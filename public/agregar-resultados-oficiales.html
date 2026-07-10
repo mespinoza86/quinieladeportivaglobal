@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Resultados Oficiales</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/agregar-resultados-oficiales.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Administración</p>
+          <h1>Resultados Oficiales</h1>
+        </div>
+        <div class="app-logo">✅</div>
+      </div>
+
+      <p class="hero-text">
+        Carga los resultados guardados y actualízalos desde la API cuando lo necesites.
+      </p>
+    </section>
+
+    <section class="app-panel">
+      <label class="field-label" for="jornadaSelect">Jornada</label>
+      <select id="jornadaSelect"></select>
+
+      <button id="actualizarDesdeApiButton" type="button">
+        Actualizar desde API
+      </button>
+
+      <div id="estadoSync" class="info-card" style="display:none;"></div>
+
+      <div id="partidosContainer" class="matches-container"></div>
+
+      <button id="saveResultadosOficialesButton" type="button">
+        Guardar Resultados Oficiales
+      </button>
+
+      <button onclick="window.location.href='adminmode.html'" class="ghost-button" type="button">
+        Volver
+      </button>
+    </section>
+
+  </main>
+
+</body>
+</html>

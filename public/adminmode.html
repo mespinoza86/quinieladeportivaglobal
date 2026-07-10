@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Modo Admin</title>
+
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/adminmode.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Panel de control</p>
+          <h1>Modo Administrador</h1>
+        </div>
+        <div class="app-logo">⚙️</div>
+      </div>
+
+      <p class="hero-text">
+        Administra jugadores, jornadas, resultados oficiales, reportes y envíos.
+      </p>
+    </section>
+
+    <section id="admin-content" class="app-panel" style="display: none;">
+      <div class="section-title-row">
+        <div>
+          <h2>Herramientas de administrador</h2>
+          <p class="helper-text">Accesos rápidos para manejar la quiniela.</p>
+        </div>
+      </div>
+
+      <div class="quick-actions admin-grid">
+        <a class="action-card" href="jugadores.html">
+          <span class="icon">👥</span>
+          <div>
+            <h3>Agregar Jugadores</h3>
+            <p>Crear o eliminar participantes</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="jornadas.html">
+          <span class="icon">📅</span>
+          <div>
+            <h3>Agregar Jornada</h3>
+            <p>Crear partidos y comodines</p>
+          </div>
+        </a>
+
+      <a class="action-card" href="importar_partidos.html">
+        <span class="icon">🌎</span>
+        <div>
+          <h3>Importar Partidos</h3>
+          <p>Buscar partidos desde API</p>
+        </div>
+      </a>
+
+      <a href="admin_trivias.html" class="menu-card">
+  <div class="menu-icon">❓</div>
+  <div>
+    <h3>Crear Trivias</h3>
+    <p>Activa preguntas extra por partido.</p>
+  </div>
+</a>
+
+
+
+      <a href="/campeon-oficial.html" class="menu-card admin-card">
+        <div class="menu-icon">🏆</div>
+        <div class="menu-title">Campeón Oficial</div>
+        <div class="menu-description">Seleccionar campeón mundial y asignar 20 puntos</div>
+    </a>
+
+        <a class="action-card" href="resultados.html">
+          <span class="icon">🎯</span>
+          <div>
+            <h3>Resultados por Jugador</h3>
+            <p>Agregar pronósticos manuales</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="agregar-resultados-oficiales.html">
+          <span class="icon">✅</span>
+          <div>
+            <h3>Resultados Oficiales</h3>
+            <p>Registrar marcadores reales</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="verResultados.html">
+          <span class="icon">🔎</span>
+          <div>
+            <h3>Pronósticos</h3>
+            <p>Ver resultados pronosticados</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="verResultados_puntos.html">
+          <span class="icon">🏅</span>
+          <div>
+            <h3>Puntos</h3>
+            <p>Ver puntos por jugador</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="resultados-totales.html">
+          <span class="icon">🏆</span>
+          <div>
+            <h3>Tabla General</h3>
+            <p>Ver acumulado total</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="generar_reporte.html">
+          <span class="icon">📄</span>
+          <div>
+            <h3>Generar Reporte</h3>
+            <p>Crear resumen de resultados</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="enviarresultados.html">
+          <span class="icon">📲</span>
+          <div>
+            <h3>Enviar Resultados</h3>
+            <p>Compartir información</p>
+          </div>
+        </a>
+
+
+        
+        <a class="action-card" href="enviarresultadospartido.html">          
+          <span class="icon">📲</span>
+          <div>
+            <h3>Enviar resultados por partido</h3>
+            <p>Compartir información</p>
+          </div>
+        </a>
+
+
+        
+        <a class="action-card" href="enviarresultadostriviaspartido.html">          
+          <span class="icon">📲</span>
+          <div>
+            <h3>Enviar resultados trivias por partido</h3>
+            <p>Compartir información</p>
+          </div>
+        </a>
+
+        
+
+        <a class="action-card" href="enviarresultadostrivias.html">
+        <span class="icon">🎯</span>
+        <div>
+          <h3>Enviar Trivias</h3>
+          <p>Copiar o enviar por WhatsApp las respuestas de trivia.</p>
+        </div>
+      </a>
+
+
+        <a class="action-card" href="copiarresultadojugador.html">
+          <span class="icon">📋</span>
+          <div>
+            <h3>Copiar Resultados</h3>
+            <p>Copiar texto por jugador</p>
+          </div>
+        </a>
+      </div>
+
+      <form id="logoutForm" class="logout-box">
+        <button type="submit" class="secondary-button">Cerrar sesión</button>
+      </form>
+    </section>
+
+    <section id="guest-content" class="app-panel">
+      <div class="section-title-row">
+        <div>
+          <h2>Menú Principal</h2>
+          <p class="helper-text">Consulta pública de la quiniela.</p>
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <a class="action-card" href="ver_jugadores.html">
+          <span class="icon">👥</span>
+          <div>
+            <h3>Ver Jugadores</h3>
+            <p>Participantes registrados</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="ver_jornadas.html">
+          <span class="icon">📅</span>
+          <div>
+            <h3>Ver Jornadas</h3>
+            <p>Partidos disponibles</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="verResultados.html">
+          <span class="icon">🎯</span>
+          <div>
+            <h3>Pronósticos</h3>
+            <p>Marcadores enviados</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="verResultados_puntos.html">
+          <span class="icon">🏅</span>
+          <div>
+            <h3>Puntos</h3>
+            <p>Pronósticos con puntaje</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="ver-resultados-oficiales.html">
+          <span class="icon">✅</span>
+          <div>
+            <h3>Oficiales</h3>
+            <p>Resultados reales</p>
+          </div>
+        </a>
+
+        <a class="action-card" href="resultados-totales.html">
+          <span class="icon">🏆</span>
+          <div>
+            <h3>Tabla General</h3>
+            <p>Acumulado total</p>
+          </div>
+        </a>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">🏠<span>Inicio</span></a>
+    <a href="ver_jornadas.html">📅<span>Jornadas</span></a>
+    <a href="resultados-totales.html">🏆<span>Tabla</span></a>
+    <a href="adminmode.html" class="active">⚙️<span>Admin</span></a>
+  </nav>
+
+</body>
+</html>

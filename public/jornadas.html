@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Agregar Jornada</title>
+
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/jornadas.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Administración</p>
+          <h1>Jornadas</h1>
+        </div>
+        <div class="app-logo">📅</div>
+      </div>
+
+      <p class="hero-text">
+        Crea jornadas, agrega partidos, define comodines y administra jornadas existentes.
+      </p>
+    </section>
+
+    <section id="jornadaSection" class="app-panel">
+
+      <div class="section-title-row">
+        <div>
+          <h2>Agregar Partido</h2>
+          <p class="helper-text">Agrega los partidos que formarán parte de la nueva jornada.</p>
+        </div>
+      </div>
+
+      <div class="match-editor-card">
+        <div class="partido-inputs">
+          <div class="autocomplete-wrapper">
+            <label for="equipo1Input" class="field-label">Equipo 1</label>
+            <input
+              type="text"
+              id="equipo1Input"
+              placeholder="Equipo 1"
+              oninput="autocompleteEquipo(this, 'equipo1Suggestions')"
+            />
+            <div id="suggestions1" class="autocomplete-suggestions"></div>
+          </div>
+
+          <span class="vs">vs</span>
+
+          <div class="autocomplete-wrapper">
+            <label for="equipo2Input" class="field-label">Equipo 2</label>
+            <input
+              type="text"
+              id="equipo2Input"
+              placeholder="Equipo 2"
+              oninput="autocompleteEquipo(this, 'equipo2Suggestions')"
+            />
+            <div id="suggestions2" class="autocomplete-suggestions"></div>
+          </div>
+        </div>
+
+        <label class="checkbox-card" for="comodinCheckbox">
+          <input type="checkbox" id="comodinCheckbox" name="comodin" />
+          <span>Marcar como comodín</span>
+        </label>
+
+        <button id="addPartidoButton">Agregar Partido</button>
+      </div>
+
+      <div class="list-card">
+        <ul id="partidosList"></ul>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>Cierre de Jornada</h2>
+      <p class="helper-text">Define la fecha y hora límite para llenar la quiniela.</p>
+
+      <div class="two-column">
+        <div>
+          <label for="fechaCierreInput" class="field-label">Fecha de cierre</label>
+          <input type="date" id="fechaCierreInput" min="" />
+        </div>
+
+        <div>
+          <label for="horaCierreInput" class="field-label">Hora de cierre</label>
+          <input type="time" id="horaCierreInput" />
+        </div>
+      </div>
+
+      <button id="finalizarJornadaButton">Finalizar Jornada</button>
+
+      <div class="divider"></div>
+
+      <h2>Ver Jornadas</h2>
+      <p class="helper-text">Revisa los partidos de una jornada ya creada.</p>
+
+      <select id="jornadaSelect"></select>
+
+      <div class="list-card">
+        <ul id="partidosJornadaList"></ul>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>Modificar Jornada</h2>
+      <p class="helper-text">Selecciona una jornada para agregar o eliminar partidos.</p>
+
+      <select id="modificarJornadaSelect"></select>
+
+      <div id="modificarJornadaControls" class="match-editor-card" style="display: none;">
+      <h3>Modificar fecha de cierre</h3>
+        <div class="two-column">
+        <div>
+          <label for="modificarFechaCierreInput" class="field-label">Nueva fecha de cierre</label>
+          <input type="date" id="modificarFechaCierreInput" />
+        </div>
+
+      <div>
+        <label for="modificarHoraCierreInput" class="field-label">Nueva hora de cierre</label>
+        <input type="time" id="modificarHoraCierreInput" />
+      </div>
+  </div>
+
+<button id="actualizarFechaCierreButton" type="button">
+  Actualizar fecha de cierre
+</button>
+
+<div class="divider"></div>
+
+        <div class="partido-inputs">
+          <div>
+            <label for="modificarEquipo1Input" class="field-label">Equipo 1</label>
+            <input type="text" id="modificarEquipo1Input" placeholder="Equipo 1" />
+          </div>
+
+          <span class="vs">vs</span>
+
+          <div>
+            <label for="modificarEquipo2Input" class="field-label">Equipo 2</label>
+            <input type="text" id="modificarEquipo2Input" placeholder="Equipo 2" />
+          </div>
+        </div>
+
+        <label class="checkbox-card" for="modificarComodinSelect">
+          <input type="checkbox" id="modificarComodinSelect" name="comodin" />
+          <span>Marcar como comodín</span>
+        </label>
+
+        <button id="agregarPartidoButton">Agregar Partido</button>
+
+        <div class="divider"></div>
+
+<h3>Buscar partidos desde API</h3>
+
+<div class="two-column">
+  <div>
+    <label for="buscarApiFechaInput" class="field-label">Fecha</label>
+    <input type="date" id="buscarApiFechaInput" />
+  </div>
+
+  <div>
+  <label for="buscarApiTorneoSelect" class="field-label">Torneo</label>
+  <select id="buscarApiTorneoSelect">
+            <option value="">Todos los torneos</option>
+
+            <optgroup label="Clubes">
+              <option value="country=Mexico;league_exact=Liga MX">México - Liga MX</option>
+          
+              <option value="country=Costa Rica;league_exact=Primera Division">Costa Rica - Primera División</option>
+              <option value="country=Costa Rica;league_exact=Liga de Ascenso">Costa Rica - Segunda División</option>
+
+              <option value="country=Honduras;league_exact=Liga Nacional">Honduras - Liga Nacional</option>
+              <option value="country=El Salvador;league_exact=Primera División">El Salvador - Primera División</option>
+              <option value="country=Panama;league_exact=LPF">Panamá - LPF</option>
+              <option value="country=Guatemala;league_exact=Liga Nacional">Guatemala - Liga Nacional</option>
+
+              <option value="country=Argentina;league_exact=Liga Profesional Argentina">Argentina - Liga Profesional</option>
+              <option value="country=Brazil;league_exact=Serie A">Brasil - Serie A</option>
+
+              <option value="country=England;league_exact=Premier League">Premier League</option>
+              <option value="country=Spain;league_exact=La Liga">La Liga</option>
+              <option value="country=Germany;league_exact=Bundesliga">Bundesliga</option>
+              <option value="country=France;league_exact=Ligue 1">Ligue 1</option>
+
+              <option value="league_exact=UEFA Champions League">UEFA Champions League</option>
+              <option value="league_exact=UEFA Europa League">UEFA Europa League</option>
+              <option value="league_exact=CONMEBOL Libertadores">CONMEBOL Libertadores</option>
+              <option value="league_exact=CONMEBOL Sudamericana">CONMEBOL Sudamericana</option>
+              <option value="league_contains=CONCACAF">CONCACAF Champions Cup</option>
+
+              <option value="country=USA;league_exact=Major League Soccer">MLS</option>
+            </optgroup>
+
+            <optgroup label="Selecciones">
+              <option value="league_any=World Cup|Copa del Mundo|FIFA World Cup">Mundial FIFA</option>
+              <option value="league_any=World Cup Qualification|World Cup Qualifying|WC Qualification">Eliminatorias Mundialistas</option>
+          
+              <option value="league_any=CONCACAF Gold Cup|Gold Cup">Copa Oro CONCACAF</option>
+              <option value="league_any=CONCACAF Nations League">CONCACAF Nations League</option>
+          
+              <option value="league_any=Copa America|CONMEBOL Copa America">Copa América</option>
+              <option value="league_any=UEFA Nations League">UEFA Nations League</option>
+              <option value="league_any=Euro Championship|UEFA Euro">Eurocopa</option>
+
+              <option value="league_any=Friendlies|Friendly International|International Friendlies">Amistosos Internacionales</option>
+            </optgroup>
+
+            <option value="custom">Buscar por texto</option>
+
+          </select>
+
+
+  
+    
+</div>
+
+</div>
+
+<div id="buscarApiCustomBox" style="display:none;">
+  <label for="buscarApiTextoInput" class="field-label">Texto a buscar</label>
+  <input type="text" id="buscarApiTextoInput" placeholder="Ej: Argentina, World Cup, FIFA" />
+</div>
+
+
+<button id="buscarPartidosApiButton" type="button" class="secondary-button">
+  Buscar partidos API
+</button>
+
+<div id="partidosApiModificarContainer" class="matches-container"></div>
+
+        <div class="list-card">
+          <ul id="partidosModificarList"></ul>
+        </div>
+
+        <button id="eliminarPartidosButton" class="danger-button">
+          Eliminar Partidos Seleccionados
+        </button>
+        <button id="eliminarJornadaButton" type="button" class="danger-button">
+          Eliminar Jornada Completa
+        </button>
+      </div>
+
+      <button onclick="window.location.href='adminmode.html'" class="ghost-button">Volver</button>
+
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">🏠<span>Inicio</span></a>
+    <a href="ver_jornadas.html">📅<span>Jornadas</span></a>
+    <a href="resultados-totales.html">🏆<span>Tabla</span></a>
+    <a href="adminmode.html" class="active">⚙️<span>Admin</span></a>
+  </nav>
+
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Inicio de Sesión</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/login.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Acceso privado</p>
+          <h1>Inicio de Sesión</h1>
+        </div>
+        <div class="app-logo">🔐</div>
+      </div>
+
+      <p class="hero-text">
+        Ingresa la contraseña para entrar al modo administrador.
+      </p>
+    </section>
+
+    <section class="app-panel">
+      <form id="loginForm">
+        <label for="password" class="field-label">Contraseña</label>
+
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Contraseña"
+          autocomplete="current-password"
+        />
+
+        <button type="submit">Iniciar sesión</button>
+      </form>
+
+      <button onclick="window.location.href='index.html'" class="ghost-button" type="button">
+        Volver
+      </button>
+    </section>
+  </main>
+
+</body>
+</html>

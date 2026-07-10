@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Resultados de Trivias</title>
+
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/ver_resultados_trivias.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Puntos extra</p>
+          <h1>Resultados de Trivias</h1>
+        </div>
+
+        <div class="app-logo">🎯</div>
+      </div>
+
+      <p class="hero-text">
+        Selecciona una jornada para ver las respuestas de todos los jugadores y los puntos obtenidos.
+      </p>
+    </section>
+
+    <section class="app-panel">
+
+      <button id="volver-btn-top" class="ghost-button" type="button" style="display:none;">
+        Volver al Inicio
+      </button>
+
+      <label for="jornada-select" class="field-label">Seleccionar Jornada</label>
+      <select id="jornada-select"></select>
+
+      <button id="ver-resultados-btn" type="button">
+        Ver Resultados
+      </button>
+
+      <div id="resultados-cards" class="resultados-cards"></div>
+
+      <button id="volver-btn-bottom" class="ghost-button" type="button" style="display:none;">
+        Volver al Inicio
+      </button>
+
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html" class="active">
+      🏠
+      <span>Inicio</span>
+    </a>
+
+    <a href="ver_jornadas.html">
+      📅
+      <span>Jornadas</span>
+    </a>
+
+    <a href="reglamento_quiniela.html">
+      📜
+      <span>Reglamento</span>
+    </a>
+
+    <a href="resultados-totales.html">
+      🏆
+      <span>Tabla</span>
+    </a>
+  </nav>
+
+</body>
+</html>

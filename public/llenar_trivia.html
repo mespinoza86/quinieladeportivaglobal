@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Llenar Trivia</title>
+
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/llenar_trivia.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <div id="modalPassword" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-icon">🔒</div>
+      <h2>Validar jugador</h2>
+      <p>Ingrese la contraseña del jugador:</p>
+
+      <input type="password" id="inputPassword" placeholder="Contraseña" />
+
+      <div class="button-grid">
+        <button id="btnPasswordOk" type="button">Aceptar</button>
+        <button id="btnPasswordCancel" type="button" class="secondary-button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Puntos extra</p>
+          <h1>Llenar Trivia</h1>
+        </div>
+        <div class="app-logo">🎯</div>
+      </div>
+
+      <p class="hero-text">
+        Responde las trivias activas antes del cierre para ganar puntos extra.
+      </p>
+    </section>
+
+    <section class="app-panel">
+
+      <div class="section-title-row">
+        <div>
+          <h2 id="tituloTrivia">Trivia</h2>
+          <p class="helper-text" id="subtituloTrivia">
+            Selecciona tu jugador para cargar o guardar tus respuestas.
+          </p>
+        </div>
+      </div>
+
+      <div id="infoCierreTrivia" class="info-card"></div>
+
+      <div class="input-group">
+        <label class="field-label" for="jugadorSelect">Nombre del jugador</label>
+        <select id="jugadorSelect">
+          <option value="">Cargando jugadores...</option>
+        </select>
+      </div>
+
+      <div id="triviasContainer" class="trivias-container"></div>
+
+      <div class="button-stack">
+        <button id="guardarBtn" type="button">Guardar Trivias</button>
+        <button onclick="window.location.href='index.html'" class="ghost-button" type="button">
+          Volver
+        </button>
+      </div>
+
+      <p id="mensaje" class="form-message"></p>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html" class="active">
+      🏠
+      <span>Inicio</span>
+    </a>
+
+    <a href="ver_jornadas.html">
+      📅
+      <span>Jornadas</span>
+    </a>
+
+    <a href="reglamento_quiniela.html">
+      📜
+      <span>Reglamento</span>
+    </a>
+
+    <a href="resultados-totales.html">
+      🏆
+      <span>Tabla</span>
+    </a>
+  </nav>
+
+</body>
+</html>

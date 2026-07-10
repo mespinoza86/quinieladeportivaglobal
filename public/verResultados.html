@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Resultados Pronosticados por Jugador</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/ver-resultados.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <div id="passwordModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-icon">🔒</div>
+
+      <h2>Jornada aún no ha cerrado</h2>
+      <p>Introduce la contraseña:</p>
+
+      <input type="password" id="passwordInput" placeholder="Contraseña" />
+
+      <div class="button-grid">
+        <button id="passwordAceptar" type="button">Aceptar</button>
+        <button id="passwordCancelar" type="button" class="secondary-button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="mobile-shell wide-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Pronósticos</p>
+          <h1>Resultados Pronosticados</h1>
+        </div>
+        <div class="app-logo">🔎</div>
+      </div>
+
+      <p class="hero-text">
+        Consulta los marcadores enviados por cada jugador.
+      </p>
+    </section>
+
+    <section id="verResultadosSection" class="app-panel">
+      <h2>Buscar Resultados</h2>
+
+      <div class="two-column">
+        <div>
+          <label for="jugadorSelect" class="field-label">Jugador</label>
+          <select id="jugadorSelect"></select>
+        </div>
+
+        <div>
+          <label for="jornadaSelect" class="field-label">Jornada</label>
+          <select id="jornadaSelect"></select>
+        </div>
+      </div>
+
+      <button id="searchResultadosButton" type="button">
+        Buscar Resultados
+      </button>
+
+      <div id="resultadosContainer" class="matches-container"></div>
+
+      <button onclick="window.location.href='index.html'" class="ghost-button">
+        Volver
+      </button>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+  <a href="index.html" class="active">
+    🏠
+    <span>Inicio</span>
+  </a>
+
+  <a href="ver_jornadas.html">
+    📅
+    <span>Jornadas</span>
+  </a>
+
+  <a href="reglamento_quiniela.html">
+    📜
+    <span>Reglamento</span>
+  </a>
+
+  <a href="resultados-totales.html">
+    🏆
+    <span>Tabla</span>
+  </a>
+</nav>
+
+
+</body>
+</html>

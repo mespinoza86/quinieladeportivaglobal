@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campeón Mundial</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/pronostico-campeon.js" defer></script>
+</head>
+
+<body class="app-body">
+  <main class="mobile-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Pronóstico especial</p>
+          <h1>Campeón Mundial</h1>
+        </div>
+        <div class="app-logo">🏆</div>
+      </div>
+
+      <p class="hero-text">
+        Elige el país que crees que será campeón del mundo. Si aciertas, ganas 20 puntos extra.
+      </p>
+    </section>
+
+    <section class="app-panel">
+      <h2>Seleccionar campeón</h2>
+
+      <label for="jugadorSelect" class="field-label">Jugador</label>
+      <select id="jugadorSelect"></select>
+
+      <label for="passwordInput" class="field-label">Contraseña</label>
+      <input type="password" id="passwordInput" placeholder="Digite su contraseña" />
+
+      <label for="campeonSelect" class="field-label">Campeón Mundial</label>
+      <select id="campeonSelect"></select>
+
+      <div class="button-grid">
+        <button onclick="window.location.href='index.html'" class="secondary-button">
+          Volver
+        </button>
+
+        <button id="guardarBtn">
+          Guardar
+        </button>
+      </div>
+
+      <p id="mensaje"></p>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+  <a href="index.html" class="active">
+    🏠
+    <span>Inicio</span>
+  </a>
+
+  <a href="ver_jornadas.html">
+    📅
+    <span>Jornadas</span>
+  </a>
+
+  <a href="reglamento_quiniela.html">
+    📜
+    <span>Reglamento</span>
+  </a>
+
+  <a href="resultados-totales.html">
+    🏆
+    <span>Tabla</span>
+  </a>
+</nav>
+
+
+</body>
+</html>

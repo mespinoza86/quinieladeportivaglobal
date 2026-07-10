@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pronósticos Campeón Mundial</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/ver-pronosticos-campeon.js" defer></script>
+</head>
+
+<body class="app-body">
+  <main class="mobile-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Pronósticos especiales</p>
+          <h1>Campeón Mundial</h1>
+        </div>
+        <div class="app-logo">🏆</div>
+      </div>
+
+      <p class="hero-text">
+        Aquí puedes ver qué selección eligió cada jugador como campeona del mundo.
+      </p>
+    </section>
+
+    <section class="app-panel">
+      <h2>Selecciones elegidas</h2>
+
+      <div class="list-card table-scroll">
+        <table class="app-table campeon-table">
+          <thead>
+            <tr>
+              <th>Jugador</th>
+              <th>Campeón elegido</th>
+            </tr>
+          </thead>
+          <tbody id="tablaPronosticos"></tbody>
+        </table>
+      </div>
+
+      <div class="button-grid">
+        <button onclick="window.location.href='index.html'" class="secondary-button">
+          Volver
+        </button>
+
+        <button onclick="window.location.href='pronostico-campeon.html'">
+          Elegir campeón
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+  <a href="index.html" class="active">
+    🏠
+    <span>Inicio</span>
+  </a>
+
+  <a href="ver_jornadas.html">
+    📅
+    <span>Jornadas</span>
+  </a>
+
+  <a href="reglamento_quiniela.html">
+    📜
+    <span>Reglamento</span>
+  </a>
+
+  <a href="resultados-totales.html">
+    🏆
+    <span>Tabla</span>
+  </a>
+</nav>
+
+
+</body>
+</html>

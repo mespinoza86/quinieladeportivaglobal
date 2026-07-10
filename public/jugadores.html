@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Agregar Jugadores</title>
+
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/jugadores.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Administración</p>
+          <h1>Jugadores</h1>
+        </div>
+        <div class="app-logo">👥</div>
+      </div>
+
+      <p class="hero-text">
+        Agrega nuevos participantes, revisa la lista actual o elimina jugadores.
+      </p>
+    </section>
+
+    <section id="jugadoresSection" class="app-panel">
+
+      <div class="section-title-row">
+        <div>
+          <h2>Agregar Jugador</h2>
+          <p class="helper-text">Crea un jugador con contraseña para proteger sus pronósticos.</p>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="nombreInput" class="field-label">Nombre</label>
+        <input type="text" id="nombreInput" placeholder="Nombre del jugador" />
+
+        <label for="passwordInput" class="field-label">Contraseña</label>
+        <input type="password" id="passwordInput" placeholder="Contraseña" />
+
+        <label for="confirmPasswordInput" class="field-label">Confirmar contraseña</label>
+        <input type="password" id="confirmPasswordInput" placeholder="Confirmar contraseña" />
+
+        <button id="addJugadorButton">Agregar Jugador</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>Lista de Jugadores</h2>
+      <p class="helper-text">Jugadores actualmente registrados.</p>
+
+      <div class="list-card">
+        <ul id="jugadoresList"></ul>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>Eliminar Jugador</h2>
+      <p class="helper-text">Selecciona un jugador para eliminarlo.</p>
+
+      <select id="eliminarJugadorSelect"></select>
+
+      <div class="button-stack">
+        <button id="deleteJugadorButton" class="danger-button">Eliminar Jugador</button>
+        <button onclick="window.location.href='adminmode.html'" class="ghost-button">Volver</button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">🏠<span>Inicio</span></a>
+    <a href="ver_jornadas.html">📅<span>Jornadas</span></a>
+    <a href="resultados-totales.html">🏆<span>Tabla</span></a>
+    <a href="adminmode.html" class="active">⚙️<span>Admin</span></a>
+  </nav>
+
+</body>
+</html>

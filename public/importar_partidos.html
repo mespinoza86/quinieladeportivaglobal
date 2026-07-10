@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Importar Partidos</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/importar_partidos.js" defer></script>
+</head>
+
+<body class="app-body">
+
+  <main class="mobile-shell wide-shell">
+
+    <section class="hero-card">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">API Football</p>
+          <h1>Importar Partidos</h1>
+        </div>
+
+        <div class="app-logo">🌎</div>
+      </div>
+
+      <p class="hero-text">
+        Busca partidos reales por fecha y filtra por torneo.
+      </p>
+    </section>
+
+    <section class="app-panel">
+
+      <div class="two-column">
+
+        <div>
+          <label class="field-label" for="fechaInput">Fecha</label>
+          <input type="date" id="fechaInput" />
+        </div>
+
+        <div>
+          <label class="field-label" for="torneoSelect">Torneo</label>
+
+          <select id="torneoSelect">
+            <option value="">Todos los torneos</option>
+
+            <optgroup label="Clubes">
+              <option value="country=Mexico;league_exact=Liga MX">México - Liga MX</option>
+          
+              <option value="country=Costa Rica;league_exact=Primera Division">Costa Rica - Primera División</option>
+              <option value="country=Costa Rica;league_exact=Liga de Ascenso">Costa Rica - Segunda División</option>
+
+              <option value="country=Honduras;league_exact=Liga Nacional">Honduras - Liga Nacional</option>
+              <option value="country=El Salvador;league_exact=Primera División">El Salvador - Primera División</option>
+              <option value="country=Panama;league_exact=LPF">Panamá - LPF</option>
+              <option value="country=Guatemala;league_exact=Liga Nacional">Guatemala - Liga Nacional</option>
+
+              <option value="country=Argentina;league_exact=Liga Profesional Argentina">Argentina - Liga Profesional</option>
+              <option value="country=Brazil;league_exact=Serie A">Brasil - Serie A</option>
+
+              <option value="country=England;league_exact=Premier League">Premier League</option>
+              <option value="country=Spain;league_exact=La Liga">La Liga</option>
+              <option value="country=Germany;league_exact=Bundesliga">Bundesliga</option>
+              <option value="country=France;league_exact=Ligue 1">Ligue 1</option>
+
+              <option value="league_exact=UEFA Champions League">UEFA Champions League</option>
+              <option value="league_exact=UEFA Europa League">UEFA Europa League</option>
+              <option value="league_exact=CONMEBOL Libertadores">CONMEBOL Libertadores</option>
+              <option value="league_exact=CONMEBOL Sudamericana">CONMEBOL Sudamericana</option>
+              <option value="league_contains=CONCACAF">CONCACAF Champions Cup</option>
+
+              <option value="country=USA;league_exact=Major League Soccer">MLS</option>
+            </optgroup>
+
+            <optgroup label="Selecciones">
+              <option value="league_any=World Cup|Copa del Mundo|FIFA World Cup">Mundial FIFA</option>
+              <option value="league_any=World Cup Qualification|World Cup Qualifying|WC Qualification">Eliminatorias Mundialistas</option>
+          
+              <option value="league_any=CONCACAF Gold Cup|Gold Cup">Copa Oro CONCACAF</option>
+              <option value="league_any=CONCACAF Nations League">CONCACAF Nations League</option>
+          
+              <option value="league_any=Copa America|CONMEBOL Copa America">Copa América</option>
+              <option value="league_any=UEFA Nations League">UEFA Nations League</option>
+              <option value="league_any=Euro Championship|UEFA Euro">Eurocopa</option>
+
+              <option value="league_any=Friendlies|Friendly International|International Friendlies">Amistosos Internacionales</option>
+            </optgroup>
+
+            <option value="custom">Buscar por texto</option>
+
+          </select>
+
+        </div>
+
+      </div>
+
+      <div id="customLeagueBox" style="display:none;margin-top:16px;">
+        <label class="field-label" for="customLeagueNameInput">Texto del torneo</label>
+        <input
+          type="text"
+          id="customLeagueNameInput"
+          placeholder="Ej: Copa, Apertura, Libertadores, Champions"
+        />
+      </div>
+
+      <div style="margin-top:20px;">
+        <button id="buscarPartidosButton" type="button">
+          Buscar Partidos
+        </button>
+      </div>
+
+      <p class="helper-text">
+        Este método busca todos los partidos de la fecha y luego filtra por nombre del torneo.
+      </p>
+
+    </section>
+
+    <section class="app-panel">
+      <h2>Partidos Disponibles</h2>
+
+      <div id="estadoBusqueda" class="info-card" style="display:none;"></div>
+
+      <div id="partidosContainer" class="matches-container"></div>
+    </section>
+
+    <section class="app-panel">
+
+      <h2>Crear Jornada</h2>
+
+      <div class="two-column">
+
+        <div>
+          <label class="field-label" for="nombreJornadaInput">Nombre Jornada</label>
+          <input type="text" id="nombreJornadaInput" placeholder="Ej: Jornada34" />
+        </div>
+
+        <div>
+          <label class="field-label" for="fechaCierreInput">Fecha de cierre</label>
+          <input type="datetime-local" id="fechaCierreInput" />
+        </div>
+
+      </div>
+
+      <button id="crearJornadaButton" type="button">
+        Crear Jornada desde API
+      </button>
+
+      <button onclick="window.location.href='adminmode.html'" class="ghost-button" type="button">
+        Volver
+      </button>
+
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">🏠<span>Inicio</span></a>
+    <a href="ver_jornadas.html">📅<span>Jornadas</span></a>
+    <a href="resultados-totales.html">🏆<span>Tabla</span></a>
+    <a href="adminmode.html" class="active">⚙️<span>Admin</span></a>
+  </nav>
+
+</body>
+</html>

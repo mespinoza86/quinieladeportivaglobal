@@ -1,0 +1,667 @@
+[
+  [
+    "Jornada1",
+    [
+      {
+        "equipo1": "USA",
+        "marcador1": "5",
+        "equipo2": "🇹🇹Trinidad y Tobago",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇭🇹Haiti",
+        "marcador1": "0",
+        "equipo2": "🇸🇦Arabia Saudita",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇷Costa Rica",
+        "marcador1": "4",
+        "equipo2": "🇸🇷Surinam",
+        "marcador2": "3",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇵🇦Panama",
+        "marcador1": "4",
+        "equipo2": "🇫🇷Guadalupe",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇯🇲Jamaica",
+        "marcador1": "0",
+        "equipo2": "🇬🇹Guatemala",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇨🇼Curazao",
+        "marcador1": "0",
+        "equipo2": "🇸🇻El Salvador",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇦Canada",
+        "marcador1": "6",
+        "equipo2": "🇭🇳 Honduras",
+        "marcador2": "0",
+        "comodin": false
+      }
+    ]
+  ],
+  [
+    "Jornada2",
+    [
+      {
+        "equipo1": "Manchester City",
+        "marcador1": "2",
+        "equipo2": "Wydad Casablanca",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Real Madrid",
+        "marcador1": "1",
+        "equipo2": "Al Hilal",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Pachuca",
+        "marcador1": "1",
+        "equipo2": "Salzburg",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇷Costa Rica",
+        "marcador1": "2",
+        "equipo2": "🇩🇴República Dominicana",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Al-Ain",
+        "marcador1": "0",
+        "equipo2": "Juventus",
+        "marcador2": "5",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇸🇷Surinam",
+        "marcador1": "0",
+        "equipo2": "🇲🇽Mexico",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "Palmeiras",
+        "marcador1": "2",
+        "equipo2": "Al Ahly SC",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Inter Miami",
+        "marcador1": "2",
+        "equipo2": "FC Porto",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "Seattle Sounders",
+        "marcador1": "1",
+        "equipo2": "Atlético Madrid",
+        "marcador2": "3",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇹🇹Trinidad y Tobago",
+        "marcador1": "1",
+        "equipo2": "🇭🇹Haiti",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "PSG",
+        "marcador1": "0",
+        "equipo2": "Botafogo RJ",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇸🇦Arabia Saudita",
+        "marcador1": "0",
+        "equipo2": "🇺🇸Estados Unidos",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Benfica",
+        "marcador1": "6",
+        "equipo2": "Auckland City FC",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Flamengo⚫🔴",
+        "marcador1": "3",
+        "equipo2": "Chelsea 🔵",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "LAFC",
+        "marcador1": "0",
+        "equipo2": "Espérance",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇯🇲Jamaica",
+        "marcador1": "2",
+        "equipo2": "🇫🇷Guadalupe",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Bayern Munchen",
+        "marcador1": "2",
+        "equipo2": "Boca Juniors🟡🔵",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇬🇹Guatemala",
+        "marcador1": "0",
+        "equipo2": "🇵🇦Panama",
+        "marcador2": "1",
+        "comodin": false
+      }
+    ]
+  ],
+  [
+    "Jornada3",
+    [
+      {
+        "equipo1": "M Sundowns FC",
+        "marcador1": "3",
+        "equipo2": "Dortmund",
+        "marcador2": "4",
+        "comodin": false
+      },
+      {
+        "equipo1": "Inter 🔵⚪",
+        "marcador1": "2",
+        "equipo2": "U Red Diamonds",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Fluminense",
+        "marcador1": "4",
+        "equipo2": "Ulsan HD FC",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇼Curacao",
+        "marcador1": "1",
+        "equipo2": "🇨🇦Canada",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "River Plate🔴⚪",
+        "marcador1": "0",
+        "equipo2": "Monterrey 🔵⚪",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇭🇳 Honduras",
+        "marcador1": "2",
+        "equipo2": "🇸🇻El Salvador",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Juventus ⚫⚪",
+        "marcador1": "4",
+        "equipo2": "Wydad Casablanca",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Real Madrid",
+        "marcador1": "3",
+        "equipo2": "Pachuca",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Salzburg",
+        "marcador1": "0",
+        "equipo2": "Al Hilal",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇸🇦Arabia Saudita",
+        "marcador1": "1",
+        "equipo2": "🇹🇹Trinidad y Tobago",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇺🇸USA",
+        "marcador1": "2",
+        "equipo2": "🇭🇹Haiti",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Manchester City",
+        "marcador1": "6",
+        "equipo2": "Al-Ain",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇩🇴República Dominicana",
+        "marcador1": "0",
+        "equipo2": "🇸🇷Surinam",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇲🇽Mexico",
+        "marcador1": "0",
+        "equipo2": "🇨🇷Costa Rica",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "Atletico Madrid",
+        "marcador1": "1",
+        "equipo2": "Botafogo RJ",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Seattle Sounders",
+        "marcador1": "0",
+        "equipo2": "PSG",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "FC Porto",
+        "marcador1": "4",
+        "equipo2": "Al Ahly SC",
+        "marcador2": "4",
+        "comodin": false
+      },
+      {
+        "equipo1": "Inter Miami",
+        "marcador1": "2",
+        "equipo2": "Palmeiras",
+        "marcador2": "2",
+        "comodin": true
+      }
+    ]
+  ],
+  [
+    "Jornada4",
+    [
+      {
+        "equipo1": "Auckland City FC",
+        "marcador1": "1",
+        "equipo2": "Boca Juniors🟡🔵",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Benfica",
+        "marcador1": "1",
+        "equipo2": "Bayern Munchen",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇫🇷Guadalupe",
+        "marcador1": "2",
+        "equipo2": "🇬🇹Guatemala",
+        "marcador2": "3",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇵🇦Panama",
+        "marcador1": "4",
+        "equipo2": "🇯🇲Jamaica",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Esperance",
+        "marcador1": "0",
+        "equipo2": "Chelsea 🔵",
+        "marcador2": "3",
+        "comodin": false
+      },
+      {
+        "equipo1": "LAFC",
+        "marcador1": "1",
+        "equipo2": "Flamengo⚫🔴",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇦Canada",
+        "marcador1": "2",
+        "equipo2": "🇸🇻El Salvador",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇭🇳 Honduras",
+        "marcador1": "2",
+        "equipo2": "🇨🇼Curazao",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Dortmund",
+        "marcador1": "1",
+        "equipo2": "Ulsan HD FC",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "M Sundowns FC",
+        "marcador1": "0",
+        "equipo2": "Fluminense",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Inter 🔵⚪",
+        "marcador1": "2",
+        "equipo2": "River Plate🔴⚪",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "U Red Diamonds",
+        "marcador1": "0",
+        "equipo2": "Monterrey 🔵⚪",
+        "marcador2": "4",
+        "comodin": false
+      },
+      {
+        "equipo1": "Juventus ⚫⚪",
+        "marcador1": "2",
+        "equipo2": "Manchester City",
+        "marcador2": "5",
+        "comodin": true
+      },
+      {
+        "equipo1": "Wydad Casablanca",
+        "marcador1": "1",
+        "equipo2": "Al-Ain",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "Al Hilal",
+        "marcador1": "2",
+        "equipo2": "Pachuca",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Salzburg",
+        "marcador1": "0",
+        "equipo2": "Real Madrid",
+        "marcador2": "3",
+        "comodin": false
+      }
+    ]
+  ],
+  [
+    "Jornada5",
+    [
+      {
+        "equipo1": "Palmeiras",
+        "marcador1": "0",
+        "equipo2": "Botafogo RJ",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "Benfica",
+        "marcador1": "1",
+        "equipo2": "Chelsea 🔵",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇵🇦Panama",
+        "marcador1": "1",
+        "equipo2": "🇭🇳 Honduras",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇲🇽Mexico",
+        "marcador1": "2",
+        "equipo2": "🇸🇦Arabia Saudita",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "PSG",
+        "marcador1": "4",
+        "equipo2": "Inter Miami",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Flamengo⚫🔴",
+        "marcador1": "2",
+        "equipo2": "Bayern Munchen",
+        "marcador2": "4",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇨🇦Canada",
+        "marcador1": "1",
+        "equipo2": "🇬🇹Guatemala",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇺🇸USA",
+        "marcador1": "2",
+        "equipo2": "🇨🇷Costa Rica",
+        "marcador2": "2",
+        "comodin": true
+      },
+      {
+        "equipo1": "Inter 🔵⚪",
+        "marcador1": "0",
+        "equipo2": "Fluminense",
+        "marcador2": "2",
+        "comodin": true
+      },
+      {
+        "equipo1": "Manchester City",
+        "marcador1": "2",
+        "equipo2": "Al Hilal",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "Real Madrid",
+        "marcador1": "1",
+        "equipo2": "Juventus ⚫⚪",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "Dortmund",
+        "marcador1": "2",
+        "equipo2": "Monterrey 🔵⚪",
+        "marcador2": "1",
+        "comodin": false
+      }
+    ]
+  ],
+  [
+    "Jornada6",
+    [
+      {
+        "equipo1": "🇺🇸USA",
+        "marcador1": "2",
+        "equipo2": "🇬🇹Guatemala",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "🇲🇽Mexico",
+        "marcador1": "1",
+        "equipo2": "🇭🇳 Honduras",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "NYCFC",
+        "marcador1": "3",
+        "equipo2": "Toronto",
+        "marcador2": "1",
+        "comodin": false
+      },
+      {
+        "equipo1": "Instituto",
+        "marcador1": "0",
+        "equipo2": "Huracan",
+        "marcador2": "0",
+        "comodin": false
+      },
+      {
+        "equipo1": "Fluminense",
+        "marcador1": "2",
+        "equipo2": "Al Hilal",
+        "marcador2": "1",
+        "comodin": true
+      },
+      {
+        "equipo1": "Palmeiras",
+        "marcador1": "1",
+        "equipo2": "Chelsea 🔵",
+        "marcador2": "2",
+        "comodin": true
+      },
+      {
+        "equipo1": "Dallas",
+        "marcador1": "1",
+        "equipo2": "Minnesota",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "Colorado Rapids",
+        "marcador1": "1",
+        "equipo2": "Sporting Kansas City",
+        "marcador2": "2",
+        "comodin": false
+      },
+      {
+        "equipo1": "LA Galaxy",
+        "marcador1": "3",
+        "equipo2": "Vancouver",
+        "marcador2": "0",
+        "comodin": false
+      }
+    ]
+  ],
+  [
+    "Jornada7",
+    [
+      {
+        "equipo1": "PSG",
+        "marcador1": "2",
+        "equipo2": "Bayern Munchen",
+        "marcador2": "0",
+        "comodin": true
+      },
+      {
+        "equipo1": "Real Madrid",
+        "marcador1": "3",
+        "equipo2": "Dortmund",
+        "marcador2": "2",
+        "comodin": true
+      },
+      {
+        "equipo1": "Charlolett FC",
+        "marcador1": "",
+        "equipo2": "Orlando",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "DC United",
+        "marcador1": "",
+        "equipo2": "Atlanta United",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "Austin FC",
+        "marcador1": "",
+        "equipo2": "LAFC",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "Nashville SC 🟡⚫",
+        "marcador1": "",
+        "equipo2": "Philadelfia 🔵⚫",
+        "marcador2": "",
+        "comodin": true
+      },
+      {
+        "equipo1": "Salt Lake",
+        "marcador1": "",
+        "equipo2": "St Louis City",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "San Jose",
+        "marcador1": "",
+        "equipo2": "NY Red Bulls",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "Seattle Sounders",
+        "marcador1": "",
+        "equipo2": "Columbus",
+        "marcador2": "",
+        "comodin": false
+      },
+      {
+        "equipo1": "🇺🇸USA",
+        "marcador1": "",
+        "equipo2": "🇲🇽Mexico",
+        "marcador2": "",
+        "comodin": true
+      }
+    ]
+  ]
+]
