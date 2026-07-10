@@ -28,6 +28,7 @@
       </p>
     </section>    
     <section class="quick-actions">
+      <a class="action-card" href="quinielas.html"><span class="icon">🔄</span><div><h3>Cambiar quiniela</h3><p id="quinielaActualNombre">Quiniela actual</p></div></a>
 
     <section class="home-rotator">
   <section id="rankingCard" class="ranking-card rotator-panel active">
@@ -200,6 +201,14 @@
   <script src="js/index-ranking.js"></script>
   <script>
   document.addEventListener('DOMContentLoaded', async () => {
+    const contexto = await fetch('/api/quiniela-actual');
+    if (contexto.status === 401) return window.location.href = '/login.html';
+    if (contexto.status === 409) return window.location.href = '/quinielas.html';
+    if (contexto.ok) {
+      const q = await contexto.json();
+      document.querySelector('h1').textContent = q.nombre;
+      document.getElementById('quinielaActualNombre').textContent = `${q.nombre} · ${q.rol}`;
+    }
     const card = document.getElementById('llenarTriviaCard');
     if (!card) return;
 

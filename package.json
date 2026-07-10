@@ -4,22 +4,27 @@
   "description": "Una aplicación de Quiniela Deportiva",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js",
+    "test": "node test/architecture.test.js",
+    "migrate:legacy:dry": "node scripts/migrate-legacy.js",
+    "migrate:legacy": "node scripts/migrate-legacy.js --execute"
   },
   "dependencies": {
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^1.20.2",
     "canvas": "^2.11.2",
+    "connect-mongo": "^5.1.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.1",
     "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
     "express-session": "^1.18.0",
     "fs": "^0.0.1-security",
     "mongoose": "^8.16.1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "devDependencies": {}
+  "license": "ISC"
 }

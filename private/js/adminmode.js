@@ -1,41 +1,19 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const adminContent = document.getElementById('admin-content');
-    const guestContent = document.getElementById('guest-content');
-    const logoutForm = document.getElementById('logoutForm');
-
-    // Verificar el estado de la sesión
-    fetch('/check-auth')
-        .then(response => response.json())
-        .then(data => {
-            if (data.authenticated) {
-                // Mostrar contenido para administradores
-                adminContent.style.display = 'block';
-                guestContent.style.display = 'none';
-            } else {
-                // Mostrar contenido para usuarios no autenticados
-                adminContent.style.display = 'none';
-                guestContent.style.display = 'block';
-            }
-        })
-        .catch(error => {
-            console.error('Error al verificar autenticación:', error);
-        });
-
-    // Manejar el cierre de sesión
-    logoutForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-
-        fetch('/logout', {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.href = '/login.html';
-            }
-        })
-        .catch(error => {
-            console.error('Error al cerrar sesión:', error);
-        });
-    });
+document.addEventListener('DOMContentLoaded', async () => {
+  const adminContent = document.getElementById('admin-content');
+  const guestContent = document.getElementById('guest-content');
+  const logoutForm = document.getElementById('logoutForm');
+  try {
+    const response = await fetch('/api/quiniela-actual');
+    if (response.status === 401) return window.location.href = '/login.html';
+    if (response.status === 409) return window.location.href = '/quinielas.html';
+    const data = await response.json();
+    const esAdmin = ['propietario', 'admin'].includes(data.rol);
+    adminContent.style.display = esAdmin ? 'block' : 'none';
+    guestContent.style.display = esAdmin ? 'none' : 'block';
+  } catch (error) {
+    console.error('Error al verificar permisos:', error);
+  }
+  logoutForm?.addEventListener('submit', async event => {
+    event.preventDefault(); await fetch('/logout', { method: 'POST' }); window.location.href = '/login.html';
+  });
 });

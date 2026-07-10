@@ -3,6 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const jornadaSelect = document.getElementById('jornadaSelect');
   const generarPdfBtn = document.getElementById('generarPdfBtn');
+  let puntuacion = { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4 };
+  fetch('/api/quiniela-actual').then(r => r.json()).then(q => { puntuacion = { ...puntuacion, ...q.configuracion?.puntuacion }; });
 
   function limpiarTexto(texto) {
     return (texto || '')
@@ -71,20 +73,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultadoOficialEquipo1 = determinarResultado(marcador1Oficial, marcador2Oficial);
     const resultadoPronosticoEquipo1 = determinarResultado(marcador1Pronostico, marcador2Pronostico);
 
-    let puntosJornada = 0;
-
-    if (resultadoOficialEquipo1 === resultadoPronosticoEquipo1) {
-      puntosJornada += comodin ? 4 : 3;
-    }
-
     if (
       marcador1Oficial === marcador1Pronostico &&
       marcador2Oficial === marcador2Pronostico
     ) {
-      puntosJornada += comodin ? 3 : 2;
+      return comodin ? puntuacion.comodinExacto : puntuacion.marcadorExacto;
     }
-
-    return puntosJornada;
+    return resultadoOficialEquipo1 === resultadoPronosticoEquipo1
+      ? (comodin ? puntuacion.comodinResultado : puntuacion.resultadoCorrecto)
+      : 0;
   }
 
   function buscarPartidoPorEquipos(partidos, equipo1, equipo2) {

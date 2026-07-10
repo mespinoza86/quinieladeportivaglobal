@@ -1,5 +1,8 @@
+let puntuacionQuiniela = { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4 };
 document.addEventListener("DOMContentLoaded", async function () {
     try {
+        const contextoPuntuacion = await fetch('/api/quiniela-actual').then(r => r.json());
+        puntuacionQuiniela = { ...puntuacionQuiniela, ...contextoPuntuacion.configuracion?.puntuacion };
         const jornadaSelect = document.getElementById('jornada-select');
         const verResultadosBtn = document.getElementById('ver-resultados-btn');
         const resultadosCards = document.getElementById('resultados-cards');
@@ -357,7 +360,7 @@ function calcularPuntos(pronostico, partidoOficial) {
             marcador1Pronosticado === marcador1Oficial &&
             marcador2Pronosticado === marcador2Oficial
         ) {
-            puntos += esComodin ? 7 : 5;
+            puntos += esComodin ? puntuacionQuiniela.comodinExacto : puntuacionQuiniela.marcadorExacto;
         } else {
             const resultadoPronosticado =
                 marcador1Pronosticado === marcador2Pronosticado
@@ -374,7 +377,7 @@ function calcularPuntos(pronostico, partidoOficial) {
                         : 'gana2';
 
             if (resultadoPronosticado === resultadoOficial) {
-                puntos += esComodin ? 4 : 3;
+                puntos += esComodin ? puntuacionQuiniela.comodinResultado : puntuacionQuiniela.resultadoCorrecto;
             }
         }
     }

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mis quinielas</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/quinielas.js" defer></script>
+</head>
+<body class="app-body"><main class="mobile-shell">
+  <section class="hero-card"><div class="hero-top"><div><p class="eyebrow" id="cuentaActual">Mi cuenta</p><h1>Mis quinielas</h1></div><div class="app-logo">⚽</div></div><p class="hero-text">Selecciona una quiniela o comienza una nueva.</p></section>
+  <section class="app-panel"><h2>Crear quiniela</h2><form id="crearQuinielaForm"><label class="field-label" for="nombreQuiniela">Nombre</label><input id="nombreQuiniela" minlength="3" maxlength="80" required /><button type="submit">Crear quiniela</button></form></section>
+  <section class="app-panel"><h2>Unirme a una quiniela</h2><form id="unirseForm"><label class="field-label" for="codigoIngreso">Código de ingreso</label><input id="codigoIngreso" autocomplete="off" required /><button type="submit">Solicitar ingreso</button></form></section>
+  <section class="app-panel"><h2>Quinielas y solicitudes</h2><div id="listaQuinielas" class="quick-actions"></div><p id="mensajeQuinielas" class="form-message" role="alert"></p></section>
+  <button id="cerrarSesion" class="ghost-button" type="button">Cerrar sesión</button>
+</main></body></html>

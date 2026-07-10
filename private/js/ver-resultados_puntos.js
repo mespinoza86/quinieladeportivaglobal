@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let verTodosAutorizado = false;
     let passwordGuardada = '';
+    let puntuacion = { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4 };
+    fetch('/api/quiniela-actual').then(r => r.json()).then(q => { puntuacion = { ...puntuacion, ...q.configuracion?.puntuacion }; });
 
     function isValidScore(v) {
         if (v === null || v === undefined) return false;
@@ -91,20 +93,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const n1o = Number(m1o);
         const n2o = Number(m2o);
 
-        let puntos = 0;
-
         const ganadorPron = n1p > n2p ? 1 : n1p < n2p ? -1 : 0;
         const ganadorOfi = n1o > n2o ? 1 : n1o < n2o ? -1 : 0;
-
-        if (ganadorPron === ganadorOfi) {
-            puntos += comodin ? 4 : 3;
-        }
-
         if (n1p === n1o && n2p === n2o) {
-            puntos += comodin ? 3 : 2;
+            return comodin ? puntuacion.comodinExacto : puntuacion.marcadorExacto;
         }
-
-        return puntos;
+        return ganadorPron === ganadorOfi
+            ? (comodin ? puntuacion.comodinResultado : puntuacion.resultadoCorrecto)
+            : 0;
     }
 
     function pedirPassword() {

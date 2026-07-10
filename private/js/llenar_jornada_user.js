@@ -21,9 +21,10 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => console.error('Error al cargar las jornadas:', error));
 
     // Cargar jugadores en combo
-    fetch('/api/jugadores')
+    fetch('/api/auth/me')
         .then(res => res.json())
-        .then(jugadores => {
+        .then(data => {
+            const jugadores = [data.usuario.username];
             const combo = document.getElementById('comboJugadores');
             combo.innerHTML = '<option value="">Seleccione un jugador</option>';
             jugadores.forEach(j => {
@@ -32,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 opt.textContent = j;
                 combo.appendChild(opt);
             });
+            combo.value = data.usuario.username;
+            combo.dispatchEvent(new Event('change'));
         });
 
     // Botones

@@ -1,17 +1,36 @@
 const express = require('express');
+require('express-async-errors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const axios = require('axios');
+const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SALT_ROUNDS = 10;
+const tenantContext = new AsyncLocalStorage();
+const INTERNAL_SYNC_TOKEN = crypto.randomBytes(32).toString('hex');
+
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
+if (!process.env.MONGO_URI_MULTIQUINIELA) {
+  console.error('Falta MONGO_URI_MULTIQUINIELA. Por seguridad no se utilizará MONGO_URI.');
+  process.exit(1);
+}
+
+const mongoConnectionPromise = mongoose.connect(process.env.MONGO_URI_MULTIQUINIELA)
+  .then(() => {
+    console.log('✅ Conectado a la base multi-quiniela');
+    return mongoose.connection;
+  });
 
 /* ================= Middleware ================= */
 
@@ -42,21 +61,32 @@ app.use(express.json());
 app.use(bodyParser.json({ limit: '10kb' }));
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'quiniela_secret',
+  secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('Falta SESSION_SECRET'); })() : 'solo-desarrollo-cambiar'),
+  store: MongoStore.create({
+    clientPromise: mongoConnectionPromise.then(connection => connection.getClient()),
+    collectionName: 'sesiones',
+    ttl: 60 * 60 * 24 * 14
+  }),
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: 'strict',
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }));
 
+function requireLogin(req, res, next) {
+  if (req.session?.usuarioId) return next();
+  return res.status(401).json({ error: 'Debes iniciar sesión.' });
+}
+
 function requireAdmin(req, res, next) {
-  if (req.session && req.session.authenticated === true) {
+  if (req.membership && ['propietario', 'admin'].includes(req.membership.rol)) {
     return next();
   }
-
-  return res.redirect('/login.html');
+  return res.status(403).json({ error: 'Se requieren permisos de administrador en esta quiniela.' });
 }
 
 const paginasAdmin = [
@@ -72,12 +102,14 @@ const paginasAdmin = [
   '/enviarresultadostrivias.html',
   '/enviarresultadospartido.html',
   '/enviarresultadostriviaspartido.html',
-  '/campeon-oficial.html'
+  '/campeon-oficial.html',
+  '/miembros.html',
+  '/configuracion-quiniela.html'
 ];
 
 app.use((req, res, next) => {
   if (paginasAdmin.includes(req.path)) {
-    return requireAdmin(req, res, next);
+    if (!req.session?.usuarioId) return res.redirect('/login.html');
   }
 
   next();
@@ -123,21 +155,15 @@ app.use((req, res, next) => {
 
 /* ================= Auth ================= */
 
-app.post('/login', (req, res) => {
-  if (req.body.password === process.env.ADMIN_PASSWORD) {
-    req.session.authenticated = true;
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ error: 'Contraseña incorrecta' });
-  }
-});
-
 app.post('/logout', (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
 app.get('/check-auth', (req, res) => {
-  res.json({ authenticated: req.session.authenticated || false });
+  res.json({
+    authenticated: Boolean(req.session.usuarioId),
+    quinielaActivaId: req.session.quinielaActivaId || null
+  });
 });
 
 /* ================= Static Files ================= */
@@ -160,15 +186,6 @@ app.get('/css/:filename', (req, res) => {
 
 
 
-/* ================= MongoDB ================= */
-
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Conectado a MongoDB Atlas'))
-  .catch(err => {
-    console.error('❌ Error al conectar a MongoDB:', err.message);
-    process.exit(1);
-  });
-
 /* ================= API-Football ================= */
 
 /*
@@ -187,8 +204,95 @@ const apiFootballCom = axios.create({
 
 /* ================= Schemas ================= */
 
+const UsuarioSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, trim: true },
+  usernameNormalizado: { type: String, required: true, unique: true, index: true },
+  email: { type: String, required: true, unique: true, trim: true },
+  emailNormalizado: { type: String, required: true, unique: true, index: true },
+  password: { type: String, required: true },
+  emailVerificado: { type: Boolean, default: false },
+  tokenVerificacion: { type: String, default: null },
+  expiracionTokenVerificacion: { type: Date, default: null },
+  activo: { type: Boolean, default: true }
+}, { timestamps: true });
+
+const puntuacionDefault = {
+  marcadorExacto: 5,
+  resultadoCorrecto: 3,
+  comodinExacto: 7,
+  comodinResultado: 4,
+  campeon: 20,
+  triviasHabilitadas: true,
+  puntosTriviaDefault: 1
+};
+
+const QuinielaSchema = new mongoose.Schema({
+  nombre: { type: String, required: true, trim: true },
+  codigoIngreso: { type: String, required: true, unique: true, index: true },
+  propietarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true },
+  estado: { type: String, enum: ['activa', 'archivada', 'eliminada'], default: 'activa' },
+  eliminadaEn: Date,
+  configuracion: {
+    puntuacion: {
+      marcadorExacto: { type: Number, default: 5, min: 0 },
+      resultadoCorrecto: { type: Number, default: 3, min: 0 },
+      comodinExacto: { type: Number, default: 7, min: 0 },
+      comodinResultado: { type: Number, default: 4, min: 0 },
+      campeon: { type: Number, default: 20, min: 0 },
+      triviasHabilitadas: { type: Boolean, default: true },
+      puntosTriviaDefault: { type: Number, default: 1, min: 0 }
+    },
+    incluirExpulsadosEnRanking: { type: Boolean, default: true }
+  }
+}, { timestamps: true });
+
+const MembresiaSchema = new mongoose.Schema({
+  quinielaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quiniela', required: true, index: true },
+  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true, index: true },
+  rol: { type: String, enum: ['propietario', 'admin', 'user'], default: 'user' },
+  estado: {
+    type: String,
+    enum: ['pendiente_ingreso', 'activo', 'pendiente_retiro', 'rechazado', 'expulsado'],
+    default: 'pendiente_ingreso'
+  },
+  solicitadoEn: { type: Date, default: Date.now },
+  aprobadoEn: Date,
+  retiradoEn: Date
+}, { timestamps: true });
+MembresiaSchema.index({ quinielaId: 1, usuarioId: 1 }, { unique: true });
+
+const Usuario = mongoose.model('Usuario', UsuarioSchema);
+const Quiniela = mongoose.model('Quiniela', QuinielaSchema);
+const Membresia = mongoose.model('Membresia', MembresiaSchema);
+
+function tenantPlugin(schema) {
+  schema.add({
+    quinielaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quiniela', required: true, index: true }
+  });
+
+  const aplicarFiltro = function aplicarFiltroTenant(next) {
+    const store = tenantContext.getStore();
+    if (store?.quinielaId) this.where({ quinielaId: store.quinielaId });
+    next();
+  };
+
+  schema.pre(/^find/, aplicarFiltro);
+  schema.pre('countDocuments', aplicarFiltro);
+  schema.pre('deleteMany', aplicarFiltro);
+  schema.pre('deleteOne', aplicarFiltro);
+  schema.pre('updateMany', aplicarFiltro);
+  schema.pre('updateOne', aplicarFiltro);
+
+  schema.pre('validate', function asignarTenant(next) {
+    const store = tenantContext.getStore();
+    if (!this.quinielaId && store?.quinielaId) this.quinielaId = store.quinielaId;
+    next();
+  });
+}
+
 const JugadorSchema = new mongoose.Schema({
-  nombre: { type: String, required: true, unique: true },
+  nombre: { type: String, required: true },
+  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
   password: { type: String }
 });
 
@@ -267,24 +371,13 @@ const respuestaTriviaSchema = new mongoose.Schema({
   fechaRespuesta: { type: Date, default: Date.now }
 });
 
-const Trivia = mongoose.model('Trivia', triviaSchema);
-const RespuestaTrivia = mongoose.model('RespuestaTrivia', respuestaTriviaSchema);
-
-
-
 const EquipoSchema = new mongoose.Schema({
-  nombre: { type: String, required: true, unique: true }
+  nombre: { type: String, required: true }
 });
 
-const Equipo = mongoose.model('Equipo', EquipoSchema);
-const Jugador = mongoose.model('Jugador', JugadorSchema);
-const Jornada = mongoose.model('Jornada', JornadaSchema);
-const Resultado = mongoose.model('Resultado', ResultadoSchema);
-const ResultadoOficial = mongoose.model('ResultadoOficial', ResultadoOficialSchema);
-
-
 const PronosticoCampeonSchema = new mongoose.Schema({
-  jugador: { type: String, required: true, unique: true },
+  jugador: { type: String, required: true },
+  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
   campeon: { type: String, required: true },
   fechaRegistro: { type: Date, default: Date.now }
 });
@@ -294,6 +387,32 @@ const CampeonOficialSchema = new mongoose.Schema({
   puntos: { type: Number, default: 20 }
 });
 
+[
+  JugadorSchema,
+  JornadaSchema,
+  ResultadoSchema,
+  ResultadoOficialSchema,
+  triviaSchema,
+  respuestaTriviaSchema,
+  EquipoSchema,
+  PronosticoCampeonSchema,
+  CampeonOficialSchema
+].forEach(tenantPlugin);
+
+JugadorSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
+JornadaSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
+ResultadoSchema.index({ quinielaId: 1, jugador: 1, jornada: 1 }, { unique: true });
+ResultadoOficialSchema.index({ quinielaId: 1, jornada: 1 }, { unique: true });
+EquipoSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
+PronosticoCampeonSchema.index({ quinielaId: 1, jugador: 1 }, { unique: true });
+
+const Equipo = mongoose.model('Equipo', EquipoSchema);
+const Jugador = mongoose.model('Jugador', JugadorSchema);
+const Jornada = mongoose.model('Jornada', JornadaSchema);
+const Resultado = mongoose.model('Resultado', ResultadoSchema);
+const ResultadoOficial = mongoose.model('ResultadoOficial', ResultadoOficialSchema);
+const Trivia = mongoose.model('Trivia', triviaSchema);
+const RespuestaTrivia = mongoose.model('RespuestaTrivia', respuestaTriviaSchema);
 const PronosticoCampeon = mongoose.model('PronosticoCampeon', PronosticoCampeonSchema);
 const CampeonOficial = mongoose.model('CampeonOficial', CampeonOficialSchema);
 
@@ -369,6 +488,370 @@ function triviaCerrada(trivia) {
   return new Date(trivia.fechaCierre) <= new Date();
 }
 
+/* ================= Cuentas y multi-quiniela ================= */
+
+function normalizarIdentidad(valor) {
+  return String(valor || '').trim().toLowerCase();
+}
+
+function usuarioPublico(usuario) {
+  return {
+    id: usuario._id,
+    username: usuario.username,
+    email: usuario.email,
+    emailVerificado: usuario.emailVerificado
+  };
+}
+
+function generarCodigoIngreso() {
+  return crypto.randomBytes(5).toString('hex').toUpperCase();
+}
+
+async function codigoIngresoUnico() {
+  let codigo;
+  do codigo = generarCodigoIngreso();
+  while (await Quiniela.exists({ codigoIngreso: codigo }));
+  return codigo;
+}
+
+app.post('/api/auth/registro', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const email = String(req.body.email || '').trim();
+    const password = String(req.body.password || '');
+    const confirmarPassword = String(req.body.confirmarPassword || '');
+    const usernameNormalizado = normalizarIdentidad(username);
+    const emailNormalizado = normalizarIdentidad(email);
+
+    if (!username || !email || !password || !confirmarPassword) {
+      return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
+    }
+    if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(username)) {
+      return res.status(400).json({ error: 'El usuario debe tener entre 3 y 30 caracteres y usar solamente letras, números, punto, guion o guion bajo.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'El correo electrónico no es válido.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+    if (password !== confirmarPassword) {
+      return res.status(400).json({ error: 'Las contraseñas no coinciden.' });
+    }
+
+    const [usuarioExistente, correoExistente] = await Promise.all([
+      Usuario.exists({ usernameNormalizado }),
+      Usuario.exists({ emailNormalizado })
+    ]);
+    if (usuarioExistente || correoExistente) {
+      const campos = [];
+      if (usuarioExistente) campos.push('nombre de usuario');
+      if (correoExistente) campos.push('correo electrónico');
+      return res.status(409).json({
+        error: `Ya existe una cuenta con ese ${campos.join(' y ese ')}. Debes cambiar ${campos.join(' y ')}.`,
+        usernameEnUso: Boolean(usuarioExistente),
+        emailEnUso: Boolean(correoExistente)
+      });
+    }
+
+    const usuario = await Usuario.create({
+      username,
+      usernameNormalizado,
+      email,
+      emailNormalizado,
+      password: await bcrypt.hash(password, SALT_ROUNDS)
+    });
+    req.session.usuarioId = usuario._id.toString();
+    res.status(201).json({ success: true, usuario: usuarioPublico(usuario) });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: 'El usuario o el correo electrónico ya están registrados.' });
+    }
+    console.error('Error registrando usuario:', error);
+    res.status(500).json({ error: 'No se pudo crear la cuenta.' });
+  }
+});
+
+async function iniciarSesion(req, res) {
+  const identificador = normalizarIdentidad(req.body.identificador || req.body.username || req.body.email);
+  const password = String(req.body.password || '');
+  if (!identificador || !password) return res.status(400).json({ error: 'Usuario/correo y contraseña son obligatorios.' });
+
+  const usuario = await Usuario.findOne({
+    $or: [{ usernameNormalizado: identificador }, { emailNormalizado: identificador }],
+    activo: true
+  });
+  if (!usuario || !(await bcrypt.compare(password, usuario.password))) {
+    return res.status(401).json({ error: 'Usuario, correo o contraseña incorrectos.' });
+  }
+
+  req.session.regenerate(error => {
+    if (error) return res.status(500).json({ error: 'No se pudo iniciar la sesión.' });
+    req.session.usuarioId = usuario._id.toString();
+    res.json({ success: true, usuario: usuarioPublico(usuario) });
+  });
+}
+
+app.post('/api/auth/login', (req, res, next) => iniciarSesion(req, res).catch(next));
+app.post('/login', (req, res, next) => iniciarSesion(req, res).catch(next));
+
+app.get('/api/auth/me', requireLogin, async (req, res) => {
+  const usuario = await Usuario.findById(req.session.usuarioId);
+  if (!usuario) return res.status(401).json({ error: 'La cuenta ya no existe.' });
+  res.json({ usuario: usuarioPublico(usuario), quinielaActivaId: req.session.quinielaActivaId || null });
+});
+
+app.get('/api/quinielas', requireLogin, async (req, res) => {
+  const membresias = await Membresia.find({ usuarioId: req.session.usuarioId })
+    .populate('quinielaId')
+    .sort({ updatedAt: -1 });
+  res.json(membresias.filter(m => m.quinielaId && m.quinielaId.estado !== 'eliminada').map(m => ({
+    id: m.quinielaId._id,
+    nombre: m.quinielaId.nombre,
+    codigoIngreso: ['propietario', 'admin'].includes(m.rol) ? m.quinielaId.codigoIngreso : undefined,
+    estadoQuiniela: m.quinielaId.estado,
+    rol: m.rol,
+    estadoMembresia: m.estado
+  })));
+});
+
+app.post('/api/quinielas', requireLogin, async (req, res) => {
+  const nombre = String(req.body.nombre || '').trim();
+  if (nombre.length < 3 || nombre.length > 80) return res.status(400).json({ error: 'El nombre debe tener entre 3 y 80 caracteres.' });
+
+  const quiniela = await Quiniela.create({
+    nombre,
+    codigoIngreso: await codigoIngresoUnico(),
+    propietarioId: req.session.usuarioId,
+    configuracion: { puntuacion: puntuacionDefault }
+  });
+  await Membresia.create({
+    quinielaId: quiniela._id,
+    usuarioId: req.session.usuarioId,
+    rol: 'propietario',
+    estado: 'activo',
+    aprobadoEn: new Date()
+  });
+  req.session.quinielaActivaId = quiniela._id.toString();
+  res.status(201).json({ success: true, quiniela });
+});
+
+app.post('/api/quinielas/unirse', requireLogin, async (req, res) => {
+  const codigoIngreso = String(req.body.codigoIngreso || '').trim().toUpperCase();
+  const quiniela = await Quiniela.findOne({ codigoIngreso, estado: 'activa' });
+  if (!quiniela) return res.status(404).json({ error: 'Código de quiniela inválido o quiniela no disponible.' });
+
+  const existente = await Membresia.findOne({ quinielaId: quiniela._id, usuarioId: req.session.usuarioId });
+  if (existente?.estado === 'activo' || existente?.estado === 'pendiente_retiro') {
+    return res.status(409).json({ error: 'Ya perteneces a esta quiniela.' });
+  }
+  if (existente?.estado === 'pendiente_ingreso') return res.status(409).json({ error: 'Tu solicitud ya está pendiente de aprobación.' });
+
+  await Membresia.findOneAndUpdate(
+    { quinielaId: quiniela._id, usuarioId: req.session.usuarioId },
+    { rol: 'user', estado: 'pendiente_ingreso', solicitadoEn: new Date(), $unset: { retiradoEn: 1 } },
+    { upsert: true, new: true }
+  );
+  res.status(202).json({ success: true, message: 'Solicitud enviada. Un administrador debe aprobarla.' });
+});
+
+app.post('/api/quinielas/:id/seleccionar', requireLogin, async (req, res) => {
+  const membresia = await Membresia.findOne({ quinielaId: req.params.id, usuarioId: req.session.usuarioId, estado: { $in: ['activo', 'pendiente_retiro'] } });
+  if (!membresia) return res.status(403).json({ error: 'No tienes acceso activo a esta quiniela.' });
+  const quiniela = await Quiniela.findOne({ _id: req.params.id, estado: { $ne: 'eliminada' } });
+  if (!quiniela) return res.status(404).json({ error: 'Quiniela no encontrada.' });
+  req.session.quinielaActivaId = quiniela._id.toString();
+  res.json({ success: true, quiniela: { id: quiniela._id, nombre: quiniela.nombre }, rol: membresia.rol });
+});
+
+app.use(async (req, res, next) => {
+  try {
+    if (
+      req.get('x-internal-sync-token') === INTERNAL_SYNC_TOKEN &&
+      mongoose.isValidObjectId(req.get('x-quiniela-id'))
+    ) {
+      const quiniela = await Quiniela.findOne({ _id: req.get('x-quiniela-id'), estado: 'activa' });
+      if (!quiniela) return res.status(404).json({ error: 'Quiniela interna no encontrada.' });
+      req.quiniela = quiniela;
+      req.membership = { rol: 'admin', estado: 'activo', internal: true };
+      return tenantContext.run({ quinielaId: quiniela._id }, next);
+    }
+    if (!req.session?.usuarioId || !req.session?.quinielaActivaId) return next();
+    const [membership, quiniela] = await Promise.all([
+      Membresia.findOne({
+        usuarioId: req.session.usuarioId,
+        quinielaId: req.session.quinielaActivaId,
+        estado: { $in: ['activo', 'pendiente_retiro'] }
+      }),
+      Quiniela.findOne({ _id: req.session.quinielaActivaId, estado: { $ne: 'eliminada' } })
+    ]);
+    if (!membership || !quiniela) {
+      delete req.session.quinielaActivaId;
+      return next();
+    }
+    req.membership = membership;
+    req.quiniela = quiniela;
+    tenantContext.run({ quinielaId: quiniela._id }, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.membership?.internal) return next();
+  if (!req.session?.usuarioId) return res.status(401).json({ error: 'Debes iniciar sesión.' });
+  if (!req.quiniela || !req.membership) return res.status(409).json({ error: 'Debes seleccionar una quiniela activa.' });
+  if (req.quiniela.estado === 'archivada' && !['GET', 'HEAD'].includes(req.method)) {
+    const permitidas = ['/api/quiniela-actual/archivar', '/api/quiniela-actual'];
+    if (!permitidas.includes(req.originalUrl.split('?')[0])) {
+      return res.status(409).json({ error: 'La quiniela está archivada y es de solo lectura.' });
+    }
+  }
+  next();
+});
+
+app.get('/api/quiniela-actual', (req, res) => {
+  res.json({
+    id: req.quiniela._id,
+    nombre: req.quiniela.nombre,
+    estado: req.quiniela.estado,
+    rol: req.membership.rol,
+    codigoIngreso: ['propietario', 'admin'].includes(req.membership.rol) ? req.quiniela.codigoIngreso : undefined,
+    configuracion: req.quiniela.configuracion
+  });
+});
+
+app.get('/api/quiniela-actual/miembros', requireAdmin, async (req, res) => {
+  const membresias = await Membresia.find({ quinielaId: req.quiniela._id })
+    .populate('usuarioId', 'username email emailVerificado')
+    .sort({ estado: 1, rol: 1, createdAt: 1 });
+  res.json(membresias.map(m => ({
+    id: m._id,
+    usuarioId: m.usuarioId?._id,
+    username: m.usuarioId?.username,
+    email: m.usuarioId?.email,
+    rol: m.rol,
+    estado: m.estado,
+    solicitadoEn: m.solicitadoEn
+  })));
+});
+
+app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar', requireAdmin, async (req, res) => {
+  const membresia = await Membresia.findOne({ _id: req.params.membresiaId, quinielaId: req.quiniela._id });
+  if (!membresia || membresia.estado !== 'pendiente_ingreso') return res.status(404).json({ error: 'Solicitud pendiente no encontrada.' });
+  membresia.estado = 'activo';
+  membresia.rol = 'user';
+  membresia.aprobadoEn = new Date();
+  await membresia.save();
+  const usuario = await Usuario.findById(membresia.usuarioId);
+  await Jugador.findOneAndUpdate(
+    { usuarioId: usuario._id },
+    { usuarioId: usuario._id, nombre: usuario.username },
+    { upsert: true, new: true }
+  );
+  res.json({ success: true });
+});
+
+app.patch('/api/quiniela-actual/miembros/:membresiaId/rechazar', requireAdmin, async (req, res) => {
+  const membresia = await Membresia.findOne({ _id: req.params.membresiaId, quinielaId: req.quiniela._id });
+  if (!membresia || !['pendiente_ingreso', 'pendiente_retiro'].includes(membresia.estado)) {
+    return res.status(404).json({ error: 'Solicitud pendiente no encontrada.' });
+  }
+  membresia.estado = membresia.estado === 'pendiente_ingreso' ? 'rechazado' : 'activo';
+  await membresia.save();
+  res.json({ success: true });
+});
+
+app.patch('/api/quiniela-actual/miembros/:membresiaId/rol', requireAdmin, async (req, res) => {
+  const nuevoRol = req.body.rol;
+  if (!['admin', 'user'].includes(nuevoRol)) return res.status(400).json({ error: 'Rol inválido.' });
+  const membresia = await Membresia.findOne({ _id: req.params.membresiaId, quinielaId: req.quiniela._id, estado: 'activo' });
+  if (!membresia) return res.status(404).json({ error: 'Miembro activo no encontrado.' });
+  if (membresia.rol === 'propietario') return res.status(400).json({ error: 'El rol del propietario solo cambia mediante una transferencia.' });
+  if (membresia.rol === 'admin' && nuevoRol === 'user') {
+    const administradores = await Membresia.countDocuments({ quinielaId: req.quiniela._id, rol: { $in: ['propietario', 'admin'] }, estado: 'activo' });
+    if (administradores <= 1) return res.status(409).json({ error: 'La quiniela no puede quedar sin administrador.' });
+  }
+  membresia.rol = nuevoRol;
+  await membresia.save();
+  res.json({ success: true });
+});
+
+app.post('/api/quiniela-actual/solicitar-retiro', async (req, res) => {
+  if (req.membership.rol === 'propietario') return res.status(409).json({ error: 'El propietario debe transferir la propiedad antes de solicitar retirarse.' });
+  req.membership.estado = 'pendiente_retiro';
+  await req.membership.save();
+  res.json({ success: true, message: 'Solicitud de retiro enviada.' });
+});
+
+app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar-retiro', requireAdmin, async (req, res) => {
+  const membresia = await Membresia.findOne({ _id: req.params.membresiaId, quinielaId: req.quiniela._id, estado: 'pendiente_retiro' });
+  if (!membresia) return res.status(404).json({ error: 'Solicitud de retiro no encontrada.' });
+  if (membresia.rol === 'propietario') return res.status(409).json({ error: 'No se puede retirar al propietario.' });
+  membresia.estado = 'expulsado';
+  membresia.retiradoEn = new Date();
+  await membresia.save();
+  res.json({ success: true });
+});
+
+app.patch('/api/quiniela-actual/miembros/:membresiaId/expulsar', requireAdmin, async (req, res) => {
+  const membresia = await Membresia.findOne({ _id: req.params.membresiaId, quinielaId: req.quiniela._id, estado: { $in: ['activo', 'pendiente_retiro'] } });
+  if (!membresia) return res.status(404).json({ error: 'Miembro no encontrado.' });
+  if (membresia.rol === 'propietario') return res.status(409).json({ error: 'No se puede expulsar al propietario.' });
+  if (membresia.usuarioId.equals(req.session.usuarioId)) return res.status(409).json({ error: 'No puedes expulsarte a ti mismo.' });
+  membresia.estado = 'expulsado';
+  membresia.retiradoEn = new Date();
+  await membresia.save();
+  res.json({ success: true });
+});
+
+app.post('/api/quiniela-actual/transferir-propiedad', requireAdmin, async (req, res) => {
+  if (req.membership.rol !== 'propietario') return res.status(403).json({ error: 'Solo el propietario puede transferir la propiedad.' });
+  const destino = await Membresia.findOne({ quinielaId: req.quiniela._id, usuarioId: req.body.usuarioId, estado: 'activo' });
+  if (!destino || destino.rol !== 'admin') return res.status(400).json({ error: 'El nuevo propietario debe ser un administrador activo.' });
+  destino.rol = 'propietario';
+  req.membership.rol = 'admin';
+  req.quiniela.propietarioId = destino.usuarioId;
+  await Promise.all([destino.save(), req.membership.save(), req.quiniela.save()]);
+  res.json({ success: true });
+});
+
+app.patch('/api/quiniela-actual/configuracion', requireAdmin, async (req, res) => {
+  const entrada = req.body.puntuacion || {};
+  const camposNumericos = ['marcadorExacto', 'resultadoCorrecto', 'comodinExacto', 'comodinResultado', 'campeon', 'puntosTriviaDefault'];
+  for (const campo of camposNumericos) {
+    if (entrada[campo] !== undefined && (!Number.isFinite(Number(entrada[campo])) || Number(entrada[campo]) < 0)) {
+      return res.status(400).json({ error: `Puntuación inválida para ${campo}.` });
+    }
+  }
+  camposNumericos.forEach(campo => {
+    if (entrada[campo] !== undefined) req.quiniela.configuracion.puntuacion[campo] = Number(entrada[campo]);
+  });
+  if (entrada.triviasHabilitadas !== undefined) req.quiniela.configuracion.puntuacion.triviasHabilitadas = Boolean(entrada.triviasHabilitadas);
+  if (req.body.incluirExpulsadosEnRanking !== undefined) req.quiniela.configuracion.incluirExpulsadosEnRanking = Boolean(req.body.incluirExpulsadosEnRanking);
+  req.quiniela.markModified('configuracion');
+  await req.quiniela.save();
+  res.json({ success: true, configuracion: req.quiniela.configuracion });
+});
+
+app.patch('/api/quiniela-actual/archivar', requireAdmin, async (req, res) => {
+  req.quiniela.estado = req.body.archivada === false ? 'activa' : 'archivada';
+  await req.quiniela.save();
+  res.json({ success: true, estado: req.quiniela.estado });
+});
+
+app.delete('/api/quiniela-actual', requireAdmin, async (req, res) => {
+  if (req.membership.rol !== 'propietario') return res.status(403).json({ error: 'Solo el propietario puede eliminar la quiniela.' });
+  if (String(req.body?.confirmacion || '') !== req.quiniela.nombre) {
+    return res.status(400).json({ error: 'Escribe exactamente el nombre de la quiniela para confirmar.' });
+  }
+  req.quiniela.estado = 'eliminada';
+  req.quiniela.eliminadaEn = new Date();
+  await req.quiniela.save();
+  delete req.session.quinielaActivaId;
+  res.json({ success: true });
+});
+
 
 /* ================= HTML Routes ================= */
 
@@ -409,54 +892,35 @@ function triviaCerrada(trivia) {
 /* ================= API: Jugadores ================= */
 
 app.get('/api/jugadores', async (req, res) => {
-  const jugadores = await Jugador.find({}).sort({ nombre: 1 });
-  res.json(jugadores.map(j => j.nombre));
+  const membresias = await Membresia.find({ quinielaId: req.quiniela._id, estado: { $in: ['activo', 'pendiente_retiro'] } })
+    .populate('usuarioId', 'username')
+    .sort({ createdAt: 1 });
+  const historicos = await Jugador.find({}).select('nombre').lean();
+  const nombres = new Set([
+    ...membresias.map(m => m.usuarioId?.username).filter(Boolean),
+    ...historicos.map(j => j.nombre).filter(Boolean)
+  ]);
+  res.json(Array.from(nombres).sort((a, b) => a.localeCompare(b)));
 });
 
 app.post('/api/jugadores', requireAdmin, async (req, res) => {
-  const { nombre, password } = req.body;
-
-  if (!nombre || !password) {
-    return res.status(400).json({ error: 'Nombre y contraseña obligatorios' });
-  }
-
-  const existe = await Jugador.findOne({ nombre });
-  if (existe) return res.status(400).json({ error: 'Jugador ya existe' });
-
-  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-  const nuevo = new Jugador({ nombre, password: hashedPassword });
-  await nuevo.save();
-
-  const jugadores = await Jugador.find({});
-  res.json(jugadores.map(j => ({ nombre: j.nombre })));
+  res.status(410).json({ error: 'Los jugadores ahora crean su cuenta y solicitan ingreso mediante el código de la quiniela.' });
 });
 
 app.delete('/api/jugadores/:nombre', requireAdmin, async (req, res) => {
-  try {
-    await Jugador.deleteOne({ nombre: req.params.nombre });
-    res.json({ message: 'Jugador eliminado correctamente' });
-  } catch (err) {
-    res.status(500).json({ error: 'Error al eliminar jugador' });
-  }
+  res.status(410).json({ error: 'Usa la administración de miembros para expulsar participantes.' });
 });
 
 app.get('/api/jugador/:nombre', async (req, res) => {
-  const jugador = await Jugador.findOne({ nombre: req.params.nombre });
-  if (!jugador) return res.status(404).json({ error: 'Jugador no encontrado' });
-
-  res.json({
-    nombre: jugador.nombre,
-    password: jugador.password ? true : false
-  });
+  const usuario = await Usuario.findById(req.session.usuarioId);
+  if (!usuario || usuario.username !== req.params.nombre) return res.status(403).json({ error: 'Solo puedes utilizar tu propia cuenta.' });
+  res.json({ nombre: usuario.username, password: true });
 });
 
 app.post('/api/jugadores/:nombre/verificar-password', async (req, res) => {
   const { password } = req.body;
-  const jugador = await Jugador.findOne({ nombre: req.params.nombre });
-
-  if (!jugador) return res.status(404).json({ error: 'Jugador no encontrado' });
-  if (!jugador.password) return res.status(400).json({ error: 'Jugador no tiene contraseña' });
-
+  const jugador = await Usuario.findById(req.session.usuarioId);
+  if (!jugador || jugador.username !== req.params.nombre) return res.status(403).json({ error: 'Solo puedes validar tu propia cuenta.' });
   const match = await bcrypt.compare(password, jugador.password);
 
   if (match) {
@@ -470,7 +934,12 @@ app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
   const { nombre } = req.params;
   const { currentPassword, newPassword } = req.body;
 
-  const jugador = await Jugador.findOne({ nombre });
+  if (String(newPassword || '').length < 8) {
+    return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+  }
+
+  const jugador = await Usuario.findById(req.session.usuarioId);
+  if (jugador?.username !== nombre) return res.status(403).json({ error: 'Solo puedes cambiar tu propia contraseña.' });
   if (!jugador) return res.status(404).json({ error: 'Jugador no encontrado' });
 
   if (jugador.password) {
@@ -844,7 +1313,14 @@ async function sincronizarTodasLasJornadasDesdeApi() {
   for (const jornada of jornadas) {
     try {
       await axios.post(
-        `http://localhost:${PORT}/api/sync-resultados-oficiales/${encodeURIComponent(jornada.nombre)}`
+        `http://localhost:${PORT}/api/sync-resultados-oficiales/${encodeURIComponent(jornada.nombre)}`,
+        {},
+        {
+          headers: {
+            'x-internal-sync-token': INTERNAL_SYNC_TOKEN,
+            'x-quiniela-id': jornada.quinielaId.toString()
+          }
+        }
       );
     } catch (err) {
       console.error(`Error sincronizando ${jornada.nombre}:`, err.message);
@@ -968,7 +1444,7 @@ function obtenerEstadoPartido(fixture, partido) {
 }
 
 
-app.post('/api/sync-resultados-oficiales/:jornada', async (req, res) => {
+app.post('/api/sync-resultados-oficiales/:jornada', requireAdmin, async (req, res) => {
   try {
     const { jornada } = req.params;
 
@@ -1200,7 +1676,14 @@ function buscarOficialCorrespondiente(resultadosOficiales, partido) {
 /* ================= API: Resultados ================= */
 
 app.get('/api/resultados', async (req, res) => {
-  const r = await Resultado.find({});
+  const usuario = await Usuario.findById(req.session.usuarioId);
+  const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
+  const jornadas = await Jornada.find({}).select('nombre fechaCierre').lean();
+  const visibles = new Set(jornadas
+    .filter(j => !j.fechaCierre || new Date(j.fechaCierre) <= new Date())
+    .map(j => j.nombre));
+  const todos = await Resultado.find({});
+  const r = esAdmin ? todos : todos.filter(item => item.jugador === usuario.username || visibles.has(item.jornada));
   const resultMap = new Map();
 
   r.forEach(r => resultMap.set(`${r.jugador}_${r.jornada}`, r.pronosticos));
@@ -1245,6 +1728,14 @@ function partidoYaInicio(partido, oficial = null) {
 app.post('/api/resultados', async (req, res) => {
   try {
     const { jugador, jornada, pronosticos } = req.body;
+
+    const usuarioSesion = await Usuario.findById(req.session.usuarioId);
+    if (!usuarioSesion || jugador !== usuarioSesion.username) {
+      return res.status(403).json({ success: false, error: 'Solo puedes guardar tus propios pronósticos.' });
+    }
+    if (req.quiniela.estado !== 'activa' || req.membership.estado !== 'activo') {
+      return res.status(409).json({ success: false, error: 'La quiniela o tu membresía no permiten nuevos pronósticos.' });
+    }
 
     if (!jugador || !jornada || !Array.isArray(pronosticos)) {
       return res.status(400).json({ success: false, error: 'Datos inválidos.' });
@@ -1393,6 +1884,15 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
 
 app.get('/api/resultados/:jugador/:jornada', async (req, res) => {
   const { jugador, jornada } = req.params;
+  const [usuario, jornadaDoc] = await Promise.all([
+    Usuario.findById(req.session.usuarioId),
+    Jornada.findOne({ nombre: jornada })
+  ]);
+  const cerrada = !jornadaDoc?.fechaCierre || new Date(jornadaDoc.fechaCierre) <= new Date();
+  const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
+  if (!cerrada && !esAdmin && usuario?.username !== jugador) {
+    return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
+  }
   const r = await Resultado.findOne({ jugador, jornada });
 
   res.json(r ? r.pronosticos : []);
@@ -1517,6 +2017,9 @@ app.get('/api/tipos-trivia', (req, res) => {
 
 app.post('/api/admin/trivias', requireAdmin, async (req, res) => {
   try {
+    if (!req.quiniela.configuracion.puntuacion.triviasHabilitadas) {
+      return res.status(409).json({ error: 'Habilita las trivias en la configuración de la quiniela.' });
+    }
     const { jornadaNombre, partidoIndex, tipos, fechaCierre } = req.body;
 
     if (!jornadaNombre || partidoIndex === undefined || !Array.isArray(tipos) || tipos.length === 0 || !fechaCierre) {
@@ -1562,7 +2065,7 @@ app.post('/api/admin/trivias', requireAdmin, async (req, res) => {
         tipo,
         pregunta: TIPOS_TRIVIA[tipo].pregunta,
         opciones: opcionesTrivia(tipo, partido.equipo1, partido.equipo2),
-        puntos: 1,
+        puntos: req.quiniela.configuracion.puntuacion.puntosTriviaDefault,
         fechaCierre: new Date(fechaCierre),
         respuestaCorrecta: '',
         resuelta: false,
@@ -1698,7 +2201,7 @@ app.put('/api/admin/trivias/:jornadaNombre', requireAdmin, async (req, res) => {
           tipo,
           pregunta: TIPOS_TRIVIA[tipo].pregunta,
           opciones: opcionesTrivia(tipo, partido.equipo1, partido.equipo2),
-          puntos: 1,
+          puntos: req.quiniela.configuracion.puntuacion.puntosTriviaDefault,
           fechaCierre: fecha,
           respuestaCorrecta: '',
           resuelta: false,
@@ -1914,6 +2417,12 @@ app.get('/api/respuestas-trivia/:jugador/:jornadaNombre', async (req, res) => {
       activa: true
     });
 
+    const usuario = await Usuario.findById(req.session.usuarioId);
+    const cerradas = trivias.every(t => !t.fechaCierre || new Date(t.fechaCierre) <= new Date());
+    if (!cerradas && !['propietario', 'admin'].includes(req.membership.rol) && usuario?.username !== jugador) {
+      return res.status(403).json({ error: 'Las respuestas de otros participantes permanecen privadas hasta el cierre.' });
+    }
+
     const triviaIds = trivias.map(t => t._id.toString());
 
     const respuestas = await RespuestaTrivia.find({
@@ -1931,6 +2440,14 @@ app.get('/api/respuestas-trivia/:jugador/:jornadaNombre', async (req, res) => {
 app.post('/api/respuestas-trivia', async (req, res) => {
   try {
     const { jugador, respuestas } = req.body;
+
+    const usuarioSesion = await Usuario.findById(req.session.usuarioId);
+    if (!usuarioSesion || jugador !== usuarioSesion.username) {
+      return res.status(403).json({ error: 'Solo puedes guardar tus propias respuestas.' });
+    }
+    if (!req.quiniela.configuracion.puntuacion.triviasHabilitadas) {
+      return res.status(409).json({ error: 'Las trivias están deshabilitadas en esta quiniela.' });
+    }
 
     if (!jugador || !Array.isArray(respuestas)) {
       return res.status(400).json({ error: 'Datos inválidos.' });
@@ -2304,7 +2821,7 @@ app.get('/api/equipos', async (req, res) => {
   }
 });
 
-app.post('/actualizar-equipos', async (req, res) => {
+app.post('/actualizar-equipos', requireAdmin, async (req, res) => {
   try {
     const { equipos } = req.body;
 
@@ -2333,8 +2850,15 @@ app.post('/actualizar-equipos', async (req, res) => {
 app.get('/api/resultados-con-equipos/:jugador/:jornada', async (req, res) => {
   const { jugador, jornada } = req.params;
 
+  const usuario = await Usuario.findById(req.session.usuarioId);
+  const jornadaAcceso = await Jornada.findOne({ nombre: jornada });
+  const cerrada = !jornadaAcceso?.fechaCierre || new Date(jornadaAcceso.fechaCierre) <= new Date();
+  if (!cerrada && !['propietario', 'admin'].includes(req.membership.rol) && usuario?.username !== jugador) {
+    return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
+  }
+
   const resultado = await Resultado.findOne({ jugador, jornada });
-  const jornadaDoc = await Jornada.findOne({ nombre: jornada });
+  const jornadaDoc = jornadaAcceso;
 
   if (!resultado || !jornadaDoc) {
     return res.status(404).json({ error: 'Datos no encontrados' });
@@ -2396,6 +2920,10 @@ app.get('/api/resultados-trivias/:jornadaNombre', async (req, res) => {
 
     const fechaCierre = trivias[0].fechaCierre;
     const cerrada = fechaCierre ? new Date(fechaCierre) <= new Date() : false;
+
+    if (!cerrada && !['propietario', 'admin'].includes(req.membership.rol)) {
+      return res.status(403).json({ error: 'Los resultados de trivias estarán disponibles después del cierre.' });
+    }
 
   
     const triviaIds = trivias.map(t => t._id.toString());
@@ -2472,7 +3000,7 @@ app.post('/api/resultados-seguros/:jugador/:jornada', async (req, res) => {
     const resultado = await Resultado.findOne({ jugador, jornada });
     if (!resultado) return res.status(404).json({ error: 'Resultados no encontrados' });
 
-    const jugadorDoc = await Jugador.findOne({ nombre: jugador });
+    const jugadorDoc = await Usuario.findOne({ usernameNormalizado: normalizarIdentidad(jugador) });
     if (!jugadorDoc) return res.status(404).json({ error: 'Jugador no encontrado' });
 
     const ahora = new Date();
@@ -2480,6 +3008,9 @@ app.post('/api/resultados-seguros/:jugador/:jornada', async (req, res) => {
     const jornadaSinFecha = !jornadaDoc.fechaCierre;
 
     if (!jornadaCerrada && !jornadaSinFecha) {
+      if (jugadorDoc._id.toString() !== req.session.usuarioId) {
+        return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
+      }
       if (jugadorDoc.password) {
         if (!password) {
           return res.json({ success: false, error: 'Contraseña requerida' });
@@ -2606,6 +3137,11 @@ app.post('/api/pronostico-campeon', async (req, res) => {
   try {
     const { jugador, password, campeon } = req.body;
 
+    const usuarioSesion = await Usuario.findById(req.session.usuarioId);
+    if (!usuarioSesion || jugador !== usuarioSesion.username) {
+      return res.status(403).json({ error: 'Solo puedes guardar tu propio pronóstico de campeón.' });
+    }
+
     if (!jugador || !password || !campeon) {
       return res.status(400).json({ error: 'Jugador, contraseña y campeón son obligatorios' });
     }
@@ -2623,7 +3159,7 @@ app.post('/api/pronostico-campeon', async (req, res) => {
       }
     }
 
-    const jugadorEncontrado = await Jugador.findOne({ nombre: jugador });
+    const jugadorEncontrado = usuarioSesion;
 
     if (!jugadorEncontrado) {
       return res.status(404).json({ error: 'Jugador no encontrado' });
@@ -2655,8 +3191,15 @@ app.post('/api/pronostico-campeon', async (req, res) => {
 
 app.get('/api/pronosticos-campeon-publicos', async (req, res) => {
   try {
-    const jugadores = await Jugador.find({}).sort({ nombre: 1 });
+    const miembros = await Membresia.find({
+      quinielaId: req.quiniela._id,
+      estado: { $in: ['activo', 'pendiente_retiro'] }
+    }).populate('usuarioId', 'username');
+    const historicos = await Jugador.find({}).select('nombre').lean();
     const pronosticos = await PronosticoCampeon.find({});
+    const jornada1 = await Jornada.findOne({ nombre: 'Jornada1' });
+    const cerrada = !jornada1?.fechaCierre || new Date(jornada1.fechaCierre) <= new Date();
+    const usuario = await Usuario.findById(req.session.usuarioId);
 
     const mapaPronosticos = new Map();
 
@@ -2664,9 +3207,15 @@ app.get('/api/pronosticos-campeon-publicos', async (req, res) => {
       mapaPronosticos.set(p.jugador, p.campeon);
     });
 
-    const resultado = jugadores.map(j => ({
-      jugador: j.nombre,
-      campeon: mapaPronosticos.get(j.nombre) || null
+    const nombres = new Set([
+      ...miembros.filter(m => m.usuarioId).map(m => m.usuarioId.username),
+      ...historicos.map(j => j.nombre)
+    ]);
+    const resultado = Array.from(nombres).sort((a, b) => a.localeCompare(b)).map(nombre => ({
+      jugador: nombre,
+      campeon: cerrada || nombre === usuario.username
+        ? (mapaPronosticos.get(nombre) || null)
+        : null
     }));
 
     res.json(resultado);
@@ -2697,7 +3246,7 @@ app.post('/api/campeon-oficial', requireAdmin, async (req, res) => {
 
   await CampeonOficial.findOneAndUpdate(
     {},
-    { campeon, puntos: 20 },
+    { campeon, puntos: req.quiniela.configuracion.puntuacion.campeon },
     { upsert: true, new: true }
   );
 
@@ -2707,7 +3256,18 @@ app.post('/api/campeon-oficial', requireAdmin, async (req, res) => {
 
 app.get('/api/resultados-totales', async (req, res) => {
   try {
-    const jugadores = await Jugador.find({});
+    const miembrosRanking = await Membresia.find({
+      quinielaId: req.quiniela._id,
+      estado: req.quiniela.configuracion.incluirExpulsadosEnRanking
+        ? { $in: ['activo', 'pendiente_retiro', 'expulsado'] }
+        : { $in: ['activo', 'pendiente_retiro'] }
+    }).populate('usuarioId', 'username');
+    const jugadoresHistoricos = await Jugador.find({}).select('nombre').lean();
+    const nombresJugadores = new Set([
+      ...miembrosRanking.filter(m => m.usuarioId).map(m => m.usuarioId.username),
+      ...jugadoresHistoricos.map(j => j.nombre).filter(Boolean)
+    ]);
+    const jugadores = Array.from(nombresJugadores).map(nombre => ({ nombre }));
     const jornadas = await Jornada.find({});
     const resultados = await Resultado.find({});
     const oficiales = await ResultadoOficial.find({});
@@ -2756,7 +3316,7 @@ app.get('/api/resultados-totales', async (req, res) => {
         String(campeonJugador).trim().toLowerCase() ===
         String(campeonOficial.campeon).trim().toLowerCase()
       ) {
-        puntosCampeon = campeonOficial.puntos || 20;
+        puntosCampeon = campeonOficial.puntos ?? req.quiniela.configuracion.puntuacion.campeon;
       }
 
       resultadosTotales[j.nombre]['Campeón Mundial'] = puntosCampeon;
@@ -2789,13 +3349,17 @@ app.get('/api/resultados-totales', async (req, res) => {
           const esComodin = o.comodin;
 
           if (o.marcador1 === p.marcador1 && o.marcador2 === p.marcador2) {
-            puntosJornada += esComodin ? 7 : 5;
+            puntosJornada += esComodin
+              ? req.quiniela.configuracion.puntuacion.comodinExacto
+              : req.quiniela.configuracion.puntuacion.marcadorExacto;
           } else {
             const rOf = resultado(o.marcador1, o.marcador2);
             const rPr = resultado(p.marcador1, p.marcador2);
 
             if (rOf === rPr) {
-              puntosJornada += esComodin ? 4 : 3;
+              puntosJornada += esComodin
+                ? req.quiniela.configuracion.puntuacion.comodinResultado
+                : req.quiniela.configuracion.puntuacion.resultadoCorrecto;
             }
           }
         });
@@ -2858,7 +3422,7 @@ app.get('/api/debug/api-football-match/:matchId', requireAdmin, async (req, res)
   }
 });
 
-app.get('/debug/trivia-goles/:matchId', async (req, res) => {
+app.get('/debug/trivia-goles/:matchId', requireAdmin, async (req, res) => {
   try {
     const evento = await obtenerEventoTrivia(req.params.matchId);
 
@@ -2882,7 +3446,7 @@ app.get('/debug/trivia-goles/:matchId', async (req, res) => {
   }
 });
 
-app.get('/api/debug/jornadas', async (req, res) => {
+app.get('/api/debug/jornadas', requireAdmin, async (req, res) => {
   const jornadas = await Jornada.find({});
   res.json(jornadas);
 });
@@ -2955,8 +3519,24 @@ app.get('/generar_reporte', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'generar_reporte.html'));
 });
 
+app.use((error, req, res, next) => {
+  console.error('Error no controlado:', error);
+  if (res.headersSent) return next(error);
+  if (error?.code === 11000) {
+    return res.status(409).json({ error: 'Ya existe un registro con esos datos.' });
+  }
+  res.status(500).json({ error: 'Ocurrió un error interno.' });
+});
+
 /* ================= Start Server ================= */
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-});
+mongoConnectionPromise
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Servidor corriendo en http://localhost:${PORT}`);
+    });
+  })
+  .catch(error => {
+    console.error('❌ No se pudo conectar a la base multi-quiniela:', error.message);
+    process.exit(1);
+  });

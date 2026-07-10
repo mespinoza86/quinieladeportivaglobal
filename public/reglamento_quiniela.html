@@ -78,8 +78,8 @@ incluidos en una jornada.
 <h3>Partidos Comodín</h3>
 
 <ul>
-<li><strong>7 puntos</strong> por acertar marcador exacto.</li>
-<li><strong>4 puntos</strong> por acertar únicamente el resultado.</li>
+<li><strong><span id="pComodinExacto">7</span> puntos</strong> por acertar marcador exacto.</li>
+<li><strong><span id="pComodinResultado">4</span> puntos</strong> por acertar únicamente el resultado.</li>
 </ul>
 
 </div>
@@ -89,8 +89,8 @@ incluidos en una jornada.
 <h3>Partidos Normales</h3>
 
 <ul>
-<li><strong>5 puntos</strong> por acertar marcador exacto.</li>
-<li><strong>3 puntos</strong> por acertar únicamente el resultado.</li>
+<li><strong><span id="pExacto">5</span> puntos</strong> por acertar marcador exacto.</li>
+<li><strong><span id="pResultado">3</span> puntos</strong> por acertar únicamente el resultado.</li>
 </ul>
 
 </div>
@@ -205,4 +205,13 @@ Cualquier situación no contemplada será resuelta por la administración de la 
 </nav>
 
 </body>
+<script>
+fetch('/api/quiniela-actual').then(r => r.json()).then(q => {
+  const p = q.configuracion.puntuacion;
+  document.getElementById('pExacto').textContent = p.marcadorExacto;
+  document.getElementById('pResultado').textContent = p.resultadoCorrecto;
+  document.getElementById('pComodinExacto').textContent = p.comodinExacto;
+  document.getElementById('pComodinResultado').textContent = p.comodinResultado;
+});
+</script>
 </html>

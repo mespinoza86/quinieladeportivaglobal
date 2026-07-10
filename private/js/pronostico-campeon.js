@@ -6,8 +6,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mensaje = document.getElementById('mensaje');
 
   async function cargarJugadores() {
-    const res = await fetch('/api/jugadores');
-    const jugadores = await res.json();
+    const res = await fetch('/api/auth/me');
+    const data = await res.json();
+    const jugadores = [data.usuario.username];
 
     jugadorSelect.innerHTML = '<option value="">Seleccione jugador</option>';
 
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       option.textContent = jugador;
       jugadorSelect.appendChild(option);
     });
+    jugadorSelect.value = data.usuario.username;
   }
 
   async function cargarEquipos() {
