@@ -83,10 +83,19 @@ function requireLogin(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  if (req.membership && ['propietario', 'admin'].includes(req.membership.rol)) {
-    return next();
+  if (req.membership?.internal) return next();
+  if (!req.membership || !['propietario', 'admin'].includes(req.membership.rol)) {
+    return res.status(403).json({ error: 'Se requieren permisos de administrador en esta quiniela.' });
   }
-  return res.status(403).json({ error: 'Se requieren permisos de administrador en esta quiniela.' });
+
+  const acceso = req.session?.adminMode;
+  const vigente = acceso &&
+    acceso.quinielaId === req.quiniela?._id.toString() &&
+    Date.now() - acceso.verificadoEn < 1000 * 60 * 60;
+  if (!vigente) {
+    return res.status(401).json({ error: 'Confirma tu contraseña para entrar al modo administrador.', requiereAdminMode: true });
+  }
+  return next();
 }
 
 const paginasAdmin = [
@@ -661,6 +670,7 @@ app.post('/api/quinielas/:id/seleccionar', requireLogin, async (req, res) => {
   const quiniela = await Quiniela.findOne({ _id: req.params.id, estado: { $ne: 'eliminada' } });
   if (!quiniela) return res.status(404).json({ error: 'Quiniela no encontrada.' });
   req.session.quinielaActivaId = quiniela._id.toString();
+  delete req.session.adminMode;
   res.json({ success: true, quiniela: { id: quiniela._id, nombre: quiniela.nombre }, rol: membresia.rol });
 });
 
@@ -719,6 +729,38 @@ app.get('/api/quiniela-actual', (req, res) => {
     codigoIngreso: ['propietario', 'admin'].includes(req.membership.rol) ? req.quiniela.codigoIngreso : undefined,
     configuracion: req.quiniela.configuracion
   });
+});
+
+app.get('/api/admin-mode', (req, res) => {
+  const autorizadoPorRol = ['propietario', 'admin'].includes(req.membership.rol);
+  const acceso = req.session.adminMode;
+  const activo = autorizadoPorRol && Boolean(
+    acceso &&
+    acceso.quinielaId === req.quiniela._id.toString() &&
+    Date.now() - acceso.verificadoEn < 1000 * 60 * 60
+  );
+  res.json({ autorizadoPorRol, activo });
+});
+
+app.post('/api/admin-mode/activar', async (req, res) => {
+  if (!['propietario', 'admin'].includes(req.membership.rol)) {
+    return res.status(403).json({ error: 'No tienes permisos administrativos en esta quiniela.' });
+  }
+  const password = String(req.body.password || '');
+  const usuario = await Usuario.findById(req.session.usuarioId).select('password activo');
+  if (!usuario?.activo || !password || !(await bcrypt.compare(password, usuario.password))) {
+    return res.status(401).json({ error: 'Contraseña incorrecta.' });
+  }
+  req.session.adminMode = {
+    quinielaId: req.quiniela._id.toString(),
+    verificadoEn: Date.now()
+  };
+  res.json({ success: true });
+});
+
+app.post('/api/admin-mode/desactivar', (req, res) => {
+  delete req.session.adminMode;
+  res.json({ success: true });
 });
 
 app.get('/api/quiniela-actual/miembros', requireAdmin, async (req, res) => {

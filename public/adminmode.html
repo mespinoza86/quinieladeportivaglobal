@@ -28,6 +28,19 @@
       </p>
     </section>
 
+    <section id="admin-login" class="app-panel" style="display: none;">
+      <div class="section-title-row"><div>
+        <h2>Confirmar acceso</h2>
+        <p class="helper-text">Escribe la contraseña de tu cuenta para entrar al modo administrador.</p>
+      </div></div>
+      <form id="adminLoginForm" class="auth-form">
+        <label for="adminPassword">Contraseña</label>
+        <input id="adminPassword" name="password" type="password" autocomplete="current-password" required />
+        <button type="submit" class="primary-button">Entrar a Admin mode</button>
+        <p id="adminLoginMessage" class="form-message" role="alert"></p>
+      </form>
+    </section>
+
     <section id="admin-content" class="app-panel" style="display: none;">
       <div class="section-title-row">
         <div>
@@ -168,6 +181,7 @@
       </div>
 
       <form id="logoutForm" class="logout-box">
+        <button id="exitAdminMode" type="button" class="ghost-button">Salir de Admin mode</button>
         <button type="submit" class="secondary-button">Cerrar sesión</button>
       </form>
     </section>

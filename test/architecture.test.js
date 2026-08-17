@@ -35,6 +35,13 @@ test('existen las rutas principales de cuenta y membresía', () => {
   ]) assert.ok(server.includes(route), `Falta ${route}`);
 });
 
+test('el modo administrador exige rol y confirmación de contraseña', () => {
+  assert.match(server, /app\.post\('\/api\/admin-mode\/activar'/);
+  assert.match(server, /bcrypt\.compare\(password, usuario\.password\)/);
+  assert.match(server, /requiereAdminMode: true/);
+  assert.match(server, /acceso\.quinielaId === req\.quiniela\?\._id\.toString\(\)/);
+});
+
 test('la migración es simulación por defecto y separa origen de destino', () => {
   assert.match(migrator, /process\.argv\.includes\('--execute'\)/);
   assert.match(migrator, /MONGO_URI_LEGACY_READONLY/);
