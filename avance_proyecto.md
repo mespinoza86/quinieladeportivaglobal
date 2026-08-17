@@ -1273,6 +1273,15 @@ en la interfaz.**
 | **M-27** | El código de ingreso no caduca ni se puede rotar | `Quiniela.codigoIngreso` |
 | **M-28** | Sin registro de auditoría de acciones administrativas | ausente |
 | **M-29** | Sin notificaciones (correo/push) para solicitudes, aprobaciones o cierres | ausente |
+| **M-30** | **La base de datos se llama `test`.** La URI nunca especificó nombre, así que MongoDB usó su valor por defecto. Las 13 colecciones y todos los datos reales viven ahí | `.env` |
+| **M-31** | La URI de desarrollo usa el formato sin SRV, que **fija los nombres de los tres nodos** del clúster. Si Atlas cambia la topología, dejan de ser válidos | `.env`, ver bitácora 005 |
+
+**Sobre M-30:** no es urgente —funciona— pero tiene una trampa. Si alguien "corrige"
+la URI poniéndole un nombre propio (`/quiniela`), la aplicación arrancaría contra una
+base vacía y **parecería que se perdieron todos los datos**. No se perderían, seguirían
+en `test`, pero la reacción instintiva sería restaurar un respaldo encima. Dos salidas:
+dejarlo y escribir `/test` de forma explícita en la URI (ya hecho en desarrollo), o
+copiar las colecciones a una base con nombre propio y cambiar la URI a la vez.
 
 ### 🟢 Bajos — pulido
 
@@ -1884,6 +1893,96 @@ incidente era de infraestructura.
 
 **Pendiente / siguiente paso:** reanudar el clúster y ejecutar la prueba de humo de
 la Fase 0, que sigue bloqueada.
+
+---
+
+### 📌 Entrada 005 — 16 de agosto de 2026 — Segundo incidente: Node no resuelve SRV
+
+**Síntoma:** reanudado el clúster y con las IPs en *Active*, la aplicación **seguía**
+sin conectar, con el mismo mensaje que en el incidente anterior:
+`querySrv ECONNREFUSED _mongodb._tcp.cluster0.fjjzrhl.mongodb.net`
+
+Mismo mensaje, **causa distinta**. El incidente 004 fue el clúster pausado; este es un
+problema del resolutor DNS de Node en esta máquina Windows.
+
+**Cómo se aisló:**
+
+| # | Comprobación | Resultado |
+|---:|---|---|
+| 1 | SRV vía `Resolve-DnsName -Server 8.8.8.8` | ✅ Resuelve 3 nodos — el clúster ya está publicado |
+| 2 | IP pública vs. IP autorizada en Atlas | ✅ `186.15.21.132` coincide exactamente |
+| 3 | TCP al puerto 27017 de los tres nodos | ✅ Los tres conectan |
+| 4 | Conexión real con el driver | ❌ `querySrv ECONNREFUSED` |
+| 5 | `dns.getServers()` en Node | `127.0.0.1` |
+| 6 | `dns.resolveSrv` forzando `dns.setServers(['8.8.8.8'])` | ✅ Funciona |
+
+**La contradicción que lo explica todo:** el TCP a los nodos funcionaba mientras la
+consulta SRV fallaba. Node usa **dos resolutores distintos**: `getaddrinfo` del sistema
+operativo para `lookup()` y para abrir sockets —que funciona— y **c-ares con su propia
+lista de servidores** para `resolveSrv()`, `resolve4()` y demás. Solo el segundo estaba
+roto. Como `mongodb+srv://` obliga a una consulta SRV, la conexión moría antes de
+intentar nada.
+
+**Causa raíz:** c-ares no consigue enumerar la configuración DNS de este Windows y cae
+a su valor por defecto, `127.0.0.1`, donde no hay ningún servidor escuchando — de ahí
+el `ECONNREFUSED` inmediato. Windows funciona con normalidad porque usa su propia API:
+`Resolve-DnsName` y `nslookup` responden bien, y por eso el problema parece invisible
+desde fuera de Node. Node v24.18.0 y c-ares 1.34.6, ambos actuales: **no se arregla
+actualizando**.
+
+**Hipótesis descartada por el camino:** se pensó que la causa era que los DNS llegaban
+por DHCP (`DhcpNameServer` con valores, `NameServer` vacío en el registro) y que c-ares
+solo leía el segundo. Se fijaron los DNS de forma estática con
+`Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ServerAddresses 8.8.8.8,1.1.1.1`;
+el registro quedó correcto y **c-ares siguió reportando `127.0.0.1`**. La teoría era
+falsa: c-ares no lee el registro, usa `GetAdaptersAddresses`. El cambio de DNS puede
+revertirse con `Set-DnsClientServerAddress -InterfaceAlias "Wi-Fi" -ResetServerAddresses`.
+
+**Solución aplicada:** cambiar la URI de desarrollo al **formato sin SRV**, que nombra
+los tres nodos del clúster directamente y por tanto no necesita consulta SRV:
+
+```
+mongodb://<credenciales>@ac-8j5wktv-shard-00-00.fjjzrhl.mongodb.net:27017,
+                        ac-8j5wktv-shard-00-01.fjjzrhl.mongodb.net:27017,
+                        ac-8j5wktv-shard-00-02.fjjzrhl.mongodb.net:27017
+        /test?ssl=true&replicaSet=atlas-z3r9e6-shard-0&authSource=admin
+             &retryWrites=true&w=majority&appName=Cluster0
+```
+
+Es un formato soportado por Atlas (*Connect → Drivers*, opción de driver antiguo). La
+URI original quedó **comentada dentro del propio `.env`** para poder volver atrás.
+
+**Alcance del problema:** afecta solo a esta máquina de desarrollo. En Render (Linux)
+la resolución SRV funciona con normalidad, así que **el despliegue debe seguir usando
+`mongodb+srv://`**. Es una diferencia deliberada entre entornos.
+
+**Hallazgos nuevos:**
+
+| ID | Hallazgo |
+|---|---|
+| **M-30** | La base de datos se llama `test`: la URI nunca especificó nombre. Todos los datos reales viven ahí |
+| **M-31** | La URI sin SRV fija los nombres de los tres nodos; si Atlas cambia la topología del clúster, dejan de ser válidos |
+
+**Endurecimiento colateral:** `.gitignore` solo ignoraba `.env` exactamente. Cualquier
+variante (`.env.backup`, `.env.local`) se habría versionado **con las credenciales
+dentro**. Ahora ignora `.env.*` con excepción explícita para `.env.example`.
+
+**Estado de los datos, verificado durante el diagnóstico:**
+
+```
+usuarios 8 · membresias 7 · resultados 7 · jugadors 6
+jornadas 1 · quinielas 1 · resultadooficials 1 · resto 0
+```
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `.env` | URI al formato sin SRV, original comentada (no versionado) |
+| `.gitignore` | Ignora `.env.*`, salvo `.env.example` |
+| `avance_proyecto.md` | M-30, M-31 y esta entrada |
+
+**Pendiente / siguiente paso:** prueba de humo de la Fase 0, ya desbloqueada.
 
 ---
 
