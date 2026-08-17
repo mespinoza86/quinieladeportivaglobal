@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js",
-    "test": "node test/architecture.test.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:arquitectura": "node --test test/architecture.test.js",
+    "test:integracion": "node --test test/integracion.test.js",
     "migrate:legacy:dry": "node scripts/migrate-legacy.js",
     "migrate:legacy": "node scripts/migrate-legacy.js --execute"
   },
@@ -28,5 +30,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "mongodb-memory-server": "^11.2.0",
+    "supertest": "^7.2.2"
+  }
 }

@@ -31,7 +31,8 @@
 15. [Hallazgos clasificados por severidad](#15-hallazgos-clasificados-por-severidad)
 16. [Roadmap para escalar "en grande"](#16-roadmap-para-escalar-en-grande)
 17. [Anexo A — Acta de continuidad del 9 de julio de 2026 (HANDOFF)](#anexo-a--acta-de-continuidad-del-9-de-julio-de-2026-handoff)
-18. [Bitácora de avance](#18-bitácora-de-avance)
+18. [Anexo B — Verificación de C-02 (fuga entre quinielas)](#anexo-b--verificación-de-c-02-fuga-de-aislamiento-entre-quinielas)
+19. [Bitácora de avance](#18-bitácora-de-avance)
 
 ---
 
@@ -1409,20 +1410,29 @@ Ver bitácora, entrada 007.
 | 20 | Quitar `/generar_reporte` duplicada y `leagues-test` **(M-08, M-09)** | ✅ Verificado: `/generar_reporte` sigue devolviendo 200 |
 | 21 | Renombrar `CINCO_MINUTOS` **(M-15)** | ✅ `INTERVALO_MINIMO_ENTRE_SYNCS_MS` |
 
-### Fase 3 — Red de seguridad de pruebas (2 sesiones)
+### 🟨 Fase 3 — Red de seguridad de pruebas — MAYORMENTE COMPLETADA el 16 de agosto de 2026
 
-*Prerrequisito indispensable antes de refactorizar.*
+*Prerrequisito indispensable antes de refactorizar.* Ver bitácora, entrada 008.
 
-22. Montar `mongodb-memory-server` + `supertest`.
-23. **Pruebas del motor de puntuación**: exacto, resultado, comodín, marcadores
-    nulos, campeón, trivias.
-24. **Pruebas de aislamiento multi-inquilino**: dos quinielas con nombres de jornada
-    idénticos; verificar que ninguna consulta cruza.
-25. **Pruebas de las invariantes de roles**: último administrador, expulsión del
-    propietario, transferencia.
-26. **Pruebas de normalización de APIFootball** con respuestas guardadas como
-    fixtures: estados, marcador a 90', equipos invertidos.
-27. **Pruebas de autorresolución de trivias** para los 8 tipos.
+| # | Tarea | Estado |
+|---:|---|---|
+| 22 | Montar `mongodb-memory-server` + `supertest` | ✅ Arnés funcionando, 7 s por corrida |
+| 23 | Pruebas del motor de puntuación | ✅ Las cuatro reglas, marcadores nulos, campeón y trivias |
+| 24 | **Pruebas de aislamiento multi-inquilino** | ✅ **C-02 verificado en ejecución**, ver Anexo B |
+| 25 | Pruebas de las invariantes de roles | 🟨 Parcial: último administrador, autoexpulsión y Admin Mode. **Falta transferencia de propiedad** |
+| 26 | Pruebas de normalización de APIFootball | 🟨 Parcial: estados y filtro de goles. **Falta marcador a 90' y equipos invertidos** |
+| 27 | Pruebas de autorresolución de trivias para los 8 tipos | ❌ **Pendiente.** Requiere fixtures grabados del API |
+
+**Total: 39 pruebas** (17 de arquitectura + 22 de integración), de 6 al empezar el día.
+
+**Lo que falta de esta fase**, por orden de valor:
+
+1. **Autorresolución de trivias, los 8 tipos** (punto 27). Es la mayor superficie
+   sin cubrir. Necesita grabar respuestas reales de APIFootball como fixtures para
+   no depender de la red.
+2. **Marcador a 90 minutos** (punto 26). La lógica que descarta penales y tiempo
+   extra es sutil y resuelve un problema real de eliminatorias; merece pruebas.
+3. **Transferencia de propiedad** (punto 25).
 
 ### Fase 4 — Rediseño del sincronizador (2–3 sesiones) ← *el bloqueante real*
 
@@ -1621,6 +1631,206 @@ tocó ninguno de estos ejes, que es exactamente el hueco que llena este document
 > conserva en el repositorio como documento histórico con su fecha original, pero
 > **no debe seguir actualizándose**: toda continuidad se registra a partir de ahora
 > en la bitácora de §18 de este archivo.
+
+---
+
+## Anexo B — Verificación de C-02 (fuga de aislamiento entre quinielas)
+
+> **Qué se verifica:** que la resolución automática de trivias de una quiniela
+> nunca use los datos de otra, aunque ambas tengan una jornada con el mismo
+> nombre —que es lo normal: `"Jornada1"` se repite en todas—.
+>
+> Hay tres procedimientos, con propósitos distintos. **El C es el único urgente**,
+> porque el fallo estuvo activo en producción y pudo dejar datos mal.
+
+---
+
+### B.1 — Procedimiento A: la prueba automática *(la vía normal)*
+
+Desde la carpeta del proyecto:
+
+```bash
+npm run test:integracion
+```
+
+Deben pasar las cuatro pruebas que empiezan por `C-02:` y la de escrituras:
+
+```
+✔ C-02: dos quinielas con el mismo nombre de jornada no se contaminan
+✔ C-02: sin contexto, la consulta SÍ cruza — de ahí la necesidad del guardia
+✔ C-02: resolverTriviasPendientes se niega a correr sin contexto de quiniela
+✔ C-02: el barrido global recorre cada quiniela en su propio contexto
+✔ el aislamiento se aplica también a las escrituras y los borrados
+```
+
+No necesita conexión a internet ni a tu base: levanta un MongoDB en memoria y lo
+tira al terminar. **No toca los datos reales.** Tarda unos 7 segundos.
+
+Si alguna falla, el aislamiento está roto y **no debe desplegarse nada**.
+
+---
+
+### B.2 — Procedimiento B: verificación manual de extremo a extremo
+
+Sirve para confirmar el comportamiento **en un entorno real**, con Atlas y
+APIFootball de verdad, que es lo único que la prueba automática no cubre.
+
+> ⚠️ Hazlo en una base de pruebas, no en la de producción. Si no tienes otra,
+> usa quinielas desechables y bórralas al final (paso 7).
+
+**Paso 1 — Preparar dos cuentas y dos quinielas**
+
+1. Registra dos cuentas: `pruebaA` y `pruebaB`.
+2. Con `pruebaA`, crea la quiniela **"Prueba Aislamiento A"**.
+3. Con `pruebaB`, crea la quiniela **"Prueba Aislamiento B"**.
+
+No hace falta que una cuenta pertenezca a las dos: el fallo no dependía de eso,
+sino de los nombres de jornada repetidos.
+
+**Paso 2 — Crear en AMBAS una jornada con el mismo nombre**
+
+En las dos quinielas, crea una jornada llamada exactamente **`Jornada1`**. El
+nombre idéntico es el corazón de la prueba: es lo que hacía que la consulta sin
+filtro devolviera el documento equivocado.
+
+**Paso 3 — Poner partidos en estados opuestos**
+
+Es lo que hace la prueba concluyente:
+
+| Quiniela | Partido a importar | Estado que debe tener |
+|---|---|---|
+| **A** | Uno que **ya terminó** (busca una fecha pasada en *Importar partidos*) | `TC` |
+| **B** | Uno que **aún no se juega** (fecha futura) | `PROGRAMADO` |
+
+Tras importarlos, entra a *Ver resultados oficiales* en cada quiniela y confirma
+que A muestra el partido terminado y B el pendiente.
+
+**Paso 4 — Crear una trivia en la quiniela B**
+
+En **B**, entra a *Admin trivias* y crea una trivia sobre su partido (el que no se
+ha jugado). Cualquier tipo sirve; `¿Ambos equipos anotan?` es el más simple.
+
+Pon una **fecha de cierre ya pasada** (ayer). Esto la deja *vencida pero sin
+resolver*, que es exactamente el estado que el barrido periódico intenta procesar.
+
+**Paso 5 — Provocar el barrido**
+
+El barrido corre solo cada 5 minutos. Tienes dos opciones:
+
+- **Esperar 5 minutos** con el servidor levantado, o
+- **Reiniciar el servidor** y esperar los 5 minutos del primer disparo.
+
+**Paso 6 — Comprobar el resultado**
+
+Vuelve a *Admin trivias* en la quiniela **B**.
+
+| Resultado | Interpretación |
+|---|---|
+| La trivia de B **sigue sin resolver** | ✅ **Correcto.** El partido de B no ha terminado, así que no debe resolverse. El aislamiento funciona |
+| La trivia de B **aparece resuelta** | ❌ **La fuga sigue viva.** Se resolvió usando el partido *terminado* de la quiniela A. No despliegues; reabre C-02 |
+
+También puedes comprobarlo directamente en la base:
+
+```javascript
+// En mongosh, sobre la base de la aplicación
+db.trivias.find(
+  { jornadaNombre: "Jornada1" },
+  { quinielaId: 1, jornadaNombre: 1, resuelta: 1, respuestaCorrecta: 1 }
+)
+```
+
+La trivia cuya `quinielaId` sea la de **B** debe tener `resuelta: false` y
+`respuestaCorrecta` vacía.
+
+**Paso 7 — Limpiar**
+
+Borra las dos quinielas de prueba desde *Configuración de quiniela → Eliminar*.
+El borrado es lógico (marca `estado: 'eliminada'`), así que no se pierde nada del
+resto.
+
+---
+
+### B.3 — Procedimiento C: auditoría de los datos existentes ⚠️
+
+**Este es el único urgente.** Los procedimientos A y B comprueban que el fallo ya
+no ocurre; este comprueba **si alcanzó a hacer daño mientras estuvo activo**.
+
+Ejecuta en `mongosh`, sobre la base de la aplicación. **Es de solo lectura.**
+
+```javascript
+// ¿Hay nombres de jornada repetidos entre quinielas? Si no los hay,
+// la fuga nunca tuvo ocasión de manifestarse.
+db.resultadooficials.aggregate([
+  { $group: { _id: "$jornada", quinielas: { $addToSet: "$quinielaId" } } },
+  { $project: { jornada: "$_id", cuantasQuinielas: { $size: "$quinielas" } } },
+  { $match: { cuantasQuinielas: { $gt: 1 } } }
+])
+```
+
+- **Sin resultados** → ninguna jornada compartía nombre entre quinielas, así que
+  la fuga **no pudo activarse**. No hay nada que reparar.
+- **Con resultados** → esos nombres de jornada son los sospechosos. Sigue con la
+  consulta de abajo.
+
+```javascript
+// Trivias resueltas cuyo propio partido NO está terminado en su quiniela.
+// Cada documento que salga aquí es una trivia resuelta con datos ajenos.
+db.trivias.aggregate([
+  { $match: { resuelta: true } },
+  { $lookup: {
+      from: "resultadooficials",
+      let: { q: "$quinielaId", j: "$jornadaNombre" },
+      pipeline: [
+        { $match: { $expr: { $and: [
+          { $eq: ["$quinielaId", "$$q"] },
+          { $eq: ["$jornada", "$$j"] }
+        ] } } }
+      ],
+      as: "oficialPropio"
+  } },
+  { $addFields: { partido: {
+      $first: { $filter: {
+        input: { $ifNull: [{ $first: "$oficialPropio.resultados" }, []] },
+        cond: { $or: [
+          { $and: [ { $eq: ["$$this.equipo1", "$equipo1"] }, { $eq: ["$$this.equipo2", "$equipo2"] } ] },
+          { $and: [ { $eq: ["$$this.equipo1", "$equipo2"] }, { $eq: ["$$this.equipo2", "$equipo1"] } ] }
+        ] }
+      } }
+  } } },
+  { $match: { $or: [
+      { partido: null },
+      { "partido.estado": { $ne: "TC" } }
+  ] } },
+  { $project: { quinielaId: 1, jornadaNombre: 1, equipo1: 1, equipo2: 1,
+                tipo: 1, respuestaCorrecta: 1, estadoPropio: "$partido.estado" } }
+])
+```
+
+**Si devuelve documentos**, cada uno es una trivia que se resolvió sin que su
+propio partido hubiera terminado — la firma exacta de la fuga. Reparación:
+
+```javascript
+// 1) Anotar los _id afectados antes de tocar nada.
+// 2) Reabrir esas trivias y poner a cero los puntos de sus respuestas:
+const afectadas = [ /* pega aquí los _id del paso anterior */ ];
+db.trivias.updateMany(
+  { _id: { $in: afectadas } },
+  { $set: { resuelta: false, respuestaCorrecta: "" } }
+);
+db.respuestatrivias.updateMany(
+  { triviaId: { $in: afectadas.map(String) } },
+  { $set: { puntos: 0 } }
+);
+```
+
+El barrido corregido las volverá a resolver, ahora con los datos de su propia
+quiniela.
+
+**Estado conocido al 16 de agosto de 2026:** en la base actual hay **0 trivias y
+0 respuestas de trivia**, y una sola quiniela. La fuga, por tanto, **no llegó a
+corromper nada**. Esta auditoría cobra sentido cuando haya varias quinielas en
+marcha, y conviene repetirla la primera vez que dos quinielas coincidan en el
+nombre de una jornada.
 
 ---
 
@@ -2227,6 +2437,104 @@ comportamiento*.
 **Pendiente / siguiente paso:** **Fase 3 — red de seguridad de pruebas**, que además
 es la que permite verificar de verdad C-02. Es prerrequisito de la Fase 4, donde está
 el bloqueante real de escala (C-01, el auto-sync con APIFootball).
+
+---
+
+### 📌 Entrada 008 — 16 de agosto de 2026 — Fase 3: red de seguridad de pruebas
+
+**Objetivo:** pasar de 6 pruebas que solo leen el texto del código a una suite que
+ejecuta el servidor de verdad, y **verificar C-02 en comportamiento**, no solo en
+estructura.
+
+**Rama:** `fase-3-pruebas`, creada desde `fase-2-correccion`.
+
+**El obstáculo previo:** `server.js` abría el puerto y se conectaba a Mongo al
+importarse, así que `supertest` no podía usarlo. Se resolvió con el mínimo
+imprescindible, sin partir el monolito —eso es Fase 6—:
+
+- `EJECUTADO_DIRECTAMENTE` (`require.main === module`) envuelve el `app.listen` y la
+  conexión: al importar, el módulo no abre puerto, no conecta y no arranca trabajos.
+- `ENTORNO_DE_PRUEBAS` (`NODE_ENV === 'test'`) apaga el auto-sync —que si no
+  golpearía APIFootball de verdad y se autollamaría a un puerto cerrado—, el
+  `setInterval` de trivias y los limitadores de tasa, que si no bloquearían las
+  propias pruebas a la sexta cuenta creada.
+- `module.exports` expone 21 símbolos: `app`, `tenantContext`, los 12 modelos y las
+  funciones de dominio bajo prueba.
+
+**Qué se cubrió (22 pruebas de integración):**
+
+| Área | Pruebas |
+|---|---|
+| **Aislamiento C-02** | Dos quinielas con jornada homónima no se contaminan; sin contexto la consulta sí cruza (documenta el fallo original); `resolverTriviasPendientes` se niega a correr sin contexto; el barrido recorre cada quiniela en la suya; el aislamiento cubre escrituras y borrados |
+| **Motor de puntuación** | Las cuatro reglas de una pasada (exacto 5, signo 3, exacto con comodín 7, signo con comodín 4); marcadores nulos; campeón normalizando mayúsculas y espacios; suma de trivias |
+| **Roles y Admin Mode** | No se puede degradar al último administrador ni expulsar al propietario; el Admin Mode exige contraseña correcta y **no se arrastra al cambiar de quiniela**; las rutas administrativas rechazan a quien no lo ha confirmado |
+| **Autenticación** | Unicidad global de usuario y correo; mensaje de error idéntico exista o no la cuenta; login con usuario o con correo; 409 sin quiniela activa |
+| **Índices** | **S-10 verificado en ejecución**: la segunda respuesta a la misma trivia choca contra el índice único |
+| **APIFootball** | Normalización de los 10 estados crudos; **M-11**: los goles de Varela, Varane, Álvarez y Navarro ya no se anulan |
+| **Deuda documentada** | **M-03**: cambiar la puntuación reescribe el histórico. No es una corrección: fija el comportamiento actual para que, cuando la Fase 5 decida congelar, el cambio sea deliberado y esta prueba falle a propósito |
+
+**La trampa que costó entender — y que conviene no olvidar:**
+
+> La primera versión de la prueba de aislamiento **falló**, y parecía que la
+> corrección de la Fase 2 no servía: escribiendo desde el contexto de B y leyendo
+> desde el contexto de B, `findOne` devolvía el documento de **A**.
+>
+> No era el código: era la prueba. **Las consultas de Mongoose son perezosas.**
+> `Model.findOne()` construye la consulta pero no la ejecuta, y el gancho
+> `pre(/^find/)` que aplica el filtro por quiniela corre en la **ejecución**. El
+> ayudante estaba escrito como `run(store, () => Model.findOne(...))`, así que
+> `run` devolvía la consulta sin ejecutar y el `await` ocurría ya **fuera** del
+> contexto: `AsyncLocalStorage` devolvía `undefined`, el filtro no se aplicaba y la
+> consulta veía todas las quinielas.
+>
+> La corrección es poner el `await` **dentro** del `run`. El código de producción
+> nunca tuvo este problema, porque el middleware envuelve `next()` y los
+> manejadores async empiezan a ejecutarse ya dentro del contexto; lo mismo vale
+> para `resolverTriviasDeTodasLasQuinielas`, que invoca una función async y por
+> tanto arranca en contexto.
+>
+> Queda como advertencia porque es una forma silenciosa de escribir una prueba de
+> aislamiento que **siempre falla**, o peor, de escribir código de producción que
+> **nunca filtra**.
+
+**Cambios en la ejecución de pruebas:**
+
+```
+npm test               → las dos suites (39 pruebas)
+npm run test:arquitectura
+npm run test:integracion
+```
+
+El patrón es `node --test "test/**/*.test.js"`. Con `node --test test/` Node
+intenta resolver `test` como módulo y falla.
+
+**Verificación:**
+
+```
+npm run check          → válido
+npm test               → 39/39  (17 arquitectura + 22 integración)
+duración               → ~7 s, sin red y sin tocar la base real
+```
+
+**C-02 pasa de "corregido estructuralmente" a "verificado en comportamiento".**
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Importable sin efectos secundarios, `module.exports`, apagados de pruebas |
+| `test/integracion.test.js` | **Nuevo**, 22 pruebas |
+| `package.json` | `mongodb-memory-server` y `supertest` como dependencias de desarrollo; scripts de prueba |
+| `avance_proyecto.md` | **Anexo B** con los tres procedimientos de verificación de C-02, §16 y esta entrada |
+
+**Pendiente / siguiente paso:**
+
+1. Cerrar lo que falta de la Fase 3: autorresolución de trivias para los 8 tipos
+   (lo más grande), marcador a 90 minutos y transferencia de propiedad.
+2. **Anexo B, procedimiento C** — auditar si la fuga alcanzó a dañar datos. Hoy no:
+   hay 0 trivias y 0 respuestas. Repetir cuando haya varias quinielas activas.
+3. **Fase 4 — el rediseño del sincronizador**, que es el bloqueante real de escala
+   (C-01). Ya con red de seguridad debajo.
 
 ---
 

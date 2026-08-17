@@ -16,6 +16,17 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+/*
+ * Distingue "me están ejecutando" de "me están importando". Al importar —que es
+ * lo que hacen las pruebas de integración— no se abre el puerto, no se conecta
+ * a la base y no arrancan los trabajos periódicos: eso lo decide quien importa.
+ *
+ * Es el mínimo indispensable para poder probar el servidor de verdad sin
+ * partirlo en módulos, que es trabajo de la Fase 6.
+ */
+const EJECUTADO_DIRECTAMENTE = require.main === module;
+const ENTORNO_DE_PRUEBAS = process.env.NODE_ENV === 'test';
 const SALT_ROUNDS = 10;
 const tenantContext = new AsyncLocalStorage();
 const INTERNAL_SYNC_TOKEN = crypto.randomBytes(32).toString('hex');
@@ -85,6 +96,8 @@ async function conectarMongoConReintentos() {
 }
 
 mongoose.connection.on('disconnected', () => {
+  // En pruebas la desconexión es parte del cierre ordenado, no un incidente.
+  if (ENTORNO_DE_PRUEBAS) return;
   console.warn('⚠️  Conexión con MongoDB perdida. El driver reintentará por su cuenta.');
 });
 mongoose.connection.on('reconnected', () => {
@@ -213,7 +226,14 @@ app.use(session({
 
 const opcionesLimiteComunes = {
   standardHeaders: 'draft-7',
-  legacyHeaders: false
+  legacyHeaders: false,
+  /*
+   * Las pruebas de integración salen todas de la misma IP y crean varias
+   * cuentas seguidas, así que el limitador de registro (5 por hora) las
+   * bloquearía a la sexta. Se desactiva solo en el entorno de pruebas; las
+   * pruebas que verifican el limitador en sí lo hacen contra el servidor real.
+   */
+  skip: () => ENTORNO_DE_PRUEBAS
 };
 
 /*
@@ -349,6 +369,10 @@ let syncEnProceso = false;
 const INTERVALO_MINIMO_ENTRE_SYNCS_MS = 30 * 1000;
 
 app.use((req, res, next) => {
+  // En pruebas jamás se dispara: golpearía el API externo de verdad y se
+  // autollamaría por HTTP a un puerto que no está escuchando.
+  if (ENTORNO_DE_PRUEBAS) return next();
+
   const ahora = Date.now();
 
   const esArchivoEstatico =
@@ -3103,11 +3127,13 @@ async function resolverTriviasDeTodasLasQuinielas() {
 
 const INTERVALO_RESOLUCION_TRIVIAS_MS = 5 * 60 * 1000;
 
-setInterval(() => {
-  resolverTriviasDeTodasLasQuinielas().catch(error => {
-    console.error('Error automático resolviendo trivias:', error.message);
-  });
-}, INTERVALO_RESOLUCION_TRIVIAS_MS);
+if (!ENTORNO_DE_PRUEBAS) {
+  setInterval(() => {
+    resolverTriviasDeTodasLasQuinielas().catch(error => {
+      console.error('Error automático resolviendo trivias:', error.message);
+    });
+  }, INTERVALO_RESOLUCION_TRIVIAS_MS);
+}
 
 
 
@@ -3859,9 +3885,34 @@ app.use((error, req, res, next) => {
  * necesitan. Ahora /healthz responde siempre y /readyz devuelve 503 hasta que
  * la base esté disponible.
  */
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-  if (!mongoListo()) console.log('   Esperando conexión con MongoDB. /readyz devolverá 503 hasta entonces.');
-});
+if (EJECUTADO_DIRECTAMENTE) {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+    if (!mongoListo()) console.log('   Esperando conexión con MongoDB. /readyz devolverá 503 hasta entonces.');
+  });
 
-conectarMongoConReintentos();
+  conectarMongoConReintentos();
+}
+
+/*
+ * Superficie pública para las pruebas de integración. No la usa nada del código
+ * de producción: al ejecutarse como programa, este módulo no se importa desde
+ * ningún sitio.
+ */
+module.exports = {
+  app,
+  tenantContext,
+  conectarMongoConReintentos,
+  diagnosticarErrorMongo,
+  // Modelos de plataforma
+  Usuario, Quiniela, Membresia,
+  // Modelos de dominio, todos con aislamiento por quiniela
+  Jugador, Jornada, Resultado, ResultadoOficial,
+  Trivia, RespuestaTrivia, Equipo, PronosticoCampeon, CampeonOficial,
+  // Lógica de dominio bajo prueba
+  resolverTriviasPendientes,
+  resolverTriviasDeTodasLasQuinielas,
+  esGolApiFootball,
+  obtenerEstadoPartido,
+  partidoYaInicio
+};
