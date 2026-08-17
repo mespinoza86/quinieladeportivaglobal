@@ -1,6 +1,5 @@
 const express = require('express');
 require('express-async-errors');
-const bodyParser = require('body-parser');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const mongoose = require('mongoose');
@@ -36,29 +35,35 @@ const mongoConnectionPromise = mongoose.connect(process.env.MONGO_URI_MULTIQUINI
 
 /* ================= Middleware ================= */
 
+const ORIGENES_LOCALES = [
+  'http://localhost',
+  `http://localhost:${PORT}`,
+  'http://localhost:3000',
+  'http://127.0.0.1',
+  `http://127.0.0.1:${PORT}`,
+  'capacitor://localhost'
+];
+
+const ORIGENES_PERMITIDOS = [
+  ...new Set([
+    ...ORIGENES_LOCALES,
+    ...String(process.env.ALLOWED_ORIGINS || 'https://quinieladeportivaglobal.onrender.com')
+      .split(',')
+      .map(origen => origen.trim())
+      .filter(Boolean)
+  ])
+];
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || origin === 'null') return callback(null, true);
-
-    const allowedOrigins = [
-      'http://localhost',
-      'http://localhost:3000',
-      'http://127.0.0.1',
-      'capacitor://localhost',
-      'https://quinieladeportivamundialista.onrender.com'
-    ];
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
+    if (ORIGENES_PERMITIDOS.includes(origin)) return callback(null, true);
     return callback(new Error('No permitido por CORS'));
   },
   credentials: true
 }));
 
-app.use(express.json());
-app.use(bodyParser.json({ limit: '10kb' }));
+app.use(express.json({ limit: '10kb' }));
 
 app.use(session({
   secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('Falta SESSION_SECRET'); })() : 'solo-desarrollo-cambiar'),
