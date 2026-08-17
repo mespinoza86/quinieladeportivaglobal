@@ -146,23 +146,34 @@ inferior, paneles de aplicación).
 
 ### 2.7 Dependencias
 
+Estado **después de la Fase 0** (16 de agosto de 2026):
+
 ```
-axios ^1.11.0            → cliente HTTP hacia APIFootball
+axios ^1.11.0            → cliente HTTP hacia APIFootball  ⚠️ 29 advisories, ver abajo
 bcrypt ^6.0.0            → hash de contraseñas (SALT_ROUNDS = 10)
-body-parser ^1.20.2      → redundante, Express 4.16+ ya lo trae
-canvas ^2.11.2           → NO SE USA en ningún archivo. Dependencia nativa pesada
 connect-mongo ^5.1.0     → almacén de sesiones en MongoDB
 cors ^2.8.5              → CORS con lista blanca
 dotenv ^17.0.1           → variables de entorno
 express ^4.21.2          → framework HTTP
 express-async-errors     → captura de errores en handlers async
 express-session ^1.18.0  → sesiones
-fs ^0.0.1-security       → PAQUETE BASURA. `fs` es módulo nativo de Node
 mongoose ^8.16.1         → ODM de MongoDB
 ```
 
-**Acción pendiente:** eliminar `canvas`, `fs` y probablemente `body-parser`.
-`canvas` sola arrastra compilación nativa y hace lentos los despliegues.
+✅ **Eliminadas en la Fase 0** (63 paquetes menos): `canvas` (no se usaba en ningún
+archivo, arrastraba compilación nativa), `fs` (paquete basura que suplanta al módulo
+nativo homónimo, que se sigue usando sin dependencia) y `body-parser` (redundante
+desde Express 4.16).
+
+⚠️ **`npm audit --omit=dev` → 11 vulnerabilidades** (3 bajas, 3 moderadas, 5 altas),
+medidas el 16 de agosto de 2026. En julio eran 0. Casi todas provienen de
+`axios@1.11.0`, que acumuló ~29 advisories (SSRF, prototype pollution, DoS, fuga de
+cabeceras `Proxy-Authorization` en redirecciones). El resto son transitivas de
+Express (`body-parser`, `qs`, `path-to-regexp`, `cookie`, `follow-redirects`).
+Todas se resuelven con `npm audit fix` sin cambios de ruptura. **No se aplicó en la
+Fase 0** porque actualizar `axios` toca directamente el cliente de APIFootball y la
+Fase 0 tiene la regla de no alterar comportamiento. Queda como primer punto de la
+Fase 1.
 
 ### 2.8 Scripts de npm
 
@@ -1146,25 +1157,35 @@ error silencioso destruye la confianza de los usuarios. Ambos están sin probar.
 
 ### 14.1 Historial
 
+Al **16 de agosto de 2026**, rama `fase-0-higiene`:
+
 ```
+c17d131  Fase 0: higiene previa al trabajo de escalado
+05a8054  Completar el flujo de Admin Mode en la interfaz
+04f6de0  Dejar de rastrear node_modules
 f92462b  Implementar arquitectura multi-quiniela
 c0d2ad1  Version inicial basada en quiniela mundialista
 ```
 
-### 14.2 Árbol de trabajo (al 14 de agosto de 2026)
+Árbol de trabajo **limpio**. La rama `fase-0-higiene` está lista para fusionarse a
+`main` (`git checkout main && git merge fase-0-higiene`).
 
-```
- D .env.example
- M private/js/adminmode.js
- M public/adminmode.html
- M public/index.html
- M server.js
- M test/architecture.test.js
-```
+### 14.2 `node_modules` estaba versionado — hallazgo de la Fase 0
 
-Resumen: 6 archivos, +111 / −18.
+Descubierto al preparar el primer commit: **2.531 de los 2.615 archivos rastreados
+eran `node_modules`**, el 97 % del repositorio. Estaba listado en `.gitignore`, pero
+la regla no le aplicaba porque los archivos ya estaban versionados desde antes de
+que ese `.gitignore` existiera — Git ignora únicamente lo que aún no rastrea.
 
-### 14.3 Contenido de los cambios sin confirmar
+No era solo ruido: `bcrypt` y `canvas` son módulos nativos, así que el repositorio
+llevaba binarios compilados para Windows que **habrían roto un despliegue en Linux**
+en lugar de acelerarlo. Corregido con `git rm -r --cached node_modules`; los archivos
+siguen en disco y la instalación reproducible ya la garantizaba `package-lock.json`.
+
+### 14.3 Contenido de los cambios que estaban sin confirmar (histórico)
+
+> Confirmados el 16 de agosto de 2026 en el commit `05a8054`. Se conserva la tabla
+> como registro de qué contenía aquel trabajo pendiente.
 
 Todos pertenecen a **una misma unidad de trabajo: terminar el flujo de Admin Mode
 en la interfaz.**
@@ -1267,18 +1288,27 @@ en la interfaz.**
 Ordenado por dependencias, no solo por urgencia. Cada fase deja el sistema en un
 estado desplegable.
 
-### Fase 0 — Higiene inmediata (1 sesión)
+### ✅ Fase 0 — Higiene inmediata — COMPLETADA el 16 de agosto de 2026
 
-*Nada aquí cambia el comportamiento; todo reduce riesgo.*
+*Nada aquí cambia el comportamiento; todo reduce riesgo.* Ver bitácora, entrada 003.
 
-1. Corregir `NODE_EN` → `NODE_ENV` en `.env`. **(S-01)**
-2. Restaurar `.env.example` con todas las variables actuales. **(M-22)**
-3. Confirmar el trabajo pendiente de Admin Mode en un commit.
-4. Actualizar la lista blanca de CORS al dominio real y quitar el antiguo. **(S-05)**
-5. Eliminar `express.json()` duplicado y dejar solo el límite de 10 KB. **(S-06)**
-6. Desinstalar `canvas`, `fs` y `body-parser`. **(M-17)**
-7. Añadir `"engines": { "node": ">=20" }`. **(B-09)**
-8. Mover los cinco `.json` heredados a `legacy-data/` o eliminarlos. **(M-18)**
+| # | Tarea | Estado |
+|---:|---|---|
+| 1 | Corregir `NODE_EN` → `NODE_ENV` en `.env`. **(S-01)** | ✅ Hecho |
+| 2 | Restaurar `.env.example` con todas las variables actuales. **(M-22)** | ✅ Hecho, ampliado con `NODE_ENV` y `ALLOWED_ORIGINS` |
+| 3 | Confirmar el trabajo pendiente de Admin Mode en un commit. | ✅ Commit `05a8054` |
+| 4 | Actualizar la lista blanca de CORS al dominio real y quitar el antiguo. **(S-05)** | ✅ Hecho, ahora configurable por `ALLOWED_ORIGINS` |
+| 5 | Eliminar `express.json()` duplicado y dejar solo el límite de 10 KB. **(S-06)** | ✅ Hecho |
+| 6 | Desinstalar `canvas`, `fs` y `body-parser`. **(M-17)** | ✅ Hecho, −63 paquetes |
+| 7 | Añadir `"engines": { "node": ">=20" }`. **(B-09)** | ✅ Hecho |
+| 8 | Mover los cinco `.json` heredados a `legacy-data/`. **(M-18)** | ✅ Hecho, con README explicativo |
+| + | Dejar de rastrear `node_modules` (hallazgo nuevo, ver §14.2) | ✅ Commit `04f6de0` |
+| + | Reejecutar `npm audit --omit=dev` | ✅ Ejecutado: **11 vulnerabilidades**, no corregidas aquí → Fase 1 |
+
+**Pendiente de la Fase 0 (requiere al usuario):** arrancar la aplicación contra la
+base real y hacer la prueba de humo. No se pudo verificar de forma automática porque
+arrancar el servidor dispara el auto-sync, que **escribe** resultados oficiales y
+consume cuota de APIFootball.
 
 ### Fase 1 — Seguridad de base (1–2 sesiones)
 
@@ -1663,6 +1693,114 @@ que conviene incluir en esa fase:
 - Reejecutar `npm audit --omit=dev` (la última verificación es de julio).
 - Cerrar formalmente los pasos 5 y 7 del HANDOFF: prueba de extremo a extremo con
   dos cuentas y dos quinielas, y registro de la cuenta propietaria definitiva.
+
+---
+
+### 📌 Entrada 003 — 16 de agosto de 2026 — Fase 0: higiene inmediata
+
+**Objetivo:** ejecutar las 8 tareas de la Fase 0 (§16). Regla autoimpuesta: **ningún
+cambio puede alterar el comportamiento del dominio.**
+
+**Rama:** `fase-0-higiene`, creada desde `main` en `f92462b`.
+
+**Verificación previa (antes de tocar nada):**
+
+| Qué se verificó | Resultado |
+|---|---|
+| Diff de los 6 archivos sin confirmar | El flujo de Admin Mode está completo y coherente: endpoints, caducidad de 1 h, borrado de la marca al cambiar de quiniela, exención del token interno de sync y prueba nueva |
+| Valor real de `NODE_EN` en `.env` | `development` — por lo tanto renombrarlo a `NODE_ENV` es un no-op en local; el efecto real es en producción |
+| Uso real de `canvas` | Cero referencias en todo el código |
+| Uso real de `body-parser` | Solo dos líneas: el `require` y el segundo parser inútil |
+| Uso real de `fs` | La línea 8 usa el módulo **nativo** de Node; el paquete npm `fs` es un stub vacío que no interviene |
+
+**Qué se hizo — las 8 tareas:**
+
+1. **`NODE_EN` → `NODE_ENV`** en `.env`. La letra faltante dejaba `trust proxy`
+   desactivado y la cookie de sesión sin `secure`. **(S-01)**
+2. **`.env.example` restaurado** y ampliado: documenta ahora `NODE_ENV` (con
+   advertencia explícita sobre la errata) y la nueva `ALLOWED_ORIGINS`. **(M-22)**
+3. **Trabajo de Admin Mode confirmado** en el commit `05a8054`, aislado del resto.
+4. **CORS**: la lista blanca dejaba fuera el dominio nuevo y seguía autorizando el
+   de la aplicación anterior. Ahora los orígenes se leen de `ALLOWED_ORIGINS`, con
+   `https://quinieladeportivaglobal.onrender.com` por defecto; los orígenes locales
+   quedan siempre permitidos y respetan `PORT`. **(S-05)**
+5. **Un solo parser de cuerpo**: `express.json({ limit: '10kb' })`. Antes había dos
+   encadenados y el límite de 10 KB no se aplicaba nunca. **(S-06)**
+6. **`canvas`, `fs` y `body-parser` desinstalados**: 63 paquetes menos. **(M-17)**
+7. **`"engines": { "node": ">=20" }`** declarado. **(B-09)**
+8. **Los cinco `.json` heredados** movidos a `legacy-data/` con un README que aclara
+   que ningún código los lee y que la migración real no los usa. **(M-18)**
+
+**Hallazgo nuevo, no previsto en el análisis: `node_modules` estaba versionado.**
+
+Al preparar el primer commit apareció que **2.531 de los 2.615 archivos rastreados
+eran dependencias** (97 % del repositorio). `.gitignore` lo listaba, pero no surtía
+efecto porque Git solo ignora lo que aún no rastrea. Además de inflar el historial,
+era activamente dañino: `bcrypt` y `canvas` son módulos nativos, así que había
+binarios de Windows versionados que **romperían un despliegue en Linux**. Corregido
+con `git rm -r --cached node_modules`. Detalle en §14.2.
+
+**Reejecución de `npm audit --omit=dev`:** de **0 vulnerabilidades en julio a 11**
+(3 bajas, 3 moderadas, 5 altas). El grueso viene de `axios@1.11.0`, con ~29
+advisories acumuladas (SSRF vía bypass de `NO_PROXY`, prototype pollution, DoS, fuga
+de `Proxy-Authorization` en redirecciones). El resto son transitivas de Express.
+Todas se resuelven con `npm audit fix` sin cambios de ruptura. **Deliberadamente no
+se aplicó**: actualizar `axios` toca el cliente de APIFootball y habría violado la
+regla de la Fase 0. Pasa a ser el primer punto de la Fase 1.
+
+**Commits:**
+
+| SHA | Commit |
+|---|---|
+| `04f6de0` | Dejar de rastrear node_modules |
+| `05a8054` | Completar el flujo de Admin Mode en la interfaz |
+| `c17d131` | Fase 0: higiene previa al trabajo de escalado |
+
+Se rehízo el historial una vez: los renombrados a `legacy-data/` se habían colado en
+el commit de `node_modules` porque `git mv` los dejó en el índice. Se corrigió con
+`git reset --mixed` y reconstrucción de los tres commits, verificando que el diff de
+Admin Mode siguiera siendo exactamente el original (+111 inserciones).
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `.env` | `NODE_EN` → `NODE_ENV` (no versionado) |
+| `.env.example` | Restaurado y ampliado |
+| `server.js` | CORS configurable, parser único, `require` de `body-parser` retirado |
+| `package.json` | −3 dependencias, `engines` añadido |
+| `package-lock.json` | Regenerado |
+| `legacy-data/*` | Cinco `.json` movidos + README |
+| `avance_proyecto.md` | §2.7, §14, §16 y esta entrada |
+| `node_modules/` | 2.531 archivos dejan de rastrearse |
+
+**Verificación:**
+
+```
+npm run check              → sintaxis válida
+npm test                   → 6/6 pruebas pasan
+git status                 → árbol limpio
+npm audit --omit=dev       → 11 vulnerabilidades (documentadas, no corregidas)
+node server.js             → ✗ NO VERIFICADO
+```
+
+⚠️ **El arranque real no se pudo verificar.** El entorno de trabajo bloquea la salida
+de red hacia MongoDB Atlas (`querySrv ECONNREFUSED`). El proceso llegó a cargar todos
+los módulos y el pipeline completo de middleware —lo que confirma que retirar
+`body-parser` no rompe la carga— y falló únicamente al conectar. No se forzó el
+arranque fuera del entorno restringido porque **iniciar el servidor dispara el
+auto-sync global, que escribe resultados oficiales en la base real y consume cuota de
+APIFootball**.
+
+**Pendiente / siguiente paso:**
+
+1. **Prueba de humo manual** (bloquea el cierre formal de la Fase 0): `npm start`,
+   iniciar sesión, entrar a Admin mode, guardar un pronóstico y ver el ranking.
+2. Fusionar `fase-0-higiene` a `main`.
+3. En Render, definir `NODE_ENV=production` y `ALLOWED_ORIGINS` en las variables de
+   entorno del servicio. Sin `NODE_ENV=production` la corrección de S-01 no surte
+   efecto en el despliegue, que es justamente donde importa.
+4. Iniciar la **Fase 1 — Seguridad de base**, empezando por `npm audit fix`.
 
 ---
 
