@@ -1215,6 +1215,12 @@ en la interfaz.**
 | **C-03** | `/api/resultados-totales` lee 6 colecciones completas y recalcula todo el ranking en cada petición | `server.js:3299-3422` | Latencia creciente y consumo de memoria proporcional al histórico total |
 | **C-04** | `server.js` monolítico de 3.584 líneas con 96 handlers | todo el archivo | Cada cambio es riesgoso; imposible dividir el trabajo entre varias personas |
 | **C-05** | Los jobs viven dentro del proceso web con estado en variables de módulo (`ultimaSyncGlobal`, `syncEnProceso`) | `server.js:129-130` | Impide el escalado horizontal: N instancias = N syncs simultáneos |
+| **C-06** | La base vive en un clúster **MongoDB Atlas M0 gratuito**, que Atlas **pausa automáticamente** tras un periodo de inactividad | infraestructura | La aplicación queda muerta sola, sin aviso y sin recuperación. Detectado en producción el 16-ago-2026, ver bitácora 004 |
+
+> **Nota sobre las referencias de línea:** los números de `server.js` de estas tablas
+> corresponden al estado analizado el 14 de agosto de 2026 (commit `f92462b`).
+> Tras la Fase 0 están desplazados unas pocas líneas en la zona de cabecera del
+> archivo. El resto de las referencias sigue siendo válido.
 
 ### 🟠 Altos — corregir antes de abrir al público
 
@@ -1231,6 +1237,8 @@ en la interfaz.**
 | **S-09** | Sin recuperación de contraseña | ausente | Cada olvido requiere intervención manual en la base de datos |
 | **S-10** | `RespuestaTrivia` sin índice único `{quinielaId, jugador, triviaId}` | `server.js:375-381` | Doble envío concurrente duplica la respuesta → **puntos dobles** |
 | **S-11** | La guardia de `paginasAdmin` verifica sesión pero no rol | `server.js:119-125` | Cualquier usuario descarga el HTML administrativo |
+| **S-12** | El servidor termina con `process.exit(1)` si falla la **conexión inicial** a MongoDB: sin reintentos, sin retroceso exponencial | `server.js:24-33` | Cualquier indisponibilidad momentánea de la base —pausa del clúster, mantenimiento de Atlas, corte de red— deja la aplicación caída de forma permanente hasta que alguien la reinicie a mano |
+| **S-13** | El mensaje de error de conexión no distingue causas | `server.js:29-33` | `DNS inexistente`, `credenciales inválidas`, `IP no autorizada` y `red caída` son cuatro problemas con cuatro soluciones distintas, y los cuatro imprimen lo mismo. Diagnosticar la caída del 16-ago tomó varias comprobaciones manuales de DNS |
 
 ### 🟡 Medios — deuda técnica con impacto
 
@@ -1310,7 +1318,21 @@ base real y hacer la prueba de humo. No se pudo verificar de forma automática p
 arrancar el servidor dispara el auto-sync, que **escribe** resultados oficiales y
 consume cuota de APIFootball.
 
-### Fase 1 — Seguridad de base (1–2 sesiones)
+### Fase 1 — Seguridad de base y resiliencia (1–2 sesiones)
+
+8-bis. **`npm audit fix`** — 11 vulnerabilidades pendientes, la mayoría de
+    `axios@1.11.0`. Se dejó fuera de la Fase 0 por su regla de no alterar
+    comportamiento; aquí sí, con la prueba de importación de partidos como
+    verificación. Ver §2.7.
+
+8-ter. **Resiliencia de la conexión a MongoDB** *(nuevo tras el incidente del
+    16-ago, ver bitácora 004)*:
+    - Reintentos con retroceso exponencial en lugar de `process.exit(1)` al primer
+      fallo. **(S-12)**
+    - Mensajes de error que distingan DNS inexistente, credenciales inválidas, IP no
+      autorizada y red caída. **(S-13)**
+    - Decidir el plan del clúster: un M0 gratuito que se auto-pausa no sostiene el
+      objetivo de producción. **(C-06)**
 
 9. Añadir `helmet` con CSP ajustada. **(S-03)**
 10. Añadir `express-rate-limit`: login, registro y `admin-mode/activar` con límites
@@ -1801,6 +1823,67 @@ APIFootball**.
    entorno del servicio. Sin `NODE_ENV=production` la corrección de S-01 no surte
    efecto en el despliegue, que es justamente donde importa.
 4. Iniciar la **Fase 1 — Seguridad de base**, empezando por `npm audit fix`.
+
+---
+
+### 📌 Entrada 004 — 16 de agosto de 2026 — Incidente: la base dejó de resolver
+
+**Síntoma:** la aplicación no arranca. `❌ No se pudo conectar a la base
+multi-quiniela: querySrv ECONNREFUSED _mongodb._tcp.cluster0.fjjzrhl.mongodb.net`
+
+**Causa raíz:** el clúster de MongoDB Atlas estaba **pausado**. Atlas pausa
+automáticamente los clústeres M0 gratuitos tras un periodo de inactividad y, al
+hacerlo, **retira sus registros DNS**. Por eso el fallo no se manifestó como un
+error de conexión sino como un nombre inexistente.
+
+**Cómo se diagnosticó** *(el orden importa: cada paso descarta una familia de
+causas)*:
+
+| # | Comprobación | Resultado | Qué descarta |
+|---:|---|---|---|
+| 1 | Integridad de `.env`: variables presentes, sin `\r`, URI bien formada | ✅ Correcto | Descarta configuración corrupta y descarta que lo hubiera roto la Fase 0 |
+| 2 | `dns.getServers()` dentro del entorno restringido | `127.0.0.1`, `ECONNREFUSED` | **Falso positivo**: el entorno de trabajo tiene su propio resolutor. No concluir nada desde aquí |
+| 3 | `Resolve-DnsName ... -Server 8.8.8.8` desde Windows | `DNS name does not exist` | Descarta red local, ISP y resolutor |
+| 4 | `Resolve-DnsName mongodb.net -Server 8.8.8.8` | SOA de AWS ✅ | Confirma que el DNS funciona y que la respuesta es autoritativa |
+| 5 | Registros A, TXT y SRV del host del clúster | Los tres NXDOMAIN | El nombre no está publicado, no es un problema de conectividad |
+| 6 | Estado del clúster en la consola de Atlas | **Paused** | Causa raíz |
+
+**La distinción que resuelve el caso:**
+
+> **NXDOMAIN no es un error de conexión.** Si el problema fuera la lista de IPs
+> permitidas, las credenciales o la red, el nombre **sí resolvería** y el fallo
+> ocurriría después, al conectar o autenticar. Un nombre que no existe significa que
+> Atlas no está publicando el clúster.
+
+**Dos hipótesis que resultaron falsas y por qué:**
+
+1. *"Las entradas de IP Access List salen como Inactive, ese es el problema."* No:
+   la lista de acceso vive en el proyecto, no en el clúster. Sin clúster corriendo,
+   las reglas no tienen dónde aplicarse y se marcan inactivas. Era **otro síntoma de
+   la misma causa**, no la causa.
+2. *"Un clúster pausado conserva sus registros DNS."* **Incorrecto**, y este error
+   desvió el diagnóstico: en M0 Atlas los retira. Queda corregido aquí para que no
+   se repita el razonamiento equivocado.
+
+**Solución:** *Database → Resume* en la consola de Atlas. Tarda entre 2 y 10 minutos;
+las entradas de IP Access List vuelven a *Active* solas. No hay que recrear IPs ni
+cambiar la URI: el host se vuelve a publicar con el mismo nombre.
+
+**Hallazgos nuevos que deja el incidente:**
+
+| ID | Hallazgo |
+|---|---|
+| **C-06** | El plan M0 gratuito se auto-pausa. Para el objetivo de producción es un bloqueante: la aplicación puede morir sola, sin aviso y sin recuperarse |
+| **S-12** | El servidor hace `process.exit(1)` al primer fallo de conexión, sin reintentos. Cualquier indisponibilidad momentánea lo deja caído de forma permanente |
+| **S-13** | El mensaje de error no distingue DNS inexistente, credenciales inválidas, IP no autorizada y red caída — cuatro problemas con cuatro soluciones distintas |
+
+Los tres se incorporan a §15 y a la Fase 1 del roadmap.
+
+**Archivos modificados:** solo `avance_proyecto.md`. Ningún cambio de código: el
+incidente era de infraestructura.
+
+**Pendiente / siguiente paso:** reanudar el clúster y ejecutar la prueba de humo de
+la Fase 0, que sigue bloqueada.
 
 ---
 
