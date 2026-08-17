@@ -12,6 +12,116 @@
 
 ---
 
+## 🔖 PUNTO DE PARTIDA — última actualización: 16 de agosto de 2026
+
+> **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
+> continuación. El detalle de cada paso está en la bitácora (§19).
+
+### Dónde estamos
+
+**Fases 0, 1, 2 y 3 completadas** en una sola sesión, el 16 de agosto de 2026.
+
+| Fase | Qué se hizo | Bitácora |
+|---|---|---|
+| **0** | Higiene: `NODE_ENV`, CORS, parser único, −63 paquetes, `legacy-data/` | 003 |
+| **1** | Seguridad: helmet, rate limiting, índices, sondas de salud, reintentos de conexión | 006 |
+| **2** | **Cerrada la fuga C-02** entre quinielas + 4 bugs de dominio | 007 |
+| **3** | Red de pruebas: de **6 a 53 pruebas**, con MongoDB en memoria | 008, 009 |
+
+También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
+absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
+
+### Estado de Git — ⚠️ cinco ramas encadenadas sin fusionar
+
+```
+d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia   ← fase-3-pruebas (HEAD)
+a2e91df  Fase 3: red de seguridad de pruebas de integracion
+200c3c0  Fase 2: cerrar la fuga entre quinielas y los bugs de dominio
+f454d81  Fase 1: seguridad de base y resiliencia de la conexion
+c723c38  Documentar el fallo de resolucion SRV y endurecer .gitignore
+0d88769  Documentar el incidente de conexion y sus hallazgos
+c7181a2  Registrar la Fase 0 en el documento de avance
+c17d131  Fase 0: higiene previa al trabajo de escalado
+05a8054  Completar el flujo de Admin Mode en la interfaz
+04f6de0  Dejar de rastrear node_modules
+f92462b  Implementar arquitectura multi-quiniela                     ← main sigue aquí
+```
+
+Cada rama se creó sobre la anterior, así que **`fase-3-pruebas` contiene todo**.
+Para llevarlo a `main` de una vez:
+
+```bash
+git checkout main
+git merge fase-3-pruebas      # avance rápido, sin conflictos
+```
+
+Las ramas intermedias pueden borrarse después.
+
+### ⚠️ Antes de arrancar la aplicación, lee esto
+
+Dos peculiaridades de este entorno que ya costaron una tarde. Ambas están
+documentadas en detalle en las bitácoras 004 y 005.
+
+1. **El clúster de Atlas es M0 gratuito y se auto-pausa.** Si la aplicación no
+   conecta, lo primero es mirar en [cloud.mongodb.com](https://cloud.mongodb.com) si
+   dice *Paused*, y pulsar **Resume**. Atlas **retira los registros DNS** al pausar,
+   así que el síntoma es `querySrv ECONNREFUSED`, que parece un problema de red y no
+   lo es. Es el hallazgo **C-06** y sigue abierto.
+2. **Node no resuelve consultas SRV en esta máquina.** c-ares no consigue leer la
+   configuración DNS de este Windows y cae a `127.0.0.1`, donde no hay nada
+   escuchando. Por eso `.env` usa la **URI sin SRV**, con los tres nodos nombrados
+   directamente. La original quedó comentada en el mismo archivo.
+   **En Render (Linux) el SRV funciona bien: el despliegue debe usar
+   `mongodb+srv://`.**
+
+### Comandos habituales
+
+```bash
+npm start                  # arranca la aplicación
+npm test                   # las 53 pruebas (~8 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 36 de integración
+npm run check              # comprobación de sintaxis
+npm audit --omit=dev       # 0 vulnerabilidades al cierre del 16-ago
+```
+
+### Lo siguiente: Fase 4 — rediseño del sincronizador (C-01)
+
+Es **el bloqueante real de escala** y el trabajo más grande del roadmap. Hoy el
+auto-sync hace una llamada a APIFootball **por cada partido de cada quiniela cada 30
+segundos**: con 20 quinielas se agota una cuota mensual típica en media hora.
+
+El plan está detallado en §16, Fase 4 (puntos 28–33). En resumen:
+
+1. Extraer el sync a un proceso aparte o a un planificador con bloqueo distribuido.
+2. Sustituir la autollamada HTTP a `localhost` por una llamada de función directa
+   envuelta en `tenantContext.run`.
+3. **Deduplicar por `apiFixtureId`**: si 40 quinielas siguen el mismo partido, es
+   *una* llamada al API, no 40. Introducir una colección `fixtures` global como
+   caché compartida.
+4. Ventanas de sincronización según el estado real del partido (terminado → nunca;
+   en vivo → cada minuto; lejano → cada 6 horas).
+5. Paralelismo controlado y registro del consumo de cuota.
+
+Ya es prudente meterle mano: hay 53 pruebas debajo.
+
+### Decisiones abiertas que dependen del usuario
+
+| # | Decisión | Por qué importa |
+|---|---|---|
+| **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
+| — | ¿Se fusiona la cadena de ramas a `main`? | Cinco ramas encadenadas son frágiles de mantener |
+| **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
+
+### Pendientes menores, cuando toque
+
+- **Anexo B, procedimiento C**: auditar si la fuga C-02 dañó datos. Hoy no hay nada
+  que auditar (0 trivias, 0 respuestas, una sola quiniela). Repetir cuando haya
+  varias quinielas y dos coincidan en el nombre de una jornada.
+- En Render, definir `NODE_ENV=production`, `ALLOWED_ORIGINS` y
+  `DEBUG_ENDPOINTS=false`, y configurar `/readyz` como health check del servicio.
+
+---
+
 ## Índice
 
 1. [Resumen ejecutivo](#1-resumen-ejecutivo)
@@ -32,7 +142,7 @@
 16. [Roadmap para escalar "en grande"](#16-roadmap-para-escalar-en-grande)
 17. [Anexo A — Acta de continuidad del 9 de julio de 2026 (HANDOFF)](#anexo-a--acta-de-continuidad-del-9-de-julio-de-2026-handoff)
 18. [Anexo B — Verificación de C-02 (fuga entre quinielas)](#anexo-b--verificación-de-c-02-fuga-de-aislamiento-entre-quinielas)
-19. [Bitácora de avance](#18-bitácora-de-avance)
+19. [Bitácora de avance](#19-bitácora-de-avance)
 
 ---
 
@@ -1133,41 +1243,56 @@ conectada ni modificada.
 
 ## 13. Pruebas y verificación
 
-### 13.1 Suite actual
+### 13.1 Suite actual — 53 pruebas
 
-`npm test` → 6 pruebas, todas pasan (verificado el 14 de agosto de 2026):
+Estado tras la Fase 3 (16 de agosto de 2026). Corren en **~8 segundos, sin red y sin
+tocar la base real**.
 
-```
-✔ el servidor solo acepta la URI multi-quiniela
-✔ los modelos deportivos reciben aislamiento por quiniela
-✔ existen las rutas principales de cuenta y membresía
-✔ el modo administrador exige rol y confirmación de contraseña
-✔ la migración es simulación por defecto y separa origen de destino
-✔ todas las referencias locales JS y CSS de HTML existen
-ℹ tests 6  ℹ pass 6  ℹ fail 0  ℹ duration_ms 28.98
+```bash
+npm test                   # las dos suites: 53 pruebas
+npm run test:arquitectura  # 17 sobre el texto del código
+npm run test:integracion   # 36 contra un MongoDB en memoria
 ```
 
-### 13.2 Naturaleza de las pruebas
+| Suite | Pruebas | Qué comprueba |
+|---|---:|---|
+| `test/architecture.test.js` | 17 | Invariantes estructurales por expresiones regulares sobre `server.js` y `migrate-legacy.js` |
+| `test/integracion.test.js` | 36 | El servidor en ejecución: HTTP real con `supertest` contra `mongodb-memory-server` |
 
-Cinco de las seis son **expresiones regulares sobre el texto de `server.js` y
-`migrate-legacy.js`**. Son guardarraíles útiles contra regresiones arquitectónicas
-(por ejemplo, que alguien vuelva a añadir el fallback a `MONGO_URI`), pero **no
-ejercitan una sola línea de código en ejecución**.
+### 13.2 Las dos naturalezas, y para qué sirve cada una
 
-La sexta sí es útil de verdad: verifica que ningún HTML referencia un `.js` o `.css`
-inexistente.
+**Las de arquitectura** no ejecutan una línea de código: comprueban que ciertas
+decisiones no se reviertan por descuido. Suenan pobres pero han demostrado su valor —
+por ejemplo, la que fija `scriptSrcAttr: 'unsafe-inline'` explica *por qué* está ahí,
+de modo que nadie lo "endurezca" y deje la interfaz inerte.
 
-### 13.3 Cobertura ausente
+Cuidado con una trampa ya vista dos veces: las comprobaciones del tipo *"esto ya no
+está en el código"* fallaban al encontrar el texto viejo **en los comentarios que
+explican el cambio**. Para eso existe `serverSinComentarios`; úsalo en toda
+aserción negativa.
 
-- Cero pruebas de integración HTTP.
-- Cero pruebas del motor de puntuación (lo más crítico del negocio).
-- Cero pruebas del aislamiento multi-inquilino en ejecución.
-- Cero pruebas de la normalización de estados y marcadores de APIFootball.
-- Cero pruebas de la autorresolución de trivias.
-- Cero pruebas de las invariantes de roles.
+**Las de integración** sí ejercitan el sistema: registran cuentas, crean quinielas,
+abren sesiones, escriben en la base y leen la respuesta HTTP.
 
-**El motor de puntuación y el aislamiento por quiniela son los dos lugares donde un
-error silencioso destruye la confianza de los usuarios. Ambos están sin probar.**
+### 13.3 Cobertura actual
+
+| Área | Estado |
+|---|---|
+| Aislamiento multi-inquilino (C-02) | ✅ Verificado en ejecución, incluidas escrituras y borrados |
+| Motor de puntuación | ✅ Las cuatro reglas, marcadores nulos, campeón y trivias |
+| Invariantes de roles | ✅ Último administrador, autoexpulsión, Admin Mode, transferencia |
+| Autenticación | ✅ Unicidad, mensajes que no filtran, login por usuario o correo |
+| Índices únicos | ✅ S-10 verificado en ejecución |
+| Normalización de APIFootball | ✅ Estados, filtro de goles, marcador a 90', equipos invertidos |
+| Autorresolución de trivias | ✅ Los 8 tipos |
+| Deuda documentada | ✅ M-03 fijado con una prueba, para que congelar los puntos sea deliberado |
+
+### 13.4 Lo que sigue sin cubrirse
+
+- **El sincronizador con APIFootball.** Es justo lo que reescribe la Fase 4, así que
+  las pruebas van con ella.
+- **El frontend.** 39 scripts sin ninguna prueba. Ligado al hallazgo S-04 (XSS).
+- **Concurrencia real**: dos usuarios escribiendo a la vez el mismo pronóstico.
 
 ---
 
@@ -1175,18 +1300,13 @@ error silencioso destruye la confianza de los usuarios. Ambos están sin probar.
 
 ### 14.1 Historial
 
-Al **16 de agosto de 2026**, rama `fase-0-higiene`:
+> **El historial vigente está al principio del documento**, en
+> [🔖 PUNTO DE PARTIDA](#-punto-de-partida--última-actualización-16-de-agosto-de-2026),
+> junto con el comando para fusionar la cadena de ramas. Se mantiene ahí y no aquí
+> para que haya un solo sitio que actualizar.
 
-```
-c17d131  Fase 0: higiene previa al trabajo de escalado
-05a8054  Completar el flujo de Admin Mode en la interfaz
-04f6de0  Dejar de rastrear node_modules
-f92462b  Implementar arquitectura multi-quiniela
-c0d2ad1  Version inicial basada en quiniela mundialista
-```
-
-Árbol de trabajo **limpio**. La rama `fase-0-higiene` está lista para fusionarse a
-`main` (`git checkout main && git merge fase-0-higiene`).
+Al cierre del 16 de agosto de 2026: **11 commits**, cinco ramas encadenadas, árbol
+de trabajo limpio, `main` todavía en `f92462b`.
 
 ### 14.2 `node_modules` estaba versionado — hallazgo de la Fase 0
 
@@ -1826,7 +1946,7 @@ nombre de una jornada.
 
 ---
 
-## 18. Bitácora de avance
+## 19. Bitácora de avance
 
 > Registro cronológico. Cada entrada documenta qué se hizo, por qué, qué archivos se
 > tocaron y cómo se verificó.
