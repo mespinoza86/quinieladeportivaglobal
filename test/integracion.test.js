@@ -546,6 +546,256 @@ test('obtenerEstadoPartido normaliza los estados crudos del API', () => {
   assert.equal(srv.obtenerEstadoPartido({ match_status: 'FT' }).minuto, null);
 });
 
+/* ================================================================
+ * Marcador a 90 minutos
+ *
+ * Resuelve un problema real de eliminatorias: un partido decidido en penales o
+ * en la prórroga no debe alterar el pronóstico del tiempo reglamentario.
+ * ================================================================ */
+
+test('el marcador en vivo se usa mientras el partido está en curso', () => {
+  const enVivo = {
+    match_hometeam_score: '1', match_awayteam_score: '0',
+    match_hometeam_ft_score: '', match_awayteam_ft_score: ''
+  };
+  for (const estado of ['LIVE', 'MT']) {
+    const m = srv.obtenerMarcador90Minutos(enVivo, { estado });
+    assert.deepEqual({ ...m }, { marcador1: 1, marcador2: 0 }, `Falló con estado ${estado}`);
+  }
+});
+
+test('terminado el partido manda el marcador de tiempo reglamentario', () => {
+  const m = srv.obtenerMarcador90Minutos({
+    match_hometeam_score: '5', match_awayteam_score: '4',   // incluiría los penales
+    match_hometeam_ft_score: '2', match_awayteam_ft_score: '2'
+  }, { estado: 'TC' });
+
+  assert.deepEqual({ ...m }, { marcador1: 2, marcador2: 2 },
+    'Debe ganar el marcador a 90 minutos, no el que incluye la tanda');
+});
+
+test('sin marcador de 90\' se reconstruye descartando penales y prórroga', () => {
+  /*
+   * Escenario de eliminatoria: 1-1 en el tiempo reglamentario, gol en la
+   * prórroga y tanda de penales. El pronóstico se juzga sobre el 1-1.
+   */
+  const m = srv.obtenerMarcador90Minutos({
+    match_hometeam_score: '4', match_awayteam_score: '3',
+    match_hometeam_ft_score: '', match_awayteam_ft_score: '',
+    goalscorer: [
+      { time: '15', home_scorer: 'A', score: '1 - 0', score_info_time: '' },
+      { time: '77', away_scorer: 'B', score: '1 - 1', score_info_time: '' },
+      { time: '105', home_scorer: 'C', score: '2 - 1', score_info_time: 'extra time' },
+      { time: '120', away_scorer: 'D', score: '2 - 2', score_info_time: 'penalty' }
+    ]
+  }, { estado: 'TC' });
+
+  assert.deepEqual({ ...m }, { marcador1: 1, marcador2: 1 },
+    'El gol de la prórroga y el de la tanda no cuentan para el marcador a 90 minutos');
+});
+
+/* ================================================================
+ * Autorresolución de trivias — los 8 tipos
+ * ================================================================ */
+
+/** Construye un evento de APIFootball con la forma que devuelve el proveedor. */
+function eventoApi({ local = 'Alfa', visitante = 'Beta', goles = [], tarjetas = [], estadisticas = [] } = {}) {
+  return {
+    match_hometeam_name: local,
+    match_awayteam_name: visitante,
+    match_hometeam_score: '0',
+    match_awayteam_score: '0',
+    goalscorer: goles,
+    cards: tarjetas,
+    statistics: estadisticas
+  };
+}
+
+const gol = (time, quien, extra = {}) => ({
+  time: String(time),
+  home_scorer: quien === 'local' ? 'Jugador Local' : '',
+  away_scorer: quien === 'visitante' ? 'Jugador Visitante' : '',
+  score: '1 - 0',
+  info: '',
+  ...extra
+});
+
+const triviaDe = tipo => ({ tipo, equipo1: 'Alfa', equipo2: 'Beta' });
+
+test('los 8 tipos de trivia están declarados y se resuelven', () => {
+  const tipos = Object.keys(srv.TIPOS_TRIVIA);
+  assert.equal(tipos.length, 8, `Se esperaban 8 tipos, hay ${tipos.length}: ${tipos}`);
+  for (const tipo of tipos) {
+    assert.ok(srv.TIPOS_TRIVIA[tipo].pregunta, `El tipo ${tipo} no declara pregunta`);
+  }
+});
+
+test('trivia primer_gol: identifica al equipo que anota primero', () => {
+  const conGoles = eventoApi({ goles: [gol(60, 'local'), gol(20, 'visitante')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('primer_gol'), conGoles), 'Beta',
+    'El primer gol es el del minuto 20, aunque venga después en el arreglo');
+
+  const sinGoles = eventoApi({ goles: [] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('primer_gol'), sinGoles), 'Nadie anotará');
+});
+
+test('trivia primer_gol: corrige los equipos invertidos por el API', () => {
+  /*
+   * El API a veces devuelve local y visitante al revés respecto a cómo se
+   * guardó el partido. Sin la corrección, el primer gol se atribuiría al
+   * equipo equivocado y TODOS los que acertaron perderían sus puntos.
+   */
+  const invertido = eventoApi({ local: 'Beta', visitante: 'Alfa', goles: [gol(10, 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('primer_gol'), invertido), 'Beta',
+    'Si el API pone a Beta de local, su gol sigue siendo de Beta');
+
+  const normal = eventoApi({ local: 'Alfa', visitante: 'Beta', goles: [gol(10, 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('primer_gol'), normal), 'Alfa');
+});
+
+test('trivia ambos_anotan: exige gol de los dos equipos', () => {
+  const ambos = eventoApi({ goles: [gol(10, 'local'), gol(50, 'visitante')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('ambos_anotan'), ambos), 'Sí');
+
+  const soloUno = eventoApi({ goles: [gol(10, 'local'), gol(70, 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('ambos_anotan'), soloUno), 'No');
+
+  const ninguno = eventoApi({ goles: [] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('ambos_anotan'), ninguno), 'No');
+});
+
+test('trivias de primer y segundo tiempo: el corte está en el 45', () => {
+  const primero = eventoApi({ goles: [gol(30, 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_primer_tiempo'), primero), 'Sí');
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_segundo_tiempo'), primero), 'No');
+
+  const segundo = eventoApi({ goles: [gol(70, 'visitante')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_primer_tiempo'), segundo), 'No');
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_segundo_tiempo'), segundo), 'Sí');
+
+  // El añadido del primer tiempo ("45+2") cuenta como primer tiempo.
+  const anadido = eventoApi({ goles: [gol('45+2', 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_primer_tiempo'), anadido), 'Sí',
+    'Un gol en el 45+2 es del primer tiempo');
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('gol_segundo_tiempo'), anadido), 'No');
+});
+
+test('trivia mas_amarillas: cuenta por cards y compara equipos', () => {
+  const amarilla = (quien) => ({
+    card: 'yellow card',
+    home_fault: quien === 'local' ? 'Jugador' : '',
+    away_fault: quien === 'visitante' ? 'Jugador' : ''
+  });
+
+  const ganaLocal = eventoApi({ tarjetas: [amarilla('local'), amarilla('local'), amarilla('visitante')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('mas_amarillas'), ganaLocal), 'Alfa');
+
+  const empate = eventoApi({ tarjetas: [amarilla('local'), amarilla('visitante')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('mas_amarillas'), empate), 'Empate');
+
+  const ninguna = eventoApi({ tarjetas: [] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('mas_amarillas'), ninguna), 'No habrá tarjetas amarillas');
+});
+
+test('trivia mas_amarillas: si cards viene vacío, recurre a statistics', () => {
+  /*
+   * APIFootball no siempre rellena `cards`. El respaldo por `statistics` evita
+   * que la trivia se resuelva como "no hubo amarillas" cuando sí las hubo.
+   */
+  const soloStats = eventoApi({
+    tarjetas: [],
+    estadisticas: [{ type: 'Yellow Cards', home: '1', away: '4' }]
+  });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('mas_amarillas'), soloStats), 'Beta');
+});
+
+test('trivia mas_rojas: sin rojas responde que no hubo', () => {
+  const roja = (quien) => ({
+    card: 'red card',
+    home_fault: quien === 'local' ? 'Jugador' : '',
+    away_fault: quien === 'visitante' ? 'Jugador' : ''
+  });
+
+  assert.equal(
+    srv.resolverRespuestaTrivia(triviaDe('mas_rojas'), eventoApi({ tarjetas: [] })),
+    'No habrá tarjetas rojas'
+  );
+  assert.equal(
+    srv.resolverRespuestaTrivia(triviaDe('mas_rojas'), eventoApi({ tarjetas: [roja('visitante')] })),
+    'Beta'
+  );
+});
+
+test('trivias de tiempo extra y penales', () => {
+  const conProrroga = eventoApi({ goles: [gol(105, 'local', { score_info_time: 'extra time' })] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('hubo_tiempo_extra'), conProrroga), 'Sí');
+
+  const conPenales = eventoApi({ goles: [gol(120, 'local', { score_info_time: 'penalty' })] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('hubo_penales'), conPenales), 'Sí');
+
+  const normal = eventoApi({ goles: [gol(30, 'local')] });
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('hubo_tiempo_extra'), normal), 'No');
+  assert.equal(srv.resolverRespuestaTrivia(triviaDe('hubo_penales'), normal), 'No');
+});
+
+test('sin evento del API, ninguna trivia se resuelve', () => {
+  for (const tipo of Object.keys(srv.TIPOS_TRIVIA)) {
+    assert.equal(srv.resolverRespuestaTrivia(triviaDe(tipo), null), '',
+      `El tipo ${tipo} debe devolver cadena vacía sin evento, para no resolver a ciegas`);
+  }
+});
+
+/* ================================================================
+ * Transferencia de propiedad
+ * ================================================================ */
+
+test('la propiedad solo se transfiere a un administrador activo', async () => {
+  const { agente: duenoAgente, datos: dueno } = await cuentaNueva('dueno');
+  const { agente: socioAgente, datos: socio } = await cuentaNueva('socio');
+
+  const quiniela = await quinielaNueva(duenoAgente, 'Traspaso');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await duenoAgente.post('/api/admin-mode/activar').send({ password: dueno.password });
+
+  // El socio solicita ingreso y el propietario lo aprueba.
+  const unirse = await socioAgente.post('/api/quinielas/unirse').send({ codigoIngreso: quiniela.codigo });
+  assert.equal(unirse.status, 202, JSON.stringify(unirse.body));
+
+  const socioUsuario = await srv.Usuario.findOne({ usernameNormalizado: socio.username.toLowerCase() });
+  const membresiaSocio = await srv.Membresia.findOne({ quinielaId: id, usuarioId: socioUsuario._id });
+
+  const aprobar = await duenoAgente.patch(`/api/quiniela-actual/miembros/${membresiaSocio._id}/aprobar`).send({});
+  assert.equal(aprobar.status, 200, JSON.stringify(aprobar.body));
+
+  // La ruta identifica al destinatario por id de USUARIO, no de membresía.
+  const destino = { usuarioId: String(socioUsuario._id) };
+
+  // Con el socio como simple 'user', la transferencia debe rechazarse.
+  const prematura = await duenoAgente.post('/api/quiniela-actual/transferir-propiedad').send(destino);
+  assert.equal(prematura.status, 400,
+    `Transferir a un 'user' debe rechazarse: ${JSON.stringify(prematura.body)}`);
+
+  // Se le asciende a admin y ahora sí.
+  const ascender = await duenoAgente.patch(`/api/quiniela-actual/miembros/${membresiaSocio._id}/rol`)
+    .send({ rol: 'admin' });
+  assert.equal(ascender.status, 200, JSON.stringify(ascender.body));
+
+  const transferir = await duenoAgente.post('/api/quiniela-actual/transferir-propiedad').send(destino);
+  assert.equal(transferir.status, 200, JSON.stringify(transferir.body));
+
+  // Los roles quedan intercambiados y sigue habiendo exactamente un propietario.
+  const membresias = await srv.Membresia.find({ quinielaId: id });
+  const propietarios = membresias.filter(m => m.rol === 'propietario');
+  assert.equal(propietarios.length, 1, 'Debe quedar exactamente un propietario');
+  assert.equal(String(propietarios[0].usuarioId), String(socioUsuario._id),
+    'El nuevo propietario debe ser el socio');
+
+  const quinielaActualizada = await srv.Quiniela.findById(id);
+  assert.equal(String(quinielaActualizada.propietarioId), String(socioUsuario._id),
+    'El campo propietarioId de la quiniela también debe actualizarse');
+});
+
 test('M-11: no se anulan los goles de jugadores con "var" en el apellido', () => {
   // Goles legítimos que la versión anterior descartaba por subcadena.
   for (const anotador of ['R. Varela', 'R. Varane', 'L. Álvarez', 'J. Navarro']) {

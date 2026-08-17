@@ -3912,7 +3912,11 @@ module.exports = {
   // Lógica de dominio bajo prueba
   resolverTriviasPendientes,
   resolverTriviasDeTodasLasQuinielas,
+  resolverRespuestaTrivia,
   esGolApiFootball,
   obtenerEstadoPartido,
-  partidoYaInicio
+  obtenerMarcador90Minutos,
+  minutoApiFootball,
+  partidoYaInicio,
+  TIPOS_TRIVIA
 };

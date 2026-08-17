@@ -1410,29 +1410,21 @@ Ver bitácora, entrada 007.
 | 20 | Quitar `/generar_reporte` duplicada y `leagues-test` **(M-08, M-09)** | ✅ Verificado: `/generar_reporte` sigue devolviendo 200 |
 | 21 | Renombrar `CINCO_MINUTOS` **(M-15)** | ✅ `INTERVALO_MINIMO_ENTRE_SYNCS_MS` |
 
-### 🟨 Fase 3 — Red de seguridad de pruebas — MAYORMENTE COMPLETADA el 16 de agosto de 2026
+### ✅ Fase 3 — Red de seguridad de pruebas — COMPLETADA el 16 de agosto de 2026
 
-*Prerrequisito indispensable antes de refactorizar.* Ver bitácora, entrada 008.
+*Prerrequisito indispensable antes de refactorizar.* Ver bitácora, entradas 008 y 009.
 
 | # | Tarea | Estado |
 |---:|---|---|
-| 22 | Montar `mongodb-memory-server` + `supertest` | ✅ Arnés funcionando, 7 s por corrida |
+| 22 | Montar `mongodb-memory-server` + `supertest` | ✅ Arnés funcionando, ~8 s por corrida |
 | 23 | Pruebas del motor de puntuación | ✅ Las cuatro reglas, marcadores nulos, campeón y trivias |
 | 24 | **Pruebas de aislamiento multi-inquilino** | ✅ **C-02 verificado en ejecución**, ver Anexo B |
-| 25 | Pruebas de las invariantes de roles | 🟨 Parcial: último administrador, autoexpulsión y Admin Mode. **Falta transferencia de propiedad** |
-| 26 | Pruebas de normalización de APIFootball | 🟨 Parcial: estados y filtro de goles. **Falta marcador a 90' y equipos invertidos** |
-| 27 | Pruebas de autorresolución de trivias para los 8 tipos | ❌ **Pendiente.** Requiere fixtures grabados del API |
+| 25 | Pruebas de las invariantes de roles | ✅ Último administrador, autoexpulsión, Admin Mode y transferencia de propiedad |
+| 26 | Pruebas de normalización de APIFootball | ✅ Estados, filtro de goles, marcador a 90' y equipos invertidos |
+| 27 | Pruebas de autorresolución de trivias para los 8 tipos | ✅ Los 8, con eventos sintéticos del proveedor |
 
-**Total: 39 pruebas** (17 de arquitectura + 22 de integración), de 6 al empezar el día.
-
-**Lo que falta de esta fase**, por orden de valor:
-
-1. **Autorresolución de trivias, los 8 tipos** (punto 27). Es la mayor superficie
-   sin cubrir. Necesita grabar respuestas reales de APIFootball como fixtures para
-   no depender de la red.
-2. **Marcador a 90 minutos** (punto 26). La lógica que descarta penales y tiempo
-   extra es sutil y resuelve un problema real de eliminatorias; merece pruebas.
-3. **Transferencia de propiedad** (punto 25).
+**Total: 53 pruebas** (17 de arquitectura + 36 de integración), de **6** al empezar
+el día. Sin red y sin tocar la base real.
 
 ### Fase 4 — Rediseño del sincronizador (2–3 sesiones) ← *el bloqueante real*
 
@@ -2535,6 +2527,74 @@ duración               → ~7 s, sin red y sin tocar la base real
    hay 0 trivias y 0 respuestas. Repetir cuando haya varias quinielas activas.
 3. **Fase 4 — el rediseño del sincronizador**, que es el bloqueante real de escala
    (C-01). Ya con red de seguridad debajo.
+
+---
+
+### 📌 Entrada 009 — 16 de agosto de 2026 — Cierre de la Fase 3
+
+**Objetivo:** completar los tres huecos que quedaban de la entrada 008.
+
+**De 39 a 53 pruebas.** Las 14 nuevas:
+
+**Autorresolución de trivias, los 8 tipos (punto 27).** Se cubren con eventos
+sintéticos que reproducen la forma real de la respuesta de APIFootball
+(`goalscorer`, `cards`, `statistics`), así que no hace falta ni red ni clave del
+proveedor. Casos cubiertos:
+
+| Tipo | Qué se comprueba |
+|---|---|
+| `primer_gol` | Gana el gol de **menor minuto**, aunque venga después en el arreglo; sin goles responde "Nadie anotará" |
+| `primer_gol` invertido | **Equipos invertidos por el API**: si el proveedor pone de local al que se guardó como visitante, el gol se sigue atribuyendo al equipo correcto |
+| `ambos_anotan` | Exige gol de los dos; con goles de uno solo, o sin goles, responde "No" |
+| `gol_primer_tiempo` / `gol_segundo_tiempo` | El corte está en el 45, y un gol en el **45+2** cuenta como primer tiempo |
+| `mas_amarillas` | Conteo por `cards`, empate y ausencia de tarjetas |
+| `mas_amarillas` respaldo | Si `cards` viene vacío recurre a `statistics`, que evita resolver "no hubo amarillas" cuando sí las hubo |
+| `mas_rojas` | Ausencia de rojas y victoria por conteo |
+| `hubo_tiempo_extra` / `hubo_penales` | Detección por `score_info_time` |
+| Los 8 sin evento | Devuelven cadena vacía: **no se resuelve a ciegas** cuando el API no responde |
+
+**Marcador a 90 minutos (punto 26).** Tres pruebas sobre la lógica en cascada, que
+resuelve un problema real de eliminatorias: un partido decidido en la prórroga o en
+penales no debe alterar el pronóstico del tiempo reglamentario.
+
+- En `LIVE` y `MT` manda el marcador en vivo.
+- Terminado, mandan los campos de tiempo reglamentario, no el marcador que incluye
+  la tanda.
+- Sin esos campos, se reconstruye desde `goalscorer` **descartando los goles de
+  prórroga y de tanda**: un 1-1 al 90 con gol en el 105 y penales sigue siendo 1-1.
+
+**Transferencia de propiedad (punto 25).** Flujo completo: el socio solicita
+ingreso, el propietario lo aprueba, se rechaza la transferencia mientras el socio es
+`user`, se le asciende a `admin` y entonces sí procede. Se comprueba que queda
+**exactamente un propietario**, que los roles se intercambian y que
+`Quiniela.propietarioId` también se actualiza.
+
+**Un detalle que la prueba destapó:** la ruta de transferencia identifica al
+destinatario por **id de usuario** (`req.body.usuarioId`), no por id de membresía,
+que es lo que parecía natural viniendo del resto de rutas de miembros —todas usan
+`/miembros/:id` con el id de la membresía—. La primera versión de la prueba pasaba
+la comprobación de "rechaza a un `user`" **por el motivo equivocado**: fallaba por
+nombre de campo incorrecto, no por el rol. Corregido para que la prueba compruebe lo
+que dice comprobar.
+
+**Verificación:**
+
+```
+npm run check     → válido
+npm test          → 53/53  (17 arquitectura + 36 integración)
+duración          → ~8 s, sin red y sin tocar la base real
+```
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Exporta `resolverRespuestaTrivia`, `obtenerMarcador90Minutos`, `minutoApiFootball` y `TIPOS_TRIVIA` |
+| `test/integracion.test.js` | 14 pruebas nuevas: 22 → 36 |
+| `avance_proyecto.md` | §16 y esta entrada |
+
+**Pendiente / siguiente paso:** **Fase 4 — rediseño del sincronizador (C-01)**, el
+bloqueante real de escala, ya con red de seguridad debajo.
 
 ---
 
