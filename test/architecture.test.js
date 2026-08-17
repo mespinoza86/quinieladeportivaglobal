@@ -9,6 +9,21 @@ const root = path.join(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const migrator = fs.readFileSync(path.join(root, 'scripts', 'migrate-legacy.js'), 'utf8');
 
+/*
+ * Versión sin comentarios, para las comprobaciones de tipo "esto ya no está en
+ * el código". Los comentarios explican a menudo qué había antes y por qué se
+ * cambió —"antes era info.includes('var')"—, y esas menciones hacían fallar a
+ * las pruebas contra su propia documentación.
+ *
+ * Solo se eliminan bloques /* *\/ y líneas que son íntegramente comentario, de
+ * modo que nunca se descarta código real y las comprobaciones no se ablandan.
+ */
+const serverSinComentarios = server
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split(/\r?\n/)
+  .filter(linea => !/^\s*(\/\/|\*)/.test(linea))
+  .join('\n');
+
 test('el servidor solo acepta la URI multi-quiniela', () => {
   assert.match(server, /process\.env\.MONGO_URI_MULTIQUINIELA/);
   assert.doesNotMatch(server, /mongoose\.connect\(process\.env\.MONGO_URI\)/);
@@ -133,6 +148,56 @@ test('existen las sondas de salud y no dependen de la sesión', () => {
   );
   // El servidor escucha sin esperar a la base.
   assert.doesNotMatch(server, /mongoConnectionPromise\s*\.then\(\(\) => \{\s*app\.listen/);
+});
+
+test('la resolución de trivias no cruza entre quinielas', () => {
+  /*
+   * El barrido periódico corría sin contexto de inquilino, así que la consulta
+   * de ResultadoOficial por nombre de jornada devolvía el documento de
+   * cualquier quiniela. Como los nombres se repiten ("Jornada1"), la trivia de
+   * una quiniela se resolvía con el partido de otra.
+   */
+  assert.match(server, /async function resolverTriviasDeTodasLasQuinielas/);
+  assert.match(server, /tenantContext\.run\(\s*\{ quinielaId: quiniela\._id \}/);
+  // El barrido solo recorre quinielas activas.
+  assert.match(server, /Quiniela\.find\(\{ estado: 'activa' \}\)/);
+
+  // La función por quiniela debe rechazar ser invocada sin contexto.
+  assert.match(server, /resolverTriviasPendientes\(\) requiere contexto de quiniela/);
+
+  // El setInterval debe llamar al barrido global, nunca a la función por quiniela.
+  assert.match(
+    serverSinComentarios,
+    /setInterval\(\(\) => \{\s*resolverTriviasDeTodasLasQuinielas\(\)/
+  );
+});
+
+test('no hay funciones ni rutas duplicadas que se pisen entre sí', () => {
+  for (const [nombre, esperado] of [
+    ['function partidoYaInicio', 1],
+    ['function parseFechaPartidoCostaRica', 1],
+    ["app.get('/generar_reporte'", 0],
+    ["app.get('/api/football/leagues-test'", 0]
+  ]) {
+    const veces = serverSinComentarios.split(nombre).length - 1;
+    assert.equal(veces, esperado, `Se esperaban ${esperado} apariciones de "${nombre}", hay ${veces}`);
+  }
+  // La versión ingenua, que ignoraba la zona horaria de Costa Rica, ya no existe.
+  assert.doesNotMatch(serverSinComentarios, /function parseFechaPartido\(/);
+});
+
+test('los goles anulados por VAR se detectan por palabra completa', () => {
+  /*
+   * info.includes('var') anulaba los goles de Varela, Varane, Álvarez o
+   * Navarro: gol legítimo, jugador sin sus puntos, y ningún error visible.
+   */
+  assert.doesNotMatch(serverSinComentarios, /info\.includes\('var'\)/);
+  assert.match(serverSinComentarios, /\/\\bvar\\b\/\.test\(info\)/);
+});
+
+test('la constante del auto-sync declara su valor real', () => {
+  assert.doesNotMatch(serverSinComentarios, /CINCO_MINUTOS/);
+  assert.match(serverSinComentarios, /const INTERVALO_MINIMO_ENTRE_SYNCS_MS = 30 \* 1000/);
 });
 
 test('la migración es simulación por defecto y separa origen de destino', () => {

@@ -338,9 +338,18 @@ app.use(async (req, res, next) => {
 let ultimaSyncGlobal = 0;
 let syncEnProceso = false;
 
+/*
+ * La constante se llamaba CINCO_MINUTOS y valía 30 segundos. Ese desfase entre
+ * el nombre y el valor es justo lo que hacía difícil ver el coste real del
+ * auto-sync: son 10 disparos por cada cinco minutos, no uno.
+ *
+ * El rediseño de este mecanismo es la Fase 4 (hallazgo C-01); aquí solo se
+ * corrige el nombre para que el código diga la verdad.
+ */
+const INTERVALO_MINIMO_ENTRE_SYNCS_MS = 30 * 1000;
+
 app.use((req, res, next) => {
   const ahora = Date.now();
-  const CINCO_MINUTOS = 1 * 30 * 1000;
 
   const esArchivoEstatico =
     req.path.startsWith('/js/') ||
@@ -355,7 +364,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  if (!syncEnProceso && ahora - ultimaSyncGlobal > CINCO_MINUTOS) {
+  if (!syncEnProceso && ahora - ultimaSyncGlobal > INTERVALO_MINIMO_ENTRE_SYNCS_MS) {
     syncEnProceso = true;
     ultimaSyncGlobal = ahora;
 
@@ -1420,21 +1429,8 @@ app.get('/api/football/leagues', async (req, res) => {
   }
 });
 
-app.get('/api/football/leagues-test', async (req, res) => {
-  try {
-    const response = await apiFootballCom.get('', {
-      params: {
-        action: 'get_leagues',
-        APIkey: process.env.APIFOOTBALL_COM_KEY
-      }
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json(error.response?.data || { error: error.message });
-  }
-});
-
+// Aquí estaba /api/football/leagues-test, copia literal de /api/football/leagues.
+// No la usaba ningún archivo del frontend.
 
 function obtenerNumeroSeguro(valor) {
   if (valor === null || valor === undefined || valor === '') return '';
@@ -1909,30 +1905,14 @@ app.get('/api/admin/respuestas-trivias-jornada/:jornadaNombre', requireAdmin, as
   }
 });
 
-/* Code added to modify the jorney per match*/
-
-function parseFechaPartido(apiDate) {
-  if (!apiDate) return null;
-
-  const raw = String(apiDate).trim();
-
-  let d = new Date(raw);
-  if (!Number.isNaN(d.getTime())) return d;
-
-  d = new Date(raw.replace(' ', 'T'));
-  if (!Number.isNaN(d.getTime())) return d;
-
-  return null;
-}
-
-function partidoYaInicio(partido, oficial = null) {
-  if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) return true;
-
-  const fecha = parseFechaPartido(partido.apiDate);
-  if (!fecha) return false;
-
-  return fecha <= new Date();
-}
+/*
+ * Aquí vivían una segunda `parseFechaPartido` y una segunda `partidoYaInicio`,
+ * declaradas antes que las definitivas. Como las declaraciones de función se
+ * elevan, la segunda definición ganaba siempre y estas nunca llegaban a
+ * ejecutarse: eran código muerto que además engañaba al leer, porque
+ * interpretaban `apiDate` en la zona horaria del servidor en lugar de la de
+ * Costa Rica. Las versiones vigentes están más abajo.
+ */
 
 function buscarOficialCorrespondiente(resultadosOficiales, partido) {
   return resultadosOficiales.find(r =>
@@ -2813,7 +2793,13 @@ function esGolApiFootball(gol) {
 
   if (info.includes('cancel')) return false;
   if (info.includes('disallow')) return false;
-  if (info.includes('var')) return false;
+  /*
+   * Palabra completa, no subcadena. Antes era info.includes('var'), que anulaba
+   * el gol de cualquier jugador apellidado Varela, Varane, Alvarez o Navarro:
+   * el gol era legítimo y el jugador se quedaba sin sus puntos de trivia, sin
+   * ningún error visible.
+   */
+  if (/\bvar\b/.test(info)) return false;
 
   return Boolean(gol?.home_scorer || gol?.away_scorer);
 }
@@ -3005,7 +2991,27 @@ if (trivia.tipo === 'hubo_penales') {
 }
 
 
+/**
+ * Resuelve las trivias vencidas de LA QUINIELA ACTIVA.
+ *
+ * Exige contexto de inquilino, y el requisito no es decorativo: la consulta de
+ * ResultadoOficial de aquí abajo busca por nombre de jornada, y los nombres se
+ * repiten entre quinielas —"Jornada1" será la norma—. Sin filtro por quiniela,
+ * findOne devuelve el documento de la primera quiniela que MongoDB encuentre, y
+ * la trivia de una quiniela se resuelve, o se queda sin resolver, según el
+ * estado del partido de OTRA. Es un error de corrección silencioso: nadie ve un
+ * fallo, simplemente los puntos salen mal.
+ *
+ * Para el barrido periódico usa resolverTriviasDeTodasLasQuinielas().
+ */
 async function resolverTriviasPendientes(jornadaNombre = null) {
+  if (!tenantContext.getStore()?.quinielaId) {
+    throw new Error(
+      'resolverTriviasPendientes() requiere contexto de quiniela. ' +
+      'Para el barrido global usa resolverTriviasDeTodasLasQuinielas().'
+    );
+  }
+
   const filtro = {
     activa: true,
     resuelta: false,
@@ -3070,11 +3076,38 @@ app.post('/api/admin/trivias/resolver', requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * Barrido periódico. Itera las quinielas ACTIVAS y resuelve las trivias de cada
+ * una dentro de su propio contexto de inquilino, de modo que ninguna consulta
+ * cruce de una quiniela a otra.
+ *
+ * Las archivadas y eliminadas quedan fuera a propósito: nadie va a puntuar ahí,
+ * y recorrerlas solo gasta llamadas al API externo.
+ *
+ * El fallo de una quiniela no interrumpe el barrido de las demás.
+ */
+async function resolverTriviasDeTodasLasQuinielas() {
+  const quinielas = await Quiniela.find({ estado: 'activa' }).select('_id nombre').lean();
+
+  for (const quiniela of quinielas) {
+    try {
+      await tenantContext.run(
+        { quinielaId: quiniela._id },
+        () => resolverTriviasPendientes()
+      );
+    } catch (error) {
+      console.error(`Error resolviendo trivias de "${quiniela.nombre}":`, error.message);
+    }
+  }
+}
+
+const INTERVALO_RESOLUCION_TRIVIAS_MS = 5 * 60 * 1000;
+
 setInterval(() => {
-  resolverTriviasPendientes().catch(error => {
+  resolverTriviasDeTodasLasQuinielas().catch(error => {
     console.error('Error automático resolviendo trivias:', error.message);
   });
-}, 5 * 60 * 1000);
+}, INTERVALO_RESOLUCION_TRIVIAS_MS);
 
 
 
@@ -3784,9 +3817,9 @@ app.get('/api/admin/debug-partido-api/:matchId', requireDebug, requireAdmin, asy
 //////////////////////
 
 
-app.get('/generar_reporte', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'generar_reporte.html'));
-});
+// Aquí estaba un segundo registro de GET /generar_reporte. La ruta ya se
+// registra en el bloque de rutas HTML de más arriba, que gana por llegar antes,
+// así que este nunca se ejecutaba.
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);

@@ -557,8 +557,23 @@ partido de la quiniela B. Es un error de corrección real y silencioso.
 `/api/sync-resultados-oficiales/:jornada` sí hay contexto, así que ahí funciona bien.
 El comportamiento por tanto es **inconsistente según la vía de entrada**.
 
-**Corrección propuesta:** iterar quinielas y envolver cada una en su propio
-`tenantContext.run({ quinielaId })`.
+**✅ CORREGIDO en la Fase 2** (16 de agosto de 2026, commit de la rama
+`fase-2-correccion`). La solución aplicada:
+
+- `resolverTriviasPendientes()` pasa a ser **estrictamente por quiniela** y
+  **lanza un error si se la invoca sin contexto**. La invariante deja de depender
+  de que quien la llame se acuerde.
+- Se añade `resolverTriviasDeTodasLasQuinielas()`, que itera las quinielas
+  **activas** y envuelve cada una en su propio `tenantContext.run`.
+- El `setInterval` llama al barrido global, nunca a la función por quiniela.
+- Las quinielas archivadas y eliminadas quedan fuera del barrido: nadie va a
+  puntuar ahí y recorrerlas solo gastaba llamadas al API externo.
+- El fallo de una quiniela ya no interrumpe el barrido de las demás.
+
+> ⚠️ **Alcance de la verificación:** la corrección está fijada por pruebas
+> estructurales y el servidor arranca limpio, pero **no está probada en
+> ejecución con dos quinielas reales que compartan nombre de jornada**. Esa
+> prueba es precisamente el punto 24 de la Fase 3.
 
 ---
 
@@ -1230,6 +1245,12 @@ en la interfaz.**
 | **M-23** | Sin health checks | Fase 1 — `/healthz` y `/readyz` |
 | **M-25** | Falta índice en `Trivia` | Fase 1 |
 | **M-32** | El manejador de errores convertía los 4xx en 500 | Fase 1 — *hallazgo nuevo, ver bitácora 006* |
+| **C-02** | Fuga de aislamiento en la resolución de trivias | Fase 2 — ⚠️ falta prueba en ejecución (Fase 3) |
+| **M-07** | `partidoYaInicio` y `parseFechaPartido` duplicadas | Fase 2 |
+| **M-08** | `/generar_reporte` registrada dos veces | Fase 2 |
+| **M-09** | `/api/football/leagues-test` duplicada | Fase 2 |
+| **M-11** | `esGolApiFootball` anulaba goles de "Varela", "Varane"… | Fase 2 |
+| **M-15** | Constante `CINCO_MINUTOS` con valor de 30 segundos | Fase 2 |
 
 ### 🔴 Críticos — bloquean el crecimiento
 
@@ -1376,17 +1397,17 @@ Ver bitácora, entrada 006.
 decisión sobre el plan de MongoDB Atlas. Un clúster M0 gratuito se auto-pausa, y eso
 es incompatible con el objetivo de producción.
 
-### Fase 2 — Corregir la fuga de inquilino y los bugs de dominio (1 sesión)
+### ✅ Fase 2 — Fuga de inquilino y bugs de dominio — COMPLETADA el 16 de agosto de 2026
 
-17. **Reescribir `resolverTriviasPendientes()`** para iterar quinielas y envolver
-    cada una en su propio `tenantContext.run`. **(C-02)** ← *lo más urgente
-    funcionalmente*
-18. Eliminar las definiciones duplicadas de `partidoYaInicio` y `parseFechaPartido`.
-    **(M-07)**
-19. Arreglar `esGolApiFootball`: sustituir `info.includes('var')` por una comprobación
-    de palabra completa. **(M-11)**
-20. Quitar la ruta `/generar_reporte` duplicada y `leagues-test`. **(M-08, M-09)**
-21. Renombrar `CINCO_MINUTOS` a lo que realmente es. **(M-15)**
+Ver bitácora, entrada 007.
+
+| # | Tarea | Estado |
+|---:|---|---|
+| 17 | Reescribir `resolverTriviasPendientes()` **(C-02)** | ✅ Función por quiniela que **exige contexto**, más barrido global que itera quinielas activas. ⚠️ Falta prueba en ejecución (Fase 3) |
+| 18 | Eliminar `partidoYaInicio` y `parseFechaPartido` duplicadas **(M-07)** | ✅ Eran código muerto: las declaraciones de función se elevan y ganaba siempre la segunda |
+| 19 | Arreglar `esGolApiFootball` **(M-11)** | ✅ `/\bvar\b/` en lugar de `includes('var')` |
+| 20 | Quitar `/generar_reporte` duplicada y `leagues-test` **(M-08, M-09)** | ✅ Verificado: `/generar_reporte` sigue devolviendo 200 |
+| 21 | Renombrar `CINCO_MINUTOS` **(M-15)** | ✅ `INTERVALO_MINIMO_ENTRE_SYNCS_MS` |
 
 ### Fase 3 — Red de seguridad de pruebas (2 sesiones)
 
@@ -2114,6 +2135,98 @@ detuvo la instancia del usuario. Sin consecuencias: se recupera con `npm start`.
 3. Configurar `/readyz` como health check del servicio en Render.
 4. **Fase 2**: la fuga de aislamiento entre quinielas en las trivias (C-02) es el
    único fallo de corrección conocido y está corrompiendo datos en silencio.
+
+---
+
+### 📌 Entrada 007 — 16 de agosto de 2026 — Fase 2: fuga de inquilino y bugs de dominio
+
+**Objetivo:** cerrar el único fallo de corrección conocido (C-02) y los bugs de
+dominio que lo acompañaban.
+
+**Rama:** `fase-2-correccion`, creada desde `fase-1-seguridad`.
+
+**C-02 — la fuga de aislamiento entre quinielas.**
+
+El barrido periódico de trivias corría desde un `setInterval`, **fuera de todo
+`tenantContext.run`**. Sin contexto, el plugin de inquilino no aplica filtro, así que
+esta consulta buscaba en **todas** las quinielas:
+
+```js
+const oficial = await ResultadoOficial.findOne({ jornada: trivia.jornadaNombre });
+```
+
+Como los nombres de jornada se repiten entre quinielas —`"Jornada1"` va a ser la
+norma—, `findOne` devolvía el documento de la primera que MongoDB encontrara. La
+trivia de una quiniela se resolvía, o se quedaba sin resolver, **según el estado del
+partido de otra**. Nadie veía un error: simplemente los puntos salían mal.
+
+Lo agravaba que el comportamiento era **inconsistente según la vía de entrada**: por
+la ruta `/api/sync-resultados-oficiales/:jornada` sí había contexto y funcionaba
+bien; por el `setInterval` no.
+
+**Corrección aplicada:**
+
+1. `resolverTriviasPendientes()` es ahora estrictamente **por quiniela** y **lanza un
+   error si se la invoca sin contexto**. La invariante deja de depender de que quien
+   la llame se acuerde de envolverla: si alguien lo olvida, falla de inmediato y con
+   un mensaje que dice qué usar en su lugar.
+2. Se añade `resolverTriviasDeTodasLasQuinielas()`, que itera las quinielas **activas**
+   y envuelve cada una en su propio `tenantContext.run`.
+3. El `setInterval` llama al barrido global.
+4. Las **archivadas y eliminadas quedan fuera**: nadie va a puntuar ahí, y recorrerlas
+   solo gastaba llamadas al API externo.
+5. El fallo de una quiniela ya no interrumpe el barrido de las demás.
+
+**Los otros cuatro arreglos:**
+
+| Hallazgo | Qué pasaba |
+|---|---|
+| **M-07** | `partidoYaInicio` y `parseFechaPartido` estaban declaradas **dos veces**. Como las declaraciones de función se elevan, ganaba siempre la segunda, así que el primer par era código muerto — y además engañoso al leer, porque interpretaba `apiDate` en la zona horaria del servidor en vez de la de Costa Rica. Eliminado el par muerto |
+| **M-11** | `esGolApiFootball` descartaba cualquier gol cuyo `info` contuviera `"var"` como subcadena. Un gol de **Varela, Varane, Álvarez o Navarro** se anulaba: gol legítimo, jugador sin sus puntos de trivia, ningún error visible. Ahora es `/\bvar\b/`, palabra completa |
+| **M-08, M-09** | `/generar_reporte` registrada dos veces y `/api/football/leagues-test` copia literal de `/api/football/leagues`. Ninguna usada por el frontend. Eliminadas las dos muertas |
+| **M-15** | La constante `CINCO_MINUTOS` valía **30 segundos**. Ese desfase entre nombre y valor es justo lo que ocultaba el coste real del auto-sync: son 10 disparos cada cinco minutos, no uno. Renombrada a `INTERVALO_MINIMO_ENTRE_SYNCS_MS` |
+
+**Pruebas nuevas:** 13 → **17**. Cuatro pruebas que fijan cada invariante, incluida
+una que comprueba que el `setInterval` llame al barrido global y nunca a la función
+por quiniela.
+
+**Mejora en la propia suite de pruebas.** Tres pruebas fallaron contra su propia
+documentación: las comprobaciones del tipo "esto ya no está en el código" encontraban
+el texto viejo **en los comentarios que explican qué se cambió y por qué**. Ya había
+pasado en la Fase 1 con `process.exit(1)`, donde se resolvió reformulando el
+comentario; al repetirse, se atacó la causa. Ahora existe `serverSinComentarios`, que
+elimina bloques `/* */` y líneas íntegramente de comentario, y las comprobaciones
+negativas se hacen contra esa versión. Solo se descartan líneas que son comentario
+completo, así que nunca se oculta código real ni se ablanda la comprobación.
+
+**Verificación:**
+
+```
+npm run check                 → válido
+npm test                      → 17/17
+arranque del servidor         → limpio, /readyz 200 mongo:conectado
+/generar_reporte              → 200 (sigue sirviendo desde el bloque de rutas HTML)
+/api/football/leagues-test    → ya no responde como ruta propia
+```
+
+⚠️ **Límite de la verificación de C-02:** la corrección está fijada por pruebas
+estructurales y el servidor arranca limpio, pero **no está probada en ejecución con
+dos quinielas reales que compartan nombre de jornada**. Hacerlo exigiría crear datos
+de prueba en la base de producción. Esa prueba es el punto 24 de la Fase 3, y hasta
+entonces C-02 debe considerarse *corregido estructuralmente, no verificado en
+comportamiento*.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Barrido por quiniela, guardia de contexto, `\bvar\b`, par de funciones muertas eliminado, dos rutas duplicadas eliminadas, constante renombrada |
+| `test/architecture.test.js` | 4 pruebas nuevas + `serverSinComentarios` |
+| `avance_proyecto.md` | §5.3, §15, §16 y esta entrada |
+
+**Pendiente / siguiente paso:** **Fase 3 — red de seguridad de pruebas**, que además
+es la que permite verificar de verdad C-02. Es prerrequisito de la Fase 4, donde está
+el bloqueante real de escala (C-01, el auto-sync con APIFootball).
 
 ---
 
