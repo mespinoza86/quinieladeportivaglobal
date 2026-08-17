@@ -146,34 +146,36 @@ inferior, paneles de aplicación).
 
 ### 2.7 Dependencias
 
-Estado **después de la Fase 0** (16 de agosto de 2026):
+Estado **después de la Fase 1** (16 de agosto de 2026):
 
 ```
-axios ^1.11.0            → cliente HTTP hacia APIFootball  ⚠️ 29 advisories, ver abajo
+axios 1.19.0             → cliente HTTP hacia APIFootball
 bcrypt ^6.0.0            → hash de contraseñas (SALT_ROUNDS = 10)
 connect-mongo ^5.1.0     → almacén de sesiones en MongoDB
-cors ^2.8.5              → CORS con lista blanca
+cors ^2.8.5              → CORS con lista blanca configurable
 dotenv ^17.0.1           → variables de entorno
 express ^4.21.2          → framework HTTP
 express-async-errors     → captura de errores en handlers async
+express-rate-limit ^8.6  → limitación de intentos (añadida en Fase 1)
 express-session ^1.18.0  → sesiones
+helmet ^8.3.0            → cabeceras de seguridad (añadida en Fase 1)
 mongoose ^8.16.1         → ODM de MongoDB
 ```
+
+✅ **`npm audit --omit=dev` → 0 vulnerabilidades** (16 de agosto de 2026, tras la
+Fase 1). `axios` subió de 1.11.0 a 1.19.0 dentro del mismo rango semver, sin cambios
+de ruptura.
 
 ✅ **Eliminadas en la Fase 0** (63 paquetes menos): `canvas` (no se usaba en ningún
 archivo, arrastraba compilación nativa), `fs` (paquete basura que suplanta al módulo
 nativo homónimo, que se sigue usando sin dependencia) y `body-parser` (redundante
 desde Express 4.16).
 
-⚠️ **`npm audit --omit=dev` → 11 vulnerabilidades** (3 bajas, 3 moderadas, 5 altas),
-medidas el 16 de agosto de 2026. En julio eran 0. Casi todas provienen de
-`axios@1.11.0`, que acumuló ~29 advisories (SSRF, prototype pollution, DoS, fuga de
-cabeceras `Proxy-Authorization` en redirecciones). El resto son transitivas de
-Express (`body-parser`, `qs`, `path-to-regexp`, `cookie`, `follow-redirects`).
-Todas se resuelven con `npm audit fix` sin cambios de ruptura. **No se aplicó en la
-Fase 0** porque actualizar `axios` toca directamente el cliente de APIFootball y la
-Fase 0 tiene la regla de no alterar comportamiento. Queda como primer punto de la
-Fase 1.
+> **Histórico:** el 16 de agosto, antes de la Fase 1, `npm audit` reportaba 11
+> vulnerabilidades (3 bajas, 3 moderadas, 5 altas); en julio eran 0. Casi todas
+> provenían de `axios@1.11.0`, que acumuló ~29 advisories (SSRF, prototype
+> pollution, DoS, fuga de `Proxy-Authorization` en redirecciones). Se resolvieron
+> con `npm audit fix` en la Fase 1.
 
 ### 2.8 Scripts de npm
 
@@ -1206,6 +1208,29 @@ en la interfaz.**
 
 ## 15. Hallazgos clasificados por severidad
 
+### ✅ Hallazgos ya resueltos
+
+| ID | Hallazgo | Resuelto en |
+|---|---|---|
+| **S-01** | `NODE_EN` en lugar de `NODE_ENV` | Fase 0 |
+| **S-05** | Lista blanca de CORS apuntando al dominio anterior | Fase 0 |
+| **S-06** | Límite de 10 KB del cuerpo que no se aplicaba | Fase 0 — verificado: ahora devuelve 413 |
+| **M-17** | Dependencias sin usar (`canvas`, `fs`, `body-parser`) | Fase 0 |
+| **M-18** | Cinco `.json` heredados en la raíz | Fase 0 |
+| **M-22** | `.env.example` eliminado | Fase 0 |
+| **B-09** | Sin `engines` en `package.json` | Fase 0 |
+| **S-02** | Sin limitación de intentos | Fase 1 — verificado: 429 al superar la cuota |
+| **S-03** | Sin `helmet` ni cabeceras de seguridad | Fase 1 |
+| **S-07** | El registro no regeneraba la sesión | Fase 1 |
+| **S-10** | `RespuestaTrivia` sin índice único → puntos dobles | Fase 1 |
+| **S-11** | Guardia de páginas admin sin verificar rol | Fase 1 — verificado: redirige |
+| **S-12** | `process.exit(1)` al primer fallo de conexión | Fase 1 |
+| **S-13** | Error de conexión sin distinguir causas | Fase 1 |
+| **M-20** | Endpoints `/debug/*` activos en producción | Fase 1 — verificado: 404 con la bandera apagada |
+| **M-23** | Sin health checks | Fase 1 — `/healthz` y `/readyz` |
+| **M-25** | Falta índice en `Trivia` | Fase 1 |
+| **M-32** | El manejador de errores convertía los 4xx en 500 | Fase 1 — *hallazgo nuevo, ver bitácora 006* |
+
 ### 🔴 Críticos — bloquean el crecimiento
 
 | ID | Hallazgo | Ubicación | Efecto |
@@ -1327,31 +1352,29 @@ base real y hacer la prueba de humo. No se pudo verificar de forma automática p
 arrancar el servidor dispara el auto-sync, que **escribe** resultados oficiales y
 consume cuota de APIFootball.
 
-### Fase 1 — Seguridad de base y resiliencia (1–2 sesiones)
+### ✅ Fase 1 — Seguridad de base y resiliencia — COMPLETADA el 16 de agosto de 2026
 
-8-bis. **`npm audit fix`** — 11 vulnerabilidades pendientes, la mayoría de
-    `axios@1.11.0`. Se dejó fuera de la Fase 0 por su regla de no alterar
-    comportamiento; aquí sí, con la prueba de importación de partidos como
-    verificación. Ver §2.7.
+Ver bitácora, entrada 006.
 
-8-ter. **Resiliencia de la conexión a MongoDB** *(nuevo tras el incidente del
-    16-ago, ver bitácora 004)*:
-    - Reintentos con retroceso exponencial en lugar de `process.exit(1)` al primer
-      fallo. **(S-12)**
-    - Mensajes de error que distingan DNS inexistente, credenciales inválidas, IP no
-      autorizada y red caída. **(S-13)**
-    - Decidir el plan del clúster: un M0 gratuito que se auto-pausa no sostiene el
-      objetivo de producción. **(C-06)**
+| # | Tarea | Estado |
+|---:|---|---|
+| 8-bis | `npm audit fix` **(11 vulnerabilidades)** | ✅ 0 vulnerabilidades; `axios` 1.11.0 → 1.19.0 |
+| 8-ter | Reintentos con retroceso exponencial **(S-12)** | ✅ Hasta 60 s entre intentos, sin techo de reintentos |
+| 8-ter | Diagnóstico diferenciado del error de conexión **(S-13)** | ✅ Distingue DNS, credenciales, lista de IPs, red y rechazo |
+| 8-ter | Decidir el plan del clúster **(C-06)** | ⏳ **Decisión de negocio, sigue pendiente** |
+| 9 | `helmet` con CSP ajustada **(S-03)** | ✅ Verificado en respuesta real |
+| 10 | `express-rate-limit` **(S-02)** | ✅ Login 10/15 min (solo fallos), registro 5/h, Admin Mode 5/15 min |
+| 11 | Regenerar la sesión en el registro **(S-07)** | ✅ Hecho |
+| 12 | Índice único en `RespuestaTrivia` **(S-10)** | ✅ Hecho |
+| 13 | Índice en `Trivia` **(M-25)** | ✅ Hecho |
+| 14 | Verificar rol en la guardia de `paginasAdmin` **(S-11)** | ✅ Verificado: redirige según sesión, quiniela y rol |
+| 15 | `/debug/*` tras bandera de entorno **(M-20)** | ✅ `DEBUG_ENDPOINTS`, responde 404 |
+| 16 | `/healthz` y `/readyz` **(M-23)** | ✅ Declarados antes de la sesión |
+| + | Manejador de errores que respeta los 4xx **(M-32)** | ✅ *Hallazgo nuevo durante las pruebas* |
 
-9. Añadir `helmet` con CSP ajustada. **(S-03)**
-10. Añadir `express-rate-limit`: login, registro y `admin-mode/activar` con límites
-    estrictos por IP y por cuenta. **(S-02)**
-11. Regenerar la sesión también en el registro. **(S-07)**
-12. Índice único `{quinielaId, jugador, triviaId}` en `RespuestaTrivia`. **(S-10)**
-13. Índice `{quinielaId, jornadaNombre, partidoIndex, tipo}` en `Trivia`. **(M-25)**
-14. Verificar el rol —no solo la sesión— en la guardia de `paginasAdmin`. **(S-11)**
-15. Mover los endpoints `/debug/*` detrás de una bandera de entorno. **(M-20)**
-16. Endpoints `/healthz` y `/readyz`. **(M-23)**
+**Único punto pendiente de la Fase 1: C-06**, que no es trabajo de código sino una
+decisión sobre el plan de MongoDB Atlas. Un clúster M0 gratuito se auto-pausa, y eso
+es incompatible con el objetivo de producción.
 
 ### Fase 2 — Corregir la fuga de inquilino y los bugs de dominio (1 sesión)
 
@@ -1983,6 +2006,114 @@ jornadas 1 · quinielas 1 · resultadooficials 1 · resto 0
 | `avance_proyecto.md` | M-30, M-31 y esta entrada |
 
 **Pendiente / siguiente paso:** prueba de humo de la Fase 0, ya desbloqueada.
+
+---
+
+### 📌 Entrada 006 — 16 de agosto de 2026 — Fase 1: seguridad de base y resiliencia
+
+**Objetivo:** cerrar los hallazgos de seguridad de severidad alta y dar a la
+aplicación capacidad de sobrevivir a una base momentáneamente indispuesta.
+
+**Rama:** `fase-1-seguridad`, creada desde `fase-0-higiene`.
+
+**Precondición:** la prueba de humo de la Fase 0 la confirmó el usuario.
+
+**Qué se hizo:**
+
+1. **`npm audit fix`** → de 11 vulnerabilidades a **0**. `axios` 1.11.0 → 1.19.0,
+   dentro del mismo rango semver, sin cambios de ruptura.
+2. **`helmet`** con CSP a medida. Ver más abajo la trampa que casi rompe la interfaz.
+3. **`express-rate-limit`** en las cuatro rutas de autenticación, con cuotas
+   independientes por ruta:
+   - Login: 10 por 15 min, **contando solo los intentos fallidos**. Un usuario
+     legítimo nunca consume cuota.
+   - Registro: 5 por hora, contando todos, contra creación masiva de cuentas.
+   - Admin Mode: 5 por 15 min. Es el punto más rentable para un atacante, porque
+     quien llega ahí ya tiene sesión y rol; solo le falta la contraseña.
+4. **Regeneración de sesión en el registro**, igual que ya hacía el login.
+5. **Índice único** `{quinielaId, jugador, triviaId}` en `RespuestaTrivia`. Sin él,
+   dos envíos simultáneos duplicaban la respuesta y el jugador cobraba **el doble de
+   puntos**. Se pudo crear sin migración porque la colección está vacía.
+6. **Índice** `{quinielaId, jornadaNombre, partidoIndex, tipo}` en `Trivia`.
+7. **Guardia de páginas administrativas con verificación de rol.** Antes solo
+   comprobaba que hubiera sesión, así que cualquier usuario descargaba el HTML
+   administrativo. Corre antes del middleware de inquilino, así que consulta la
+   membresía a mano; el coste es una consulta indexada en 15 rutas.
+8. **`/debug/*` tras la bandera `DEBUG_ENDPOINTS`.** Responden **404**, no 403: así
+   no revelan siquiera que la ruta existe.
+9. **Conexión a MongoDB con reintentos** y retroceso exponencial hasta 60 s, más
+   `diagnosticarErrorMongo()`, que traduce el error crudo a una de cinco causas
+   accionables. El servidor **escucha de inmediato** sin esperar a la base.
+10. **`/healthz` y `/readyz`**, declarados deliberadamente **antes** del middleware
+    de sesión: con la base caída, el almacén de sesiones bloquearía la petición, y
+    una sonda que se cuelga no diagnostica nada.
+
+**La trampa de helmet que casi rompe la aplicación:**
+
+> `helmet` **fusiona** las directivas que le pasas con sus valores por defecto, y
+> entre esos defaults está **`script-src-attr 'none'`**, que bloquea los manejadores
+> en atributo. El frontend tiene **63 `onclick`**, así que la interfaz habría
+> cargado con normalidad y los botones simplemente no habrían respondido: un fallo
+> silencioso, sin error visible en pantalla. `'unsafe-inline'` en `script-src` **no**
+> cubre este caso; son directivas independientes.
+>
+> Se corrigió con `scriptSrcAttr: ["'unsafe-inline'"]` y quedó fijado por una prueba
+> con el porqué explicado, para que nadie lo revierta creyendo que endurece la
+> política. También se retiró `upgrade-insecure-requests` en desarrollo, que helmet
+> añadía por defecto.
+
+**Hallazgo nuevo (M-32): el manejador de errores convertía los 4xx en 500.** Apareció
+al enviar por error un JSON malformado durante las pruebas: la respuesta fue `500`
+en lugar de `400`. El manejador global ignoraba `error.status`, así que cualquier
+error de cliente —JSON inválido, cuerpo demasiado grande— se reportaba como fallo del
+servidor, ensuciando los registros y despistando el diagnóstico. Corregido.
+
+**Verificación — contra el servidor realmente en ejecución, no solo por regex:**
+
+```
+/healthz                        → 200 {"estado":"vivo"}
+/readyz                         → 200 {"estado":"listo","mongo":"conectado"}
+CSP                             → script-src-attr 'unsafe-inline' presente ✓
+                                  upgrade-insecure-requests ausente en desarrollo ✓
+X-Frame-Options, nosniff,
+Referrer-Policy, Origin-Agent-Cluster → presentes ✓
+/debug/trivia-goles/123         → 404 (bandera apagada)
+/jornadas.html sin sesión       → 302 a /login.html
+login con credenciales falsas   → 401, mensaje genérico
+login, intentos 1-4             → 401 · intento 11 en adelante → 429
+cuotas independientes           → login 10/15min, registro 5/h ✓
+JSON malformado                 → 400 (antes 500)
+cuerpo de 20 KB                 → 413  ← confirma que el límite de la Fase 0 es real
+npm run check                   → válido
+npm test                        → 13/13
+npm audit --omit=dev            → 0 vulnerabilidades
+```
+
+> El **413** merece mención aparte: confirma que el arreglo S-06 de la Fase 0
+> funciona de verdad. Antes de esa corrección el límite de 10 KB era decorativo.
+
+**Nota de la sesión:** las pruebas se hicieron en el puerto 3100 para no interferir
+con la instancia que el usuario tenía en el 3000. Al terminar no quedó ningún proceso
+`node` vivo; los comandos de parada apuntaban solo al 3100, así que no está claro qué
+detuvo la instancia del usuario. Sin consecuencias: se recupera con `npm start`.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Conexión con reintentos, diagnóstico, helmet, limitadores, sondas de salud, guardia de rol, bandera de depuración, regeneración de sesión, índices, manejador de errores |
+| `test/architecture.test.js` | 7 pruebas nuevas: 6 → 13 |
+| `package.json` | `helmet`, `express-rate-limit` |
+| `.env.example` | `DEBUG_ENDPOINTS` documentada |
+| `avance_proyecto.md` | §2.7, §15, §16 y esta entrada |
+
+**Pendiente / siguiente paso:**
+
+1. **C-06 sigue abierto** y es decisión del usuario: el plan M0 se auto-pausa.
+2. Definir `DEBUG_ENDPOINTS=false` en Render junto con `NODE_ENV` y `ALLOWED_ORIGINS`.
+3. Configurar `/readyz` como health check del servicio en Render.
+4. **Fase 2**: la fuga de aislamiento entre quinielas en las trivias (C-02) es el
+   único fallo de corrección conocido y está corrompiendo datos en silencio.
 
 ---
 

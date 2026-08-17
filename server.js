@@ -1,5 +1,7 @@
 const express = require('express');
 require('express-async-errors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const mongoose = require('mongoose');
@@ -25,15 +27,118 @@ if (!process.env.MONGO_URI_MULTIQUINIELA) {
   process.exit(1);
 }
 
-const mongoConnectionPromise = mongoose.connect(process.env.MONGO_URI_MULTIQUINIELA)
-  .then(() => {
-    console.log('✅ Conectado a la base multi-quiniela');
-    return mongoose.connection;
-  });
+/* ================= Conexión a MongoDB con reintentos ================= */
+
+/**
+ * Traduce el error crudo del driver a una causa accionable. Las cuatro familias
+ * de fallo —DNS, credenciales, lista de IPs y red— exigen soluciones distintas y
+ * el mensaje del driver no las distingue.
+ */
+function diagnosticarErrorMongo(error) {
+  const mensaje = String(error?.message || error);
+  if (/querySrv|ENOTFOUND|EAI_AGAIN/i.test(mensaje)) {
+    return 'No se pudo resolver el nombre del clúster por DNS. Causas típicas: el clúster está pausado o eliminado en Atlas, o el resolutor DNS de este equipo no atiende consultas SRV.';
+  }
+  if (/authentication failed|bad auth|SCRAM/i.test(mensaje)) {
+    return 'Usuario o contraseña de la base de datos incorrectos, o el usuario ya no existe.';
+  }
+  if (/whitelist|not allowed to connect|IP address/i.test(mensaje)) {
+    return 'La IP de este servidor no está autorizada en la lista de acceso de Atlas.';
+  }
+  if (/server selection timed out|ETIMEDOUT|timed out/i.test(mensaje)) {
+    return 'Se agotó el tiempo de espera al contactar el clúster: red caída, cortafuegos, o el clúster todavía reanudándose.';
+  }
+  if (/ECONNREFUSED/i.test(mensaje)) {
+    return 'La conexión fue rechazada: no hay nada aceptando conexiones en esa dirección.';
+  }
+  return 'Causa no reconocida. Revisa el mensaje del driver arriba.';
+}
+
+const MONGO_ESPERA_MAXIMA_MS = 60 * 1000;
+let resolverConexionMongo;
+const mongoConnectionPromise = new Promise(resolve => { resolverConexionMongo = resolve; });
+
+/**
+ * Reintenta indefinidamente con retroceso exponencial hasta un minuto entre
+ * intentos. Antes el proceso terminaba al primer fallo, de modo que cualquier
+ * indisponibilidad pasajera dejaba la aplicación caída de forma permanente
+ * hasta que alguien la reiniciara a mano.
+ */
+async function conectarMongoConReintentos() {
+  for (let intento = 1; ; intento++) {
+    try {
+      if (mongoose.connection.readyState !== 0) {
+        await mongoose.disconnect().catch(() => {});
+      }
+      await mongoose.connect(process.env.MONGO_URI_MULTIQUINIELA, { serverSelectionTimeoutMS: 10000 });
+      console.log('✅ Conectado a la base multi-quiniela');
+      resolverConexionMongo(mongoose.connection);
+      return;
+    } catch (error) {
+      const espera = Math.min(2 ** (intento - 1) * 1000, MONGO_ESPERA_MAXIMA_MS);
+      console.error(`❌ Intento ${intento} de conexión a MongoDB: ${error.message}`);
+      console.error(`   Diagnóstico: ${diagnosticarErrorMongo(error)}`);
+      console.error(`   Reintentando en ${Math.round(espera / 1000)} s.`);
+      await new Promise(resolver => setTimeout(resolver, espera));
+    }
+  }
+}
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('⚠️  Conexión con MongoDB perdida. El driver reintentará por su cuenta.');
+});
+mongoose.connection.on('reconnected', () => {
+  console.log('✅ Conexión con MongoDB restablecida.');
+});
+
+function mongoListo() {
+  return mongoose.connection.readyState === 1;
+}
 
 /* ================= Middleware ================= */
 
 /* ================= Middleware ================= */
+
+/*
+ * CSP con 'unsafe-inline' a propósito: el frontend tiene 63 atributos onclick y
+ * 19 style= en línea, así que una política estricta lo rompería entero. Quitarlo
+ * exige migrar esos manejadores a addEventListener, tarea que va junto con el
+ * escapado sistemático de innerHTML (hallazgo S-04). Aun con 'unsafe-inline',
+ * la política sigue bloqueando scripts de terceros no declarados.
+ */
+const esProduccion = process.env.NODE_ENV === 'production';
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdnjs.cloudflare.com'],
+      /*
+       * IMPRESCINDIBLE. helmet trae por defecto script-src-attr 'none', que
+       * bloquea los manejadores en atributo (onclick, onchange…). El frontend
+       * tiene 63, así que con el valor por defecto la interfaz queda inerte:
+       * los botones cargan pero no responden. 'unsafe-inline' en script-src NO
+       * cubre este caso; son directivas independientes.
+       */
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https://apiv3.apifootball.com'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      // null elimina la directiva que helmet añade por defecto. En desarrollo
+      // sobra y solo estorba al servir por HTTP plano.
+      upgradeInsecureRequests: esProduccion ? [] : null
+    }
+  },
+  // Los escudos vienen de apiv3.apifootball.com; CORP estricta no los afecta,
+  // pero COEP sí rompería la carga de recursos cruzados sin CORP explícita.
+  crossOriginEmbedderPolicy: false,
+  hsts: esProduccion ? { maxAge: 15552000, includeSubDomains: true } : false
+}));
 
 const ORIGENES_LOCALES = [
   'http://localhost',
@@ -65,6 +170,28 @@ app.use(cors({
 
 app.use(express.json({ limit: '10kb' }));
 
+/*
+ * Sondas de salud. Van deliberadamente ANTES de la sesión: si la base está caída,
+ * el almacén de sesiones se bloquearía esperando, y una sonda que se cuelga no
+ * sirve para diagnosticar nada.
+ *
+ *   /healthz  el proceso responde (liveness). No toca la base.
+ *   /readyz   el proceso puede atender tráfico real (readiness). Exige base viva.
+ */
+app.get('/healthz', (req, res) => {
+  res.json({ estado: 'vivo', tiempoActivoSegundos: Math.round(process.uptime()) });
+});
+
+app.get('/readyz', (req, res) => {
+  const estados = ['desconectado', 'conectado', 'conectando', 'desconectando'];
+  const listo = mongoListo();
+  res.status(listo ? 200 : 503).json({
+    estado: listo ? 'listo' : 'no-listo',
+    mongo: estados[mongoose.connection.readyState] ?? 'desconocido',
+    tiempoActivoSegundos: Math.round(process.uptime())
+  });
+});
+
 app.use(session({
   secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? (() => { throw new Error('Falta SESSION_SECRET'); })() : 'solo-desarrollo-cambiar'),
   store: MongoStore.create({
@@ -82,9 +209,63 @@ app.use(session({
   }
 }));
 
+/* ================= Limitación de intentos ================= */
+
+const opcionesLimiteComunes = {
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+};
+
+/*
+ * Login: solo cuentan los intentos FALLIDOS (skipSuccessfulRequests). Un usuario
+ * legítimo que entra bien nunca consume cuota, mientras que la fuerza bruta se
+ * frena a los 10 fallos por cuarto de hora.
+ */
+const limiteLogin = rateLimit({
+  ...opcionesLimiteComunes,
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  message: { error: 'Demasiados intentos fallidos. Espera unos minutos antes de volver a intentarlo.' }
+});
+
+// Registro: cuentan todos, para que nadie cree cuentas en masa desde una IP.
+const limiteRegistro = rateLimit({
+  ...opcionesLimiteComunes,
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  message: { error: 'Se alcanzó el límite de cuentas creadas desde esta conexión. Inténtalo más tarde.' }
+});
+
+/*
+ * Admin Mode: el más estricto de los tres. Quien llega aquí ya tiene sesión
+ * válida y rol administrativo; lo único que lo separa de operar la quiniela es
+ * la contraseña, así que es el punto más rentable para un ataque por fuerza bruta.
+ */
+const limiteAdminMode = rateLimit({
+  ...opcionesLimiteComunes,
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  message: { error: 'Demasiados intentos de confirmación. Espera unos minutos.' }
+});
+
 function requireLogin(req, res, next) {
   if (req.session?.usuarioId) return next();
   return res.status(401).json({ error: 'Debes iniciar sesión.' });
+}
+
+/*
+ * Los endpoints /debug/* exponen respuestas crudas de APIFootball y volcados de
+ * jornadas. Son útiles para diagnosticar, pero no tienen por qué existir en
+ * producción. Con la bandera apagada devuelven 404, no 403: así ni siquiera
+ * revelan que la ruta existe.
+ */
+const DEPURACION_HABILITADA = process.env.DEBUG_ENDPOINTS === 'true';
+
+function requireDebug(req, res, next) {
+  if (!DEPURACION_HABILITADA) return res.status(404).json({ error: 'No encontrado.' });
+  return next();
 }
 
 function requireAdmin(req, res, next) {
@@ -121,12 +302,35 @@ const paginasAdmin = [
   '/configuracion-quiniela.html'
 ];
 
-app.use((req, res, next) => {
-  if (paginasAdmin.includes(req.path)) {
-    if (!req.session?.usuarioId) return res.redirect('/login.html');
-  }
+/*
+ * Antes esta guardia solo comprobaba que hubiera sesión, así que cualquier
+ * usuario autenticado podía descargar el HTML administrativo. No era fuga de
+ * datos —las APIs sí exigen requireAdmin— pero sí de superficie, y una mala
+ * experiencia: la página cargaba y luego fallaba petición por petición.
+ *
+ * Se ejecuta antes del middleware de inquilino, así que req.membership todavía
+ * no existe y hay que consultar la membresía a mano. El coste es una consulta
+ * indexada, y solo en estas 15 rutas.
+ */
+app.use(async (req, res, next) => {
+  if (!paginasAdmin.includes(req.path)) return next();
+  if (!req.session?.usuarioId) return res.redirect('/login.html');
+  if (!req.session?.quinielaActivaId) return res.redirect('/quinielas.html');
 
-  next();
+  try {
+    const membresia = await Membresia.findOne({
+      usuarioId: req.session.usuarioId,
+      quinielaId: req.session.quinielaActivaId,
+      estado: { $in: ['activo', 'pendiente_retiro'] }
+    }).select('rol');
+
+    if (!membresia || !['propietario', 'admin'].includes(membresia.rol)) {
+      return res.redirect('/index.html');
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 });
 
 /* ================= Auto Sync Global ================= */
@@ -420,6 +624,17 @@ ResultadoOficialSchema.index({ quinielaId: 1, jornada: 1 }, { unique: true });
 EquipoSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
 PronosticoCampeonSchema.index({ quinielaId: 1, jugador: 1 }, { unique: true });
 
+/*
+ * Único de verdad: sin él, dos envíos simultáneos de la misma respuesta hacían
+ * que el findOneAndUpdate con upsert insertara dos documentos, y al resolver la
+ * trivia el jugador cobraba los puntos DOS VECES. Es un fallo de puntuación
+ * silencioso y difícil de detectar a posteriori.
+ */
+respuestaTriviaSchema.index({ quinielaId: 1, jugador: 1, triviaId: 1 }, { unique: true });
+
+// Sostiene las búsquedas por jornada y partido, que hoy hacen recorrido completo.
+triviaSchema.index({ quinielaId: 1, jornadaNombre: 1, partidoIndex: 1, tipo: 1 });
+
 const Equipo = mongoose.model('Equipo', EquipoSchema);
 const Jugador = mongoose.model('Jugador', JugadorSchema);
 const Jornada = mongoose.model('Jornada', JornadaSchema);
@@ -528,7 +743,7 @@ async function codigoIngresoUnico() {
   return codigo;
 }
 
-app.post('/api/auth/registro', async (req, res) => {
+app.post('/api/auth/registro', limiteRegistro, async (req, res) => {
   try {
     const username = String(req.body.username || '').trim();
     const email = String(req.body.email || '').trim();
@@ -575,8 +790,15 @@ app.post('/api/auth/registro', async (req, res) => {
       emailNormalizado,
       password: await bcrypt.hash(password, SALT_ROUNDS)
     });
-    req.session.usuarioId = usuario._id.toString();
-    res.status(201).json({ success: true, usuario: usuarioPublico(usuario) });
+    // Se regenera la sesión igual que en el login: si un atacante consiguió
+    // fijar un identificador de sesión antes del registro, aquí deja de servirle.
+    req.session.regenerate(errorSesion => {
+      if (errorSesion) {
+        return res.status(500).json({ error: 'La cuenta se creó, pero no se pudo iniciar la sesión. Inicia sesión manualmente.' });
+      }
+      req.session.usuarioId = usuario._id.toString();
+      res.status(201).json({ success: true, usuario: usuarioPublico(usuario) });
+    });
   } catch (error) {
     if (error?.code === 11000) {
       return res.status(409).json({ error: 'El usuario o el correo electrónico ya están registrados.' });
@@ -606,8 +828,8 @@ async function iniciarSesion(req, res) {
   });
 }
 
-app.post('/api/auth/login', (req, res, next) => iniciarSesion(req, res).catch(next));
-app.post('/login', (req, res, next) => iniciarSesion(req, res).catch(next));
+app.post('/api/auth/login', limiteLogin, (req, res, next) => iniciarSesion(req, res).catch(next));
+app.post('/login', limiteLogin, (req, res, next) => iniciarSesion(req, res).catch(next));
 
 app.get('/api/auth/me', requireLogin, async (req, res) => {
   const usuario = await Usuario.findById(req.session.usuarioId);
@@ -747,7 +969,7 @@ app.get('/api/admin-mode', (req, res) => {
   res.json({ autorizadoPorRol, activo });
 });
 
-app.post('/api/admin-mode/activar', async (req, res) => {
+app.post('/api/admin-mode/activar', limiteAdminMode, async (req, res) => {
   if (!['propietario', 'admin'].includes(req.membership.rol)) {
     return res.status(403).json({ error: 'No tienes permisos administrativos en esta quiniela.' });
   }
@@ -3428,7 +3650,7 @@ app.get('/api/resultados-totales', async (req, res) => {
 
 ////////////borrar borrar
 
-app.get('/api/debug/estado-partido/:status', requireAdmin, (req, res) => {
+app.get('/api/debug/estado-partido/:status', requireDebug, requireAdmin, (req, res) => {
   const fixture = {
     match_status: req.params.status,
     match_live: req.query.live || ''
@@ -3440,7 +3662,7 @@ app.get('/api/debug/estado-partido/:status', requireAdmin, (req, res) => {
   });
 });
 
-app.get('/api/debug/api-football-match/:matchId', requireAdmin, async (req, res) => {
+app.get('/api/debug/api-football-match/:matchId', requireDebug, requireAdmin, async (req, res) => {
   try {
     const { matchId } = req.params;
 
@@ -3469,7 +3691,7 @@ app.get('/api/debug/api-football-match/:matchId', requireAdmin, async (req, res)
   }
 });
 
-app.get('/debug/trivia-goles/:matchId', requireAdmin, async (req, res) => {
+app.get('/debug/trivia-goles/:matchId', requireDebug, requireAdmin, async (req, res) => {
   try {
     const evento = await obtenerEventoTrivia(req.params.matchId);
 
@@ -3493,12 +3715,12 @@ app.get('/debug/trivia-goles/:matchId', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/debug/jornadas', requireAdmin, async (req, res) => {
+app.get('/api/debug/jornadas', requireDebug, requireAdmin, async (req, res) => {
   const jornadas = await Jornada.find({});
   res.json(jornadas);
 });
 
-app.get('/api/admin/debug-partido-api/:matchId', requireAdmin, async (req, res) => {
+app.get('/api/admin/debug-partido-api/:matchId', requireDebug, requireAdmin, async (req, res) => {
   try {
     const { matchId } = req.params;
 
@@ -3567,23 +3789,46 @@ app.get('/generar_reporte', (req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  console.error('Error no controlado:', error);
   if (res.headersSent) return next(error);
+
   if (error?.code === 11000) {
+    console.warn('Conflicto de clave única:', error.message);
     return res.status(409).json({ error: 'Ya existe un registro con esos datos.' });
   }
+
+  /*
+   * body-parser y otros middlewares marcan los errores del cliente con un
+   * status 4xx propio. Antes se ignoraba y todo acababa en 500: un JSON mal
+   * formado o un cuerpo por encima del límite se reportaban como fallo del
+   * servidor, lo que ensucia los registros y despista al diagnosticar.
+   */
+  const estado = error?.status ?? error?.statusCode;
+  if (Number.isInteger(estado) && estado >= 400 && estado < 500) {
+    console.warn(`Petición inválida (${estado}):`, error.type || error.message);
+    return res.status(estado).json({
+      error: estado === 413
+        ? 'El contenido enviado es demasiado grande.'
+        : 'La petición no es válida.'
+    });
+  }
+
+  console.error('Error no controlado:', error);
   res.status(500).json({ error: 'Ocurrió un error interno.' });
 });
 
 /* ================= Start Server ================= */
 
-mongoConnectionPromise
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en http://localhost:${PORT}`);
-    });
-  })
-  .catch(error => {
-    console.error('❌ No se pudo conectar a la base multi-quiniela:', error.message);
-    process.exit(1);
-  });
+/*
+ * El servidor escucha de inmediato, sin esperar a MongoDB. Antes hacía lo
+ * contrario —y moría si la base no respondía— con dos consecuencias malas:
+ * un despliegue fallaba entero por una base momentáneamente indispuesta, y las
+ * sondas de salud nunca llegaban a responder, que es justo cuando más se
+ * necesitan. Ahora /healthz responde siempre y /readyz devuelve 503 hasta que
+ * la base esté disponible.
+ */
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  if (!mongoListo()) console.log('   Esperando conexión con MongoDB. /readyz devolverá 503 hasta entonces.');
+});
+
+conectarMongoConReintentos();
