@@ -22,8 +22,8 @@
 **Fases 0 a 4 completadas.** Las cuatro primeras el 16 de agosto de 2026; la
 Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— el 17.
 
-**La Fase 5 está implementada en el árbol de trabajo, pero todavía no está
-confirmada en Git.** `PuntosJornada` materializa las jornadas terminadas, la
+**La Fase 5 y las mejoras posteriores están confirmadas localmente en Git, pero
+todavía no están fusionadas a `main` ni enviadas a `origin`.** `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
 interfaz. Las **75 pruebas** actuales pasan. Además existe una tabla por jornada:
@@ -51,7 +51,8 @@ misma caché. Ver §9.4 y la bitácora 010.
 ### Estado de Git
 
 ```
-73b6ca0  Anotar el hash de la Fase 4 en el documento          ← fase-4-sincronizador (HEAD)
+64ec3ce  Applying changes for tabla por jornada               ← fase-4-sincronizador (HEAD)
+73b6ca0  Anotar el hash de la Fase 4 en el documento
 f15dad3  Fase 4: rediseno del sincronizador (C-01 y C-05)
 e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main, origin/main
 d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia
@@ -67,9 +68,9 @@ La cadena de cinco ramas encadenadas **ya se fusionó**: el 17 de agosto se llev
 intermedias. `main` y `origin/main` están en `e2f8d3f`; la rama actual está dos
 commits por delante y todavía falta fusionarla a `main` y empujar ese avance.
 
-El árbol de trabajo **no está limpio**: `server.js`, `test/architecture.test.js`
-y `test/integracion.test.js` contienen el trabajo local de la Fase 5 descrito
-arriba. Debe conservarse; no corresponde descartarlo al cambiar de tarea.
+El árbol de trabajo estaba limpio al terminar la auditoría de la Entrada 015.
+La única modificación posterior a ese punto es la propia documentación de dicha
+auditoría; no se debe confundir con trabajo funcional pendiente.
 
 > ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
 > `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
@@ -103,16 +104,16 @@ npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
 
-### Lo siguiente: Fase 5 — rendimiento del ranking (C-03)
+### Lo siguiente: endurecimiento antes de producción
 
 Con el sincronizador arreglado, el siguiente cuello de botella es la lectura.
 `/api/resultados-totales` lee **seis colecciones completas** y recalcula todo el
 ranking histórico **en cada petición**. Hoy no se nota; con temporadas
 acumuladas y varias quinielas activas, sí.
 
-El plan está en §16, Fase 5 (puntos 34–37). Estado real del trabajo local:
+El plan de Fase 5 está en §16 (puntos 34–37). Estado real confirmado localmente:
 
-1. ✅ `PuntosJornada` está implementado localmente, incluidas las invalidaciones
+1. ✅ `PuntosJornada` está implementado, incluidas las invalidaciones
    al editar la jornada, los pronósticos o los resultados oficiales.
 2. ✅ La jornada se congela cuando todos los partidos son definitivos; una
    corrección posterior usa las reglas guardadas de esa jornada.
@@ -126,7 +127,7 @@ El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo
 | # | Decisión | Por qué importa |
 |---|---|---|
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `main` y `origin/main` todavía no contienen la Fase 4 ni el trabajo local de la Fase 5 |
+| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `main` y `origin/main` todavía no contienen la Fase 4, la Fase 5, el retiro de campeón ni la tabla por jornada |
 | **M-03/M-04** | Política de congelamiento implementada localmente | Se congela al quedar definitivos todos los partidos y las correcciones conservan las reglas originales |
 | **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
 
@@ -3295,6 +3296,61 @@ npm test                                   → 75/75 (25 arquitectura + 50 integ
 en curso y una finalizada. Si más adelante se necesita otra política de desempate,
 debe añadirse como configuración explícita de administración, no cambiar esta regla
 por defecto silenciosamente.
+
+---
+
+### 📌 Entrada 015 — 17 de agosto de 2026 — Auditoría integral y prioridades de mejora
+
+**Objetivo:** revisar el repositorio completo sin modificar funcionalidad y dejar
+una lista priorizada, verificable y accionable antes de continuar agregando
+características.
+
+**Qué se revisó:**
+
+1. Código de servidor, modelos, rutas, middleware de sesión/roles, aislamiento
+   multi-quiniela, motor de puntuación, sincronizador y migrador.
+2. Las 32 pantallas HTML y los 33 scripts del frontend, con especial atención a
+   interpolación de datos, referencias de assets y navegación.
+3. Pruebas, dependencias, auditoría de paquetes, estado de Git y preparación de
+   despliegue.
+
+**Verificación:**
+
+```
+npm test                         → 75/75 (25 arquitectura + 50 integración)
+npm audit --omit=dev             → 0 vulnerabilidades conocidas
+revisión individual con `node --check` → 33/33 scripts con sintaxis válida
+git status                       → limpio antes de registrar esta entrada
+HEAD                             → 64ec3ce, rama fase-4-sincronizador
+```
+
+**Hallazgos y recomendación priorizada:**
+
+| Prioridad | Hallazgo | Recomendación concreta |
+|---|---|---|
+| Alta | **S-04 sigue abierto:** numerosos scripts interpolan nombres de usuarios, jornadas y equipos mediante `innerHTML`/`insertAdjacentHTML`; la CSP vigente permite scripts y manejadores inline. | Sustituir renderizados por nodos DOM + `textContent` o aplicar una única función de escape estricta. La nueva tabla por jornada es el patrón correcto. |
+| Alta | Varias rutas administrativas y de pronósticos convierten marcadores con `Number()` sin exigir enteros no negativos, y crean/actualizan jornadas sin validación estructural centralizada. | Crear validadores de dominio para marcador, fecha, partido y jornada; rechazar negativos, decimales, valores no finitos, fechas inválidas y arreglos vacíos. |
+| Alta | Una jornada sin `fechaCierre` se considera cerrada para consultar pronósticos ajenos en `/api/resultados`, `/api/resultados/:jugador/:jornada` y `/api/resultados-seguros/...`. | Definir privacidad por defecto: sin fecha debe seguir privada, o debe usar el inicio real de cada partido. No dejar que una omisión de administración revele pronósticos. |
+| Alta | Crear quiniela/membresía, transferir propiedad, borrar jornada y editar trivias son secuencias de varias escrituras sin transacción. | Usar sesiones/`withTransaction` de MongoDB y pruebas de fallo intermedio para no dejar propietarios, puntos o respuestas inconsistentes. |
+| Alta | APIFootball se consulta con Axios sin `timeout`; el cerrojo de sincronización vence a los cinco minutos sin renovación. | Configurar timeout, reintentos con espera y renovación de lease del cerrojo; evitar ciclos simultáneos si una llamada externa queda bloqueada. |
+| Media | Una jornada aplazada, cancelada o abandonada puede quedar provisional para siempre porque el cierre exige resultados definitivos. | Modelar estados de anulación/aplazamiento y añadir una acción administrativa explícita que defina cómo puntúan. |
+| Media | La “última jornada” se elige por `createdAt`, no por orden competitivo ni fecha. | Añadir orden/fecha de jornada y elegir la más reciente según esa regla, para que una importación tardía no cambie el valor predeterminado. |
+| Media | Los miembros que ingresan después pueden aparecer con 0 en clasificaciones históricas; no hay política registrada para ello. | Decidir si las tablas históricas muestran participantes de ese momento o todos los miembros actuales, y guardar el criterio. |
+| Media | La tabla por jornada conserva empates con puestos `1.º, 1.º, 3.º`; los desempates solo ordenan visualmente. | Confirmar que se desea ranking de competición y documentarlo como regla de producto. Si se prefiere `1.º, 1.º, 2.º`, cambiar el algoritmo de puesto. |
+| Media | Quedan consultas completas o N+1: por ejemplo trivias activas consulta jornada y oficial por cada trivia; varios listados no tienen paginación. | Agrupar consultas por jornada, añadir índices según medición y planificar M-26 para paginar los listados restantes. |
+| Media | Las 75 pruebas son sólidas para backend, pero el frontend no tiene pruebas de navegador ni un reporte de cobertura. | Añadir pruebas E2E con Playwright para registro, roles, privacidad, móvil, navegación y regresiones XSS. |
+| Media | No hay CI, backups, alertas, logging estructurado ni configuración declarativa de despliegue en el repositorio. | Incorporar pipeline que ejecute pruebas/auditoría, backups de Atlas, monitor de `/readyz`, registro estructurado y alertas. |
+| Baja | `server.js` supera 4.700 líneas, contiene bloques/comentarios heredados y el marcador `////////////borrar borrar`. | Ejecutar Fase 6: dividir por dominios y limpiar código muerto después de cubrirlo con pruebas. |
+
+**Decisión recomendada de orden:** primero S-04, validación y privacidad de
+pronósticos; después transacciones y robustez del sincronizador; luego pruebas E2E,
+operación de producción y modularización. No conviene sumar nuevas funciones antes
+de cerrar al menos las cinco prioridades altas.
+
+**Pendiente / siguiente paso:** elegir si se autoriza implementar el primer bloque
+de endurecimiento (XSS, validación y privacidad) como una fase separada con pruebas
+de regresión. La rama contiene el commit local `64ec3ce`, pero sigue pendiente de
+fusión a `main` y envío a `origin`.
 
 ---
 
