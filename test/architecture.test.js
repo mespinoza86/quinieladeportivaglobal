@@ -304,7 +304,11 @@ test('toda escritura de resultados oficiales actualiza los puntos', () => {
   assert.ok(actualizaciones.length >= 3,
     'Faltan llamadas a actualizarPuntosDeJornada tras las escrituras');
 
-  assert.match(serverSinComentarios, /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}\)/);
+  // Desde la Entrada 022 el borrado lleva sesión: la ruta entera es atómica.
+  assert.match(
+    serverSinComentarios,
+    /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}, \{ session: sesion \}\)/
+  );
 });
 
 test('toda edición de una jornada invalida o recalcula sus puntos materializados', () => {
@@ -328,10 +332,21 @@ test('toda edición de una jornada invalida o recalcula sus puntos materializado
   assert.ok(actualizaciones.length >= 8,
     'Cada edición de Jornada y Resultado debe actualizar PuntosJornada');
 
-  assert.match(
-    serverSinComentarios,
-    /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}\);\s+invalidarCacheRanking\(req\.quiniela\._id\);/
+  /*
+   * Antes se exigía que el borrado y la invalidación fueran líneas contiguas.
+   * Desde la Entrada 022 el borrado ocurre DENTRO de la transacción y la
+   * invalidación después de confirmarla —invalidar antes sería mentir si la
+   * transacción se revierte—, así que se comprueba la intención, que la ruta
+   * haga ambas cosas, y no su adyacencia.
+   */
+  const rutaBorrado = serverSinComentarios.slice(
+    serverSinComentarios.indexOf("app.delete('/api/jornadas/:nombre'"),
+    serverSinComentarios.indexOf('/* ================= Puntos por jornada')
   );
+
+  assert.ok(rutaBorrado.length > 0, 'No se localizó la ruta de borrado de jornada');
+  assert.match(rutaBorrado, /await PuntosJornada\.deleteMany\(/);
+  assert.match(rutaBorrado, /invalidarCacheRanking\(req\.quiniela\._id\)/);
 });
 
 test('el ranking tiene caché por quiniela y paginación opcional compatible', () => {
@@ -673,4 +688,44 @@ test('toda pantalla que use la etiqueta html carga el ayudante antes', () => {
       }
     }
   }
+});
+
+test('las secuencias de varias escrituras son atómicas', () => {
+  assert.match(serverSinComentarios, /async function enTransaccion/);
+  assert.match(serverSinComentarios, /sesion\.withTransaction\(/);
+  assert.match(serverSinComentarios, /function esFaltaDeSoporteDeTransacciones/);
+
+  // Las cuatro secuencias que lo necesitan pasan por el ayudante.
+  const usos = serverSinComentarios.match(/enTransaccion\(/g) || [];
+  assert.ok(usos.length >= 5, `Se esperaban la definición y sus cuatro usos, hubo ${usos.length}`);
+
+  /*
+   * Una sesión no admite operaciones en paralelo, así que dentro de una
+   * transacción no puede haber `Promise.all` de escrituras. La transferencia de
+   * propiedad lo hacía y por eso se convirtió en secuencia.
+   */
+  assert.doesNotMatch(
+    serverSinComentarios,
+    /await Promise\.all\(\[destino\.save\(\)/,
+    'La transferencia de propiedad no puede volver a guardar en paralelo'
+  );
+
+  /*
+   * `Model.create` con sesión EXIGE un arreglo: con un documento suelto,
+   * Mongoose toma el segundo argumento por otro documento y la sesión se pierde
+   * sin avisar, de modo que esa escritura quedaría fuera de la transacción.
+   */
+  assert.match(serverSinComentarios, /Quiniela\.create\(\[\{/);
+  assert.match(serverSinComentarios, /Membresia\.create\(\[\{/);
+});
+
+test('las pruebas de integración corren sobre un conjunto de réplicas', () => {
+  /*
+   * MongoDB solo admite transacciones sobre un conjunto de réplicas. Con un
+   * mongod suelto, las pruebas de atomicidad se ejercitarían contra la rama de
+   * respaldo de enTransaccion() y pasarían sin comprobar nada.
+   */
+  const integracion = fs.readFileSync(path.join(root, 'test', 'integracion.test.js'), 'utf8');
+  assert.match(integracion, /MongoMemoryReplSet/);
+  assert.doesNotMatch(integracion, /MongoMemoryServer\.create\(/);
 });

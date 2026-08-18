@@ -15,7 +15,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const request = require('supertest');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongoEnMemoria;
 let srv;
@@ -80,7 +80,14 @@ function enQuiniela(quinielaId, fn) {
 /* ================= Arranque y limpieza ================= */
 
 test.before(async () => {
-  mongoEnMemoria = await MongoMemoryServer.create();
+  /*
+   * Conjunto de réplicas, no un mongod suelto: MongoDB solo admite
+   * transacciones sobre un conjunto de réplicas, y sin esto las pruebas de
+   * atomicidad se ejercitarían contra la rama de respaldo de enTransaccion()
+   * en vez de contra las transacciones de verdad. Un nodo basta y arranca en
+   * medio segundo.
+   */
+  mongoEnMemoria = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
 
   process.env.NODE_ENV = 'test';
   process.env.MONGO_URI_MULTIQUINIELA = mongoEnMemoria.getUri('quiniela_pruebas');
@@ -1889,4 +1896,207 @@ test('un sync que no cambia nada deja la caché del ranking en pie', async () =>
   } finally {
     srv.Jornada.find = originalFind;
   }
+});
+
+/* ================================================================
+ * Transacciones: una secuencia a medias no debe dejar rastro
+ * ================================================================ */
+
+/**
+ * Hace que un método de un modelo falle una sola vez.
+ *
+ * Se sustituye el método real en el propio modelo que usa el servidor, que es
+ * la única forma de provocar el fallo EN MITAD de la secuencia sin tocar el
+ * código de producción para hacerlo comprobable.
+ */
+function fallaUnaVez(objeto, metodo, mensaje = 'fallo provocado por la prueba') {
+  const original = objeto[metodo];
+  let usado = false;
+
+  objeto[metodo] = function (...args) {
+    if (!usado) {
+      usado = true;
+      return Promise.reject(new Error(mensaje));
+    }
+    return original.apply(this, args);
+  };
+
+  return { restaurar() { objeto[metodo] = original; } };
+}
+
+test('crear quiniela: si falla la membresía, no queda la quiniela suelta', async () => {
+  const { agente } = await cuentaNueva('tx_crear');
+
+  const antes = await srv.Quiniela.countDocuments({ nombre: 'Quiniela Atomica' });
+  assert.equal(antes, 0);
+
+  const trampa = fallaUnaVez(srv.Membresia, 'create');
+  let respuesta;
+  try {
+    respuesta = await agente.post('/api/quinielas').send({ nombre: 'Quiniela Atomica' });
+  } finally {
+    trampa.restaurar();
+  }
+
+  assert.equal(respuesta.status, 500, JSON.stringify(respuesta.body));
+
+  /*
+   * Lo que se comprueba: sin transacción, la quiniela ya estaba escrita cuando
+   * falló la membresía, y quedaba una quiniela cuyo propietario no es miembro
+   * de ella. No aparece en su lista y no puede entrar: invisible e inaccesible,
+   * pero ocupando el nombre y el código de ingreso.
+   */
+  assert.equal(
+    await srv.Quiniela.countDocuments({ nombre: 'Quiniela Atomica' }),
+    0,
+    'La quiniela no debe sobrevivir al fallo de la membresía'
+  );
+
+  // Y después del fallo, crear de verdad sigue funcionando.
+  const buena = await agente.post('/api/quinielas').send({ nombre: 'Quiniela Atomica' });
+  assert.equal(buena.status, 201, JSON.stringify(buena.body));
+
+  const quinielaId = new mongoose.Types.ObjectId(buena.body.quiniela._id);
+  const membresia = await srv.Membresia.findOne({ quinielaId, rol: 'propietario' });
+  assert.ok(membresia, 'El propietario sí debe ser miembro cuando la creación va bien');
+});
+
+test('transferir propiedad: si falla a mitad, no quedan dos propietarios', async () => {
+  const { agente: duenoAgente, datos: dueno } = await cuentaNueva('tx_dueno');
+  const { agente: socioAgente, datos: socio } = await cuentaNueva('tx_socio');
+
+  const quiniela = await quinielaNueva(duenoAgente, 'Traspaso Atomico');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await duenoAgente.post('/api/admin-mode/activar').send({ password: dueno.password });
+
+  const unirse = await socioAgente.post('/api/quinielas/unirse').send({ codigoIngreso: quiniela.codigo });
+  assert.equal(unirse.status, 202, JSON.stringify(unirse.body));
+
+  const socioUsuario = await srv.Usuario.findOne({ usernameNormalizado: socio.username.toLowerCase() });
+  const membresiaSocio = await srv.Membresia.findOne({ quinielaId: id, usuarioId: socioUsuario._id });
+
+  await duenoAgente.patch(`/api/quiniela-actual/miembros/${membresiaSocio._id}/aprobar`).send({});
+  await duenoAgente.patch(`/api/quiniela-actual/miembros/${membresiaSocio._id}/rol`).send({ rol: 'admin' });
+
+  /*
+   * La transferencia son tres escrituras: el nuevo propietario, el antiguo y la
+   * quiniela. Se hace fallar la de la quiniela, que es la última.
+   */
+  const trampa = fallaUnaVez(srv.Quiniela.prototype, 'save');
+  let respuesta;
+  try {
+    respuesta = await duenoAgente.post('/api/quiniela-actual/transferir-propiedad')
+      .send({ usuarioId: String(socioUsuario._id) });
+  } finally {
+    trampa.restaurar();
+  }
+
+  assert.equal(respuesta.status, 500, JSON.stringify(respuesta.body));
+
+  // Sin transacción, aquí había DOS propietarios: el socio ascendido y el dueño.
+  const membresias = await srv.Membresia.find({ quinielaId: id });
+  const propietarios = membresias.filter(m => m.rol === 'propietario');
+  assert.equal(propietarios.length, 1, 'Debe seguir habiendo exactamente un propietario');
+  assert.equal(String(propietarios[0].usuarioId), String((await srv.Usuario.findOne({
+    usernameNormalizado: dueno.username.toLowerCase()
+  }))._id), 'Y debe ser el original');
+
+  const quinielaDoc = await srv.Quiniela.findById(id);
+  assert.equal(
+    String(quinielaDoc.propietarioId),
+    String(propietarios[0].usuarioId),
+    'La quiniela y las membresías no pueden discrepar sobre quién manda'
+  );
+});
+
+test('borrar jornada: si falla un borrado, la jornada sigue entera', async () => {
+  const { agente, datos } = await cuentaNueva('tx_borrar');
+  const quiniela = await quinielaNueva(agente, 'Borrado Atomico');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  await agente.post('/api/admin-mode/activar').send({ password: datos.password });
+
+  const partido = { equipo1: 'Uno', equipo2: 'Dos' };
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'Jornada Atomica', partidos: [partido] });
+    await srv.Resultado.create({
+      jugador: datos.username,
+      jornada: 'Jornada Atomica',
+      pronosticos: [{ ...partido, marcador1: 1, marcador2: 0 }]
+    });
+    await srv.ResultadoOficial.create({
+      jornada: 'Jornada Atomica',
+      resultados: [{ ...partido, marcador1: 1, marcador2: 0, estado: 'TC', bloqueadoFinal: true }]
+    });
+  });
+
+  // El último de los cuatro borrados falla.
+  const trampa = fallaUnaVez(srv.PuntosJornada, 'deleteMany');
+  let respuesta;
+  try {
+    respuesta = await agente.delete('/api/jornadas/Jornada%20Atomica');
+  } finally {
+    trampa.restaurar();
+  }
+
+  assert.equal(respuesta.status, 500, JSON.stringify(respuesta.body));
+
+  /*
+   * Sin transacción quedaban pronósticos y puntos congelados de una jornada que
+   * ya no existía. La tabla general los seguía sumando al total sin una columna
+   * a la que pertenecer: los puntos de todos salían mal y nada decía por qué.
+   */
+  await enQuiniela(id, async () => {
+    assert.ok(
+      await srv.Jornada.findOne({ nombre: 'Jornada Atomica' }),
+      'La jornada debe seguir existiendo'
+    );
+    assert.ok(
+      await srv.Resultado.findOne({ jornada: 'Jornada Atomica' }),
+      'Y sus pronósticos con ella'
+    );
+    assert.ok(
+      await srv.ResultadoOficial.findOne({ jornada: 'Jornada Atomica' }),
+      'Y sus resultados oficiales'
+    );
+  });
+
+  // Sin la trampa, el borrado se lleva las cuatro colecciones.
+  const buena = await agente.delete('/api/jornadas/Jornada%20Atomica');
+  assert.equal(buena.status, 200, JSON.stringify(buena.body));
+
+  await enQuiniela(id, async () => {
+    assert.equal(await srv.Jornada.countDocuments({ nombre: 'Jornada Atomica' }), 0);
+    assert.equal(await srv.Resultado.countDocuments({ jornada: 'Jornada Atomica' }), 0);
+    assert.equal(await srv.ResultadoOficial.countDocuments({ jornada: 'Jornada Atomica' }), 0);
+    assert.equal(await srv.PuntosJornada.countDocuments({ jornada: 'Jornada Atomica' }), 0);
+  });
+});
+
+test('enTransaccion revierte lo ya escrito cuando la operación falla', async () => {
+  const { agente } = await cuentaNueva('tx_directo');
+  const quiniela = await quinielaNueva(agente, 'Reversion Directa');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await assert.rejects(
+    () => enQuiniela(id, () => srv.enTransaccion(async sesion => {
+      await srv.Jornada.create([{ nombre: 'Se Revierte', partidos: [{ equipo1: 'A', equipo2: 'B' }] }], { session: sesion });
+      throw new Error('a mitad');
+    })),
+    /a mitad/
+  );
+
+  const quedan = await enQuiniela(id, () => srv.Jornada.countDocuments({ nombre: 'Se Revierte' }));
+  assert.equal(quedan, 0, 'Lo escrito antes del fallo no debe quedar');
+
+  // Y cuando no falla, se confirma.
+  await enQuiniela(id, () => srv.enTransaccion(async sesion =>
+    srv.Jornada.create([{ nombre: 'Se Confirma', partidos: [{ equipo1: 'A', equipo2: 'B' }] }], { session: sesion })
+  ));
+
+  assert.equal(
+    await enQuiniela(id, () => srv.Jornada.countDocuments({ nombre: 'Se Confirma' })),
+    1
+  );
 });

@@ -26,7 +26,7 @@ Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— e
 el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **99 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **105 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -45,6 +45,7 @@ resuelta de la tabla general.
 | **6.3** | Ojo para ver la contraseña; cierre por partido en vez de por jornada | 018, 019 |
 | **6.4** | La caché del ranking sobrevive a los ciclos que no mueven puntos | 020 |
 | **6.5** | **Cerrado S-04**: construcción de HTML sin agujeros de inyección | 021 |
+| **6.6** | Transacciones en las secuencias de varias escrituras | 022 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -104,8 +105,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 99 pruebas (~60 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 61 de integración
+npm test                   # las 105 pruebas (~30 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 65 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
@@ -3856,6 +3857,94 @@ cambio toca dieciocho pantallas. Lo que hay que mirar en cada una es que el
 contenido se vea como antes y no aparezcan etiquetas HTML en texto. Después,
 transacciones y las pruebas E2E, que son las que harían automática esta
 comprobación.
+
+---
+
+### 📌 Entrada 022 — 18 de agosto de 2026 — Transacciones
+
+**Objetivo:** cerrar la última prioridad alta de la Entrada 015. Cuatro
+operaciones eran secuencias de varias escrituras sin transacción: si fallaba la
+de en medio, lo que quedaba no era "menos datos" sino un estado que el resto del
+código no sabe interpretar.
+
+| Operación | Qué quedaba a medias |
+|---|---|
+| Crear quiniela | Una quiniela cuyo propietario **no es miembro de ella**: no aparece en su lista y no puede entrar. Invisible e inaccesible, pero ocupando nombre y código |
+| Transferir propiedad | La quiniela con **dos propietarios o con ninguno**, y el documento discrepando de las membresías |
+| Borrar jornada | Pronósticos y puntos congelados de una jornada que ya no existe. **La tabla general los seguía sumando al total** sin columna a la que pertenecer: los puntos de todos salían mal y nada decía por qué |
+| Reconciliar trivias | Respuestas huérfanas de trivias borradas, **que seguían contando puntos** |
+
+**Qué se hizo:**
+
+1. `enTransaccion(operacion)` envuelve una secuencia en `session.withTransaction`.
+   La función recibe la sesión y **debe pasarla a cada escritura**: una consulta
+   que se olvide de `{ session }` queda fuera de la transacción y no se
+   revierte, que es el fallo silencioso típico de esto.
+2. Las cuatro operaciones pasan por ahí.
+3. Si el servidor no admite transacciones se ejecuta igualmente, sin
+   atomicidad, avisando **una vez** por proceso. MongoDB solo las admite sobre
+   un conjunto de réplicas; Atlas lo es —también el plan gratuito—, así que en
+   producción no se da, pero un `mongod` suelto de desarrollo sí. Se prefirió
+   eso a dejar la aplicación inservible en local.
+
+**Dos trampas que costaron ir despacio:**
+
+- **`Model.create` con sesión EXIGE un arreglo.** Con un documento suelto,
+  Mongoose interpreta el segundo argumento como otro documento y **la sesión se
+  pierde sin decir nada**: esa escritura habría quedado fuera de la transacción
+  y el arreglo no habría servido de nada. Hay una prueba de arquitectura que lo
+  fija.
+- **Una sesión no admite operaciones en paralelo.** La transferencia de
+  propiedad hacía `Promise.all` de tres `save`; dentro de una transacción tienen
+  que ir en secuencia. También está fijado por prueba.
+
+**El arnés de pruebas cambió, y era imprescindible.** Las pruebas arrancaban un
+`mongod` suelto (`MongoMemoryServer`), donde las transacciones **no existen**:
+las pruebas de atomicidad se habrían ejercitado contra la rama de respaldo de
+`enTransaccion()` y habrían pasado sin comprobar nada. Ahora arrancan un
+conjunto de réplicas de un nodo (`MongoMemoryReplSet`), que tarda medio segundo
+en levantar. Hay una prueba que impide volver atrás.
+
+**La verificación que de verdad importa:** se desactivó la atomicidad a mano
+—dejando `enTransaccion` ejecutando sin sesión— y **las cuatro pruebas nuevas
+fallaron**. Una prueba de reversión que no se ha visto fallar no demuestra nada.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | `enTransaccion()`, `esFaltaDeSoporteDeTransacciones()` y las cuatro secuencias |
+| `test/integracion.test.js` | Conjunto de réplicas y cuatro casos que fuerzan el fallo a mitad |
+| `test/architecture.test.js` | Invariantes del ayudante, del arreglo en `create`, del `Promise.all` y del arnés |
+| `avance_proyecto.md` | Punto de partida, tabla de fases y esta entrada |
+
+**Verificación:**
+
+```
+npm run check             → sintaxis válida
+npm test                  → 105/105 (40 arquitectura + 65 integración)
+npm audit --omit=dev      → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- **Dos alarmas antiguas saltaron al cambiar el borrado de jornada**, y estaban
+  bien puestas: fijaban la forma literal de `PuntosJornada.deleteMany` y su
+  adyacencia con `invalidarCacheRanking`. Se actualizó la expectativa
+  conservando la intención —que la ruta haga ambas cosas—, no la adyacencia: el
+  borrado ocurre ahora dentro de la transacción y la invalidación **después de
+  confirmarla**, porque invalidar antes sería mentir si se revierte.
+- `PUT /api/admin/trivias/:jornadaNombre` **no invalidaba la caché del ranking**
+  pese a borrar respuestas y poner puntos a cero. Se añadió al cerrar la
+  transacción.
+- Las pruebas de integración pasaron de ~55 s a ~6 s. No es mérito de esta
+  entrada; el conjunto de réplicas resultó ser más rápido que el mongod suelto
+  en este equipo.
+
+**Pendiente / siguiente paso:** **pruebas E2E con Playwright**, que es lo
+acordado y lo que haría automática la prueba de humo manual que se viene
+repitiendo. Después, la CSP —convertir los 63 `onclick=` a `addEventListener`
+para poder quitar `unsafe-inline`— y los medios de la Entrada 015.
 
 ---
 

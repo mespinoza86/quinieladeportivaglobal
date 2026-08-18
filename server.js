@@ -774,6 +774,87 @@ function responderRanking(res, req, resultados) {
 }
 
 
+/* ================= Transacciones ================= */
+
+/*
+ * Varias operaciones del sistema son secuencias de escrituras que solo tienen
+ * sentido completas. Si falla la de en medio, lo que queda no es "menos datos":
+ * es un estado que el resto del código no sabe interpretar.
+ *
+ *   - Crear quiniela son dos escrituras. Sin la segunda queda una quiniela
+ *     cuyo propietario no es miembro de ella: nadie puede entrar, ni siquiera
+ *     quien la creó, y la pantalla de quinielas ni la lista.
+ *   - Transferir la propiedad son tres. A medias deja la quiniela con dos
+ *     propietarios o con ninguno.
+ *   - Borrar una jornada son cuatro. A medias deja pronósticos y puntos
+ *     congelados de una jornada que ya no existe, que luego aparecen sumados
+ *     en la tabla general sin columna a la que pertenecer.
+ *   - Reconciliar las trivias de una jornada son muchas. A medias deja
+ *     respuestas huérfanas de trivias borradas, que siguen contando puntos.
+ */
+
+let avisoSinTransaccionesDado = false;
+
+/**
+ * ¿Este error es "el servidor no sabe hacer transacciones"?
+ *
+ * MongoDB solo las admite sobre un conjunto de réplicas. Atlas lo es —también
+ * el plan gratuito—, así que en producción no se da; un `mongod` suelto de
+ * desarrollo, sí.
+ */
+function esFaltaDeSoporteDeTransacciones(error) {
+  const mensaje = String(error?.message || '');
+
+  return error?.code === 20 ||
+    error?.codeName === 'IllegalOperation' ||
+    /Transaction numbers are only allowed on a replica set/i.test(mensaje) ||
+    /transactions are not supported/i.test(mensaje);
+}
+
+/**
+ * Ejecuta una secuencia de escrituras como una sola operación atómica.
+ *
+ * La función recibe la sesión y DEBE pasarla a cada escritura: una consulta que
+ * se olvide de `{ session }` queda fuera de la transacción y no se revierte,
+ * que es el fallo silencioso típico de esto.
+ *
+ * OJO con `Promise.all`: una sesión no admite operaciones en paralelo. Las
+ * escrituras de dentro van en secuencia aunque sean independientes.
+ *
+ * Si el servidor no admite transacciones se ejecuta igualmente, sin
+ * atomicidad, avisando una vez. Es preferible a dejar la aplicación inservible
+ * contra un mongod suelto, pero conviene saber que ahí la garantía no está.
+ */
+async function enTransaccion(operacion) {
+  const sesion = await mongoose.startSession();
+
+  try {
+    let resultado;
+
+    await sesion.withTransaction(async () => {
+      resultado = await operacion(sesion);
+    });
+
+    return resultado;
+  } catch (error) {
+    if (!esFaltaDeSoporteDeTransacciones(error)) throw error;
+
+    if (!avisoSinTransaccionesDado) {
+      avisoSinTransaccionesDado = true;
+      console.warn(
+        '⚠️  Esta base de datos no admite transacciones (no es un conjunto de réplicas). ' +
+        'Las operaciones de varias escrituras se ejecutarán SIN atomicidad: un fallo a ' +
+        'mitad puede dejar datos inconsistentes. En Atlas esto no ocurre.'
+      );
+    }
+
+    return await operacion(undefined);
+  } finally {
+    await sesion.endSession();
+  }
+}
+
+
 /* ================= Validación de dominio ================= */
 
 /**
@@ -1150,19 +1231,35 @@ app.post('/api/quinielas', requireLogin, async (req, res) => {
   const nombre = String(req.body.nombre || '').trim();
   if (nombre.length < 3 || nombre.length > 80) return res.status(400).json({ error: 'El nombre debe tener entre 3 y 80 caracteres.' });
 
-  const quiniela = await Quiniela.create({
-    nombre,
-    codigoIngreso: await codigoIngresoUnico(),
-    propietarioId: req.session.usuarioId,
-    configuracion: { puntuacion: puntuacionDefault }
+  const codigoIngreso = await codigoIngresoUnico();
+
+  /*
+   * Las dos escrituras van juntas o no van. Sin la membresía, el propietario no
+   * es miembro de su propia quiniela: no aparece en su lista y no puede entrar.
+   *
+   * `create` recibe un ARREGLO a propósito: con un solo documento, Mongoose
+   * interpreta el segundo argumento como otro documento y la sesión se pierde
+   * sin decir nada.
+   */
+  const quiniela = await enTransaccion(async sesion => {
+    const [creada] = await Quiniela.create([{
+      nombre,
+      codigoIngreso,
+      propietarioId: req.session.usuarioId,
+      configuracion: { puntuacion: puntuacionDefault }
+    }], { session: sesion });
+
+    await Membresia.create([{
+      quinielaId: creada._id,
+      usuarioId: req.session.usuarioId,
+      rol: 'propietario',
+      estado: 'activo',
+      aprobadoEn: new Date()
+    }], { session: sesion });
+
+    return creada;
   });
-  await Membresia.create({
-    quinielaId: quiniela._id,
-    usuarioId: req.session.usuarioId,
-    rol: 'propietario',
-    estado: 'activo',
-    aprobadoEn: new Date()
-  });
+
   req.session.quinielaActivaId = quiniela._id.toString();
   res.status(201).json({ success: true, quiniela });
 });
@@ -1382,7 +1479,19 @@ app.post('/api/quiniela-actual/transferir-propiedad', requireAdmin, async (req, 
   destino.rol = 'propietario';
   req.membership.rol = 'admin';
   req.quiniela.propietarioId = destino.usuarioId;
-  await Promise.all([destino.save(), req.membership.save(), req.quiniela.save()]);
+
+  /*
+   * Antes eran tres `save` en `Promise.all`. Además de no ser atómico —a
+   * medias, la quiniela se quedaba con dos propietarios o con ninguno—, una
+   * sesión no admite operaciones en paralelo, así que dentro de la transacción
+   * tienen que ir en secuencia.
+   */
+  await enTransaccion(async sesion => {
+    await destino.save({ session: sesion });
+    await req.membership.save({ session: sesion });
+    await req.quiniela.save({ session: sesion });
+  });
+
   res.json({ success: true });
 });
 
@@ -3322,11 +3431,6 @@ app.put('/api/admin/trivias/:jornadaNombre', requireAdmin, async (req, res) => {
 
     const fecha = new Date(fechaCierre);
 
-    const existentes = await Trivia.find({
-      jornadaNombre,
-      activa: true
-    });
-
     const seleccionadas = new Set();
 
     configuracion.forEach(item => {
@@ -3341,79 +3445,103 @@ app.put('/api/admin/trivias/:jornadaNombre', requireAdmin, async (req, res) => {
     let actualizadas = 0;
     let eliminadas = 0;
 
-    for (const trivia of existentes) {
-      const clave = `${Number(trivia.partidoIndex)}_${trivia.tipo}`;
+    /*
+     * Toda la reconciliación va dentro de una transacción. Un fallo a mitad
+     * dejaba lo peor de los dos mundos: respuestas de jugadores huérfanas de
+     * trivias ya borradas, que seguían sumando puntos en el ranking sin
+     * pregunta a la que corresponder, y trivias reabiertas a medias.
+     */
+    await enTransaccion(async sesion => {
+      creadas = 0;
+      actualizadas = 0;
+      eliminadas = 0;
 
-      if (!seleccionadas.has(clave)) {
-        await RespuestaTrivia.deleteMany({
-          triviaId: trivia._id.toString()
-        });
+      const existentes = await Trivia.find({
+        jornadaNombre,
+        activa: true
+      }).session(sesion);
 
-        await Trivia.deleteOne({
-          _id: trivia._id
-        });
+      for (const trivia of existentes) {
+        const clave = `${Number(trivia.partidoIndex)}_${trivia.tipo}`;
 
-        eliminadas++;
-        continue;
+        if (!seleccionadas.has(clave)) {
+          await RespuestaTrivia.deleteMany({
+            triviaId: trivia._id.toString()
+          }, { session: sesion });
+
+          await Trivia.deleteOne({
+            _id: trivia._id
+          }, { session: sesion });
+
+          eliminadas++;
+          continue;
+        }
+
+        const fechaAnterior = trivia.fechaCierre ? new Date(trivia.fechaCierre).getTime() : null;
+        const fechaNueva = fecha.getTime();
+
+        trivia.fechaCierre = fecha;
+
+        if (fechaAnterior !== fechaNueva) {
+          trivia.resuelta = false;
+          trivia.respuestaCorrecta = '';
+
+          await RespuestaTrivia.updateMany(
+            { triviaId: trivia._id.toString() },
+            { $set: { puntos: 0 } },
+            { session: sesion }
+          );
+        }
+
+        await trivia.save({ session: sesion });
+        actualizadas++;
       }
 
-      const fechaAnterior = trivia.fechaCierre ? new Date(trivia.fechaCierre).getTime() : null;
-      const fechaNueva = fecha.getTime();
+      for (const item of configuracion) {
+        const partidoIndex = Number(item.partidoIndex);
+        const partido = jornada.partidos[partidoIndex];
 
-      trivia.fechaCierre = fecha;
+        if (!partido || !Array.isArray(item.tipos)) continue;
 
-      if (fechaAnterior !== fechaNueva) {
-        trivia.resuelta = false;
-        trivia.respuestaCorrecta = '';
+        for (const tipo of item.tipos) {
+          if (!TIPOS_TRIVIA[tipo]) continue;
 
-        await RespuestaTrivia.updateMany(
-          { triviaId: trivia._id.toString() },
-          { $set: { puntos: 0 } }
-        );
+          const existe = await Trivia.findOne({
+            jornadaNombre,
+            partidoIndex,
+            tipo,
+            activa: true
+          }).session(sesion);
+
+          if (existe) continue;
+
+          const trivia = new Trivia({
+            jornadaNombre,
+            partidoIndex,
+            apiFixtureId: partido.apiFixtureId || partido.fixtureId || '',
+            equipo1: partido.equipo1,
+            equipo2: partido.equipo2,
+            tipo,
+            pregunta: TIPOS_TRIVIA[tipo].pregunta,
+            opciones: opcionesTrivia(tipo, partido.equipo1, partido.equipo2),
+            puntos: req.quiniela.configuracion.puntuacion.puntosTriviaDefault,
+            fechaCierre: fecha,
+            respuestaCorrecta: '',
+            resuelta: false,
+            activa: true
+          });
+
+          await trivia.save({ session: sesion });
+          creadas++;
+        }
       }
+    });
 
-      await trivia.save();
-      actualizadas++;
-    }
-
-    for (const item of configuracion) {
-      const partidoIndex = Number(item.partidoIndex);
-      const partido = jornada.partidos[partidoIndex];
-
-      if (!partido || !Array.isArray(item.tipos)) continue;
-
-      for (const tipo of item.tipos) {
-        if (!TIPOS_TRIVIA[tipo]) continue;
-
-        const existe = await Trivia.findOne({
-          jornadaNombre,
-          partidoIndex,
-          tipo,
-          activa: true
-        });
-
-        if (existe) continue;
-
-        const trivia = new Trivia({
-          jornadaNombre,
-          partidoIndex,
-          apiFixtureId: partido.apiFixtureId || partido.fixtureId || '',
-          equipo1: partido.equipo1,
-          equipo2: partido.equipo2,
-          tipo,
-          pregunta: TIPOS_TRIVIA[tipo].pregunta,
-          opciones: opcionesTrivia(tipo, partido.equipo1, partido.equipo2),
-          puntos: req.quiniela.configuracion.puntuacion.puntosTriviaDefault,
-          fechaCierre: fecha,
-          respuestaCorrecta: '',
-          resuelta: false,
-          activa: true
-        });
-
-        await trivia.save();
-        creadas++;
-      }
-    }
+    /*
+     * Los puntos de las trivias entran en el ranking, y esta ruta acaba de
+     * borrarlos o ponerlos a cero.
+     */
+    invalidarCacheRanking(req.quiniela._id);
 
     res.json({
       mensaje: `Cambios guardados. Creadas: ${creadas}, actualizadas: ${actualizadas}, eliminadas: ${eliminadas}.`,
@@ -4381,17 +4509,31 @@ app.delete('/api/jornadas/:nombre', requireAdmin, async (req, res) => {
   try {
     const nombreJornada = req.params.nombre;
 
-    const jornadaEliminada = await Jornada.findOneAndDelete({
-      nombre: nombreJornada
+    /*
+     * Los cuatro borrados van juntos. A medias quedaban pronósticos y puntos
+     * congelados de una jornada que ya no existe: la tabla general los seguía
+     * sumando al total sin una columna a la que pertenecer, así que los puntos
+     * de todos salían mal y nada indicaba por qué.
+     */
+    const jornadaEliminada = await enTransaccion(async sesion => {
+      const jornada = await Jornada.findOneAndDelete(
+        { nombre: nombreJornada },
+        { session: sesion }
+      );
+
+      if (!jornada) return null;
+
+      await Resultado.deleteMany({ jornada: nombreJornada }, { session: sesion });
+      await ResultadoOficial.deleteMany({ jornada: nombreJornada }, { session: sesion });
+      await PuntosJornada.deleteMany({ jornada: nombreJornada }, { session: sesion });
+
+      return jornada;
     });
 
     if (!jornadaEliminada) {
       return res.status(404).json({ error: 'Jornada no encontrada' });
     }
 
-    await Resultado.deleteMany({ jornada: nombreJornada });
-    await ResultadoOficial.deleteMany({ jornada: nombreJornada });
-    await PuntosJornada.deleteMany({ jornada: nombreJornada });
     invalidarCacheRanking(req.quiniela._id);
 
     res.json({
@@ -5106,6 +5248,7 @@ module.exports = {
   tomarCerrojo,
   soltarCerrojo,
   conVigilante,
+  enTransaccion,
   puntosPuedenHaberCambiado,
   normalizarMarcador,
   normalizarNombreDeJornada,
