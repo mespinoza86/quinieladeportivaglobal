@@ -514,3 +514,27 @@ test('el ojo no usa innerHTML ni manejadores en atributo', () => {
   // Dentro de un <form>, un botón sin type explícito lo enviaría al pulsarlo.
   assert.match(script, /boton\.type = 'button'/);
 });
+
+test('el sincronizador no tira la caché del ranking por el minuto en vivo', () => {
+  assert.match(serverSinComentarios, /const CAMPOS_QUE_MUEVEN_PUNTOS = \[/);
+  assert.match(serverSinComentarios, /function puntosPuedenHaberCambiado/);
+
+  /*
+   * El minuto cambia en cada ciclo de un partido en vivo y no mueve la
+   * puntuación de nadie. Si entrara en la lista, la caché se vaciaría cada
+   * minuto durante los noventa del partido, que es el rato de más tráfico.
+   */
+  const lista = serverSinComentarios.match(/const CAMPOS_QUE_MUEVEN_PUNTOS = \[([^\]]*)\]/);
+  assert.ok(lista, 'No se encontró la lista de campos');
+  assert.doesNotMatch(lista[1], /'minuto'/);
+  for (const campo of ['marcador1', 'marcador2', 'estado']) {
+    assert.match(lista[1], new RegExp(`'${campo}'`), `Falta ${campo} en la lista`);
+  }
+
+  // Y el congelamiento tras el sync pasa por esa comprobación.
+  assert.match(
+    serverSinComentarios,
+    /if \(puntosPuedenHaberCambiado\(resultadosExistentes, resultadosActualizados\)\)/
+  );
+  assert.match(serverSinComentarios, /metricasSync\.syncsSinCambioDePuntos \+= 1/);
+});

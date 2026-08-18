@@ -1753,3 +1753,140 @@ test('eliminar partidos exige índices reales y no borra de más al repetirlos',
   assert.deepEqual(doc.partidos.map(p => p.equipo1), ['A', 'E'],
     'Solo debe desaparecer el partido señalado');
 });
+
+/* ================================================================
+ * La caché del ranking sobrevive a los ciclos que no cambian nada
+ * ================================================================ */
+
+/** Evento de un partido en curso, con el minuto que avanza en cada consulta. */
+function eventoEnVivo(idPartido, local, visita, golesLocal, golesVisita, minuto) {
+  return {
+    match_id: String(idPartido),
+    match_status: String(minuto),
+    match_live: '1',
+    match_hometeam_name: local,
+    match_awayteam_name: visita,
+    match_hometeam_score: String(golesLocal),
+    match_awayteam_score: String(golesVisita),
+    match_hometeam_ft_score: String(golesLocal),
+    match_awayteam_ft_score: String(golesVisita),
+    goalscorer: [],
+    cards: []
+  };
+}
+
+test('puntosPuedenHaberCambiado ignora el minuto y ve el marcador', () => {
+  const base = { equipo1: 'Uno', equipo2: 'Dos', marcador1: 1, marcador2: 0, estado: 'LIVE', minuto: 20, comodin: false };
+
+  /*
+   * El caso que motivó todo esto: el partido sigue igual, solo corre el reloj.
+   * Si esto devolviera true, la caché del ranking se vaciaría cada minuto
+   * durante los noventa del partido.
+   */
+  assert.equal(
+    srv.puntosPuedenHaberCambiado([base], [{ ...base, minuto: 21 }]),
+    false,
+    'El minuto no mueve la puntuación de nadie'
+  );
+
+  // Un gol sí.
+  assert.equal(srv.puntosPuedenHaberCambiado([base], [{ ...base, marcador2: 1 }]), true);
+
+  // El pitido final también: es lo que congela la jornada.
+  assert.equal(srv.puntosPuedenHaberCambiado([base], [{ ...base, estado: 'TC', bloqueadoFinal: true }]), true);
+
+  // Y marcar el partido como comodín multiplica los puntos.
+  assert.equal(srv.puntosPuedenHaberCambiado([base], [{ ...base, comodin: true }]), true);
+
+  // Añadir o quitar partidos cambia la jornada entera.
+  assert.equal(srv.puntosPuedenHaberCambiado([base], [base, base]), true);
+  assert.equal(srv.puntosPuedenHaberCambiado(undefined, [base]), true);
+
+  /*
+   * Si el proveedor devuelve los equipos al revés, el marcador cambia de
+   * significado. Por eso se empareja por equipos y no por posición.
+   */
+  const invertido = { ...base, equipo1: 'Dos', equipo2: 'Uno', marcador1: 0, marcador2: 1 };
+  assert.equal(srv.puntosPuedenHaberCambiado([base], [invertido]), true);
+});
+
+test('un sync que no cambia nada deja la caché del ranking en pie', async () => {
+  const { agente, datos } = await cuentaNueva('cacheviva');
+  const quiniela = await quinielaNueva(agente, 'Cache Del Ranking');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  const partido = {
+    equipo1: 'Alfa',
+    equipo2: 'Beta',
+    apiFixtureId: '900010',
+    apiDate: '2026-06-20 15:00'
+  };
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'JornadaEnVivo', partidos: [partido] });
+    await srv.Resultado.create({
+      jugador: datos.username,
+      jornada: 'JornadaEnVivo',
+      pronosticos: [{ equipo1: 'Alfa', equipo2: 'Beta', marcador1: 1, marcador2: 0 }]
+    });
+  });
+
+  await srv.Fixture.deleteMany({ clave: '900010' });
+
+  // Minuto 20: 1-0. Este ciclo sí cambia el marcador y debe invalidar.
+  let proveedor = proveedorFalso({ 900010: eventoEnVivo(900010, 'Alfa', 'Beta', 1, 0, 20) });
+  try {
+    await enQuiniela(id, () => srv.sincronizarJornadaDesdeApi('JornadaEnVivo', { forzar: true }));
+  } finally {
+    proveedor.restaurar();
+  }
+
+  // Se calienta la caché.
+  const primera = await agente.get('/api/resultados-totales');
+  assert.equal(primera.status, 200, JSON.stringify(primera.body));
+
+  const originalFind = srv.Jornada.find;
+  let lecturasDeJornadas = 0;
+  srv.Jornada.find = function (...args) {
+    lecturasDeJornadas += 1;
+    return originalFind.apply(this, args);
+  };
+
+  try {
+    // Minuto 21: el reloj corre, el marcador no. No debe invalidar nada.
+    const antes = srv.metricasSync.syncsSinCambioDePuntos;
+
+    proveedor = proveedorFalso({ 900010: eventoEnVivo(900010, 'Alfa', 'Beta', 1, 0, 21) });
+    try {
+      await enQuiniela(id, () => srv.sincronizarJornadaDesdeApi('JornadaEnVivo', { forzar: true }));
+    } finally {
+      proveedor.restaurar();
+    }
+
+    assert.equal(srv.metricasSync.syncsSinCambioDePuntos, antes + 1,
+      'El sync sin cambios debe contarse como tal');
+
+    const segunda = await agente.get('/api/resultados-totales');
+    assert.equal(segunda.status, 200);
+    assert.equal(lecturasDeJornadas, 0,
+      'La tabla debe salir de caché: el minuto no movió la puntuación de nadie');
+
+    // Pero el minuto sí llegó a la base, que es lo que ven las pantallas en vivo.
+    const oficial = await enQuiniela(id, () => srv.ResultadoOficial.findOne({ jornada: 'JornadaEnVivo' }));
+    assert.equal(oficial.resultados[0].minuto, 21, 'El documento se reescribe igualmente');
+
+    // Y ahora un gol: eso sí tiene que tirar la caché.
+    proveedor = proveedorFalso({ 900010: eventoEnVivo(900010, 'Alfa', 'Beta', 2, 0, 30) });
+    try {
+      await enQuiniela(id, () => srv.sincronizarJornadaDesdeApi('JornadaEnVivo', { forzar: true }));
+    } finally {
+      proveedor.restaurar();
+    }
+
+    const tercera = await agente.get('/api/resultados-totales');
+    assert.equal(tercera.status, 200);
+    assert.ok(lecturasDeJornadas > 0, 'Un gol debe invalidar la caché y recalcular');
+  } finally {
+    srv.Jornada.find = originalFind;
+  }
+});

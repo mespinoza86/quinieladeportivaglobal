@@ -1934,6 +1934,40 @@ const UMBRAL_INMINENTE_MS = 2 * 60 * 60 * 1000;
  */
 const UMBRAL_ABANDONO_MS = 4 * 60 * 60 * 1000;
 
+/*
+ * Los campos de un resultado oficial de los que dependen los PUNTOS.
+ *
+ * `minuto` queda fuera a propósito, y es la clave de todo esto: cambia en cada
+ * ciclo de un partido en vivo y no mueve la puntuación de nadie. Incluirlo
+ * significaba invalidar la caché del ranking cada minuto durante los noventa
+ * del partido —el rato de más tráfico de la semana y el peor momento para
+ * recalcular la tabla entera en cada petición—.
+ *
+ * `estado` sí cuenta: el paso a `TC` es lo que congela la jornada.
+ */
+const CAMPOS_QUE_MUEVEN_PUNTOS = ['marcador1', 'marcador2', 'comodin', 'estado', 'bloqueadoFinal'];
+
+/**
+ * ¿Este sync puede haber movido la tabla de posiciones?
+ *
+ * Se compara por partido y no por posición, con el mismo emparejamiento por
+ * equipos que usa el resto del sincronizador: el proveedor a veces devuelve
+ * local y visitante al revés, y ahí los marcadores sí cambian de significado.
+ */
+function puntosPuedenHaberCambiado(anteriores, nuevos) {
+  const previos = anteriores || [];
+  if (previos.length !== nuevos.length) return true;
+
+  const igual = (uno, otro) => (uno ?? null) === (otro ?? null);
+
+  return nuevos.some(nuevo => {
+    const anterior = buscarOficialCorrespondiente(previos, nuevo);
+    if (!anterior) return true;
+
+    return CAMPOS_QUE_MUEVEN_PUNTOS.some(campo => !igual(anterior[campo], nuevo[campo]));
+  });
+}
+
 const metricasSync = {
   ciclos: 0,
   ciclosOmitidosPorCerrojo: 0,
@@ -1944,6 +1978,7 @@ const metricasSync = {
   fixturesUnicos: 0,
   consultasEvitadasPorVentana: 0,
   jornadasReescritas: 0,
+  syncsSinCambioDePuntos: 0,
   ultimoCiclo: null,
   duracionUltimoCicloMs: null,
   ultimoError: null
@@ -2722,8 +2757,18 @@ async function sincronizarJornadaDesdeApi(jornadaNombre, { forzar = false } = {}
    * Si este sync fue el que dio el último partido por terminado, la jornada
    * queda congelada aquí, con la configuración vigente en ese momento. Es el
    * momento natural: el que cierra la jornada es el que fija sus puntos.
+   *
+   * Pero solo si algo que afecta a los puntos cambió de verdad. El documento se
+   * reescribe siempre —el minuto en vivo tiene que llegar a las pantallas—; lo
+   * que no puede hacerse siempre es tirar la caché del ranking, porque
+   * `actualizarPuntosDeJornada()` la invalida en su primera línea. Un 0-0 que
+   * sigue 0-0 llamaba noventa veces seguidas a recalcular una tabla idéntica.
    */
-  await actualizarPuntosDeJornada(jornadaNombre, await puntuacionDeLaQuinielaActual());
+  if (puntosPuedenHaberCambiado(resultadosExistentes, resultadosActualizados)) {
+    await actualizarPuntosDeJornada(jornadaNombre, await puntuacionDeLaQuinielaActual());
+  } else {
+    metricasSync.syncsSinCambioDePuntos += 1;
+  }
 
   return resultadosActualizados;
 }
@@ -5061,6 +5106,7 @@ module.exports = {
   tomarCerrojo,
   soltarCerrojo,
   conVigilante,
+  puntosPuedenHaberCambiado,
   normalizarMarcador,
   normalizarNombreDeJornada,
   normalizarPartido,

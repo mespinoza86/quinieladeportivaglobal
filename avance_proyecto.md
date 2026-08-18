@@ -26,7 +26,7 @@ Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— e
 el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **92 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **95 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -43,6 +43,7 @@ resuelta de la tabla general.
 | **6.1** | Endurecimiento: plazos del sincronizador y robustez de la lectura | 016 |
 | **6.2** | Validación de dominio y privacidad por defecto de los pronósticos | 017 |
 | **6.3** | Ojo para ver la contraseña; cierre por partido en vez de por jornada | 018, 019 |
+| **6.4** | La caché del ranking sobrevive a los ciclos que no mueven puntos | 020 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -102,8 +103,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 92 pruebas (~60 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 59 de integración
+npm test                   # las 95 pruebas (~60 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 61 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
@@ -3683,6 +3684,83 @@ npm audit --omit=dev               → 0 vulnerabilidades
 pedir fecha), editar una existente y ver los pronósticos de otro con una jornada
 a medias —debe verse el partido jugado y no el pendiente—. Después, la
 invalidación excesiva de la caché del ranking (Entrada 016) y S-04.
+
+---
+
+### 📌 Entrada 020 — 18 de agosto de 2026 — La caché del ranking sobrevive al minuto en vivo
+
+**Objetivo:** que la caché de `/api/resultados-totales` sirva de algo durante el
+partido, que es cuando más gente mira la tabla.
+
+**El diagnóstico, con una corrección respecto a como lo conté en la Entrada 016.**
+Allí lo resumí como "la caché se vacía justo cuando más falta hace". Eso era
+cierto pero incompleto, y la parte que faltaba cambia la solución: cuando el
+marcador cambia de verdad, vaciar la caché es **correcto y necesario** —la tabla
+ya no vale—. El desperdicio estaba en otro sitio:
+
+- `sincronizarJornadaDesdeApi()` reescribe el resultado oficial en **cada** ciclo
+  que toque la jornada, y termina llamando a `actualizarPuntosDeJornada()`, que
+  invalida la caché en su primera línea, sin mirar si algo cambió.
+- `refrescarFixture()` da por "hay datos nuevos" cualquier respuesta del
+  proveedor, no solo las que traen algo distinto.
+- Y el campo que cambia siempre es `minuto`.
+
+Resultado: un 0-0 que sigue 0-0 llamaba a recalcular una tabla idéntica una vez
+por minuto durante noventa minutos.
+
+**Qué se hizo:**
+
+1. `puntosPuedenHaberCambiado(anteriores, nuevos)` compara únicamente los campos
+   de los que dependen los puntos: `marcador1`, `marcador2`, `comodin`, `estado`
+   y `bloqueadoFinal`. **`minuto` queda fuera a propósito**, y es la clave de
+   todo el arreglo.
+2. El documento se **sigue reescribiendo siempre**: el minuto en vivo tiene que
+   llegar a las pantallas. Lo que pasa a ser condicional es la invalidación y el
+   recálculo de puntos.
+3. La comparación empareja por equipos con `buscarOficialCorrespondiente()`, no
+   por posición: el proveedor a veces devuelve local y visitante al revés, y ahí
+   los marcadores sí cambian de significado.
+4. Métrica `syncsSinCambioDePuntos`, para poder ver en producción cuánto se está
+   ahorrando de verdad en vez de suponerlo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | `CAMPOS_QUE_MUEVEN_PUNTOS`, `puntosPuedenHaberCambiado()`, invalidación condicional y métrica |
+| `test/architecture.test.js` | El invariante de que `minuto` no entra en la lista |
+| `test/integracion.test.js` | Caso unitario de la comparación y uno de extremo a extremo: gol → invalida, minuto → no |
+| `avance_proyecto.md` | Punto de partida, tabla de fases y esta entrada |
+
+**Verificación:**
+
+```
+npm run check             → sintaxis válida
+npm test                  → 95/95 (34 arquitectura + 61 integración)
+npm audit --omit=dev      → 0 vulnerabilidades
+```
+
+La prueba de extremo a extremo es la que vale: sincroniza el minuto 20 con 1-0,
+calienta la caché, sincroniza el minuto 21 con el **mismo** marcador y comprueba
+que la segunda lectura de la tabla no vuelve a tocar `Jornada`; después mete un
+gol y comprueba que entonces sí recalcula. Y verifica que el minuto 21 llegó a
+la base, que es lo que no debía romperse.
+
+**Hallazgos nuevos:**
+
+- `refrescarFixture()` sigue marcando como "refrescado" todo partido del que el
+  proveedor conteste algo. Eso ya no cuesta caché, pero sí una reescritura de
+  `ResultadoOficial` por ciclo y por quiniela. Comparar también ahí ahorraría
+  escrituras en Mongo; se deja anotado porque toca el corazón de la Fase 4 y
+  merece su propia prueba.
+- La caché sigue siendo **por instancia**. Con varias instancias, cada una
+  mantiene la suya y el TTL de 60 s acota la discrepancia. Redis sería el
+  siguiente paso solo si hiciera falta coherencia inmediata entre procesos.
+
+**Pendiente / siguiente paso:** vigilar `syncsSinCambioDePuntos` en el primer
+domingo con partidos en vivo: debe crecer mucho más deprisa que
+`jornadasReescritas`. Después, **S-04** —los `innerHTML`, empezando por
+`index-ranking.js` y `ver-resultados.js`— y las transacciones.
 
 ---
 
