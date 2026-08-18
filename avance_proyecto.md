@@ -46,6 +46,7 @@ resuelta de la tabla general.
 | **6.4** | La caché del ranking sobrevive a los ciclos que no mueven puntos | 020 |
 | **6.5** | **Cerrado S-04**: construcción de HTML sin agujeros de inyección | 021 |
 | **6.6** | Transacciones en las secuencias de varias escrituras | 022 |
+| **6.7** | Primeras pruebas de navegador (Playwright), escritorio y móvil | 023 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -107,6 +108,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación
 npm test                   # las 105 pruebas (~30 s, sin red, sin tocar la base real)
 npm run test:integracion   # solo las 65 de integración
+npm run test:e2e           # las 18 de navegador (~25 s, escritorio y móvil)
+npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
@@ -3945,6 +3948,103 @@ npm audit --omit=dev      → 0 vulnerabilidades
 acordado y lo que haría automática la prueba de humo manual que se viene
 repitiendo. Después, la CSP —convertir los 63 `onclick=` a `addEventListener`
 para poder quitar `unsafe-inline`— y los medios de la Entrada 015.
+
+---
+
+### 📌 Entrada 023 — 18 de agosto de 2026 — Pruebas de navegador con Playwright
+
+**Objetivo:** automatizar la prueba de humo manual. Las 105 pruebas de `npm test`
+cubren bien el servidor, pero el frontend no tenía ninguna: cada entrega de las
+últimas seis terminó con una lista de pantallas que había que abrir y mirar a
+mano, y esa lista crecía.
+
+**Qué se hizo:**
+
+1. `playwright.config.js` con dos proyectos: **escritorio y móvil**. El móvil no
+   es un extra: la interfaz entera está construida sobre `mobile-shell` y es
+   como se usa la aplicación.
+2. `test/e2e/arrancar.js` levanta la aplicación completa —base en memoria y
+   servidor HTTP— sin tocar nada real. Lo lanza Playwright a través de
+   `webServer`, que espera a que `/healthz` responda: así ninguna prueba puede
+   correr contra un servidor a medio levantar.
+3. La base es un **conjunto de réplicas**, igual que en las pruebas de
+   integración. Con un mongod suelto, las rutas que crean quinielas caerían a la
+   rama sin transacción y las pruebas verían la aplicación comportándose de otra
+   manera que en producción.
+4. Se ejecutan **en serie y con un solo trabajador**: comparten base de datos y
+   el ranking es global a la quiniela. En paralelo se pisarían y los fallos
+   serían intermitentes, que es la peor clase de prueba.
+5. Corren **aparte de `npm test`** (`npm run test:e2e`), para que la suite
+   rápida siga siendo rápida.
+
+**Las 9 pruebas (×2 proyectos = 18):**
+
+| Archivo | Qué fija |
+|---|---|
+| `cuenta.spec.js` | Alta, creación de quiniela y entrada; contraseña corta rechazada por el SERVIDOR —se le quita el `minlength` al campo a propósito—; el login que no revela si la cuenta existe; el ojo de la contraseña |
+| `inyeccion.spec.js` | Regresión de S-04 con un navegador de verdad |
+| `jornadas.spec.js` | Que crear jornada ya no pide fecha; la validación con su motivo; y la privacidad partido a partido con dos usuarios reales |
+
+**La prueba que más valor tiene** es la de inyección. Las de arquitectura
+comprueban que las plantillas van etiquetadas; esta comprueba lo que de verdad
+importa: que un nombre de jornada con `<img src=x onerror=…>` dentro llega a la
+pantalla **como texto**, que no aparece ninguna `<img>` en el DOM y que la
+bandera que el manejador habría puesto en `window` sigue sin existir.
+
+**Y las dos se verificaron al revés, que es lo único que las hace valer:**
+
+- Se quitó la etiqueta `html` de `ver_jornadas.js` → la prueba de inyección
+  **falla**.
+- (En la Entrada 022 se hizo lo mismo con la atomicidad y fallaron las cuatro.)
+
+Una prueba de seguridad que pasa también contra el código vulnerable no es una
+prueba, es un adorno.
+
+**Dos cosas que las pruebas destaparon del propio montaje:**
+
+- Crear una quiniela **lleva directo a la portada**; el servidor ya la deja
+  seleccionada. El ayudante esperaba volver a la lista y pulsar «Entrar».
+- Activar Admin Mode **no navega a ningún sitio**, solo cambia qué sección se
+  muestra. Sin esperar a que aparezca la de administración, la prueba seguía
+  antes de que la sesión quedara marcada y el servidor respondía 401.
+- Y una de dominio: **el servidor bloquea el pronóstico de un partido que ya
+  empezó**, que es la otra cara de la regla de privacidad. La prueba tuvo que
+  pronosticar primero y adelantar el reloj después.
+
+**Archivos añadidos:**
+
+| Archivo | Cambio |
+|---|---|
+| `playwright.config.js` | Dos proyectos, servidor propio, en serie |
+| `test/e2e/arrancar.js` | Levanta base en memoria y aplicación |
+| `test/e2e/ayudas.js` | Alta, creación de quiniela y Admin Mode |
+| `test/e2e/*.spec.js` | Las nueve pruebas |
+| `package.json`, `.gitignore` | `test:e2e`, `test:e2e:ui`; informes fuera del control de versiones |
+
+**Verificación:**
+
+```
+npm test              → 105/105 (la suite rápida no cambia)
+npm run test:e2e      → 18/18 (9 × escritorio y móvil), ~25 s
+npm audit --omit=dev  → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- Cada prueba se crea **su propia cuenta y su propia quiniela**, con marca de
+  tiempo en el nombre. Reutilizar datos entre pruebas las hace depender del
+  orden, y esos fallos se persiguen durante horas.
+- Playwright deja `test-results/` y `playwright-report/`, ya excluidos del
+  control de versiones. Las capturas y los rastros solo se guardan **al fallar**.
+- Los navegadores no van en el repositorio: en una máquina nueva hace falta
+  `npx playwright install chromium` una vez.
+
+**Pendiente / siguiente paso:** ampliar la cobertura a las pantallas de
+resultados y trivias, que son las que más plantillas tienen. Después, **la
+CSP**: convertir los 63 `onclick=` a `addEventListener` para poder quitar
+`unsafe-inline`, que es lo que convertiría el escapado de S-04 en defensa en
+profundidad y no en la única línea. Y montar CI, que ahora ya tiene algo que
+ejecutar.
 
 ---
 

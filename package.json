@@ -13,7 +13,9 @@
     "test:arquitectura": "node --test test/architecture.test.js",
     "test:integracion": "node --test test/integracion.test.js",
     "migrate:legacy:dry": "node scripts/migrate-legacy.js",
-    "migrate:legacy": "node scripts/migrate-legacy.js --execute"
+    "migrate:legacy": "node scripts/migrate-legacy.js --execute",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "axios": "^1.11.0",
@@ -32,6 +34,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "mongodb-memory-server": "^11.2.0",
     "supertest": "^7.2.2"
   }

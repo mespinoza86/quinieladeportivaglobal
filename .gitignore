@@ -3,3 +3,7 @@
 !.env.example
 node_modules/
 npm-debug.log*
+
+# Playwright: informes y rastros de las pruebas de navegador
+test-results/
+playwright-report/
