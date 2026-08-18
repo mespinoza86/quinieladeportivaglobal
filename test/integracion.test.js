@@ -1407,3 +1407,104 @@ test('un fallo del proveedor no borra el último marcador conocido', async () =>
   const espera = new Date(guardado.proximaConsulta).getTime() - Date.now();
   assert.ok(espera > 5 * 60 * 1000, 'Tras un fallo la siguiente consulta debe espaciarse');
 });
+
+/* ================================================================
+ * Endurecimiento: plazos del sincronizador y robustez de la lectura
+ * ================================================================ */
+
+test('el vigilante abandona una promesa que nunca se resuelve', async () => {
+  /*
+   * El caso real: una petición al proveedor que se queda colgada. Sin plazo, el
+   * `await` del ciclo no vuelve nunca, `cicloEnCurso` se queda en true y la
+   * sincronización de esa instancia se apaga hasta el reinicio.
+   */
+  const nuncaTermina = new Promise(() => {});
+
+  await assert.rejects(
+    () => srv.conVigilante(nuncaTermina, 30, 'plazo agotado'),
+    error => {
+      assert.equal(error.message, 'plazo agotado');
+      assert.equal(error.esTiempoAgotado, true, 'El fallo debe distinguirse de un error del ciclo');
+      return true;
+    }
+  );
+
+  // Y lo que sí termina a tiempo pasa intacto, sin que el vigilante estorbe.
+  assert.equal(await srv.conVigilante(Promise.resolve('listo'), 5000, 'no debería'), 'listo');
+});
+
+test('un ciclo abandonado no suelta el cerrojo del ciclo siguiente', async () => {
+  /*
+   * Un ciclo que el vigilante dio por perdido puede terminar más tarde y llegar
+   * a soltar el cerrojo. Si el titular fuera el proceso, soltaría el del ciclo
+   * que ya está corriendo y habría dos sincronizando a la vez.
+   */
+  const cerrojo = 'cerrojo-de-ciclo-abandonado';
+  const abandonado = 'instancia#1';
+  const vigente = 'instancia#2';
+
+  assert.equal(await srv.tomarCerrojo(cerrojo, 60 * 1000, new Date(), abandonado), true);
+
+  // El ciclo abandonado caduca y el siguiente toma el cerrojo con su testigo.
+  const despues = new Date(Date.now() + 61 * 1000);
+  assert.equal(await srv.tomarCerrojo(cerrojo, 60 * 1000, despues, vigente), true);
+
+  // Ahora el zombi termina y suelta. No es suyo: no debe soltar nada.
+  await srv.soltarCerrojo(cerrojo, abandonado);
+  assert.equal(await srv.tomarCerrojo(cerrojo, 60 * 1000, despues), false,
+    'El cerrojo del ciclo vigente debe seguir tomado');
+
+  // Su dueño real sí lo suelta.
+  await srv.soltarCerrojo(cerrojo, vigente);
+  assert.equal(await srv.tomarCerrojo(cerrojo, 60 * 1000, despues), true);
+  await srv.soltarCerrojo(cerrojo);
+});
+
+test('la clasificación responde aunque no se pueda congelar la jornada', async () => {
+  const { agente, datos } = await cuentaNueva('congelado');
+  const quiniela = await quinielaNueva(agente, 'Congelado Tolerante');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  const partido = { equipo1: 'Alfa', equipo2: 'Beta' };
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'Jornada Tolerante', partidos: [partido] });
+    await srv.ResultadoOficial.create({
+      jornada: 'Jornada Tolerante',
+      resultados: [{ ...partido, marcador1: 1, marcador2: 0, estado: 'TC', bloqueadoFinal: true }]
+    });
+    await srv.Resultado.create({
+      jugador: datos.username,
+      jornada: 'Jornada Tolerante',
+      pronosticos: [{ ...partido, marcador1: 1, marcador2: 0 }]
+    });
+  });
+
+  /*
+   * Dos peticiones simultáneas sobre una jornada recién confirmada hacen el
+   * mismo upsert y chocan contra el índice único {quinielaId, jornada}. Aquí se
+   * fuerza ese 11000 en vez de esperar a que la carrera ocurra sola.
+   */
+  const originalUpsert = srv.PuntosJornada.findOneAndUpdate;
+  const originalError = console.error;
+  srv.PuntosJornada.findOneAndUpdate = function () {
+    const duplicado = new Error('E11000 duplicate key error');
+    duplicado.code = 11000;
+    throw duplicado;
+  };
+  console.error = () => {};
+
+  let respuesta;
+  try {
+    respuesta = await agente.get('/api/clasificacion-jornada?jornada=Jornada%20Tolerante');
+  } finally {
+    srv.PuntosJornada.findOneAndUpdate = originalUpsert;
+    console.error = originalError;
+  }
+
+  assert.equal(respuesta.status, 200, JSON.stringify(respuesta.body));
+  assert.equal(respuesta.body.estado, 'confirmada');
+  assert.equal(respuesta.body.clasificacion[0].jugador, datos.username);
+  assert.equal(respuesta.body.clasificacion[0].puntos, 5,
+    'Sin materializado, los puntos se calculan al vuelo y dan el mismo número');
+});
+

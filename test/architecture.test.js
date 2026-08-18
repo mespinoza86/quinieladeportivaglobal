@@ -364,3 +364,54 @@ test('todas las referencias locales JS y CSS de HTML existen', () => {
     }
   }
 });
+
+test('el proveedor externo tiene un plazo máximo de espera', () => {
+  /*
+   * El valor por defecto de axios es 0, que significa esperar para siempre. Una
+   * petición colgada dejaba sin resolver la promesa del ciclo, y como
+   * `cicloEnCurso` solo se libera en su `finally`, el auto-sync del proceso se
+   * apagaba en silencio hasta el siguiente reinicio.
+   */
+  assert.match(serverSinComentarios, /const TIMEOUT_APIFOOTBALL_MS = Number\(process\.env\.APIFOOTBALL_TIMEOUT_MS/);
+  assert.match(
+    serverSinComentarios,
+    /axios\.create\(\{\s*baseURL: 'https:\/\/apiv3\.apifootball\.com\/',\s*timeout: TIMEOUT_APIFOOTBALL_MS\s*\}\)/
+  );
+});
+
+test('un ciclo de sincronización que no termina no bloquea al planificador', () => {
+  // El vigilante libera `cicloEnCurso` aunque el ciclo no llegue a resolverse.
+  assert.match(serverSinComentarios, /const TIMEOUT_CICLO_SYNC_MS = Number\(process\.env\.SYNC_TIMEOUT_CICLO_MS/);
+  assert.match(serverSinComentarios, /await conVigilante\(\s*ejecutarCicloDeSincronizacion\(\)/);
+  assert.match(serverSinComentarios, /metricasSync\.ciclosAbandonadosPorTiempo \+= 1/);
+
+  /*
+   * El cerrojo se suelta por el testigo del ciclo, no por el del proceso. Con
+   * el del proceso, un ciclo abandonado que terminara tarde soltaría el
+   * cerrojo del ciclo siguiente y dejaría dos sincronizando a la vez.
+   */
+  assert.match(serverSinComentarios, /async function soltarCerrojo\(nombre, titular = ID_INSTANCIA\)/);
+  assert.match(serverSinComentarios, /\{ nombre, instancia: titular \}/);
+  assert.match(serverSinComentarios, /await soltarCerrojo\(CERROJO_SYNC, titular\)/);
+});
+
+test('la clasificación por jornada no lee la temporada entera para elegir una', () => {
+  // Los partidos de todas las jornadas no hacen falta para llenar un desplegable.
+  assert.match(
+    serverSinComentarios,
+    /const jornadas = await Jornada\.find\(\{\}\)\.select\('nombre'\)\.sort\(\{ createdAt: -1 \}\)/
+  );
+
+  // Y congelar dentro de un GET es una red de seguridad: no puede tumbar la consulta.
+  assert.match(
+    serverSinComentarios,
+    /try \{\s*await actualizarPuntosDeJornada\(jornadaNombre, req\.quiniela\.configuracion\.puntuacion\);\s*\} catch/
+  );
+});
+
+test('la portada pide solo el podio, no la tabla completa', () => {
+  const portada = fs.readFileSync(path.join(root, 'private', 'js', 'index-ranking.js'), 'utf8');
+  assert.match(portada, /\/api\/resultados-totales\?pagina=1&limite=3/);
+  assert.doesNotMatch(portada, /fetch\('\/api\/resultados-totales'\)/);
+});
+

@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 17 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 18 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -22,11 +22,11 @@
 **Fases 0 a 4 completadas.** Las cuatro primeras el 16 de agosto de 2026; la
 Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— el 17.
 
-**La Fase 5 y las mejoras posteriores están confirmadas localmente en Git, pero
-todavía no están fusionadas a `main` ni enviadas a `origin`.** `PuntosJornada` materializa las jornadas terminadas, la
+**La Fase 5 y las mejoras posteriores ya están en `main` y en `origin`**, fusionadas
+el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **75 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **82 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -39,6 +39,8 @@ resuelta de la tabla general.
 | **2** | **Cerrada la fuga C-02** entre quinielas + 4 bugs de dominio | 007 |
 | **3** | Red de pruebas: de **6 a 53 pruebas**, con MongoDB en memoria | 008, 009 |
 | **4** | **Cerrados C-01 y C-05**: caché de partidos compartida, ventanas por estado, cerrojo distribuido | 010 |
+| **5** | Ranking materializado (`PuntosJornada`), caché por quiniela y paginación de la tabla general | 012 |
+| **6.1** | Endurecimiento: plazos del sincronizador y robustez de la lectura | 016 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -98,8 +100,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 75 pruebas (~14 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 50 de integración
+npm test                   # las 82 pruebas (~55 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 53 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
@@ -127,7 +129,6 @@ El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo
 | # | Decisión | Por qué importa |
 |---|---|---|
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `main` y `origin/main` todavía no contienen la Fase 4, la Fase 5, el retiro de campeón ni la tabla por jornada |
 | **M-03/M-04** | Política de congelamiento implementada localmente | Se congela al quedar definitivos todos los partidos y las correcciones conservan las reglas originales |
 | **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
 
@@ -141,7 +142,9 @@ El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo
 - **Vigilar `/api/admin/sync-metricas` tras el primer despliegue de la Fase 4.**
   Es la forma de comprobar en producción que la deduplicación hace lo que dice:
   `consultasAhorradasPorDeduplicacion` debe crecer en cuanto haya dos quinielas
-  siguiendo los mismos partidos.
+  siguiendo los mismos partidos. Desde la Entrada 016 también conviene mirar
+  `ciclosAbandonadosPorTiempo`: si crece, el proveedor está tardando más que el
+  plazo del ciclo y hay que revisar `APIFOOTBALL_TIMEOUT_MS`.
 
 ---
 
@@ -3351,6 +3354,105 @@ de cerrar al menos las cinco prioridades altas.
 de endurecimiento (XSS, validación y privacidad) como una fase separada con pruebas
 de regresión. La rama contiene el commit local `64ec3ce`, pero sigue pendiente de
 fusión a `main` y envío a `origin`.
+
+---
+
+### 📌 Entrada 016 — 18 de agosto de 2026 — Endurecimiento: plazos del sincronizador y robustez de la lectura
+
+**Objetivo:** cerrar el único modo de fallo permanente y silencioso del sistema, y
+quitar de la tabla por jornada la lectura completa y el 500 por carrera que la
+auditoría de la Entrada 015 dejó señalados.
+
+**Qué se hizo:**
+
+1. **Timeout en el cliente de APIFootball.** El valor por defecto de axios es 0
+   —esperar para siempre—. Una petición colgada dejaba sin resolver la promesa
+   del ciclo de sincronización; como `cicloEnCurso` solo se libera en el
+   `finally` de ese ciclo, el auto-sync de esa instancia se apagaba **hasta el
+   siguiente reinicio**, sin ningún error visible: `ultimoCiclo` simplemente
+   dejaba de moverse. Ahora se configura con `APIFOOTBALL_TIMEOUT_MS` (15 s).
+2. **Vigilante del ciclo completo**, como segundo cinturón: `conVigilante()`
+   deja de esperar un ciclo que no termina en `SYNC_TIMEOUT_CICLO_MS` (4 min,
+   menor que los 5 del cerrojo a propósito) y libera el planificador. Cubre
+   cualquier promesa que no resuelva, no solo una petición HTTP.
+3. **El cerrojo se suelta por el testigo del ciclo, no por el del proceso.** Sin
+   esto, un ciclo abandonado que terminara tarde soltaría el cerrojo del ciclo
+   siguiente del mismo proceso y habría dos sincronizando a la vez. El testigo
+   es `${ID_INSTANCIA}#${contador}`; `tomarCerrojo`/`soltarCerrojo` lo aceptan
+   como parámetro opcional, así que las llamadas existentes no cambian.
+4. **Métrica `ciclosAbandonadosPorTiempo`** y los dos plazos expuestos en
+   `/api/admin/sync-metricas`. El fallo dejó de ser invisible, que era la parte
+   peor del hallazgo.
+5. **`/api/clasificacion-jornada` ya no lee la temporada entera.** Traía todas
+   las jornadas con todos sus partidos para llenar el desplegable y localizar
+   una; ahora pide `.select('nombre')` y un `findOne` de la elegida, dentro del
+   mismo `Promise.all`. Con 40 jornadas de 10 partidos eran ~400 subdocumentos
+   por carga de pantalla.
+6. **Congelar dentro de ese GET ya no puede tumbar la consulta.** Dos peticiones
+   simultáneas sobre una jornada recién confirmada hacen el mismo upsert y
+   chocan contra el índice único `{quinielaId, jornada}`; MongoDB devuelve
+   11000 y la pantalla respondía 500 por una carrera que además ya había dejado
+   el trabajo hecho. Ahora se registra, se relee y, si aun así no hay
+   materializado, los puntos al vuelo dan el mismo número.
+7. **La portada pide solo el podio.** `index-ranking.js` pedía la tabla completa
+   y descartaba todo menos tres filas; ahora usa `?pagina=1&limite=3`, la
+   paginación que la Fase 5 ya había construido y que la pantalla más visitada
+   era la única en no aprovechar.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Timeout del proveedor, `conVigilante()`, testigo por ciclo, métrica y plazos; clasificación por jornada con proyección y congelado tolerante a fallos |
+| `private/js/index-ranking.js` | La portada consume el ranking paginado |
+| `.env.example` | `APIFOOTBALL_TIMEOUT_MS` y `SYNC_TIMEOUT_CICLO_MS` |
+| `test/architecture.test.js` | Cuatro invariantes: timeout, vigilante y testigo, proyección de la clasificación, portada paginada |
+| `test/integracion.test.js` | Tres casos: el vigilante abandona lo que no resuelve, un ciclo abandonado no suelta el cerrojo ajeno, la clasificación responde 200 con el congelado fallando |
+| `avance_proyecto.md` | Punto de partida, tabla de fases, vigilancia de métricas y esta entrada |
+
+**Verificación:**
+
+```
+npm run check                            → sintaxis válida
+node --check private/js/index-ranking.js → sintaxis válida
+npm test                                 → 82/82 (29 arquitectura + 53 integración)
+duración                                 → ~55 s, sin red y sin tocar la base real
+```
+
+**Hallazgos nuevos:**
+
+- La caché del ranking **se invalida sola justo cuando más falta hace**.
+  `actualizarPuntosDeJornada()` llama a `invalidarCacheRanking()`
+  incondicionalmente en su primera línea, y el sincronizador la llama al final de
+  cada `sincronizarJornadaDesdeApi()`. Con partidos en vivo la ventana es de
+  60 s, exactamente el TTL de la caché: durante la jornada en vivo —el pico de
+  tráfico— la caché se vacía en cada ciclo y casi nunca llega a servir. La
+  corrección natural es invalidar solo si los resultados escritos difieren de los
+  previos. **No se tocó aquí** porque cambia el comportamiento del sincronizador
+  y merece su propia prueba de regresión.
+- El censo del ciclo recorre **todas** las jornadas de todas las quinielas
+  activas cada minuto, incluidas temporadas cerradas hace un año. Las llamadas al
+  proveedor sí están acotadas por las ventanas; la lectura de Mongo no.
+- Se comprobó contra `mongodb-memory-server` que `POST /api/jornadas` sin
+  `nombre` **no** sobrescribe una jornada existente: Mongoose castea a
+  `nombre: null` y crea una jornada basura, que luego aparece como columna en la
+  tabla general y como opción en el desplegable. Es la ruta por la que debe
+  empezar el bloque de validación.
+- Sobre **S-04**: el username está restringido a `^[a-zA-Z0-9_.-]{3,30}$` en el
+  registro y `POST /api/jugadores` está retirado con 410, así que el ranking
+  —lo que más se interpola— no es un vector. Los vectores reales son los campos
+  libres de administración: nombre de jornada, nombres de equipo y textos de
+  trivia. Es "el dueño de una quiniela contra sus propios miembros", que en un
+  modelo donde cualquiera crea quinielas sigue importando, pero no es "cualquier
+  usuario contra todos". Se mantiene abierto, con esa severidad corregida.
+  `index-ranking.js` sigue usando `innerHTML` con plantilla: es de lo primero
+  que hay que convertir cuando se aborde.
+
+**Pendiente / siguiente paso:** prueba de humo visual de Inicio (el podio ahora
+viene paginado) y de la tabla por jornada. Después, el bloque de validación de
+dominio: marcador entero no negativo, jornada con nombre obligatorio y
+`fechaCierre` obligatoria —eso cierra de una vez la validación y la privacidad de
+pronósticos, que son el mismo agujero visto por dos lados—.
 
 ---
 

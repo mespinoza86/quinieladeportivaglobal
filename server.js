@@ -408,8 +408,19 @@ const footballApi = axios.create({
 });
 */
 
+/*
+ * `timeout` no es decorativo. El valor por defecto de axios es 0 —esperar para
+ * siempre—, y una petición que se queda colgada deja sin resolver la promesa
+ * del ciclo de sincronización. Como `cicloEnCurso` solo se libera en el
+ * `finally` de ese ciclo, el auto-sync del proceso se apaga en silencio hasta
+ * el siguiente reinicio: nadie ve un error, simplemente `ultimoCiclo` deja de
+ * moverse en /api/admin/sync-metricas.
+ */
+const TIMEOUT_APIFOOTBALL_MS = Number(process.env.APIFOOTBALL_TIMEOUT_MS || 15_000);
+
 const apiFootballCom = axios.create({
-  baseURL: 'https://apiv3.apifootball.com/'
+  baseURL: 'https://apiv3.apifootball.com/',
+  timeout: TIMEOUT_APIFOOTBALL_MS
 });
 
 
@@ -1726,6 +1737,18 @@ const CONCURRENCIA_MAXIMA_API = Number(process.env.SYNC_CONCURRENCIA || 4);
  */
 const TTL_CERROJO_SYNC_MS = 5 * 60 * 1000;
 
+/*
+ * Segundo cinturón, por debajo del timeout del proveedor: si un ciclo no
+ * termina en este plazo se deja de esperarlo y el planificador queda libre.
+ * El timeout de axios cubre el caso conocido —una petición HTTP colgada—; esto
+ * cubre cualquier otra promesa que no resuelva, que tendría el mismo efecto de
+ * apagar la sincronización del proceso para siempre.
+ *
+ * Es menor que el TTL del cerrojo a propósito: cuando el siguiente ciclo llegue
+ * a pedirlo, el del ciclo abandonado ya estará caducado o a punto.
+ */
+const TIMEOUT_CICLO_SYNC_MS = Number(process.env.SYNC_TIMEOUT_CICLO_MS || 4 * 60 * 1000);
+
 const VENTANAS_SYNC_MS = {
   enVivo: 60 * 1000,
   inminente: 15 * 60 * 1000,
@@ -1746,6 +1769,7 @@ const UMBRAL_ABANDONO_MS = 4 * 60 * 60 * 1000;
 const metricasSync = {
   ciclos: 0,
   ciclosOmitidosPorCerrojo: 0,
+  ciclosAbandonadosPorTiempo: 0,
   llamadasApi: 0,
   erroresApi: 0,
   partidosSeguidos: 0,
@@ -1828,6 +1852,31 @@ function calcularProximaConsulta(estado, apiDate, ahora = new Date(), hayError =
   }
 
   return new Date(proxima);
+}
+
+/**
+ * Deja de esperar una promesa pasado un plazo.
+ *
+ * No la cancela —en JavaScript no se puede— y no hace falta: lo que importa es
+ * que quien esperaba recupere el control. La promesa original sigue teniendo
+ * un manejador puesto por `Promise.race`, así que un fallo tardío no se
+ * convierte en un rechazo sin gestionar.
+ */
+function conVigilante(promesa, ms, mensaje) {
+  let temporizador;
+
+  const vigilante = new Promise((_, rechazar) => {
+    temporizador = setTimeout(() => {
+      const error = new Error(mensaje);
+      error.esTiempoAgotado = true;
+      rechazar(error);
+    }, ms);
+
+    // Un temporizador pendiente no debe impedir que el proceso termine.
+    temporizador.unref?.();
+  });
+
+  return Promise.race([promesa, vigilante]).finally(() => clearTimeout(temporizador));
 }
 
 /**
@@ -2015,13 +2064,13 @@ function catalogoDeJornada(jornadaDoc) {
  * por nombre. Ese choque —código 11000— es exactamente la respuesta "lo tiene
  * otro", no un error que haya que propagar.
  */
-async function tomarCerrojo(nombre, ttlMs, ahora = new Date()) {
+async function tomarCerrojo(nombre, ttlMs, ahora = new Date(), titular = ID_INSTANCIA) {
   try {
     const resultado = await JobLock.findOneAndUpdate(
       { nombre, expiraEn: { $lte: ahora } },
       {
         $set: {
-          instancia: ID_INSTANCIA,
+          instancia: titular,
           tomadoEn: ahora,
           expiraEn: new Date(ahora.getTime() + ttlMs)
         },
@@ -2037,10 +2086,19 @@ async function tomarCerrojo(nombre, ttlMs, ahora = new Date()) {
   }
 }
 
-/** Suelta el cerrojo, pero solo si sigue siendo nuestro. */
-async function soltarCerrojo(nombre) {
+/**
+ * Suelta el cerrojo, pero solo si sigue siendo nuestro.
+ *
+ * "Nuestro" es el testigo del ciclo concreto, no el del proceso. La diferencia
+ * importa cuando el vigilante abandona un ciclo lento: ese ciclo puede terminar
+ * más tarde y llegar aquí cuando el cerrojo ya lo tiene un ciclo posterior del
+ * MISMO proceso. Con el identificador de proceso lo soltaría, dejando a dos
+ * ciclos sincronizando a la vez; con el testigo del ciclo, el filtro no
+ * encuentra nada y la llamada no hace daño.
+ */
+async function soltarCerrojo(nombre, titular = ID_INSTANCIA) {
   await JobLock.updateOne(
-    { nombre, instancia: ID_INSTANCIA },
+    { nombre, instancia: titular },
     { $set: { expiraEn: new Date(0) } }
   );
 }
@@ -2059,7 +2117,14 @@ async function soltarCerrojo(nombre) {
 async function ejecutarCicloDeSincronizacion({ ahora = new Date() } = {}) {
   const arranque = Date.now();
 
-  if (!(await tomarCerrojo(CERROJO_SYNC, TTL_CERROJO_SYNC_MS, ahora))) {
+  /*
+   * Testigo propio de este ciclo. Ver soltarCerrojo(): sin él, un ciclo que el
+   * vigilante dio por perdido podría soltar, al terminar tarde, el cerrojo que
+   * ya tiene el ciclo siguiente.
+   */
+  const titular = `${ID_INSTANCIA}#${++contadorDeCiclos}`;
+
+  if (!(await tomarCerrojo(CERROJO_SYNC, TTL_CERROJO_SYNC_MS, ahora, titular))) {
     metricasSync.ciclosOmitidosPorCerrojo += 1;
     return { omitido: true, motivo: 'cerrojo en poder de otra instancia' };
   }
@@ -2143,13 +2208,14 @@ async function ejecutarCicloDeSincronizacion({ ahora = new Date() } = {}) {
       duracionMs: metricasSync.duracionUltimoCicloMs
     };
   } finally {
-    await soltarCerrojo(CERROJO_SYNC).catch(error => {
+    await soltarCerrojo(CERROJO_SYNC, titular).catch(error => {
       console.error('Error soltando el cerrojo de sincronización:', error.message);
     });
   }
 }
 
 let cicloEnCurso = false;
+let contadorDeCiclos = 0;
 
 /*
  * Guarda local además del cerrojo distribuido. El cerrojo evita que dos
@@ -2163,8 +2229,13 @@ async function tickDeSincronizacion() {
   cicloEnCurso = true;
 
   try {
-    await ejecutarCicloDeSincronizacion();
+    await conVigilante(
+      ejecutarCicloDeSincronizacion(),
+      TIMEOUT_CICLO_SYNC_MS,
+      `El ciclo de sincronización superó ${TIMEOUT_CICLO_SYNC_MS} ms y se abandonó.`
+    );
   } catch (error) {
+    if (error?.esTiempoAgotado) metricasSync.ciclosAbandonadosPorTiempo += 1;
     metricasSync.ultimoError = error.message;
     console.error('Error en el ciclo de sincronización:', error.message);
   } finally {
@@ -3795,6 +3866,8 @@ app.get('/api/admin/sync-metricas', requireAdmin, (req, res) => {
       intervaloCicloMs: INTERVALO_CICLO_SYNC_MS,
       concurrenciaMaxima: CONCURRENCIA_MAXIMA_API,
       ttlCerrojoMs: TTL_CERROJO_SYNC_MS,
+      timeoutCicloMs: TIMEOUT_CICLO_SYNC_MS,
+      timeoutProveedorMs: TIMEOUT_APIFOOTBALL_MS,
       ventanasMs: VENTANAS_SYNC_MS,
       trabajosHabilitados: JOBS_HABILITADOS
     },
@@ -4283,17 +4356,26 @@ async function puntuacionDeLaQuinielaActual() {
 /* ================= Clasificación por jornada ================= */
 app.get('/api/clasificacion-jornada', async (req, res) => {
   try {
-    const jornadas = await Jornada.find({}).sort({ createdAt: -1 }).lean();
+    /*
+     * Solo los nombres. Antes se traía la temporada entera —cada jornada con
+     * todos sus partidos— para dos cosas que no lo necesitan: llenar el
+     * desplegable y localizar una jornada. Con cuarenta jornadas de diez
+     * partidos eso son cuatrocientos subdocumentos en cada carga de pantalla,
+     * que es justo la clase de lectura que la Fase 5 quitó de la tabla general.
+     */
+    const jornadas = await Jornada.find({}).select('nombre').sort({ createdAt: -1 }).lean();
     if (!jornadas.length) return res.json({ jornadas: [], jornada: null, estado: null, clasificacion: [] });
 
     const jornadaNombre = String(req.query.jornada || jornadas[0].nombre);
-    const jornada = jornadas.find(item => item.nombre === jornadaNombre);
-    if (!jornada) return res.status(404).json({ error: 'Jornada no encontrada.' });
+    if (!jornadas.some(item => item.nombre === jornadaNombre)) {
+      return res.status(404).json({ error: 'Jornada no encontrada.' });
+    }
 
-    let [oficial, pronosticos, materializada, miembrosRanking, jugadoresHistoricos] = await Promise.all([
-      ResultadoOficial.findOne({ jornada: jornada.nombre }).lean(),
-      Resultado.find({ jornada: jornada.nombre }).lean(),
-      PuntosJornada.findOne({ jornada: jornada.nombre }).lean(),
+    let [jornada, oficial, pronosticos, materializada, miembrosRanking, jugadoresHistoricos] = await Promise.all([
+      Jornada.findOne({ nombre: jornadaNombre }).lean(),
+      ResultadoOficial.findOne({ jornada: jornadaNombre }).lean(),
+      Resultado.find({ jornada: jornadaNombre }).lean(),
+      PuntosJornada.findOne({ jornada: jornadaNombre }).lean(),
       Membresia.find({
         quinielaId: req.quiniela._id,
         estado: req.quiniela.configuracion.incluirExpulsadosEnRanking
@@ -4303,11 +4385,30 @@ app.get('/api/clasificacion-jornada', async (req, res) => {
       Jugador.find({}).select('nombre').lean()
     ]);
 
+    if (!jornada) return res.status(404).json({ error: 'Jornada no encontrada.' });
+
     const oficiales = oficial?.resultados || [];
     const confirmada = jornadaEstaFinalizada(jornada.partidos, oficiales);
+
+    /*
+     * Materializar dentro de un GET es una red de seguridad, no el camino
+     * normal: lo habitual es que la jornada se congele en el momento en que
+     * termina. Por eso un fallo aquí no puede tumbar la consulta.
+     *
+     * El caso concreto: dos peticiones simultáneas sobre una jornada recién
+     * confirmada hacen el mismo upsert y chocan contra el índice único
+     * {quinielaId, jornada}; MongoDB responde 11000 y, sin este try, la tabla
+     * devolvía un 500 por una carrera que además ya dejó el trabajo hecho. Se
+     * relee después: casi siempre estará el documento que grabó la otra.
+     * Si aun así no está, los puntos calculados al vuelo dan el mismo número.
+     */
     if (confirmada && !materializada) {
-      await actualizarPuntosDeJornada(jornada.nombre, req.quiniela.configuracion.puntuacion);
-      materializada = await PuntosJornada.findOne({ jornada: jornada.nombre }).lean();
+      try {
+        await actualizarPuntosDeJornada(jornadaNombre, req.quiniela.configuracion.puntuacion);
+      } catch (error) {
+        console.error(`No se pudo congelar "${jornadaNombre}" al consultarla:`, error.message);
+      }
+      materializada = await PuntosJornada.findOne({ jornada: jornadaNombre }).lean();
     }
     const puntuacion = materializada?.puntuacion || req.quiniela.configuracion.puntuacion;
     const puntosMaterializados = new Map((materializada?.puntos || []).map(item => [item.jugador, item.puntos || 0]));
@@ -4730,6 +4831,7 @@ module.exports = {
   conLimiteDeConcurrencia,
   tomarCerrojo,
   soltarCerrojo,
+  conVigilante,
   proveedorDeEventos,
   metricasSync,
   VENTANAS_SYNC_MS,

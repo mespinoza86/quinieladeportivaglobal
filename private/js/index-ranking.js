@@ -3,16 +3,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!container) return;
 
   try {
-    const res = await fetch('/api/resultados-totales');
+    /*
+     * Paginado. La portada solo pinta el podio, pero pedía la tabla entera y
+     * descartaba todo menos tres filas: con quinientos jugadores se transferían
+     * quinientas filas para mostrar tres. El servidor ya devuelve la página
+     * ordenada por total descendente, así que aquí no hay nada que ordenar.
+     */
+    const res = await fetch('/api/resultados-totales?pagina=1&limite=3');
     const data = await res.json();
 
-    const ranking = Object.entries(data)
-      .map(([jugador, puntos]) => ({
-        jugador,
-        total: puntos.total || 0
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 3);
+    const ranking = (data.jugadores || []).map(item => ({
+      jugador: item.jugador,
+      total: item.total || 0
+    }));
 
     const medallas = ['🥇', '🥈', '🥉'];
 
