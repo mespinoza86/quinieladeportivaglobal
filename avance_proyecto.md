@@ -26,7 +26,7 @@ Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— e
 el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **82 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **90 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -41,6 +41,7 @@ resuelta de la tabla general.
 | **4** | **Cerrados C-01 y C-05**: caché de partidos compartida, ventanas por estado, cerrojo distribuido | 010 |
 | **5** | Ranking materializado (`PuntosJornada`), caché por quiniela y paginación de la tabla general | 012 |
 | **6.1** | Endurecimiento: plazos del sincronizador y robustez de la lectura | 016 |
+| **6.2** | Validación de dominio y privacidad por defecto de los pronósticos | 017 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -100,8 +101,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 82 pruebas (~55 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 53 de integración
+npm test                   # las 90 pruebas (~60 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 59 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
@@ -3453,6 +3454,99 @@ viene paginado) y de la tabla por jornada. Después, el bloque de validación de
 dominio: marcador entero no negativo, jornada con nombre obligatorio y
 `fechaCierre` obligatoria —eso cierra de una vez la validación y la privacidad de
 pronósticos, que son el mismo agujero visto por dos lados—.
+
+---
+
+### 📌 Entrada 017 — 18 de agosto de 2026 — Validación de dominio y privacidad de pronósticos
+
+**Objetivo:** cerrar las dos prioridades altas restantes de la Entrada 015 que
+resultaron ser **el mismo agujero visto por dos lados**: nadie validaba los datos
+de entrada, y la ausencia de `fechaCierre` —que era una consecuencia de esa falta
+de validación— hacía públicos los pronósticos de todos.
+
+**Qué se hizo:**
+
+1. **Validadores de dominio**, reunidos en una sección propia y exportados para
+   poder probarlos sueltos: `normalizarMarcador`, `normalizarNombreDeJornada`,
+   `normalizarFechaDeCierre`, `normalizarPartido`, `normalizarPartidos` y
+   `normalizarIndicesDePartido`.
+2. **Marcadores.** `Number()` a secas era el agujero: acepta `'-3'`, acepta
+   `'2.5'` y acepta `'1e999'`, que **no da NaN, da Infinity**. Los tres pasaban
+   la comprobación anterior y llegaban a la base como puntuación válida. Ahora un
+   marcador es un entero de 0 a 99, o `null` si se dejó en blanco. Se aplica en
+   las tres rutas que escriben marcadores: pronósticos del jugador, pronósticos
+   cargados por un administrador y resultados oficiales manuales.
+3. **Jornadas.** Nombre obligatorio y acotado a 80 caracteres, al menos un
+   partido y como máximo 50, y los dos equipos obligatorios en cada partido.
+4. **`fechaCierre` obligatoria al CREAR una jornada, opcional al editarla.** La
+   asimetría es deliberada: exigirla también al editar dejaría inservibles las
+   pantallas de administración con las jornadas heredadas que nunca la tuvieron.
+   Para esas, el riesgo lo cubre el punto 6.
+5. **Índices de partido a eliminar**: enteros, dentro de rango y sin repetir. El
+   duplicado no era cosmético: la ruta hace `splice` por cada índice, así que un
+   número repetido borraba dos partidos, el señalado y su vecino.
+6. **Privacidad por defecto de los pronósticos.** `jornadaEstaCerradaParaPronosticos()`
+   sustituye la regla `sin fecha = cerrada` en las tres vías que la usaban:
+   `GET /api/resultados`, `GET /api/resultados/:jugador/:jornada` y
+   `POST /api/resultados-seguros/:jugador/:jornada`. Una jornada sin fecha ahora
+   sigue **privada** hasta que **todos** sus partidos han empezado de verdad,
+   reutilizando `partidoYaInicio()`, que es la señal que el sistema ya usaba para
+   bloquear la edición. No aparece una regla nueva: se reutiliza la que ya había.
+7. **El 400 vuelve a decir qué pasó.** El manejador global convertía todo 4xx en
+   un "La petición no es válida." mudo; ahora los errores de validación
+   conservan su mensaje, que es lo que el administrador necesita para corregir el
+   dato. Las dos rutas de pronósticos con `try/catch` propio dejaron de
+   devolver 500 ante un dato inválido.
+
+**El caso más grave que cerró el punto 6**, porque no era solo visibilidad de una
+lista: en `/api/resultados-seguros` la rama `jornadaSinFecha` saltaba **la
+comprobación de identidad y la de contraseña a la vez**. Con una jornada a la que
+se le olvidó la fecha, cualquier miembro podía leer los pronósticos de cualquier
+otro antes de que se jugara el partido.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Sección de validación de dominio; validación en las cinco rutas de jornada y las tres de marcadores; `jornadaEstaCerradaParaPronosticos()` en las tres vías de privacidad; mensaje de validación en el manejador global |
+| `test/architecture.test.js` | Dos invariantes: las escrituras pasan por los validadores y `Number(nuevo.marcador)` ya no existe; ninguna vía de privacidad usa `sin fecha = cerrada` |
+| `test/integracion.test.js` | Seis casos: marcadores inválidos, jornada sin nombre, fecha obligatoria al crear y no al editar, marcador negativo/fraccionario rechazado por HTTP, privacidad de una jornada sin fecha (403 en las tres vías, y 200 cuando el partido ya empezó) e índices repetidos |
+| `avance_proyecto.md` | Punto de partida, tabla de fases y esta entrada |
+
+**Verificación:**
+
+```
+npm run check             → sintaxis válida
+npm test                  → 90/90 (31 arquitectura + 59 integración)
+duración                  → ~60 s, sin red y sin tocar la base real
+npm audit --omit=dev      → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- **`GET /api/resultados` se encareció a propósito.** Para decidir la privacidad
+  sin `fechaCierre` hacen falta los partidos y los resultados oficiales, así que
+  ahora lee `Jornada` con `partidos` y `ResultadoOficial` completo. El endpoint ya
+  era el ejemplo de manual de M-26 —devuelve todos los pronósticos de todas las
+  jornadas—, y la corrección de privacidad pesa menos que el problema que ya
+  tenía. Cuando se pagine, esto se resuelve solo.
+- **Las rutas `/api/jornadas/agregar-partido`, `/eliminar-partidos` y `/comodin`
+  no las llama ninguna pantalla**: `jornadas.js` hace todas esas operaciones con
+  `POST /api/jornadas`. Se validaron igualmente porque siguen expuestas, pero son
+  candidatas a retirarse en la Fase 6.
+- Normalizar los partidos descarta el `_id` de los subdocumentos, así que al
+  editar una jornada Mongo les asigna otros nuevos. Se comprobó que **nada** en el
+  código referencia `partido._id`: todo trabaja por índice.
+- La pantalla de importación ya mostraba `data.error` del servidor, así que el
+  administrador que olvide la fecha de cierre ve el motivo exacto. Las pantallas
+  de edición de `jornadas.js` siguen con `alert` genéricos; no se tocaron porque
+  las ediciones no exigen fecha y no llegan a ese 400.
+
+**Pendiente / siguiente paso:** prueba de humo visual de crear jornada (a mano y
+por importación), editar una existente y consultar pronósticos ajenos con una
+jornada abierta. Después queda **S-04** —convertir los renderizados con
+`innerHTML` a nodos DOM, empezando por `index-ranking.js`— y la invalidación
+excesiva de la caché del ranking anotada en la Entrada 016.
 
 ---
 

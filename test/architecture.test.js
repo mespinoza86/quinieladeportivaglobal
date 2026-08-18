@@ -415,3 +415,41 @@ test('la portada pide solo el podio, no la tabla completa', () => {
   assert.doesNotMatch(portada, /fetch\('\/api\/resultados-totales'\)/);
 });
 
+test('las escrituras de dominio pasan por los validadores', () => {
+  for (const validador of [
+    'function normalizarMarcador', 'function normalizarNombreDeJornada',
+    'function normalizarFechaDeCierre', 'function normalizarPartido',
+    'function normalizarPartidos', 'function normalizarIndicesDePartido'
+  ]) {
+    assert.match(serverSinComentarios, new RegExp(validador.replace(/ /g, '\\s+')));
+  }
+
+  /*
+   * `Number()` a secas era el agujero: acepta '-3', '2.5' y '1e999', que no da
+   * NaN sino Infinity. Ninguna ruta de marcadores debe volver a usarlo.
+   */
+  assert.doesNotMatch(serverSinComentarios, /Number\(nuevo\.marcador[12]\)/);
+  assert.doesNotMatch(serverSinComentarios, /Marcador inválido en partido/);
+
+  // Y las rutas que escriben jornadas normalizan antes de tocar la base.
+  assert.match(serverSinComentarios, /const nombre = normalizarNombreDeJornada\(req\.body\?\.nombre\)/);
+  assert.match(serverSinComentarios, /const partidos = normalizarPartidos\(req\.body\?\.partidos\)/);
+  assert.match(serverSinComentarios, /normalizarIndicesDePartido\(req\.body\?\.indices, doc\.partidos\.length\)/);
+});
+
+test('una jornada sin fecha de cierre no publica los pronósticos', () => {
+  assert.match(serverSinComentarios, /function jornadaEstaCerradaParaPronosticos/);
+
+  /*
+   * Las tres vías que decidían la privacidad daban por CERRADA una jornada sin
+   * fecha, así que un olvido de administración hacía públicos los pronósticos
+   * de todos desde el primer momento.
+   */
+  assert.doesNotMatch(serverSinComentarios, /!jornadaDoc\?\.fechaCierre \|\|/);
+  assert.doesNotMatch(serverSinComentarios, /!j\.fechaCierre \|\| new Date\(j\.fechaCierre\)/);
+  assert.doesNotMatch(serverSinComentarios, /const jornadaSinFecha/);
+
+  // Las tres usan ahora la misma regla.
+  const usos = serverSinComentarios.match(/jornadaEstaCerradaParaPronosticos\(/g) || [];
+  assert.ok(usos.length >= 4, `Se esperaban la definición y sus tres usos, hubo ${usos.length}`);
+});

@@ -1508,3 +1508,233 @@ test('la clasificación responde aunque no se pueda congelar la jornada', async 
     'Sin materializado, los puntos se calculan al vuelo y dan el mismo número');
 });
 
+/* ================================================================
+ * Validación de dominio y privacidad de pronósticos
+ * ================================================================ */
+
+/** Activa Admin Mode, que `requireAdmin` exige además del rol. */
+async function conModoAdmin(agente, password = 'contrasena-larga-1') {
+  const res = await agente.post('/api/admin-mode/activar').send({ password });
+  assert.equal(res.status, 200, `No se pudo activar Admin Mode: ${JSON.stringify(res.body)}`);
+}
+
+test('normalizarMarcador rechaza lo que Number() dejaba pasar', () => {
+  /*
+   * Los tres casos del hallazgo: '-3', '2.5' y '1e999'. Ninguno da NaN, así que
+   * la comprobación anterior los aceptaba y acababan en la base como
+   * puntuación válida, corrompiendo el motor de puntos en silencio.
+   */
+  for (const malo of ['-3', -1, '2.5', 2.5, '1e999', Infinity, 'tres', true, {}]) {
+    assert.throws(
+      () => srv.normalizarMarcador(malo, 'El marcador'),
+      /marcador/i,
+      `Debía rechazarse: ${String(malo)}`
+    );
+  }
+
+  // Y lo legítimo pasa intacto, incluido el blanco, que significa "sin pronóstico".
+  assert.equal(srv.normalizarMarcador(0, 'x'), 0);
+  assert.equal(srv.normalizarMarcador('7', 'x'), 7);
+  assert.equal(srv.normalizarMarcador(99, 'x'), 99);
+  assert.equal(srv.normalizarMarcador('', 'x'), null);
+  assert.equal(srv.normalizarMarcador(null, 'x'), null);
+  assert.equal(srv.normalizarMarcador(undefined, 'x'), null);
+});
+
+test('una jornada sin nombre ya no se cuela en la base', async () => {
+  const { agente, datos } = await cuentaNueva('validacion');
+  const quiniela = await quinielaNueva(agente, 'Validacion Jornadas');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  await conModoAdmin(agente, datos.password);
+
+  /*
+   * Mongoose casteaba el filtro `{nombre: undefined}` a `{nombre: null}`: el
+   * upsert no sobrescribía nada, pero SÍ insertaba una jornada sin nombre, que
+   * después aparecía como columna en la tabla general y como opción en el
+   * desplegable de la tabla por jornada.
+   */
+  const sinNombre = await agente.post('/api/jornadas')
+    .send({ partidos: [{ equipo1: 'Uno', equipo2: 'Dos' }], fechaCierre: '2027-01-01T00:00:00.000Z' });
+  assert.equal(sinNombre.status, 400, JSON.stringify(sinNombre.body));
+  assert.match(sinNombre.body.error, /nombre de la jornada es obligatorio/i);
+
+  const sinPartidos = await agente.post('/api/jornadas')
+    .send({ nombre: 'Vacia', partidos: [], fechaCierre: '2027-01-01T00:00:00.000Z' });
+  assert.equal(sinPartidos.status, 400, JSON.stringify(sinPartidos.body));
+  assert.match(sinPartidos.body.error, /al menos un partido/i);
+
+  const equipoFaltante = await agente.post('/api/jornadas')
+    .send({ nombre: 'Coja', partidos: [{ equipo1: 'Uno', equipo2: '   ' }], fechaCierre: '2027-01-01T00:00:00.000Z' });
+  assert.equal(equipoFaltante.status, 400, JSON.stringify(equipoFaltante.body));
+  assert.match(equipoFaltante.body.error, /los dos equipos/i);
+
+  const total = await enQuiniela(id, () => srv.Jornada.countDocuments({}));
+  assert.equal(total, 0, 'Ninguna petición inválida debe dejar rastro');
+});
+
+test('la fecha de cierre es obligatoria al crear la jornada, no al editarla', async () => {
+  const { agente, datos } = await cuentaNueva('fechacierre');
+  const quiniela = await quinielaNueva(agente, 'Fecha De Cierre');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  await conModoAdmin(agente, datos.password);
+
+  const partidos = [{ equipo1: 'Uno', equipo2: 'Dos' }];
+
+  const sinFecha = await agente.post('/api/jornadas').send({ nombre: 'Jornada Nueva', partidos });
+  assert.equal(sinFecha.status, 400, JSON.stringify(sinFecha.body));
+  assert.match(sinFecha.body.error, /fecha de cierre/i);
+
+  const fechaMala = await agente.post('/api/jornadas')
+    .send({ nombre: 'Jornada Nueva', partidos, fechaCierre: 'el martes' });
+  assert.equal(fechaMala.status, 400, JSON.stringify(fechaMala.body));
+  assert.match(fechaMala.body.error, /no es una fecha válida/i);
+
+  const creada = await agente.post('/api/jornadas')
+    .send({ nombre: 'Jornada Nueva', partidos, fechaCierre: '2027-03-01T12:00:00.000Z' });
+  assert.equal(creada.status, 200, JSON.stringify(creada.body));
+
+  /*
+   * Editar sin mandar fecha no puede fallar: las pantallas de administración
+   * reenvían `fechaCierre: null` cuando la jornada heredada no tenía ninguna.
+   * La que ya estaba guardada se conserva.
+   */
+  const editada = await agente.post('/api/jornadas').send({
+    nombre: 'Jornada Nueva',
+    partidos: [...partidos, { equipo1: 'Tres', equipo2: 'Cuatro' }],
+    fechaCierre: null
+  });
+  assert.equal(editada.status, 200, JSON.stringify(editada.body));
+
+  const doc = await enQuiniela(id, () => srv.Jornada.findOne({ nombre: 'Jornada Nueva' }).lean());
+  assert.equal(doc.partidos.length, 2);
+  assert.equal(new Date(doc.fechaCierre).toISOString(), '2027-03-01T12:00:00.000Z');
+});
+
+test('un marcador negativo o fraccionario no llega a la base', async () => {
+  const { agente, datos } = await cuentaNueva('marcador');
+  const quiniela = await quinielaNueva(agente, 'Marcadores Validos');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  const partido = { equipo1: 'Uno', equipo2: 'Dos' };
+
+  await enQuiniela(id, () => srv.Jornada.create({
+    nombre: 'Jornada Marcador',
+    partidos: [partido],
+    fechaCierre: new Date('2027-01-01')
+  }));
+
+  for (const malo of [-1, 2.5, '1e999']) {
+    const res = await agente.post('/api/resultados').send({
+      jugador: datos.username,
+      jornada: 'Jornada Marcador',
+      pronosticos: [{ marcador1: malo, marcador2: 0 }]
+    });
+    assert.equal(res.status, 400, `Debía rechazar ${malo}: ${JSON.stringify(res.body)}`);
+    assert.match(res.body.error, /entero entre 0 y 99/i);
+  }
+
+  const guardado = await enQuiniela(id, () => srv.Resultado.findOne({ jornada: 'Jornada Marcador' }));
+  assert.equal(guardado, null, 'Ningún pronóstico inválido debe haberse guardado');
+
+  const bueno = await agente.post('/api/resultados').send({
+    jugador: datos.username,
+    jornada: 'Jornada Marcador',
+    pronosticos: [{ marcador1: '3', marcador2: 0 }]
+  });
+  assert.equal(bueno.status, 200, JSON.stringify(bueno.body));
+});
+
+test('una jornada sin fecha de cierre mantiene privados los pronósticos ajenos', async () => {
+  const { agente: duenoAgente, datos: dueno } = await cuentaNueva('privacidad');
+  const { agente: mironAgente, datos: miron } = await cuentaNueva('miron');
+
+  const quiniela = await quinielaNueva(duenoAgente, 'Privacidad Sin Fecha');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  await conModoAdmin(duenoAgente, dueno.password);
+
+  const unirse = await mironAgente.post('/api/quinielas/unirse').send({ codigoIngreso: quiniela.codigo });
+  assert.equal(unirse.status, 202, JSON.stringify(unirse.body));
+
+  const mironUsuario = await srv.Usuario.findOne({ usernameNormalizado: miron.username.toLowerCase() });
+  const membresia = await srv.Membresia.findOne({ quinielaId: id, usuarioId: mironUsuario._id });
+  const aprobar = await duenoAgente.patch(`/api/quiniela-actual/miembros/${membresia._id}/aprobar`).send({});
+  assert.equal(aprobar.status, 200, JSON.stringify(aprobar.body));
+
+  const seleccionar = await mironAgente.post(`/api/quinielas/${quiniela.id}/seleccionar`).send({});
+  assert.equal(seleccionar.status, 200, JSON.stringify(seleccionar.body));
+
+  /*
+   * La jornada heredada del caso real: sin `fechaCierre` y con el partido aún
+   * por jugarse. Antes se daba por CERRADA, así que sus pronósticos eran
+   * públicos desde el minuto uno y cualquiera podía copiarlos.
+   */
+  const partidoFuturo = { equipo1: 'Uno', equipo2: 'Dos', apiDate: '2099-01-01 15:00' };
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'Jornada Sin Fecha', partidos: [partidoFuturo] });
+    await srv.Resultado.create({
+      jugador: dueno.username,
+      jornada: 'Jornada Sin Fecha',
+      pronosticos: [{ equipo1: 'Uno', equipo2: 'Dos', marcador1: 2, marcador2: 1 }]
+    });
+  });
+
+  const ruta = `/api/resultados/${encodeURIComponent(dueno.username)}/Jornada%20Sin%20Fecha`;
+
+  const espiar = await mironAgente.get(ruta);
+  assert.equal(espiar.status, 403, JSON.stringify(espiar.body));
+
+  const seguro = await mironAgente
+    .post(`/api/resultados-seguros/${encodeURIComponent(dueno.username)}/Jornada%20Sin%20Fecha`)
+    .send({});
+  assert.equal(seguro.status, 403, JSON.stringify(seguro.body));
+
+  const listado = await mironAgente.get('/api/resultados');
+  const claves = listado.body.map(([clave]) => clave);
+  assert.ok(
+    !claves.includes(`${dueno.username}_Jornada Sin Fecha`),
+    `El listado general tampoco debe filtrar pronósticos ajenos: ${JSON.stringify(claves)}`
+  );
+
+  /*
+   * Cuando el partido ya empezó, la jornada pasa a estar cerrada aunque nunca
+   * tuviera fecha: es la misma señal que el sistema ya usaba para bloquear la
+   * edición de pronósticos.
+   */
+  await enQuiniela(id, () => srv.Jornada.updateOne(
+    { nombre: 'Jornada Sin Fecha' },
+    { $set: { 'partidos.0.apiDate': '2020-01-01 15:00' } }
+  ));
+
+  const yaJugado = await mironAgente.get(ruta);
+  assert.equal(yaJugado.status, 200, JSON.stringify(yaJugado.body));
+  assert.equal(yaJugado.body[0].marcador1, 2);
+});
+
+test('eliminar partidos exige índices reales y no borra de más al repetirlos', async () => {
+  const { agente, datos } = await cuentaNueva('indices');
+  const quiniela = await quinielaNueva(agente, 'Indices De Partido');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  await conModoAdmin(agente, datos.password);
+
+  await enQuiniela(id, () => srv.Jornada.create({
+    nombre: 'Jornada Indices',
+    fechaCierre: new Date('2027-01-01'),
+    partidos: [
+      { equipo1: 'A', equipo2: 'B' },
+      { equipo1: 'C', equipo2: 'D' },
+      { equipo1: 'E', equipo2: 'F' }
+    ]
+  }));
+
+  const fuera = await agente.post('/api/jornadas/eliminar-partidos')
+    .send({ jornada: 'Jornada Indices', indices: [7] });
+  assert.equal(fuera.status, 400, JSON.stringify(fuera.body));
+
+  // Repetido: antes cada `splice` corría la lista y el segundo borraba al vecino.
+  const repetido = await agente.post('/api/jornadas/eliminar-partidos')
+    .send({ jornada: 'Jornada Indices', indices: [1, 1] });
+  assert.equal(repetido.status, 200, JSON.stringify(repetido.body));
+
+  const doc = await enQuiniela(id, () => srv.Jornada.findOne({ nombre: 'Jornada Indices' }).lean());
+  assert.deepEqual(doc.partidos.map(p => p.equipo1), ['A', 'E'],
+    'Solo debe desaparecer el partido señalado');
+});

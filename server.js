@@ -775,6 +775,180 @@ function responderRanking(res, req, resultados) {
 }
 
 
+/* ================= Validación de dominio ================= */
+
+/**
+ * Error de datos del cliente.
+ *
+ * El manejador global lo convierte en un 400 conservando el mensaje, en vez del
+ * "La petición no es válida." genérico. Quien está cargando una jornada
+ * necesita saber QUÉ campo se rechazó; un 400 mudo obliga a adivinar.
+ */
+function errorDeValidacion(mensaje) {
+  const error = new Error(mensaje);
+  error.status = 400;
+  error.esValidacion = true;
+  return error;
+}
+
+const MAX_GOLES = 99;
+const MAX_PARTIDOS_POR_JORNADA = 50;
+const MAX_LARGO_NOMBRE_JORNADA = 80;
+
+/**
+ * Un marcador es un entero de 0 a MAX_GOLES, o `null` si se dejó en blanco.
+ *
+ * `Number()` a secas no bastaba, y ahí estaba el agujero: acepta '-3', acepta
+ * '2.5' y acepta '1e999', que no da NaN sino Infinity. Ninguno de los tres
+ * rompe nada de forma visible; los tres corrompen el motor de puntuación en
+ * silencio, porque `puntosDePartido` compara números sin volver a mirarlos.
+ */
+function normalizarMarcador(valor, etiqueta) {
+  if (valor === null || valor === undefined) return null;
+
+  if (typeof valor !== 'number' && typeof valor !== 'string') {
+    throw errorDeValidacion(`${etiqueta} no es un marcador válido.`);
+  }
+
+  const bruto = typeof valor === 'string' ? valor.trim() : valor;
+  if (bruto === '') return null;
+
+  const numero = Number(bruto);
+  if (!Number.isInteger(numero) || numero < 0 || numero > MAX_GOLES) {
+    throw errorDeValidacion(`${etiqueta} debe ser un número entero entre 0 y ${MAX_GOLES}.`);
+  }
+
+  return numero;
+}
+
+/** Nombre de jornada: obligatorio, recortado y acotado. */
+function normalizarNombreDeJornada(valor) {
+  const nombre = typeof valor === 'string' ? valor.trim() : '';
+
+  /*
+   * Sin esta comprobación, un POST sin `nombre` no fallaba: Mongoose casteaba
+   * el filtro a `nombre: null`, el upsert insertaba una jornada sin nombre y
+   * esa jornada fantasma aparecía después como columna en la tabla general y
+   * como opción en el desplegable de la tabla por jornada.
+   */
+  if (!nombre) throw errorDeValidacion('El nombre de la jornada es obligatorio.');
+  if (nombre.length > MAX_LARGO_NOMBRE_JORNADA) {
+    throw errorDeValidacion(`El nombre de la jornada admite hasta ${MAX_LARGO_NOMBRE_JORNADA} caracteres.`);
+  }
+
+  return nombre;
+}
+
+/**
+ * Fecha de cierre. Obligatoria al CREAR una jornada; opcional al editarla.
+ *
+ * La asimetría es deliberada: exigirla también al editar dejaría inservibles
+ * las pantallas de administración con las jornadas heredadas que nunca la
+ * tuvieron. Para esas, el riesgo lo cubre jornadaEstaCerradaParaPronosticos().
+ */
+function normalizarFechaDeCierre(valor, { obligatoria = false } = {}) {
+  if (valor === null || valor === undefined || valor === '') {
+    if (obligatoria) throw errorDeValidacion('La fecha de cierre de la jornada es obligatoria.');
+    return null;
+  }
+
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) {
+    throw errorDeValidacion('La fecha de cierre no es una fecha válida.');
+  }
+
+  return fecha;
+}
+
+/** Un partido necesita dos equipos; el resto de campos se normalizan a texto. */
+function normalizarPartido(valor, indice = 0) {
+  const posicion = `El partido ${indice + 1}`;
+
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) {
+    throw errorDeValidacion(`${posicion} no es válido.`);
+  }
+
+  const equipo1 = typeof valor.equipo1 === 'string' ? valor.equipo1.trim() : '';
+  const equipo2 = typeof valor.equipo2 === 'string' ? valor.equipo2.trim() : '';
+  if (!equipo1 || !equipo2) throw errorDeValidacion(`${posicion} necesita los dos equipos.`);
+
+  const texto = campo => (valor[campo] === null || valor[campo] === undefined ? '' : String(valor[campo]));
+
+  return {
+    equipo1,
+    equipo2,
+    logoEquipo1: texto('logoEquipo1'),
+    logoEquipo2: texto('logoEquipo2'),
+    comodin: Boolean(valor.comodin),
+    apiFixtureId: texto('apiFixtureId'),
+    apiLeagueId: texto('apiLeagueId'),
+    apiDate: texto('apiDate'),
+    apiStatus: texto('apiStatus')
+  };
+}
+
+/** Una jornada sin partidos no es una jornada. */
+function normalizarPartidos(valor) {
+  if (!Array.isArray(valor) || !valor.length) {
+    throw errorDeValidacion('La jornada debe tener al menos un partido.');
+  }
+  if (valor.length > MAX_PARTIDOS_POR_JORNADA) {
+    throw errorDeValidacion(`Una jornada admite como máximo ${MAX_PARTIDOS_POR_JORNADA} partidos.`);
+  }
+
+  return valor.map((partido, indice) => normalizarPartido(partido, indice));
+}
+
+/**
+ * Índices de partido a borrar: enteros, dentro del rango y sin repetir.
+ *
+ * El duplicado importaba: la ruta hace `splice` por cada índice, así que un
+ * mismo número repetido borraba dos partidos, el señalado y su vecino.
+ */
+function normalizarIndicesDePartido(valor, total) {
+  if (!Array.isArray(valor) || !valor.length) {
+    throw errorDeValidacion('Debes indicar qué partidos eliminar.');
+  }
+
+  const indices = valor.map(item => {
+    const numero = typeof item === 'number' ? item : Number(String(item).trim());
+    if (!Number.isInteger(numero) || numero < 0 || numero >= total) {
+      throw errorDeValidacion('Alguno de los partidos indicados no existe en la jornada.');
+    }
+    return numero;
+  });
+
+  return [...new Set(indices)];
+}
+
+/**
+ * ¿Son ya públicos los pronósticos de esta jornada?
+ *
+ * Lo que se corrige aquí es el SENTIDO del caso sin fecha. Antes, una jornada
+ * sin `fechaCierre` se daba por cerrada, de modo que un olvido de
+ * administración publicaba los pronósticos de todos desde el primer momento:
+ * cualquiera podía copiar los del vecino antes de que rodara el balón, que es
+ * justo lo que la privacidad existe para impedir.
+ *
+ * Ahora, sin fecha, la jornada sigue privada hasta que TODOS sus partidos han
+ * empezado de verdad. Es la misma señal que el sistema ya usa para bloquear la
+ * edición de pronósticos, así que no aparece una regla nueva: se reutiliza la
+ * que ya decidía cuándo dejaba de poder jugarse un partido.
+ */
+function jornadaEstaCerradaParaPronosticos(jornadaDoc, oficiales = []) {
+  if (!jornadaDoc) return false;
+
+  if (jornadaDoc.fechaCierre) {
+    return new Date(jornadaDoc.fechaCierre) <= new Date();
+  }
+
+  const partidos = jornadaDoc.partidos || [];
+  if (!partidos.length) return false;
+
+  return partidos.every((partido, indice) => partidoYaInicio(partido, oficiales[indice] || null));
+}
+
+
 const TIPOS_TRIVIA = {
   primer_gol: {
     pregunta: '¿Qué equipo anota primero?'
@@ -1379,7 +1553,11 @@ app.get('/api/jornadas/:nombre', async (req, res) => {
 });
 
 app.post('/api/jornadas', requireAdmin, async (req, res) => {
-  const { nombre, partidos, fechaCierre } = req.body;
+  const nombre = normalizarNombreDeJornada(req.body?.nombre);
+  const partidos = normalizarPartidos(req.body?.partidos);
+
+  const existente = await Jornada.findOne({ nombre }).select('_id').lean();
+  const fechaCierre = normalizarFechaDeCierre(req.body?.fechaCierre, { obligatoria: !existente });
 
   await Jornada.findOneAndUpdate(
     { nombre },
@@ -1398,25 +1576,23 @@ app.post('/api/jornadas', requireAdmin, async (req, res) => {
 
 app.post('/api/jornadas/importar-api', requireAdmin, async (req, res) => {
   try {
-    const { nombre, fechaCierre, partidos } = req.body;
+    const nombre = normalizarNombreDeJornada(req.body?.nombre);
 
-    if (!nombre || !Array.isArray(partidos) || partidos.length === 0) {
-      return res.status(400).json({
-        error: 'Nombre y partidos son obligatorios'
-      });
-    }
+    /*
+     * El importador llama `fecha` y `estado` a lo que la jornada guarda como
+     * `apiDate` y `apiStatus`. Se traduce antes de validar para que el
+     * normalizador vea siempre la misma forma de partido que el resto de rutas.
+     */
+    const partidosFormateados = normalizarPartidos(
+      (Array.isArray(req.body?.partidos) ? req.body.partidos : []).map(p => ({
+        ...p,
+        apiDate: p?.apiDate ?? p?.fecha ?? '',
+        apiStatus: p?.apiStatus ?? p?.estado ?? ''
+      }))
+    );
 
-    const partidosFormateados = partidos.map(p => ({
-      equipo1: p.equipo1,
-      equipo2: p.equipo2,
-       logoEquipo1: p.logoEquipo1 || '',
-       logoEquipo2: p.logoEquipo2 || '',
-      comodin: !!p.comodin,
-      apiFixtureId: p.apiFixtureId ? String(p.apiFixtureId) : '',
-      apiLeagueId: p.apiLeagueId ? String(p.apiLeagueId) : '',
-      apiDate: p.fecha || '',
-      apiStatus: p.estado || ''
-    }));
+    const existente = await Jornada.findOne({ nombre }).select('_id').lean();
+    const fechaCierre = normalizarFechaDeCierre(req.body?.fechaCierre, { obligatoria: !existente });
 
     await Jornada.findOneAndUpdate(
       { nombre },
@@ -1440,10 +1616,15 @@ app.post('/api/jornadas/importar-api', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {
-  const { jornada, partido } = req.body;
+  const jornada = normalizarNombreDeJornada(req.body?.jornada);
+  const partido = normalizarPartido(req.body?.partido);
   const doc = await Jornada.findOne({ nombre: jornada });
 
   if (!doc) return res.status(404).json({ error: 'Jornada no encontrada.' });
+
+  if (doc.partidos.length >= MAX_PARTIDOS_POR_JORNADA) {
+    throw errorDeValidacion(`Una jornada admite como máximo ${MAX_PARTIDOS_POR_JORNADA} partidos.`);
+  }
 
   doc.partidos.push(partido);
   await doc.save();
@@ -1453,11 +1634,12 @@ app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/jornadas/eliminar-partidos',requireAdmin, async (req, res) => {
-  const { jornada, indices } = req.body;
+  const jornada = normalizarNombreDeJornada(req.body?.jornada);
   const doc = await Jornada.findOne({ nombre: jornada });
 
   if (!doc) return res.status(404).json({ error: 'Jornada no encontrada.' });
 
+  const indices = normalizarIndicesDePartido(req.body?.indices, doc.partidos.length);
   indices.sort((a, b) => b - a).forEach(i => doc.partidos.splice(i, 1));
   await doc.save();
   await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
@@ -1466,10 +1648,20 @@ app.post('/api/jornadas/eliminar-partidos',requireAdmin, async (req, res) => {
 });
 
 app.post('/api/jornadas/comodin',requireAdmin, async (req, res) => {
-  const { jornada, partidos } = req.body;
+  const jornada = normalizarNombreDeJornada(req.body?.jornada);
+  const partidos = normalizarPartidos(req.body?.partidos);
   const doc = await Jornada.findOne({ nombre: jornada });
 
   if (!doc) return res.status(404).send('Jornada no encontrada');
+
+  /*
+   * Esta ruta reemplaza la lista entera para cambiar una casilla. Si el número
+   * de partidos no coincide, lo que llega no es "la misma jornada con otro
+   * comodín" sino otra cosa, y aplicarla borraría partidos sin querer.
+   */
+  if (partidos.length !== doc.partidos.length) {
+    throw errorDeValidacion('La lista de partidos no coincide con la jornada.');
+  }
 
   doc.partidos = partidos;
   await doc.save();
@@ -2632,9 +2824,15 @@ function buscarOficialCorrespondiente(resultadosOficiales, partido) {
 app.get('/api/resultados', async (req, res) => {
   const usuario = await Usuario.findById(req.session.usuarioId);
   const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
-  const jornadas = await Jornada.find({}).select('nombre fechaCierre').lean();
+  const [jornadas, oficiales] = await Promise.all([
+    Jornada.find({}).select('nombre fechaCierre partidos').lean(),
+    ResultadoOficial.find({}).select('jornada resultados').lean()
+  ]);
+
+  const oficialesPorJornada = new Map(oficiales.map(doc => [doc.jornada, doc.resultados || []]));
+
   const visibles = new Set(jornadas
-    .filter(j => !j.fechaCierre || new Date(j.fechaCierre) <= new Date())
+    .filter(j => jornadaEstaCerradaParaPronosticos(j, oficialesPorJornada.get(j.nombre) || []))
     .map(j => j.nombre));
   const todos = await Resultado.find({});
   const r = esAdmin ? todos : todos.filter(item => item.jugador === usuario.username || visibles.has(item.jornada));
@@ -2727,20 +2925,8 @@ app.post('/api/resultados', async (req, res) => {
 
       const nuevo = pronosticos[index] || {};
 
-      const marcador1 = nuevo.marcador1 === '' || nuevo.marcador1 === null || nuevo.marcador1 === undefined
-        ? null
-        : Number(nuevo.marcador1);
-
-      const marcador2 = nuevo.marcador2 === '' || nuevo.marcador2 === null || nuevo.marcador2 === undefined
-        ? null
-        : Number(nuevo.marcador2);
-
-      if (
-        (marcador1 !== null && Number.isNaN(marcador1)) ||
-        (marcador2 !== null && Number.isNaN(marcador2))
-      ) {
-        throw new Error(`Marcador inválido en partido ${index + 1}`);
-      }
+      const marcador1 = normalizarMarcador(nuevo.marcador1, `El marcador local del partido ${index + 1}`);
+      const marcador2 = normalizarMarcador(nuevo.marcador2, `El marcador visitante del partido ${index + 1}`);
 
       guardados++;
 
@@ -2775,6 +2961,11 @@ app.post('/api/resultados', async (req, res) => {
     });
 
   } catch (error) {
+    // Un dato inválido es culpa de la petición, no del servidor.
+    if (error?.esValidacion) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
     console.error('Error guardando resultados:', error);
     res.status(500).json({
       success: false,
@@ -2810,12 +3001,8 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
       return {
         equipo1: partido.equipo1,
         equipo2: partido.equipo2,
-        marcador1: nuevo.marcador1 === '' || nuevo.marcador1 === null || nuevo.marcador1 === undefined
-          ? null
-          : Number(nuevo.marcador1),
-        marcador2: nuevo.marcador2 === '' || nuevo.marcador2 === null || nuevo.marcador2 === undefined
-          ? null
-          : Number(nuevo.marcador2)
+        marcador1: normalizarMarcador(nuevo.marcador1, `El marcador local del partido ${index + 1}`),
+        marcador2: normalizarMarcador(nuevo.marcador2, `El marcador visitante del partido ${index + 1}`)
       };
     });
 
@@ -2834,6 +3021,10 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
+    if (error?.esValidacion) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
     console.error('Error guardando resultados admin:', error);
     res.status(500).json({
       success: false,
@@ -2844,11 +3035,12 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
 
 app.get('/api/resultados/:jugador/:jornada', async (req, res) => {
   const { jugador, jornada } = req.params;
-  const [usuario, jornadaDoc] = await Promise.all([
+  const [usuario, jornadaDoc, oficialDoc] = await Promise.all([
     Usuario.findById(req.session.usuarioId),
-    Jornada.findOne({ nombre: jornada })
+    Jornada.findOne({ nombre: jornada }),
+    ResultadoOficial.findOne({ jornada }).select('resultados').lean()
   ]);
-  const cerrada = !jornadaDoc?.fechaCierre || new Date(jornadaDoc.fechaCierre) <= new Date();
+  const cerrada = jornadaEstaCerradaParaPronosticos(jornadaDoc, oficialDoc?.resultados || []);
   const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
   if (!cerrada && !esAdmin && usuario?.username !== jugador) {
     return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
@@ -2871,7 +3063,12 @@ app.get('/api/resultados-oficiales', async (req, res) => {
 });
 
 app.post('/api/resultados-oficiales', requireAdmin, async (req, res) => {
-  const { jornada, resultados } = req.body;
+  const jornada = normalizarNombreDeJornada(req.body?.jornada);
+  const resultados = req.body?.resultados;
+
+  if (!Array.isArray(resultados) || !resultados.length) {
+    throw errorDeValidacion('Debes enviar los resultados de la jornada.');
+  }
 
   const jornadaDoc = await Jornada.findOne({ nombre: jornada });
 
@@ -2881,10 +3078,10 @@ app.post('/api/resultados-oficiales', requireAdmin, async (req, res) => {
    return {
   equipo1: r.equipo1,
   logoEquipo1: r.logoEquipo1 || partidoJornada?.logoEquipo1 || '',
-  marcador1: r.marcador1,
+  marcador1: normalizarMarcador(r.marcador1, `El marcador local del partido ${index + 1}`),
   equipo2: r.equipo2,
   logoEquipo2: r.logoEquipo2 || partidoJornada?.logoEquipo2 || '',
-  marcador2: r.marcador2,
+  marcador2: normalizarMarcador(r.marcador2, `El marcador visitante del partido ${index + 1}`),
   comodin: r.comodin,
 
   estado: r.estado || 'TC',
@@ -4071,11 +4268,17 @@ app.post('/api/resultados-seguros/:jugador/:jornada', async (req, res) => {
     const jugadorDoc = await Usuario.findOne({ usernameNormalizado: normalizarIdentidad(jugador) });
     if (!jugadorDoc) return res.status(404).json({ error: 'Jugador no encontrado' });
 
-    const ahora = new Date();
-    const jornadaCerrada = jornadaDoc.fechaCierre && new Date(jornadaDoc.fechaCierre) <= ahora;
-    const jornadaSinFecha = !jornadaDoc.fechaCierre;
+    /*
+     * La rama `jornadaSinFecha` que había aquí era una puerta abierta: una
+     * jornada a la que se le olvidó la fecha de cierre saltaba la comprobación
+     * de identidad Y la de contraseña, así que cualquiera podía leer los
+     * pronósticos de cualquiera. Ahora una jornada sin fecha se trata como
+     * abierta hasta que sus partidos empiezan.
+     */
+    const oficialDoc = await ResultadoOficial.findOne({ jornada }).select('resultados').lean();
+    const jornadaCerrada = jornadaEstaCerradaParaPronosticos(jornadaDoc, oficialDoc?.resultados || []);
 
-    if (!jornadaCerrada && !jornadaSinFecha) {
+    if (!jornadaCerrada) {
       if (jugadorDoc._id.toString() !== req.session.usuarioId) {
         return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
       }
@@ -4760,6 +4963,15 @@ app.use((error, req, res, next) => {
    * formado o un cuerpo por encima del límite se reportaban como fallo del
    * servidor, lo que ensucia los registros y despista al diagnosticar.
    */
+  /*
+   * Los errores de los validadores de dominio llevan su propio mensaje y sí se
+   * devuelve: es información que el administrador necesita para corregir el
+   * dato, no detalle interno del servidor.
+   */
+  if (error?.esValidacion) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+
   const estado = error?.status ?? error?.statusCode;
   if (Number.isInteger(estado) && estado >= 400 && estado < 500) {
     console.warn(`Petición inválida (${estado}):`, error.type || error.message);
@@ -4832,6 +5044,13 @@ module.exports = {
   tomarCerrojo,
   soltarCerrojo,
   conVigilante,
+  normalizarMarcador,
+  normalizarNombreDeJornada,
+  normalizarFechaDeCierre,
+  normalizarPartido,
+  normalizarPartidos,
+  normalizarIndicesDePartido,
+  jornadaEstaCerradaParaPronosticos,
   proveedorDeEventos,
   metricasSync,
   VENTANAS_SYNC_MS,
