@@ -41,7 +41,7 @@ misma caché. Ver §9.4 y la bitácora 010.
 ### Estado de Git
 
 ```
-(pendiente de fusionar)  Fase 4: rediseno del sincronizador   ← fase-4-sincronizador (HEAD)
+f15dad3  Fase 4: rediseno del sincronizador (C-01 y C-05)      ← fase-4-sincronizador (HEAD)
 e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main
 d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia
 a2e91df  Fase 3: red de seguridad de pruebas de integracion
