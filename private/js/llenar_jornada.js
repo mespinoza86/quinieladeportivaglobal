@@ -36,27 +36,17 @@ function loadPartidos(nombreJornada) {
                 return;
             }
 
-            // jornada ahora es un objeto { nombre, partidos, fechaCierre }
-            mostrarPartidos(jornada.partidos, jornada.fechaCierre);
+            // jornada es un objeto { nombre, partidos }
+            mostrarPartidos(jornada.partidos);
         })
         .catch(error => console.error('Error al cargar los partidos:', error));
 }
 
 
     // Mostrar los partidos en pantalla
-    // Mostrar los partidos en pantalla
-    function mostrarPartidos(partidos, fechaCierre) {
+    function mostrarPartidos(partidos) {
         const partidosContainer = document.getElementById('partidosContainer');
-        partidosContainer.innerHTML = ''; 
-
-        // Mostrar fecha de cierre si existe
-        if (fechaCierre) {
-            const fecha = new Date(fechaCierre);
-            const fechaDiv = document.createElement('div');
-            fechaDiv.textContent = `Cierra el: ${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-            fechaDiv.style.marginBottom = "10px";
-            partidosContainer.appendChild(fechaDiv);
-        }
+        partidosContainer.innerHTML = '';
 
         partidos.forEach((partido, i) => {
             const partidoDiv = document.createElement('div');

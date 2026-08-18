@@ -587,8 +587,7 @@ const JornadaSchema = new mongoose.Schema({
     apiLeagueId: String,
     apiDate: String,
     apiStatus: String
-  }],
-  fechaCierre: { type: Date, required: false }
+  }]
 });
 
 const ResultadoSchema = new mongoose.Schema({
@@ -839,27 +838,6 @@ function normalizarNombreDeJornada(valor) {
   return nombre;
 }
 
-/**
- * Fecha de cierre. Obligatoria al CREAR una jornada; opcional al editarla.
- *
- * La asimetría es deliberada: exigirla también al editar dejaría inservibles
- * las pantallas de administración con las jornadas heredadas que nunca la
- * tuvieron. Para esas, el riesgo lo cubre jornadaEstaCerradaParaPronosticos().
- */
-function normalizarFechaDeCierre(valor, { obligatoria = false } = {}) {
-  if (valor === null || valor === undefined || valor === '') {
-    if (obligatoria) throw errorDeValidacion('La fecha de cierre de la jornada es obligatoria.');
-    return null;
-  }
-
-  const fecha = new Date(valor);
-  if (Number.isNaN(fecha.getTime())) {
-    throw errorDeValidacion('La fecha de cierre no es una fecha válida.');
-  }
-
-  return fecha;
-}
-
 /** Un partido necesita dos equipos; el resto de campos se normalizan a texto. */
 function normalizarPartido(valor, indice = 0) {
   const posicion = `El partido ${indice + 1}`;
@@ -922,30 +900,44 @@ function normalizarIndicesDePartido(valor, total) {
 }
 
 /**
- * ¿Son ya públicos los pronósticos de esta jornada?
+ * Qué partidos de una jornada tienen ya el pronóstico a la vista, uno por
+ * partido y en el mismo orden.
  *
- * Lo que se corrige aquí es el SENTIDO del caso sin fecha. Antes, una jornada
- * sin `fechaCierre` se daba por cerrada, de modo que un olvido de
- * administración publicaba los pronósticos de todos desde el primer momento:
- * cualquiera podía copiar los del vecino antes de que rodara el balón, que es
- * justo lo que la privacidad existe para impedir.
+ * El cierre es POR PARTIDO, no por jornada: un partido se destapa en cuanto
+ * empieza, porque a partir de ese momento su pronóstico ya no se puede cambiar
+ * y no queda nada que proteger. Es la misma señal que `partidoYaInicio()` ya
+ * usaba para bloquear la edición, de modo que no hay dos reglas que puedan
+ * discrepar: lo que no se puede editar es exactamente lo que se puede ver.
  *
- * Ahora, sin fecha, la jornada sigue privada hasta que TODOS sus partidos han
- * empezado de verdad. Es la misma señal que el sistema ya usa para bloquear la
- * edición de pronósticos, así que no aparece una regla nueva: se reutiliza la
- * que ya decidía cuándo dejaba de poder jugarse un partido.
+ * Antes esto dependía de una `fechaCierre` de jornada que había que acordarse
+ * de poner y cuyo olvido publicaba la jornada entera de golpe.
  */
-function jornadaEstaCerradaParaPronosticos(jornadaDoc, oficiales = []) {
-  if (!jornadaDoc) return false;
+function partidosDestapados(jornadaDoc, oficiales = []) {
+  return (jornadaDoc?.partidos || []).map(
+    (partido, indice) => partidoYaInicio(partido, oficiales[indice] || null)
+  );
+}
 
-  if (jornadaDoc.fechaCierre) {
-    return new Date(jornadaDoc.fechaCierre) <= new Date();
-  }
+/**
+ * Tapa los marcadores de los partidos que todavía no han empezado.
+ *
+ * Se conservan los equipos y la posición: la fila sigue estando, simplemente no
+ * dice qué pronosticó el jugador. Así el frontend no tiene que adivinar si un
+ * hueco es "no pronosticó" o "no puedes verlo": los marcadores vienen en
+ * `null`, que es lo que esas pantallas ya pintan como "-".
+ */
+function taparPronosticosNoDestapados(pronosticos = [], destapados = []) {
+  return (pronosticos || []).map((pronostico, indice) => {
+    if (destapados[indice]) return pronostico;
 
-  const partidos = jornadaDoc.partidos || [];
-  if (!partidos.length) return false;
-
-  return partidos.every((partido, indice) => partidoYaInicio(partido, oficiales[indice] || null));
+    return {
+      equipo1: pronostico?.equipo1,
+      equipo2: pronostico?.equipo2,
+      marcador1: null,
+      marcador2: null,
+      oculto: true
+    };
+  });
 }
 
 
@@ -1537,7 +1529,6 @@ app.get('/api/jornadas', async (req, res) => {
   res.json(jornadas.map(j => ({
     nombre: j.nombre,
     partidos: j.partidos,
-    fechaCierre: j.fechaCierre || null
   })));
 });
 
@@ -1547,8 +1538,7 @@ app.get('/api/jornadas/:nombre', async (req, res) => {
 
   res.json({
     nombre: jornada.nombre,
-    partidos: jornada.partidos,
-    fechaCierre: jornada.fechaCierre || null
+    partidos: jornada.partidos
   });
 });
 
@@ -1556,16 +1546,9 @@ app.post('/api/jornadas', requireAdmin, async (req, res) => {
   const nombre = normalizarNombreDeJornada(req.body?.nombre);
   const partidos = normalizarPartidos(req.body?.partidos);
 
-  const existente = await Jornada.findOne({ nombre }).select('_id').lean();
-  const fechaCierre = normalizarFechaDeCierre(req.body?.fechaCierre, { obligatoria: !existente });
-
   await Jornada.findOneAndUpdate(
     { nombre },
-    {
-      nombre,
-      partidos,
-      ...(fechaCierre && { fechaCierre })
-    },
+    { nombre, partidos },
     { upsert: true }
   );
   await actualizarPuntosDeJornada(nombre, req.quiniela.configuracion.puntuacion);
@@ -1591,16 +1574,9 @@ app.post('/api/jornadas/importar-api', requireAdmin, async (req, res) => {
       }))
     );
 
-    const existente = await Jornada.findOne({ nombre }).select('_id').lean();
-    const fechaCierre = normalizarFechaDeCierre(req.body?.fechaCierre, { obligatoria: !existente });
-
     await Jornada.findOneAndUpdate(
       { nombre },
-      {
-        nombre,
-        partidos: partidosFormateados,
-        ...(fechaCierre && { fechaCierre })
-      },
+      { nombre, partidos: partidosFormateados },
       { upsert: true, new: true }
     );
     await actualizarPuntosDeJornada(nombre, req.quiniela.configuracion.puntuacion);
@@ -2824,21 +2800,35 @@ function buscarOficialCorrespondiente(resultadosOficiales, partido) {
 app.get('/api/resultados', async (req, res) => {
   const usuario = await Usuario.findById(req.session.usuarioId);
   const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
-  const [jornadas, oficiales] = await Promise.all([
-    Jornada.find({}).select('nombre fechaCierre partidos').lean(),
-    ResultadoOficial.find({}).select('jornada resultados').lean()
+  const [jornadas, oficiales, todos] = await Promise.all([
+    Jornada.find({}).select('nombre partidos').lean(),
+    ResultadoOficial.find({}).select('jornada resultados').lean(),
+    Resultado.find({}).lean()
   ]);
 
   const oficialesPorJornada = new Map(oficiales.map(doc => [doc.jornada, doc.resultados || []]));
+  const destapadosPorJornada = new Map(jornadas.map(jornada =>
+    [jornada.nombre, partidosDestapados(jornada, oficialesPorJornada.get(jornada.nombre) || [])]
+  ));
 
-  const visibles = new Set(jornadas
-    .filter(j => jornadaEstaCerradaParaPronosticos(j, oficialesPorJornada.get(j.nombre) || []))
-    .map(j => j.nombre));
-  const todos = await Resultado.find({});
-  const r = esAdmin ? todos : todos.filter(item => item.jugador === usuario.username || visibles.has(item.jornada));
+  /*
+   * Antes se omitía la fila entera de las jornadas no cerradas. Ahora la fila
+   * viaja siempre y lo que se tapa son los partidos que aún no han empezado:
+   * de otro modo, en una jornada a medias no se podría ver NADA, ni siquiera
+   * los partidos ya jugados, que es precisamente lo que se quería arreglar.
+   */
   const resultMap = new Map();
 
-  r.forEach(r => resultMap.set(`${r.jugador}_${r.jornada}`, r.pronosticos));
+  todos.forEach(registro => {
+    const propio = esAdmin || registro.jugador === usuario?.username;
+
+    resultMap.set(
+      `${registro.jugador}_${registro.jornada}`,
+      propio
+        ? registro.pronosticos
+        : taparPronosticosNoDestapados(registro.pronosticos, destapadosPorJornada.get(registro.jornada) || [])
+    );
+  });
 
   res.json(Array.from(resultMap.entries()));
 });
@@ -3035,19 +3025,26 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
 
 app.get('/api/resultados/:jugador/:jornada', async (req, res) => {
   const { jugador, jornada } = req.params;
-  const [usuario, jornadaDoc, oficialDoc] = await Promise.all([
+  const [usuario, jornadaDoc, oficialDoc, r] = await Promise.all([
     Usuario.findById(req.session.usuarioId),
-    Jornada.findOne({ nombre: jornada }),
-    ResultadoOficial.findOne({ jornada }).select('resultados').lean()
+    Jornada.findOne({ nombre: jornada }).lean(),
+    ResultadoOficial.findOne({ jornada }).select('resultados').lean(),
+    Resultado.findOne({ jugador, jornada }).lean()
   ]);
-  const cerrada = jornadaEstaCerradaParaPronosticos(jornadaDoc, oficialDoc?.resultados || []);
-  const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
-  if (!cerrada && !esAdmin && usuario?.username !== jugador) {
-    return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
-  }
-  const r = await Resultado.findOne({ jugador, jornada });
 
-  res.json(r ? r.pronosticos : []);
+  if (!r) return res.json([]);
+
+  const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
+  if (esAdmin || usuario?.username === jugador) return res.json(r.pronosticos);
+
+  /*
+   * De otro participante solo se ven los partidos que ya empezaron. No es un
+   * 403: la respuesta llega con los marcadores pendientes en `null`, para que
+   * la pantalla pueda mostrar la jornada a medias en vez de quedarse en blanco.
+   */
+  const destapados = partidosDestapados(jornadaDoc, oficialDoc?.resultados || []);
+
+  res.json(taparPronosticosNoDestapados(r.pronosticos, destapados));
 });
 
 /* ================= API: Resultados Oficiales ================= */
@@ -4115,29 +4112,41 @@ app.post('/actualizar-equipos', requireAdmin, async (req, res) => {
 app.get('/api/resultados-con-equipos/:jugador/:jornada', async (req, res) => {
   const { jugador, jornada } = req.params;
 
-  const usuario = await Usuario.findById(req.session.usuarioId);
-  const jornadaAcceso = await Jornada.findOne({ nombre: jornada });
-  const cerrada = !jornadaAcceso?.fechaCierre || new Date(jornadaAcceso.fechaCierre) <= new Date();
-  if (!cerrada && !['propietario', 'admin'].includes(req.membership.rol) && usuario?.username !== jugador) {
-    return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
-  }
-
-  const resultado = await Resultado.findOne({ jugador, jornada });
-  const jornadaDoc = jornadaAcceso;
+  /*
+   * Esta ruta se quedó fuera del repaso de privacidad porque llamaba
+   * `jornadaAcceso` a lo que las otras tres llaman `jornadaDoc`, y la prueba
+   * que buscaba el patrón viejo no la vio. De ahí que ahora la comprobación
+   * sea una función compartida y no una expresión copiada en cada sitio: una
+   * regla en un solo lugar no se puede quedar a medio cambiar.
+   */
+  const [usuario, jornadaDoc, oficialDoc, resultado] = await Promise.all([
+    Usuario.findById(req.session.usuarioId),
+    Jornada.findOne({ nombre: jornada }).lean(),
+    ResultadoOficial.findOne({ jornada }).select('resultados').lean(),
+    Resultado.findOne({ jugador, jornada }).lean()
+  ]);
 
   if (!resultado || !jornadaDoc) {
     return res.status(404).json({ error: 'Datos no encontrados' });
   }
 
-  const pronosticos = resultado.pronosticos;
-  const partidos = jornadaDoc.partidos;
+  const puedeVerloTodo = ['propietario', 'admin'].includes(req.membership.rol) ||
+    usuario?.username === jugador;
 
-  const resultadosConEquipos = partidos.map((p, i) => ({
-    equipo1: p.equipo1,
-    equipo2: p.equipo2,
-    marcador1: pronosticos[i]?.marcador1 ?? '',
-    marcador2: pronosticos[i]?.marcador2 ?? ''
-  }));
+  const destapados = partidosDestapados(jornadaDoc, oficialDoc?.resultados || []);
+  const pronosticos = resultado.pronosticos;
+
+  const resultadosConEquipos = jornadaDoc.partidos.map((p, i) => {
+    const visible = puedeVerloTodo || destapados[i];
+
+    return {
+      equipo1: p.equipo1,
+      equipo2: p.equipo2,
+      marcador1: visible ? (pronosticos[i]?.marcador1 ?? '') : '',
+      marcador2: visible ? (pronosticos[i]?.marcador2 ?? '') : '',
+      oculto: !visible
+    };
+  });
 
   res.json(resultadosConEquipos);
 });
@@ -4269,43 +4278,51 @@ app.post('/api/resultados-seguros/:jugador/:jornada', async (req, res) => {
     if (!jugadorDoc) return res.status(404).json({ error: 'Jugador no encontrado' });
 
     /*
-     * La rama `jornadaSinFecha` que había aquí era una puerta abierta: una
-     * jornada a la que se le olvidó la fecha de cierre saltaba la comprobación
-     * de identidad Y la de contraseña, así que cualquiera podía leer los
-     * pronósticos de cualquiera. Ahora una jornada sin fecha se trata como
-     * abierta hasta que sus partidos empiezan.
+     * Aquí vivía la puerta abierta: la rama `jornadaSinFecha` saltaba a la vez
+     * la comprobación de identidad Y la de contraseña, así que una jornada a la
+     * que se le olvidó la fecha dejaba a cualquiera leer los pronósticos de
+     * cualquiera. Ahora el permiso no depende de un campo que se puede olvidar
+     * poner, sino de si el partido ya empezó.
      */
+    const esElPropio = jugadorDoc._id.toString() === req.session.usuarioId;
+
     const oficialDoc = await ResultadoOficial.findOne({ jornada }).select('resultados').lean();
-    const jornadaCerrada = jornadaEstaCerradaParaPronosticos(jornadaDoc, oficialDoc?.resultados || []);
+    const destapados = partidosDestapados(jornadaDoc, oficialDoc?.resultados || []);
 
-    if (!jornadaCerrada) {
-      if (jugadorDoc._id.toString() !== req.session.usuarioId) {
-        return res.status(403).json({ error: 'Los pronósticos de otros participantes permanecen privados hasta el cierre.' });
+    /*
+     * La contraseña sigue protegiendo lo PROPIO, que es para lo que estaba: la
+     * pantalla se usa en el móvil de uno delante de los demás. Para lo ajeno ya
+     * no hace falta pedir nada, porque solo se entrega lo que se puede ver.
+     */
+    if (esElPropio && jugadorDoc.password) {
+      if (!password) {
+        return res.json({ success: false, error: 'Contraseña requerida' });
       }
-      if (jugadorDoc.password) {
-        if (!password) {
-          return res.json({ success: false, error: 'Contraseña requerida' });
-        }
 
-        const match = await bcrypt.compare(password, jugadorDoc.password);
+      const match = await bcrypt.compare(password, jugadorDoc.password);
 
-        if (!match) {
-          return res.status(401).json({
-            success: false,
-            error: 'Contraseña incorrecta.'
-          });
-        }
+      if (!match) {
+        return res.status(401).json({
+          success: false,
+          error: 'Contraseña incorrecta.'
+        });
       }
     }
 
-    const partidos = jornadaDoc.partidos.map((p, i) => ({
-      equipo1: p.equipo1,
-      equipo2: p.equipo2,
-      logoEquipo1: p.logoEquipo1 || '',
-      logoEquipo2: p.logoEquipo2 || '',      
-      marcador1: resultado.pronosticos[i]?.marcador1 ?? '',
-      marcador2: resultado.pronosticos[i]?.marcador2 ?? ''
-    }));
+    const partidos = jornadaDoc.partidos.map((p, i) => {
+      const pronostico = resultado.pronosticos[i];
+      const visible = esElPropio || destapados[i];
+
+      return {
+        equipo1: p.equipo1,
+        equipo2: p.equipo2,
+        logoEquipo1: p.logoEquipo1 || '',
+        logoEquipo2: p.logoEquipo2 || '',
+        marcador1: visible ? (pronostico?.marcador1 ?? '') : '',
+        marcador2: visible ? (pronostico?.marcador2 ?? '') : '',
+        oculto: !visible
+      };
+    });
 
     res.json({ success: true, partidos });
   } catch (error) {
@@ -5046,11 +5063,11 @@ module.exports = {
   conVigilante,
   normalizarMarcador,
   normalizarNombreDeJornada,
-  normalizarFechaDeCierre,
   normalizarPartido,
   normalizarPartidos,
   normalizarIndicesDePartido,
-  jornadaEstaCerradaParaPronosticos,
+  partidosDestapados,
+  taparPronosticosNoDestapados,
   proveedorDeEventos,
   metricasSync,
   VENTANAS_SYNC_MS,

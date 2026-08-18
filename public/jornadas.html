@@ -78,20 +78,10 @@
 
       <div class="divider"></div>
 
-      <h2>Cierre de Jornada</h2>
-      <p class="helper-text">Define la fecha y hora límite para llenar la quiniela.</p>
-
-      <div class="two-column">
-        <div>
-          <label for="fechaCierreInput" class="field-label">Fecha de cierre</label>
-          <input type="date" id="fechaCierreInput" min="" />
-        </div>
-
-        <div>
-          <label for="horaCierreInput" class="field-label">Hora de cierre</label>
-          <input type="time" id="horaCierreInput" />
-        </div>
-      </div>
+      <p class="helper-text">
+        Cada partido se cierra solo a su hora de inicio: a partir de ese momento
+        nadie puede cambiar su pronóstico y los demás pueden verlo.
+      </p>
 
       <button id="finalizarJornadaButton">Finalizar Jornada</button>
 
@@ -114,25 +104,6 @@
       <select id="modificarJornadaSelect"></select>
 
       <div id="modificarJornadaControls" class="match-editor-card" style="display: none;">
-      <h3>Modificar fecha de cierre</h3>
-        <div class="two-column">
-        <div>
-          <label for="modificarFechaCierreInput" class="field-label">Nueva fecha de cierre</label>
-          <input type="date" id="modificarFechaCierreInput" />
-        </div>
-
-      <div>
-        <label for="modificarHoraCierreInput" class="field-label">Nueva hora de cierre</label>
-        <input type="time" id="modificarHoraCierreInput" />
-      </div>
-  </div>
-
-<button id="actualizarFechaCierreButton" type="button">
-  Actualizar fecha de cierre
-</button>
-
-<div class="divider"></div>
-
         <div class="partido-inputs">
           <div>
             <label for="modificarEquipo1Input" class="field-label">Equipo 1</label>

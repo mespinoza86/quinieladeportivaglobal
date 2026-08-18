@@ -20,11 +20,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const eliminarPartidosButton = document.getElementById('eliminarPartidosButton');
     const eliminarJornadaButton = document.getElementById('eliminarJornadaButton');
 
-    const modificarFechaCierreInput = document.getElementById('modificarFechaCierreInput');
-    const modificarHoraCierreInput = document.getElementById('modificarHoraCierreInput');
-    const actualizarFechaCierreButton = document.getElementById('actualizarFechaCierreButton');
-
-    const fechaInputEl = document.getElementById('fechaCierreInput');
     const buscarApiFechaInput = document.getElementById('buscarApiFechaInput');
 const buscarApiTextoInput = document.getElementById('buscarApiTextoInput');
 const buscarPartidosApiButton = document.getElementById('buscarPartidosApiButton');
@@ -34,11 +29,6 @@ const buscarApiCustomBox = document.getElementById('buscarApiCustomBox');
 
 let partidosApiDisponibles = [];
 
-
-    if (fechaInputEl) {
-        const today = new Date().toISOString().split('T')[0];
-        fechaInputEl.setAttribute('min', today);
-    }
 
     let currentPartidos = [];
     let jornadas = new Map();
@@ -52,15 +42,12 @@ let partidosApiDisponibles = [];
 
         if (data.length > 0 && Array.isArray(data[0])) {
             data.forEach(([nombre, partidos]) => {
-                map.set(nombre, { partidos: partidos || [], fechaCierre: null });
+                map.set(nombre, { partidos: partidos || [] });
             });
         } else {
             data.forEach(j => {
                 if (!j?.nombre) return;
-                map.set(j.nombre, {
-                    partidos: j.partidos || [],
-                    fechaCierre: j.fechaCierre || null
-                });
+                map.set(j.nombre, { partidos: j.partidos || [] });
             });
         }
 
@@ -436,57 +423,6 @@ function renderizarPartidosApiModificar() {
         return [];
     }
 
-    function formatearFechaHoraCostaRica(fechaISO) {
-        if (!fechaISO) return 'Sin fecha de cierre';
-
-        const fecha = new Date(fechaISO);
-
-        const fechaTxt = fecha.toLocaleDateString('es-CR', {
-            timeZone: 'America/Costa_Rica',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit'
-        });
-
-        const horaTxt = fecha.toLocaleTimeString('es-CR', {
-            timeZone: 'America/Costa_Rica',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        return `${fechaTxt} ${horaTxt}`;
-    }
-
-    function convertirFechaHoraCostaRicaAISO(fecha, hora) {
-        if (!fecha || !hora) return null;
-        return new Date(`${fecha}T${hora}:00-06:00`).toISOString();
-    }
-
-    function cargarFechaCierreEnInputs(fechaISO) {
-        if (!modificarFechaCierreInput || !modificarHoraCierreInput) return;
-
-        if (!fechaISO) {
-            modificarFechaCierreInput.value = '';
-            modificarHoraCierreInput.value = '';
-            return;
-        }
-
-        const fecha = new Date(fechaISO);
-
-        modificarFechaCierreInput.value = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'America/Costa_Rica',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit'
-        }).format(fecha);
-
-        modificarHoraCierreInput.value = new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'America/Costa_Rica',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        }).format(fecha);
-    }
 
     async function cargarEquipos() {
         try {
@@ -750,7 +686,6 @@ function partidoCoincideConFiltro(partido, filtro) {
             body: JSON.stringify({
                 nombre: jornadaActualParaModificar,
                 partidos,
-                fechaCierre: data.fechaCierre || jornadas.get(jornadaActualParaModificar)?.fechaCierre || null
             })
         });
 
@@ -785,14 +720,6 @@ function partidoCoincideConFiltro(partido, filtro) {
             .then(data => {
                 const partidos = extraerPartidosDeDetalle(data);
                 partidosJornadaList.innerHTML = '';
-
-                const fechaCierre = data.fechaCierre || jornadas.get(selectedJornada)?.fechaCierre;
-
-                if (fechaCierre) {
-                    const liFecha = document.createElement('li');
-                    liFecha.innerHTML = `<strong>Cierre:</strong> ${formatearFechaHoraCostaRica(fechaCierre)}`;
-                    partidosJornadaList.appendChild(liFecha);
-                }
 
                 partidos.forEach(partido => {
                     const li = document.createElement('li');
@@ -881,7 +808,6 @@ function partidoCoincideConFiltro(partido, filtro) {
                                 body: JSON.stringify({
                                     nombre: selectedJornada,
                                     partidos,
-                                    fechaCierre: jornadas.get(selectedJornada)?.fechaCierre || null
                                 })
                             });
 
@@ -957,7 +883,6 @@ function partidoCoincideConFiltro(partido, filtro) {
                 body: JSON.stringify({
                     nombre: selectedJornada,
                     partidos,
-                    fechaCierre: data.fechaCierre || jornadas.get(selectedJornada)?.fechaCierre || null
                 })
             });
 
@@ -969,7 +894,6 @@ function partidoCoincideConFiltro(partido, filtro) {
 
             jornadas.set(selectedJornada, {
                 partidos,
-                fechaCierre: data.fechaCierre || jornadas.get(selectedJornada)?.fechaCierre || null
             });
 
             updateJornadaPartidos();
@@ -987,69 +911,6 @@ function partidoCoincideConFiltro(partido, filtro) {
 
 
 
-
-    actualizarFechaCierreButton.addEventListener('click', async () => {
-        const selectedJornada = modificarJornadaSelect.value;
-
-        if (!selectedJornada) {
-            alert('Selecciona una jornada primero.');
-            return;
-        }
-
-        const nuevaFecha = modificarFechaCierreInput.value;
-        const nuevaHora = modificarHoraCierreInput.value;
-
-        if (!nuevaFecha || !nuevaHora) {
-            alert('Debes seleccionar fecha y hora de cierre.');
-            return;
-        }
-
-        const nuevaFechaISO = convertirFechaHoraCostaRicaAISO(nuevaFecha, nuevaHora);
-        const fechaActual = jornadas.get(selectedJornada)?.fechaCierre || null;
-
-        const confirmar = confirm(
-            `¿Estás seguro que deseas cambiar la fecha y hora de cierre?\n\n` +
-            `Actual: ${formatearFechaHoraCostaRica(fechaActual)}\n` +
-            `Nueva: ${formatearFechaHoraCostaRica(nuevaFechaISO)}`
-        );
-
-        if (!confirmar) return;
-
-        try {
-            const response = await fetch(`/api/jornadas/${encodeURIComponent(selectedJornada)}`);
-            const data = await response.json();
-            const partidos = extraerPartidosDeDetalle(data);
-
-            const guardarResponse = await fetch('/api/jornadas', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    nombre: selectedJornada,
-                    partidos,
-                    fechaCierre: nuevaFechaISO
-                })
-            });
-
-            if (!guardarResponse.ok) {
-                alert('Error actualizando fecha de cierre.');
-                return;
-            }
-
-            alert('Fecha de cierre actualizada correctamente.');
-
-            jornadas.set(selectedJornada, {
-                partidos,
-                fechaCierre: nuevaFechaISO
-            });
-
-            loadJornadas();
-            updateJornadaPartidos();
-            cargarFechaCierreEnInputs(nuevaFechaISO);
-        } catch (error) {
-            console.error('Error actualizando fecha de cierre:', error);
-            alert('Error actualizando fecha de cierre.');
-        }
-    });
 
     addPartidoButton.addEventListener('click', async () => {
         const equipo1 = equipo1Input.value.trim();
@@ -1076,18 +937,8 @@ function partidoCoincideConFiltro(partido, filtro) {
         }
 
         const nombreJornada = prompt('Ingrese el nombre de la jornada:');
-        const fechaInput = document.getElementById('fechaCierreInput')?.value;
-        const horaInput = document.getElementById('horaCierreInput')?.value;
 
         if (!nombreJornada) return alert('Debe ingresar un nombre de jornada');
-        if (!fechaInput || !horaInput) return alert('Debe seleccionar fecha y hora de cierre');
-
-        const fechaCierre = convertirFechaHoraCostaRicaAISO(fechaInput, horaInput);
-
-        if (new Date(fechaCierre) <= new Date()) {
-            alert('La fecha de cierre debe ser futura');
-            return;
-        }
 
         if (jornadas.has(nombreJornada)) {
             alert('Ya existe una jornada con ese nombre.');
@@ -1099,8 +950,7 @@ function partidoCoincideConFiltro(partido, filtro) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 nombre: nombreJornada,
-                partidos: currentPartidos,
-                fechaCierre
+                partidos: currentPartidos
             })
         })
         .then(() => {
@@ -1116,9 +966,6 @@ function partidoCoincideConFiltro(partido, filtro) {
     modificarJornadaSelect.addEventListener('change', () => {
         jornadaActualParaModificar = modificarJornadaSelect.value;
         modificarJornadaControls.style.display = jornadaActualParaModificar ? 'block' : 'none';
-
-        const infoJornada = jornadas.get(jornadaActualParaModificar);
-        cargarFechaCierreEnInputs(infoJornada?.fechaCierre || null);
 
         updateModificarJornadaPartidos();
     });
@@ -1147,7 +994,6 @@ function partidoCoincideConFiltro(partido, filtro) {
                     body: JSON.stringify({
                         nombre: jornadaActualParaModificar,
                         partidos,
-                        fechaCierre: jornadas.get(jornadaActualParaModificar)?.fechaCierre || null
                     })
                 });
             })
@@ -1186,7 +1032,6 @@ function partidoCoincideConFiltro(partido, filtro) {
                     body: JSON.stringify({
                         nombre: jornadaActualParaModificar,
                         partidos: updatedPartidos,
-                        fechaCierre: jornadas.get(jornadaActualParaModificar)?.fechaCierre || null
                     })
                 });
             })

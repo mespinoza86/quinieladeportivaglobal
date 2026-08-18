@@ -1572,42 +1572,32 @@ test('una jornada sin nombre ya no se cuela en la base', async () => {
   assert.equal(total, 0, 'Ninguna petición inválida debe dejar rastro');
 });
 
-test('la fecha de cierre es obligatoria al crear la jornada, no al editarla', async () => {
-  const { agente, datos } = await cuentaNueva('fechacierre');
-  const quiniela = await quinielaNueva(agente, 'Fecha De Cierre');
+test('la jornada ya no tiene fecha de cierre', async () => {
+  const { agente, datos } = await cuentaNueva('sinfecha');
+  const quiniela = await quinielaNueva(agente, 'Sin Fecha De Cierre');
   const id = new mongoose.Types.ObjectId(quiniela.id);
   await conModoAdmin(agente, datos.password);
 
   const partidos = [{ equipo1: 'Uno', equipo2: 'Dos' }];
 
-  const sinFecha = await agente.post('/api/jornadas').send({ nombre: 'Jornada Nueva', partidos });
-  assert.equal(sinFecha.status, 400, JSON.stringify(sinFecha.body));
-  assert.match(sinFecha.body.error, /fecha de cierre/i);
-
-  const fechaMala = await agente.post('/api/jornadas')
-    .send({ nombre: 'Jornada Nueva', partidos, fechaCierre: 'el martes' });
-  assert.equal(fechaMala.status, 400, JSON.stringify(fechaMala.body));
-  assert.match(fechaMala.body.error, /no es una fecha válida/i);
-
-  const creada = await agente.post('/api/jornadas')
-    .send({ nombre: 'Jornada Nueva', partidos, fechaCierre: '2027-03-01T12:00:00.000Z' });
+  // Crear ya no exige fecha: el cierre lo marca la hora de cada partido.
+  const creada = await agente.post('/api/jornadas').send({ nombre: 'Jornada Libre', partidos });
   assert.equal(creada.status, 200, JSON.stringify(creada.body));
 
   /*
-   * Editar sin mandar fecha no puede fallar: las pantallas de administración
-   * reenvían `fechaCierre: null` cuando la jornada heredada no tenía ninguna.
-   * La que ya estaba guardada se conserva.
+   * Y si alguien la manda igualmente —una pantalla vieja en caché, un cliente
+   * antiguo—, se ignora en vez de fallar: el campo ya no existe en el modelo.
    */
-  const editada = await agente.post('/api/jornadas').send({
-    nombre: 'Jornada Nueva',
-    partidos: [...partidos, { equipo1: 'Tres', equipo2: 'Cuatro' }],
-    fechaCierre: null
-  });
-  assert.equal(editada.status, 200, JSON.stringify(editada.body));
+  const conFechaDeMas = await agente.post('/api/jornadas')
+    .send({ nombre: 'Jornada Libre', partidos, fechaCierre: '2027-03-01T12:00:00.000Z' });
+  assert.equal(conFechaDeMas.status, 200, JSON.stringify(conFechaDeMas.body));
 
-  const doc = await enQuiniela(id, () => srv.Jornada.findOne({ nombre: 'Jornada Nueva' }).lean());
-  assert.equal(doc.partidos.length, 2);
-  assert.equal(new Date(doc.fechaCierre).toISOString(), '2027-03-01T12:00:00.000Z');
+  const doc = await enQuiniela(id, () => srv.Jornada.findOne({ nombre: 'Jornada Libre' }).lean());
+  assert.equal(doc.fechaCierre, undefined, 'El modelo ya no guarda fecha de cierre');
+
+  const detalle = await agente.get('/api/jornadas/Jornada%20Libre');
+  assert.equal(detalle.status, 200);
+  assert.ok(!('fechaCierre' in detalle.body), 'La respuesta tampoco debe traerla');
 });
 
 test('un marcador negativo o fraccionario no llega a la base', async () => {
@@ -1643,11 +1633,11 @@ test('un marcador negativo o fraccionario no llega a la base', async () => {
   assert.equal(bueno.status, 200, JSON.stringify(bueno.body));
 });
 
-test('una jornada sin fecha de cierre mantiene privados los pronósticos ajenos', async () => {
+test('los pronósticos ajenos se destapan partido a partido', async () => {
   const { agente: duenoAgente, datos: dueno } = await cuentaNueva('privacidad');
   const { agente: mironAgente, datos: miron } = await cuentaNueva('miron');
 
-  const quiniela = await quinielaNueva(duenoAgente, 'Privacidad Sin Fecha');
+  const quiniela = await quinielaNueva(duenoAgente, 'Privacidad Por Partido');
   const id = new mongoose.Types.ObjectId(quiniela.id);
   await conModoAdmin(duenoAgente, dueno.password);
 
@@ -1663,50 +1653,75 @@ test('una jornada sin fecha de cierre mantiene privados los pronósticos ajenos'
   assert.equal(seleccionar.status, 200, JSON.stringify(seleccionar.body));
 
   /*
-   * La jornada heredada del caso real: sin `fechaCierre` y con el partido aún
-   * por jugarse. Antes se daba por CERRADA, así que sus pronósticos eran
-   * públicos desde el minuto uno y cualquiera podía copiarlos.
+   * Una jornada a medias: el primero ya se jugó, el segundo todavía no. Es el
+   * caso que la regla por jornada no sabía representar —o todo público, o todo
+   * privado— y el que motivó el cambio.
    */
-  const partidoFuturo = { equipo1: 'Uno', equipo2: 'Dos', apiDate: '2099-01-01 15:00' };
+  const jugado = { equipo1: 'Uno', equipo2: 'Dos', apiDate: '2020-01-01 15:00' };
+  const porJugar = { equipo1: 'Tres', equipo2: 'Cuatro', apiDate: '2099-01-01 15:00' };
+
   await enQuiniela(id, async () => {
-    await srv.Jornada.create({ nombre: 'Jornada Sin Fecha', partidos: [partidoFuturo] });
+    await srv.Jornada.create({ nombre: 'Jornada Mixta', partidos: [jugado, porJugar] });
     await srv.Resultado.create({
       jugador: dueno.username,
-      jornada: 'Jornada Sin Fecha',
-      pronosticos: [{ equipo1: 'Uno', equipo2: 'Dos', marcador1: 2, marcador2: 1 }]
+      jornada: 'Jornada Mixta',
+      pronosticos: [
+        { equipo1: 'Uno', equipo2: 'Dos', marcador1: 2, marcador2: 1 },
+        { equipo1: 'Tres', equipo2: 'Cuatro', marcador1: 3, marcador2: 0 }
+      ]
     });
   });
 
-  const ruta = `/api/resultados/${encodeURIComponent(dueno.username)}/Jornada%20Sin%20Fecha`;
+  const ruta = `/api/resultados/${encodeURIComponent(dueno.username)}/Jornada%20Mixta`;
 
-  const espiar = await mironAgente.get(ruta);
-  assert.equal(espiar.status, 403, JSON.stringify(espiar.body));
+  const visto = await mironAgente.get(ruta);
+  assert.equal(visto.status, 200, JSON.stringify(visto.body));
+  assert.equal(visto.body[0].marcador1, 2, 'El partido ya jugado se ve');
+  assert.equal(visto.body[0].marcador2, 1);
+  assert.equal(visto.body[1].marcador1, null, 'El que no ha empezado sigue tapado');
+  assert.equal(visto.body[1].marcador2, null);
+  assert.equal(visto.body[1].oculto, true);
+  assert.equal(visto.body[1].equipo1, 'Tres', 'La fila se conserva, solo se tapa el marcador');
+
+  // La misma regla en las otras tres vías que entregan pronósticos ajenos.
+  const conEquipos = await mironAgente.get(
+    `/api/resultados-con-equipos/${encodeURIComponent(dueno.username)}/Jornada%20Mixta`
+  );
+  assert.equal(conEquipos.status, 200, JSON.stringify(conEquipos.body));
+  assert.equal(conEquipos.body[0].marcador1, 2);
+  assert.equal(conEquipos.body[1].marcador1, '', 'El pendiente no puede filtrarse por aquí');
+  assert.equal(conEquipos.body[1].oculto, true);
 
   const seguro = await mironAgente
-    .post(`/api/resultados-seguros/${encodeURIComponent(dueno.username)}/Jornada%20Sin%20Fecha`)
+    .post(`/api/resultados-seguros/${encodeURIComponent(dueno.username)}/Jornada%20Mixta`)
     .send({});
-  assert.equal(seguro.status, 403, JSON.stringify(seguro.body));
+  assert.equal(seguro.status, 200, JSON.stringify(seguro.body));
+  assert.equal(seguro.body.partidos[0].marcador1, 2);
+  assert.equal(seguro.body.partidos[1].marcador1, '');
+  assert.equal(seguro.body.partidos[1].oculto, true);
 
   const listado = await mironAgente.get('/api/resultados');
-  const claves = listado.body.map(([clave]) => clave);
-  assert.ok(
-    !claves.includes(`${dueno.username}_Jornada Sin Fecha`),
-    `El listado general tampoco debe filtrar pronósticos ajenos: ${JSON.stringify(claves)}`
-  );
+  const fila = listado.body.find(([clave]) => clave === `${dueno.username}_Jornada Mixta`);
+  assert.ok(fila, 'La fila viaja siempre; lo que se tapa es el marcador pendiente');
+  assert.equal(fila[1][0].marcador1, 2);
+  assert.equal(fila[1][1].marcador1, null);
+
+  // Y el dueño de los pronósticos los sigue viendo enteros.
+  const propios = await duenoAgente.get(ruta);
+  assert.equal(propios.body[1].marcador1, 3, 'Cada quien ve sus propios pronósticos completos');
 
   /*
-   * Cuando el partido ya empezó, la jornada pasa a estar cerrada aunque nunca
-   * tuviera fecha: es la misma señal que el sistema ya usaba para bloquear la
-   * edición de pronósticos.
+   * Cuando el segundo partido arranca, se destapa solo. Nadie tiene que
+   * acordarse de cerrar nada, que es lo que se quitó de en medio.
    */
   await enQuiniela(id, () => srv.Jornada.updateOne(
-    { nombre: 'Jornada Sin Fecha' },
-    { $set: { 'partidos.0.apiDate': '2020-01-01 15:00' } }
+    { nombre: 'Jornada Mixta' },
+    { $set: { 'partidos.1.apiDate': '2020-01-02 15:00' } }
   ));
 
-  const yaJugado = await mironAgente.get(ruta);
-  assert.equal(yaJugado.status, 200, JSON.stringify(yaJugado.body));
-  assert.equal(yaJugado.body[0].marcador1, 2);
+  const despues = await mironAgente.get(ruta);
+  assert.equal(despues.body[1].marcador1, 3, 'Empezado el partido, su pronóstico ya es público');
+  assert.equal(despues.body[1].marcador2, 0);
 });
 
 test('eliminar partidos exige índices reales y no borra de más al repetirlos', async () => {

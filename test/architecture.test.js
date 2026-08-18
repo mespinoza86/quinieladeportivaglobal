@@ -418,7 +418,7 @@ test('la portada pide solo el podio, no la tabla completa', () => {
 test('las escrituras de dominio pasan por los validadores', () => {
   for (const validador of [
     'function normalizarMarcador', 'function normalizarNombreDeJornada',
-    'function normalizarFechaDeCierre', 'function normalizarPartido',
+    'function normalizarPartido',
     'function normalizarPartidos', 'function normalizarIndicesDePartido'
   ]) {
     assert.match(serverSinComentarios, new RegExp(validador.replace(/ /g, '\\s+')));
@@ -437,21 +437,44 @@ test('las escrituras de dominio pasan por los validadores', () => {
   assert.match(serverSinComentarios, /normalizarIndicesDePartido\(req\.body\?\.indices, doc\.partidos\.length\)/);
 });
 
-test('una jornada sin fecha de cierre no publica los pronósticos', () => {
-  assert.match(serverSinComentarios, /function jornadaEstaCerradaParaPronosticos/);
+test('la privacidad de los pronósticos se decide partido a partido', () => {
+  assert.match(serverSinComentarios, /function partidosDestapados/);
+  assert.match(serverSinComentarios, /function taparPronosticosNoDestapados/);
 
   /*
-   * Las tres vías que decidían la privacidad daban por CERRADA una jornada sin
-   * fecha, así que un olvido de administración hacía públicos los pronósticos
-   * de todos desde el primer momento.
+   * La jornada ya no tiene fecha de cierre: el cierre es de cada partido.
    */
-  assert.doesNotMatch(serverSinComentarios, /!jornadaDoc\?\.fechaCierre \|\|/);
-  assert.doesNotMatch(serverSinComentarios, /!j\.fechaCierre \|\| new Date\(j\.fechaCierre\)/);
-  assert.doesNotMatch(serverSinComentarios, /const jornadaSinFecha/);
+  assert.doesNotMatch(serverSinComentarios, /fechaCierre: \{ type: Date/);
+  assert.doesNotMatch(serverSinComentarios, /normalizarFechaDeCierre/);
+  assert.doesNotMatch(serverSinComentarios, /jornadaEstaCerradaParaPronosticos/);
 
-  // Las tres usan ahora la misma regla.
-  const usos = serverSinComentarios.match(/jornadaEstaCerradaParaPronosticos\(/g) || [];
-  assert.ok(usos.length >= 4, `Se esperaban la definición y sus tres usos, hubo ${usos.length}`);
+  /*
+   * Esta es la comprobación que faltaba y por la que /api/resultados-con-equipos
+   * se quedó fuera del cambio anterior: llamaba `jornadaAcceso` a lo que las
+   * demás llamaban `jornadaDoc`, así que buscar el patrón con un nombre de
+   * variable concreto no lo encontró. Ahora se busca la FORMA del patrón, sea
+   * cual sea el nombre de la variable.
+   *
+   * Las trivias quedan fuera a propósito: ellas SÍ conservan una fecha de
+   * cierre propia, que es un campo distinto y una regla que no ha cambiado.
+   */
+  const tratanFaltaDeFechaComoCierre = serverSinComentarios
+    .split('\n')
+    .filter(linea => /!\s*\w+\??\.fechaCierre\s*\|\|\s*new Date\(/.test(linea))
+    .filter(linea => !/trivia/i.test(linea));
+
+  assert.deepEqual(
+    tratanFaltaDeFechaComoCierre,
+    [],
+    'Queda una vía de jornada que trata "sin fecha de cierre" como cerrada'
+  );
+
+  /*
+   * Y las cuatro vías que entregan pronósticos ajenos usan la misma función.
+   * Si alguien añade una quinta y se le olvida, este número no cuadra.
+   */
+  const usos = serverSinComentarios.match(/partidosDestapados\(/g) || [];
+  assert.ok(usos.length >= 5, `Se esperaban la definición y sus cuatro usos, hubo ${usos.length}`);
 });
 
 test('toda pantalla con campo de contraseña carga el ojo para mostrarla', () => {

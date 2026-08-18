@@ -26,7 +26,7 @@ Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— e
 el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **90 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **92 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -42,6 +42,7 @@ resuelta de la tabla general.
 | **5** | Ranking materializado (`PuntosJornada`), caché por quiniela y paginación de la tabla general | 012 |
 | **6.1** | Endurecimiento: plazos del sincronizador y robustez de la lectura | 016 |
 | **6.2** | Validación de dominio y privacidad por defecto de los pronósticos | 017 |
+| **6.3** | Ojo para ver la contraseña; cierre por partido en vez de por jornada | 018, 019 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -101,7 +102,7 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 90 pruebas (~60 s, sin red, sin tocar la base real)
+npm test                   # las 92 pruebas (~60 s, sin red, sin tocar la base real)
 npm run test:integracion   # solo las 59 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
@@ -3547,6 +3548,141 @@ por importación), editar una existente y consultar pronósticos ajenos con una
 jornada abierta. Después queda **S-04** —convertir los renderizados con
 `innerHTML` a nodos DOM, empezando por `index-ranking.js`— y la invalidación
 excesiva de la caché del ranking anotada en la Entrada 016.
+
+---
+
+### 📌 Entrada 018 — 18 de agosto de 2026 — Ojo para ver la contraseña
+
+**Objetivo:** poder comprobar lo que se está escribiendo en cualquier campo de
+contraseña, y asegurar que un fallo de contraseña siempre se explique.
+
+**Qué se hizo:**
+
+1. `private/js/password-visible.js` recorre los `input[type="password"]` de la
+   página y les monta el botón encima. Se hizo así, y no repitiendo el marcado
+   en las nueve pantallas que los tienen, para que **una pantalla nueva lo
+   herede sin que nadie se acuerde de añadirlo**. Una prueba de arquitectura
+   falla si alguna se queda sin él.
+2. El icono muestra la **acción**, no el estado: con la contraseña oculta se ve
+   un ojo abierto —"pulsa para verla"—, y tachado cuando ya está a la vista. Es
+   la convención de los navegadores y de los gestores de contraseñas.
+3. El botón es `type="button"`. Sin eso, dentro de un `<form>` habría enviado
+   el formulario al pulsarlo: pulsar el ojo en el login habría intentado
+   iniciar sesión.
+4. Se conserva la posición del cursor al alternar, porque lo normal es pulsar el
+   ojo a mitad de escribir.
+5. Dibujado con `createElementNS`, sin `innerHTML`, para no añadir deuda de S-04
+   justo antes de ir a limpiarla. Hay una prueba que lo fija.
+6. Se revisaron **las siete rutas de contraseña** y todas mostraban ya un
+   mensaje al fallar: no había ninguna muda. Lo que había era inconsistencia de
+   redacción, y se unificó a `Contraseña incorrecta.`
+
+**El login es la excepción, y a propósito:** sigue diciendo *"Usuario, correo o
+contraseña incorrectos."* Decir solo "contraseña incorrecta" confirmaría que esa
+cuenta **existe**, que es la vía normal para armar una lista de usuarios reales
+antes de atacarlos.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/password-visible.js` | Nuevo: monta el ojo sobre cada campo de contraseña |
+| `private/css/styles.css` | Estilos del botón, que neutralizan la regla general de `button` |
+| `public/*.html` (9) | Cargan el script |
+| `server.js` y 4 scripts | Redacción unificada del mensaje de contraseña incorrecta |
+| `test/architecture.test.js` | Dos invariantes: ninguna pantalla sin ojo; el ojo sin `innerHTML` |
+
+**Verificación:** `npm test` → 92/92.
+
+---
+
+### 📌 Entrada 019 — 18 de agosto de 2026 — El cierre es por partido, no por jornada
+
+**Objetivo:** retirar la `fechaCierre` de la jornada, que era información
+duplicada —cada partido ya se cierra a su hora de inicio— y pasar la privacidad
+de los pronósticos a decidirse partido a partido.
+
+**Por qué esto revierte parte de la Entrada 017.** Allí se hizo `fechaCierre`
+obligatoria al crear una jornada. La observación posterior fue mejor: si el
+cierre real lo marca el pitido inicial de cada partido, la fecha de jornada es un
+dato que hay que recordar poner, que puede contradecir a los partidos y cuyo
+olvido tenía consecuencias. Se quita el campo, no el criterio: la validación de
+la 017 se queda entera.
+
+**Qué se hizo:**
+
+1. `fechaCierre` fuera del `JornadaSchema`, de las cuatro rutas que la escribían
+   y de las dos que la devolvían. `normalizarFechaDeCierre` se retira por
+   quedarse sin quien lo llame. **Las trivias conservan la suya**, que es un
+   campo distinto y una regla que no cambia.
+2. `partidosDestapados()` sustituye a `jornadaEstaCerradaParaPronosticos()`:
+   devuelve un booleano por partido, y un partido se destapa en cuanto empieza.
+   Reutiliza `partidoYaInicio()`, que ya decidía cuándo dejaba de poder
+   editarse un pronóstico, así que **lo que no se puede editar es exactamente
+   lo que se puede ver**: una sola regla, imposible que discrepen.
+3. `taparPronosticosNoDestapados()` deja los marcadores pendientes en `null` y
+   conserva equipos y posición, con `oculto: true`. La fila sigue estando; solo
+   no dice qué pronosticó el jugador. Las pantallas ya pintaban `null` como
+   "-", así que no hubo que tocarlas.
+4. `/api/resultados` deja de omitir la jornada entera y pasa a tapar partido a
+   partido. Antes, en una jornada a medias no se veía **nada**, ni siquiera los
+   partidos ya jugados.
+5. En `/api/resultados-seguros`, la contraseña pasa a proteger solo lo **propio**,
+   que es para lo que estaba: la pantalla se usa en el móvil de uno delante de
+   los demás. Para lo ajeno ya no hace falta pedir nada, porque solo se entrega
+   lo que se puede ver.
+6. Frontend: fuera los dos campos de fecha y hora al crear jornada, el bloque
+   entero de "Modificar fecha de cierre", el campo de la pantalla de importación,
+   la línea "Cierre:" del listado y la cabecera de `llenar_jornada`. Con ellos se
+   fueron tres funciones que quedaban sin uso.
+
+**El hallazgo serio: había una CUARTA vía de privacidad que la Entrada 017 no
+tocó.** `GET /api/resultados-con-equipos/:jugador/:jornada` conservaba intacto
+el patrón `!fechaCierre || …`, así que seguía publicando los pronósticos de una
+jornada sin fecha. **La prueba de la 017 no lo detectó porque esa ruta llamaba
+`jornadaAcceso` a lo que las otras tres llaman `jornadaDoc`**, y la comprobación
+buscaba el patrón con el nombre de variable concreto. Dos lecciones, y las dos
+están aplicadas:
+
+- La regla vive ahora en **una función compartida**, no en una expresión copiada
+  cuatro veces. Una regla en un solo sitio no se puede quedar a medio cambiar.
+- La prueba busca la **forma** del patrón, no un nombre de variable, y además
+  cuenta los usos de `partidosDestapados()`: si alguien añade una quinta ruta
+  que entregue pronósticos ajenos y se le olvida, el número no cuadra.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Modelo, 4 rutas de escritura, 2 de lectura y las **4** vías de privacidad |
+| `private/js/jornadas.js` | −161 líneas: controles, ayudantes y los siete envíos con fecha |
+| `private/js/importar_partidos.js`, `llenar_jornada.js` | Sin fecha de cierre |
+| `public/jornadas.html`, `importar_partidos.html` | Fuera los campos y el bloque de modificar |
+| `test/*` | Reescritas las 4 pruebas que fijaban la regla vieja |
+
+**Verificación:**
+
+```
+npm run check                      → sintaxis válida
+node --check en los 34 scripts     → todos válidos
+npm test                           → 92/92 (33 arquitectura + 59 integración)
+npm audit --omit=dev               → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- Las jornadas ya guardadas conservan su `fechaCierre` en Mongo. El código ya no
+  la lee, así que es un campo inerte. Borrarlo requiere una orden explícita.
+- `GET /api/resultados` devuelve ahora **más** filas que antes, aunque tapadas.
+  Es un endpoint sin paginar (M-26) y esto lo empeora ligeramente; se resuelve
+  solo cuando se pagine.
+- La pantalla de importación seguía teniendo un campo de fecha de cierre que ya
+  no servía para nada: se retiró junto con su conversor de zona horaria.
+
+**Pendiente / siguiente paso:** prueba de humo visual de crear jornada (ya sin
+pedir fecha), editar una existente y ver los pronósticos de otro con una jornada
+a medias —debe verse el partido jugado y no el pendiente—. Después, la
+invalidación excesiva de la caché del ranking (Entrada 016) y S-04.
 
 ---
 
