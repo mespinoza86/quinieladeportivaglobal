@@ -343,7 +343,7 @@ if (buscarApiTorneoSelect.value === 'custom') {
         const data = await response.json();
 
         if (!response.ok) {
-            partidosApiModificarContainer.innerHTML = `<div class="resultados-mensaje">${data.error || 'Error buscando partidos.'}</div>`;
+            partidosApiModificarContainer.innerHTML = html`<div class="resultados-mensaje">${data.error || 'Error buscando partidos.'}</div>`;
             return;
         }
 
@@ -377,18 +377,18 @@ function renderizarPartidosApiModificar() {
             })
             : 'Sin fecha';
 
-        return `
+        return html`
             <div class="match-card">
                 <div class="match-teams">
                     <div class="team-side">
-                        ${partido.logoEquipo1 ? `<img src="${partido.logoEquipo1}" class="team-logo" alt="${traducirEquipo(partido.equipo1)}">` : ''}
+                        ${partido.logoEquipo1 ? html`<img src="${partido.logoEquipo1}" class="team-logo" alt="${traducirEquipo(partido.equipo1)}">` : ''}
                         <strong>${traducirEquipo(partido.equipo1)}</strong>
                     </div>
 
                     <span class="vs">vs</span>
 
                     <div class="team-side">
-                        ${partido.logoEquipo2 ? `<img src="${partido.logoEquipo2}" class="team-logo" alt="${traducirEquipo(partido.equipo2)}">` : ''}
+                        ${partido.logoEquipo2 ? html`<img src="${partido.logoEquipo2}" class="team-logo" alt="${traducirEquipo(partido.equipo2)}">` : ''}
                         <strong>${traducirEquipo(partido.equipo2)}</strong>
                     </div>
                 </div>

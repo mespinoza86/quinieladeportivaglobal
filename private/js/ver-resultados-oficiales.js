@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function logoHTML(url, nombre) {
         if (!url) return '';
-        return `<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+        return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
     }
 
     function marcador(valor) {
@@ -34,24 +34,24 @@ function estadoPartidoHTML(partido) {
     if (!partido) return '';
 
     if (partido.estado === 'TC') {
-        return `<span class="status-pill status-finished">TC</span>`;
+        return html`<span class="status-pill status-finished">TC</span>`;
     }
 
     if (partido.estado === 'MT') {
-        return `<span class="status-pill status-live">
+        return html`<span class="status-pill status-live">
             <span class="live-dot"></span>
             MT
         </span>`;
     }
 
     if (partido.estado === 'LIVE' && partido.minuto) {
-        return `<span class="status-pill status-live">
+        return html`<span class="status-pill status-live">
             <span class="live-dot"></span>
             ${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}
         </span>`;
     }
 
-    return `<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
+    return html`<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
 }
 
 
@@ -59,11 +59,11 @@ function estadoPartidoHTML(partido) {
         const resultados = resultadosOficialesCache.find(r => r.nombre === jornada);
 
         if (resultados && resultados.partidos && resultados.partidos.length) {
-            resultadosOficialesContainer.innerHTML = resultados.partidos.map(partido => `
+            resultadosOficialesContainer.innerHTML = resultados.partidos.map(partido => html`
             <div class="match-card resultado official-result-card ${partido.comodin ? 'official-card-comodin' : ''}">
 
             <div class="official-status-column">
-                ${partido.comodin ? '<span class="official-comodin-badge">⭐ COMODÍN</span>' : '<span>Normal</span>'}
+                ${partido.comodin ? html`<span class="official-comodin-badge">⭐ COMODÍN</span>` : html`<span>Normal</span>`}
                 ${estadoPartidoHTML(partido)}
             </div>
 
@@ -99,7 +99,7 @@ function estadoPartidoHTML(partido) {
             const jornadas = await jornadasResponse.json();
 
             jornadaSelect.innerHTML = jornadas
-                .map(j => `<option value="${j.nombre}">${j.nombre}</option>`)
+                .map(j => html`<option value="${j.nombre}">${j.nombre}</option>`)
                 .join('');
 
             const resultadosResponse = await fetch('/api/resultados-oficiales');
@@ -111,7 +111,7 @@ function estadoPartidoHTML(partido) {
                 const jornadaActual = jornadaSelect.value || jornadas[jornadas.length - 1].nombre;
 
                 jornadaSelect.innerHTML = jornadas
-                .map(j => `<option value="${j.nombre}">${j.nombre}</option>`)
+                .map(j => html`<option value="${j.nombre}">${j.nombre}</option>`)
                 .join('');
 
             jornadaSelect.value = jornadaActual;

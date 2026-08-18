@@ -105,14 +105,14 @@ function loadPartidos(nombreJornada) {
                 console.error("Jornada no encontrada:", nombreJornada);
                 return;
             }            
-            mostrarPartidos(jornada.partidos, jornada.fechaCierre, jornada.nombre);
+            mostrarPartidos(jornada.partidos, jornada.nombre);
         })
         .catch(error => console.error('Error al cargar los partidos:', error));
 }
 
 function logoHTML(url, nombre) {
     if (!url) return '';
-    return `<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+    return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
 }
 
 function formatearFechaPartido(apiDate) {
@@ -184,53 +184,9 @@ function parseFechaPartidoCostaRica(apiDate) {
 
 
       
-async function mostrarPartidos(partidos, fechaCierre, nombreJornada) {
+async function mostrarPartidos(partidos, nombreJornada) {
     const partidosContainer = document.getElementById('partidosContainer');
     partidosContainer.innerHTML = '';
-
-    if (fechaCierre) {
-        const fecha = new Date(fechaCierre);
-        const infoDiv = document.createElement('div');
-
-        infoDiv.id = "infoCierre";
-        infoDiv.style.marginBottom = "20px";
-        infoDiv.style.textAlign = "center";
-
-        infoDiv.innerHTML = `
-            <div>
-                <strong>Cierre de jornada:</strong>
-                ${fecha.toLocaleDateString()}
-                ${fecha.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute:'2-digit'
-                })}
-            </div>
-
-            <div>
-                <strong>Tiempo restante:</strong>
-                <span id="contadorCierre"></span>
-            </div>
-        `;
-
-        partidosContainer.appendChild(infoDiv);
-
-        setInterval(() => {
-            const ahora = new Date();
-            const diff = fecha - ahora;
-
-            if (diff > 0) {
-                const horas = Math.floor(diff / (1000 * 60 * 60));
-                const minutos = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                const segundos = Math.floor((diff % (1000 * 60)) / 1000);
-
-                document.getElementById("contadorCierre").textContent =
-                    `${horas}h ${minutos}m ${segundos}s`;
-            } else {
-                document.getElementById("contadorCierre").textContent =
-                    "Jornada cerrada";
-            }
-        }, 1000);
-    }
 
     let oficialesJornada = [];
 
@@ -296,13 +252,13 @@ function partidoBloqueado(partido) {
 
 
 const textoBloqueo = bloqueado || fechaPaso
-    ? '<div class="status-pill status-finished">🔒 Partido cerrado</div>'
-    : '<div class="status-pill status-scheduled">Disponible</div>';
+    ? html`<div class="status-pill status-finished">🔒 Partido cerrado</div>`
+    : html`<div class="status-pill status-scheduled">Disponible</div>`;
 
 const fechaPartido = obtenerFechaPartido(partido.apiDate);
 
 const contadorHTML = !bloqueado && !fechaPaso && fechaPartido
-    ? `
+    ? html`
         <span>
             ⏳ Cierra en:
             <strong class="contador-partido" data-fecha="${fechaPartido.toISOString()}"></strong>
@@ -310,7 +266,7 @@ const contadorHTML = !bloqueado && !fechaPaso && fechaPartido
       `
     : '';
 
-const fechaPartidoHTML = `
+const fechaPartidoHTML = html`
     <div class="match-meta" style="justify-content:center; margin-bottom:10px;">
         <span>📅 ${formatearFechaPartido(partido.apiDate)}</span>
         ${textoBloqueo}
@@ -322,10 +278,10 @@ const fechaPartidoHTML = `
 
 
 
-        partidoDiv.innerHTML = `
+        partidoDiv.innerHTML = html`
            ${fechaPartidoHTML}
             <div class="match-teams">
-                ${partido.comodin ? '<div class="comodin-badge">⭐ COMODÍN</div>' : ''}
+                ${partido.comodin ? html`<div class="comodin-badge">⭐ COMODÍN</div>` : ''}
 
                 <div class="team-side">
                     ${logoHTML(partido.logoEquipo1, partido.equipo1)}

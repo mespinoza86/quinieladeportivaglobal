@@ -19,21 +19,21 @@ function estadoPartidoHTML(partido) {
   if (!partido) return '';
 
   if (partido.estado === 'TC') {
-    return `<span class="status-pill status-finished">TC</span>`;
+    return html`<span class="status-pill status-finished">TC</span>`;
   }
 
   if (partido.estado === 'MT') {
-    return `<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
+    return html`<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
   }
 
   if (partido.estado === 'LIVE' && partido.minuto) {
-    return `<span class="status-pill status-live">
+    return html`<span class="status-pill status-live">
       <span class="live-dot"></span>
       ${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}
     </span>`;
   }
 
-  return `<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
+  return html`<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
 }
 
 function partidoYaInicio(trivia) {
@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const jornadasTrivia = await jornadasRes.json();
 
     function mostrarMensaje(mensaje) {
-      resultadosCards.innerHTML = `<div class="resultados-mensaje">${mensaje}</div>`;
+      resultadosCards.innerHTML = html`<div class="resultados-mensaje">${mensaje}</div>`;
     }
 
     jornadaSelect.innerHTML = '';
@@ -114,7 +114,7 @@ async function mostrarResultadosTrivia(jornadaNombre) {
   const data = await res.json();
 
   if (!res.ok) {
-    resultadosCards.innerHTML = `<div class="resultados-mensaje">${data.error || 'No se pueden ver estos resultados aún.'}</div>`;
+    resultadosCards.innerHTML = html`<div class="resultados-mensaje">${data.error || 'No se pueden ver estos resultados aún.'}</div>`;
     return;
   }
 
@@ -161,7 +161,7 @@ async function mostrarResultadosTrivia(jornadaNombre) {
     const card = document.createElement('article');
     card.className = 'match-card';
 
-    card.innerHTML = `
+    card.innerHTML = html`
       <div class="match-main">
         <div class="match-left">
           <div class="match-title">${partido.equipo1} vs ${partido.equipo2}</div>
@@ -187,7 +187,7 @@ async function mostrarResultadosTrivia(jornadaNombre) {
       </button>
 
       <div class="players-detail trivia-results-detail" id="${grupoId}">
-        ${partido.trivias.map(trivia => `
+        ${partido.trivias.map(trivia => html`
           <div class="trivia-result-block">
             <div class="trivia-result-question">
               <strong>${trivia.pregunta}</strong>
@@ -202,7 +202,7 @@ async function mostrarResultadosTrivia(jornadaNombre) {
 
             ${
               trivia.respuestas.length > 0
-                ? trivia.respuestas.map(r => `
+                ? trivia.respuestas.map(r => html`
                     <div class="player-row">
                       <span>${r.jugador}</span>
                       <span>${r.respuesta || '-'}</span>

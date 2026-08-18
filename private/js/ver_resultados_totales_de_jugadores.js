@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         let jornadasData = await fetch('/api/jornadas').then(r => r.json());
 
         function mostrarMensaje(mensaje) {
-            resultadosCards.innerHTML = `<div class="resultados-mensaje">${mensaje}</div>`;
+            resultadosCards.innerHTML = html`<div class="resultados-mensaje">${mensaje}</div>`;
         }
 
         function jornadaTienePartidosCerrados(jornada) {
@@ -138,18 +138,18 @@ function estadoPartidoHTML(partido) {
     if (!partido) return '';
 
     if (partido.estado === 'TC') {
-        return `<span class="status-pill status-finished">TC</span>`;
+        return html`<span class="status-pill status-finished">TC</span>`;
     }
 
     if (partido.estado === 'MT') {
-        return `<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
+        return html`<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
     }
 
     if (partido.estado === 'LIVE' && partido.minuto) {
-        return `<span class="status-pill status-live"><span class="live-dot"></span>${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}</span>`;
+        return html`<span class="status-pill status-live"><span class="live-dot"></span>${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}</span>`;
     }
 
-    return `<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
+    return html`<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
 }
 
 function buscarOficialPorPartido(resultadosOficiales, partidoBase) {
@@ -264,9 +264,9 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
             const card = document.createElement('article');
             card.className = `match-card ${esComodin ? 'match-card-comodin' : ''}`;
 
-            card.innerHTML = `
+            card.innerHTML = html`
                 <div class="match-card-header">
-                    ${esComodin ? '<span class="match-comodin-badge">⭐ COMODÍN</span>' : ''}
+                    ${esComodin ? html`<span class="match-comodin-badge">⭐ COMODÍN</span>` : ''}
 
                     <div class="match-main">
                         <div class="match-left">
@@ -286,7 +286,7 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
                         </div>
 
                         <div class="match-status">
-                            ${partidoOficial ? estadoPartidoHTML(partidoOficial) : '<span class="status-pill status-finished">Cerrado</span>'}
+                            ${partidoOficial ? estadoPartidoHTML(partidoOficial) : html`<span class="status-pill status-finished">Cerrado</span>`}
                         </div>
                     </div>
                 </div>
@@ -309,7 +309,7 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
                             partidoOficial
                         );
 
-                        return `
+                        return html`
                             <div class="player-row">
                                 <span>${jugador.nombreJugador}</span>
                                 <span>${data.partido.equipo1} ${marcador(jugador.marcador1)} - ${marcador(jugador.marcador2)} ${data.partido.equipo2}</span>

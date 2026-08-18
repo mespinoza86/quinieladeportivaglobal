@@ -1,7 +1,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const lista = document.getElementById('listaQuinielas');
   const mensaje = document.getElementById('mensajeQuinielas');
-  const escapar = valor => String(valor ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
 
   async function api(url, options) {
     const response = await fetch(url, options);
@@ -23,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const card = document.createElement('article');
         card.className = 'action-card';
         const puedeEntrar = ['activo', 'pendiente_retiro'].includes(q.estadoMembresia);
-        card.innerHTML = `<div><h3>${escapar(q.nombre)}</h3><p>${escapar(q.rol)} · ${escapar(q.estadoMembresia)} · ${escapar(q.estadoQuiniela)}</p>${q.codigoIngreso ? `<p>Código: <strong>${escapar(q.codigoIngreso)}</strong></p>` : ''}</div>`;
+        card.innerHTML = html`<div><h3>${q.nombre}</h3><p>${q.rol} · ${q.estadoMembresia} · ${q.estadoQuiniela}</p>${q.codigoIngreso ? html`<p>Código: <strong>${q.codigoIngreso}</strong></p>` : ''}</div>`;
         if (puedeEntrar) {
           const button = document.createElement('button');
           button.type = 'button'; button.textContent = 'Entrar';

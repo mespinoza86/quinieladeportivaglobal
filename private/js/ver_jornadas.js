@@ -36,22 +36,28 @@ function loadJornadas() {
 
             // Mostrar partidos de la primera jornada por defecto
             if (data.length > 0) {
-                mostrarPartidosDeJornada(data[0].partidos, data[0].fechaCierre);
+                mostrarPartidosDeJornada(data[0].partidos);
             }
 
             jornadaSelect.addEventListener('change', () => {
                 const selectedIndex = jornadaSelect.selectedIndex;
                 if (selectedIndex >= 0) {
-                    mostrarPartidosDeJornada(data[selectedIndex].partidos, data[selectedIndex].fechaCierre);
+                    mostrarPartidosDeJornada(data[selectedIndex].partidos);
                 }
             });
         })
         .catch(error => console.error('Error al cargar las jornadas:', error));
 }
 
+/*
+ * Devuelve HTML ya construido, así que va etiquetado: quien lo interpole lo
+ * recibe como HtmlCrudo y no se escapa dos veces. Y el escapado importa
+ * incluso aquí: `url` y `nombre` acaban DENTRO de atributos, donde una
+ * comilla sin escapar cierra el atributo y permite añadir otro.
+ */
 function logoHTML(url, nombre) {
     if (!url) return '';
-    return `<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+    return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
 }
 
 function formatearFechaPartido(fecha) {
@@ -70,29 +76,14 @@ function formatearFechaPartido(fecha) {
     });
 }
 
-function mostrarPartidosDeJornada(partidos, fechaCierre) {
+function mostrarPartidosDeJornada(partidos) {
     const partidosJornadaList = document.getElementById('partidosJornadaList');
     partidosJornadaList.innerHTML = '';
-
-    if (fechaCierre) {
-        const fecha = new Date(fechaCierre);
-        const liFecha = document.createElement('li');
-
-        liFecha.innerHTML = `
-            <strong>Fecha de cierre:</strong>
-            ${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit'
-            })}
-        `;
-
-        partidosJornadaList.appendChild(liFecha);
-    }
 
     partidos.forEach(partido => {
         const li = document.createElement('li');
 
-        li.innerHTML = `
+        li.innerHTML = html`
     <div class="match-card jornada-match-card">
         <div class="match-date-row">
             📅 ${formatearFechaPartido(partido.apiDate)}

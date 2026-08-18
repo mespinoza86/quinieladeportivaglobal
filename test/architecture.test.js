@@ -538,3 +538,139 @@ test('el sincronizador no tira la caché del ranking por el minuto en vivo', () 
   );
   assert.match(serverSinComentarios, /metricasSync\.syncsSinCambioDePuntos \+= 1/);
 });
+
+/* ================================================================
+ * S-04: construcción de HTML sin agujeros de inyección
+ * ================================================================ */
+
+const { plantillasDeRiesgo } = require('./plantillas.js');
+
+/** Carga html-seguro.js en este proceso: el archivo se adapta a Node a propósito. */
+function cargarAyudante() {
+  const codigo = fs.readFileSync(path.join(root, 'private', 'js', 'html-seguro.js'), 'utf8');
+  const ambito = {};
+  new Function('window', codigo).call(ambito, ambito);
+  return ambito;
+}
+
+test('escapar neutraliza el marcado y las comillas', () => {
+  const { escapar } = cargarAyudante();
+
+  assert.equal(escapar('<img src=x onerror=alert(1)>'), '&lt;img src=x onerror=alert(1)&gt;');
+
+  /*
+   * Las comillas importan tanto como los ángulos: sin escaparlas, un valor
+   * dentro de un atributo —title="${nombre}"— cierra el atributo y añade otro,
+   * que es la mitad de los casos reales de inyección.
+   */
+  assert.equal(escapar('x" onmouseover="alert(1)'), 'x&quot; onmouseover=&quot;alert(1)');
+  assert.equal(escapar("x' onfocus='alert(1)"), 'x&#39; onfocus=&#39;alert(1)');
+
+  // Y el ampersand primero, o se escaparían dos veces los ya escapados.
+  assert.equal(escapar('A&B'), 'A&amp;B');
+
+  // Sin texto es cadena vacía, no las palabras "null" o "undefined".
+  assert.equal(escapar(null), '');
+  assert.equal(escapar(undefined), '');
+  assert.equal(escapar(0), '0');
+});
+
+test('la plantilla html escapa los datos y deja pasar el marcado', () => {
+  const { html, crudo } = cargarAyudante();
+  const ataque = '<img src=x onerror=alert(1)>';
+
+  assert.equal(
+    String(html`<h3>${ataque}</h3>`),
+    '<h3>&lt;img src=x onerror=alert(1)&gt;</h3>'
+  );
+
+  // Una plantilla dentro de otra no se escapa dos veces.
+  assert.equal(String(html`<p>${html`<i>${'A&B'}</i>`}</p>`), '<p><i>A&amp;B</i></p>');
+
+  // Un arreglo se une sin separador: es el caso de componer una lista.
+  const filas = [html`<li>${'<b>'}</li>`, html`<li>${'&'}</li>`];
+  assert.equal(String(html`<ul>${filas}</ul>`), '<ul><li>&lt;b&gt;</li><li>&amp;</li></ul>');
+
+  // Y `crudo` es la única salida para meter HTML ya construido.
+  assert.equal(String(html`<div>${crudo('<b>ok</b>')}</div>`), '<div><b>ok</b></div>');
+
+  /*
+   * Un objeto que traiga puesto el campo `texto` NO puede hacerse pasar por
+   * HTML seguro: la marca es la clase, no una bandera que el servidor pueda
+   * incluir en su respuesta.
+   */
+  assert.equal(
+    String(html`<div>${{ texto: '<b>no</b>' }}</div>`),
+    '<div>[object Object]</div>'
+  );
+});
+
+test('S-04: ninguna plantilla que produzca HTML con datos queda sin etiquetar', () => {
+  const dir = path.join(root, 'private', 'js');
+  const sinEtiquetar = [];
+  let total = 0;
+
+  for (const archivo of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    // El propio ayudante define la etiqueta; no puede usarse a sí mismo.
+    if (archivo === 'html-seguro.js') continue;
+
+    const codigo = fs.readFileSync(path.join(dir, archivo), 'utf8');
+
+    for (const plantilla of plantillasDeRiesgo(codigo)) {
+      total += 1;
+      if (plantilla.etiqueta !== 'html') {
+        const linea = codigo.slice(0, plantilla.inicio).split(/\r?\n/).length;
+        sinEtiquetar.push(`${archivo}:${linea}`);
+      }
+    }
+  }
+
+  assert.ok(total >= 60, `Se esperaban al menos 60 plantillas de riesgo, se hallaron ${total}`);
+  assert.deepEqual(
+    sinEtiquetar,
+    [],
+    'Estas plantillas meten datos en HTML sin escaparlos: anteponles `html`'
+  );
+});
+
+test('toda pantalla que use la etiqueta html carga el ayudante antes', () => {
+  const dirJs = path.join(root, 'private', 'js');
+
+  const usanEtiqueta = fs.readdirSync(dirJs)
+    .filter(f => f.endsWith('.js') && f !== 'html-seguro.js')
+    .filter(f => /\bhtml`/.test(fs.readFileSync(path.join(dirJs, f), 'utf8')));
+
+  assert.ok(usanEtiqueta.length >= 18, `Se esperaban al menos 18 scripts, hay ${usanEtiqueta.length}`);
+
+  for (const pagina of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'))) {
+    const marcado = fs.readFileSync(path.join(root, 'public', pagina), 'utf8');
+    const cargados = [...marcado.matchAll(/<script[^>]*src=["']\/?js\/([^"']+)["'][^>]*>/g)];
+
+    const propios = cargados.filter(m => usanEtiqueta.includes(m[1]));
+    if (!propios.length) continue;
+
+    const ayudante = cargados.find(m => m[1] === 'html-seguro.js');
+    assert.ok(ayudante, `${pagina} usa la etiqueta html pero no carga html-seguro.js`);
+
+    /*
+     * El orden no basta con mirarlo en el documento: un script con `defer` se
+     * ejecuta DESPUÉS de todos los que no lo llevan. Si el ayudante fuera
+     * diferido y el de la página no, `html` sería undefined al ejecutarse.
+     */
+    const ayudanteDiferido = /\bdefer\b/.test(ayudante[0]);
+
+    for (const propio of propios) {
+      const propioDiferido = /\bdefer\b/.test(propio[0]);
+      assert.ok(
+        !(ayudanteDiferido && !propioDiferido),
+        `${pagina}: html-seguro.js está diferido y ${propio[1]} no, así que se ejecutaría después`
+      );
+      if (ayudanteDiferido === propioDiferido) {
+        assert.ok(
+          ayudante.index < propio.index,
+          `${pagina}: html-seguro.js debe cargarse antes que ${propio[1]}`
+        );
+      }
+    }
+  }
+});

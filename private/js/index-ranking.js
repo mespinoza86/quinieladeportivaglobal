@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const medallas = ['🥇', '🥈', '🥉'];
 
-    container.innerHTML = ranking.map((item, index) => `
+    container.innerHTML = ranking.map((item, index) => html`
       <div class="ranking-row ranking-${index + 1}">
         <div class="ranking-position">${medallas[index]}</div>
         <div class="ranking-player">

@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function logoHTML(url, nombre) {
         if (!url) return '';
-        return `<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+        return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
     }
 
     function formatearFechaPartido(apiDate) {
@@ -36,27 +36,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function estadoPartidoHTML(partido) {
-        if (!partido) return '<span class="status-pill status-finished">Cerrado</span>';
+        if (!partido) return html`<span class="status-pill status-finished">Cerrado</span>`;
 
         if (partido.estado === 'TC') {
-            return `<span class="status-pill status-finished">TC</span>`;
+            return html`<span class="status-pill status-finished">TC</span>`;
         }
 
         if (partido.estado === 'MT') {
-            return `<span class="status-pill status-live">
+            return html`<span class="status-pill status-live">
                 <span class="live-dot"></span>
                 MT
             </span>`;
         }
 
         if (partido.estado === 'LIVE' && partido.minuto) {
-            return `<span class="status-pill status-live">
+            return html`<span class="status-pill status-live">
                 <span class="live-dot"></span>
                 ${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}
             </span>`;
         }
 
-        return `<span class="status-pill status-scheduled">Programado</span>`;
+        return html`<span class="status-pill status-scheduled">Programado</span>`;
     }
 
     function buscarOficialPorPartido(partidosOficiales, partidoBase) {
@@ -269,9 +269,9 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
                     div.classList.add('match-card-comodin');
                 }
 
-                div.innerHTML = `
+                div.innerHTML = html`
                     <div class="match-card-header">
-                        ${(partidoBase?.comodin || partidoOficial?.comodin) ? '<span class="match-comodin-badge">⭐ COMODÍN</span>' : ''}
+                        ${(partidoBase?.comodin || partidoOficial?.comodin) ? html`<span class="match-comodin-badge">⭐ COMODÍN</span>` : ''}
 
                         <div class="match-main">
                             <div class="match-left">
@@ -281,7 +281,7 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
 
                                 <div class="match-meta">
                                     <span>📅 ${formatearFechaPartido(partidoBase.apiDate)}</span>
-                                    ${!cerrado ? '<span class="status-pill status-scheduled">Aún no cerrado</span>' : ''}
+                                    ${!cerrado ? html`<span class="status-pill status-scheduled">Aún no cerrado</span>` : ''}
                                 </div>
                             </div>
 
@@ -293,7 +293,7 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
                             <div class="match-status">
                                 ${cerrado
                                     ? estadoPartidoHTML(partidoOficial)
-                                    : '<span class="status-pill status-scheduled">Privado</span>'
+                                    : html`<span class="status-pill status-scheduled">Privado</span>`
                                 }
                             </div>
                         </div>
@@ -324,7 +324,7 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
             }
 
             if (partidosOcultos > 0 && !mostrarTodos) {
-                resultadosContainer.insertAdjacentHTML('beforeend', `
+                resultadosContainer.insertAdjacentHTML('beforeend', html`
                     <div class="resultados-mensaje">
                         Hay ${partidosOcultos} partido(s) que aún no han cerrado.
                     </div>

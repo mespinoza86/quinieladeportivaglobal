@@ -26,7 +26,7 @@ Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— e
 el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
 puntuación histórica se congela con sus reglas originales, el ranking tiene caché
 por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **95 pruebas** actuales pasan. Además existe una tabla por jornada:
+interfaz. Las **99 pruebas** actuales pasan. Además existe una tabla por jornada:
 por defecto abre la más reciente y muestra una clasificación provisional o
 confirmada que excluye permanentemente las trivias. La paginación de los demás listados
 del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
@@ -44,6 +44,7 @@ resuelta de la tabla general.
 | **6.2** | Validación de dominio y privacidad por defecto de los pronósticos | 017 |
 | **6.3** | Ojo para ver la contraseña; cierre por partido en vez de por jornada | 018, 019 |
 | **6.4** | La caché del ranking sobrevive a los ciclos que no mueven puntos | 020 |
+| **6.5** | **Cerrado S-04**: construcción de HTML sin agujeros de inyección | 021 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -103,7 +104,7 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 95 pruebas (~60 s, sin red, sin tocar la base real)
+npm test                   # las 99 pruebas (~60 s, sin red, sin tocar la base real)
 npm run test:integracion   # solo las 61 de integración
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
@@ -3761,6 +3762,100 @@ la base, que es lo que no debía romperse.
 domingo con partidos en vivo: debe crecer mucho más deprisa que
 `jornadasReescritas`. Después, **S-04** —los `innerHTML`, empezando por
 `index-ranking.js` y `ver-resultados.js`— y las transacciones.
+
+---
+
+### 📌 Entrada 021 — 18 de agosto de 2026 — S-04: HTML sin agujeros de inyección
+
+**Objetivo:** cerrar el hallazgo S-04. El frontend construía HTML con plantillas
+e `innerHTML`, metiendo dentro nombres de jornada, de equipo y textos de trivia
+sin escapar. Y la CSP permite `unsafe-inline` tanto en `script-src` como en
+`script-src-attr` —el frontend depende de 63 manejadores en atributo—, así que
+un `<img onerror=…>` que llegue al DOM **sí se ejecuta**.
+
+**La decisión de enfoque, que es lo importante.** El audit ofrecía dos vías:
+convertir los renderizados a nodos DOM con `textContent`, o aplicar una función
+de escape estricta. Se eligió la segunda, y no por comodidad:
+
+> Convertir 62 plantillas a `createElement` **cambia el HTML generado**, y este
+> frontend no tiene pruebas de navegador. No habría forma de comprobar que las
+> dieciocho pantallas siguen viéndose igual; el riesgo de romper la interfaz
+> superaba al del agujero que se venía a cerrar.
+
+Etiquetar la plantilla deja el marcado **byte a byte idéntico** y solo cambia lo
+que se interpola, que es exactamente el agujero.
+
+**Qué se hizo:**
+
+1. `private/js/html-seguro.js` define `escapar()`, la plantilla etiquetada
+   `html` y `crudo()`. Se escapan también las comillas, no solo los ángulos:
+   un valor dentro de un atributo —`title="${nombre}"`— puede cerrar el atributo
+   y añadir otro, que es la mitad de los casos reales.
+2. La conversión de una plantilla es **anteponerle `html`**. Eso convierte ~150
+   interpolaciones en 62 ediciones de un token, cada una verificable a ojo.
+3. `html` devuelve un `HtmlCrudo`, de modo que una plantilla anidada dentro de
+   otra no se escapa dos veces. La marca es una **clase**, no una bandera en un
+   objeto plano: así una respuesta del servidor no puede hacerse pasar por HTML
+   seguro trayendo el campo puesto. Hay una prueba para eso.
+4. Se retiraron las dos copias locales de `escapar` (`miembros.js` y
+   `quinielas.js`), que eran la convención ya existente pero duplicada y sin
+   aplicar en los otros dieciséis archivos.
+5. **62 plantillas convertidas en 18 archivos**, y el ayudante cargado en las 17
+   pantallas que lo necesitan.
+
+**El guardián, que es lo que impide que esto se deshaga.** Una prueba recorre
+todos los scripts con un **escáner con estado** (`test/plantillas.js`) y falla si
+alguna plantilla que produce HTML e interpola datos se queda sin etiquetar. Hizo
+falta un escáner de verdad y no una expresión regular: las plantillas se anidan,
+y una expresión regular empareja la comilla de cierre de la interna con la de
+apertura de la siguiente, inventando plantillas que no existen —dio quince falsos
+positivos y, peor, **tapó tres casos reales**—.
+
+Se comprobó que la prueba funciona quitando a mano una etiqueta: falla.
+
+**Y una segunda prueba comprueba el orden de carga**, que no es cosmético: un
+script con `defer` se ejecuta DESPUÉS de todos los que no lo llevan. En
+`index.html`, que carga sus scripts al final del cuerpo y sin `defer`, el
+ayudante diferido habría llegado tarde y `html` habría sido `undefined`.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/html-seguro.js` | Nuevo: `escapar`, `html`, `crudo` |
+| `private/js/*.js` (18) | 62 plantillas etiquetadas; dos `escapar` locales retirados |
+| `public/*.html` (17) | Cargan el ayudante antes que su propio script |
+| `test/plantillas.js` | Nuevo: escáner de plantillas con estado |
+| `test/architecture.test.js` | Cuatro pruebas: escapado, la etiqueta, el guardián y el orden de carga |
+
+**Verificación:**
+
+```
+node --check en los 35 scripts   → todos válidos
+npm test                         → 99/99 (38 arquitectura + 61 integración)
+npm audit --omit=dev             → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- **Dos restos muertos de la Entrada 019**, que el escáner sacó a la luz: el
+  bloque "Fecha de cierre" de `ver_jornadas.js` y el bloque "Cierre de jornada"
+  de `llenar_jornada_user.js` —este último con un `setInterval` de un segundo—.
+  Como la API ya no devuelve el campo, no se ejecutaban nunca. Retirados.
+- **La CSP todavía no se puede endurecer.** Con el escapado puesto, el siguiente
+  paso natural sería quitar `unsafe-inline`, pero el frontend sigue teniendo 63
+  manejadores en atributo (`onclick=…`) y `script-src-attr: 'none'` dejaría la
+  interfaz inerte. Convertirlos a `addEventListener` es una fase propia, y
+  entonces sí se podrá cerrar la CSP —que es lo que convertiría el escapado en
+  defensa en profundidad y no en la única línea—.
+- `ver-resultados.js` y varios más siguen usando `insertAdjacentHTML`. Ya va
+  escapado, así que no es un agujero; queda como estilo.
+
+**Pendiente / siguiente paso:** prueba de humo visual **amplia**, porque este
+cambio toca dieciocho pantallas. Lo que hay que mirar en cada una es que el
+contenido se vea como antes y no aparezcan etiquetas HTML en texto. Después,
+transacciones y las pruebas E2E, que son las que harían automática esta
+comprobación.
 
 ---
 

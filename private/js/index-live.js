@@ -13,9 +13,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     return partido.estado === 'LIVE' || partido.estado === 'MT';
   }
 
+  /*
+   * Devuelve HTML ya construido, así que se etiqueta con `html`: de ese modo
+   * quien lo interpole lo recibe como HtmlCrudo y no se escapa dos veces.
+   */
   function liveBadge(partido) {
     if (partido.estado === 'MT') {
-      return `
+      return html`
         <span class="status-pill status-live">
           <span class="live-dot"></span>
           MT
@@ -24,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (partido.estado === 'LIVE' && partido.minuto) {
-      return `
+      return html`
         <span class="status-pill status-live">
           <span class="live-dot"></span>
           ${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}
@@ -74,7 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    container.innerHTML = partidosLive.map(partido => `
+    container.innerHTML = partidosLive.map(partido => html`
       <div class="live-match-row">
         <div class="live-match-main">
           <strong>${partido.equipo1}</strong>

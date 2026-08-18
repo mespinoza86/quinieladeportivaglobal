@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const jornadas = await response.json();
 
         jornadaSelect.innerHTML = jornadas
-            .map(jornada => `<option value="${jornada.nombre}">${jornada.nombre}</option>`)
+            .map(jornada => html`<option value="${jornada.nombre}">${jornada.nombre}</option>`)
             .join('');
 
         if (jornadas.length > 0) {
@@ -88,18 +88,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        partidosContainer.innerHTML = partidos.map((partido, index) => `
+        partidosContainer.innerHTML = partidos.map((partido, index) => html`
             <div class="match-card partido" data-comodin="${partido.comodin ? 'true' : 'false'}">
                 <div class="match-teams">
                     <div class="team-side">
-                        ${partido.logoEquipo1 ? `<img src="${partido.logoEquipo1}" class="team-logo" alt="${partido.equipo1}">` : ''}
+                        ${partido.logoEquipo1 ? html`<img src="${partido.logoEquipo1}" class="team-logo" alt="${partido.equipo1}">` : ''}
                         <strong>${partido.equipo1}</strong>
                     </div>
 
                     <span class="vs">vs</span>
 
                     <div class="team-side">
-                        ${partido.logoEquipo2 ? `<img src="${partido.logoEquipo2}" class="team-logo" alt="${partido.equipo2}">` : ''}
+                        ${partido.logoEquipo2 ? html`<img src="${partido.logoEquipo2}" class="team-logo" alt="${partido.equipo2}">` : ''}
                         <strong>${partido.equipo2}</strong>
                     </div>
                 </div>

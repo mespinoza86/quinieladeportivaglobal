@@ -54,7 +54,7 @@ function loadPartidos(nombreJornada) {
             
             const estiloNegrita = partido.comodin ? 'font-weight: bold;' : '';
         
-        partidoDiv.innerHTML = `
+        partidoDiv.innerHTML = html`
             <label style="${estiloNegrita}">${partido.equipo1}</label>
             <input type="text" id="resultadoEquipo1_${i}">
             <label style="${estiloNegrita}">vs</label>

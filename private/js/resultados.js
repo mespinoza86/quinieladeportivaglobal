@@ -59,7 +59,7 @@ function loadJornadas() {
                     
                     const partidoDiv = document.createElement('div');
                     partidoDiv.classList.add('partido');
-                    partidoDiv.innerHTML = `
+                    partidoDiv.innerHTML = html`
                         <div style="display: flex; align-items: center;">
                             ${partido.equipo1}
                             <input type="text" id="resultado${index}_1" placeholder="Marcador" style="margin-left: 10px; margin-right: 10px;" value="${marcador1}">

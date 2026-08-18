@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fecha = obtenerFechaPartido(partidoBase?.apiDate);
 
     if (bloqueada) {
-      return `
+      return html`
         <div class="match-meta" style="justify-content:center; margin-bottom:10px;">
           <span>📅 ${formatearFechaPartido(partidoBase?.apiDate)}</span>
           <span class="status-pill status-finished">🔒 Trivia cerrada</span>
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
     }
 
-    return `
+    return html`
       <div class="match-meta" style="justify-content:center; margin-bottom:10px;">
         <span>📅 ${formatearFechaPartido(partidoBase?.apiDate)}</span>
         <span class="status-pill status-scheduled">Disponible</span>
@@ -299,7 +299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const primeraTrivia = grupo.trivias[0];
       const partidoCerrado = triviaBloqueada(primeraTrivia);
 
-      return `
+      return html`
         <div class="trivia-match-card ${partidoCerrado ? 'partido-cerrado' : ''}">
           ${estadoTriviaHTML(primeraTrivia)}
 
@@ -309,7 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const previa = respuestaPrevia(respuestasPrevias, trivia._id);
             const bloqueada = triviaBloqueada(trivia);
 
-            return `
+            return html`
               <div class="trivia-question-card">
                 <p>${trivia.pregunta}</p>
 
@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   ${bloqueada ? 'disabled' : ''}
                 >
                   <option value="">Seleccione respuesta</option>
-                  ${trivia.opciones.map(opcion => `
+                  ${trivia.opciones.map(opcion => html`
                     <option value="${opcion}" ${previa === opcion ? 'selected' : ''}>
                       ${opcion}
                     </option>

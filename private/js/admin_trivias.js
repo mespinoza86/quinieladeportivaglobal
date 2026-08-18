@@ -134,12 +134,12 @@ function convertirADatetimeLocal(fecha) {
     }
 
     const tituloComodin = partido.comodin
-      ? `
+      ? html`
         <div class="comodin-badge">⭐ COMODÍN</div>
       `
       : '';
 
-    card.innerHTML = `
+    card.innerHTML = html`
       ${tituloComodin}
 
       <h3 class="${partido.comodin ? 'trivia-title-comodin' : ''}">
@@ -150,7 +150,7 @@ function convertirADatetimeLocal(fecha) {
         ${TIPOS.map(item => {
           const checked = existeTrivia(index, item.tipo) ? 'checked' : '';
 
-          return `
+          return html`
             <label class="trivia-admin-option">
               <input
                 type="checkbox"

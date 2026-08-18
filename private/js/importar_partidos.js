@@ -466,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const marcador1 = partido.marcador1 ?? '-';
             const marcador2 = partido.marcador2 ?? '-';
 
-            card.innerHTML = `
+            card.innerHTML = html`
                 <div class="match-header">
                     <label class="checkbox-card">
                         <input
@@ -481,14 +481,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div class="match-teams">
                     <div class="team-side">
-                        ${partido.logoEquipo1 ? `<img src="${partido.logoEquipo1}" class="team-logo" alt="${traducirEquipo(partido.equipo1)}">` : ''}
+                        ${partido.logoEquipo1 ? html`<img src="${partido.logoEquipo1}" class="team-logo" alt="${traducirEquipo(partido.equipo1)}">` : ''}
                         <strong>${traducirEquipo(partido.equipo1)}</strong>
                     </div>
 
                     <span class="vs">vs</span>
 
                   <div class="team-side">
-                    ${partido.logoEquipo2 ? `<img src="${partido.logoEquipo2}" class="team-logo" alt="${traducirEquipo(partido.equipo2)}">` : ''}
+                    ${partido.logoEquipo2 ? html`<img src="${partido.logoEquipo2}" class="team-logo" alt="${traducirEquipo(partido.equipo2)}">` : ''}
                     <strong>${traducirEquipo(partido.equipo2)}</strong>
                 </div>
             </div>
@@ -594,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        preliminarContainer.innerHTML = `
+        preliminarContainer.innerHTML = html`
             <h3>Partidos agregados a la jornada (${partidosPreliminares.length})</h3>
         `;
 
@@ -610,7 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
                 : 'Sin fecha';
 
-            card.innerHTML = `
+            card.innerHTML = html`
                 <div class="match-teams">
                     <input
                         type="text"

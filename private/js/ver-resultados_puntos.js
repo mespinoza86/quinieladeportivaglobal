@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function logoHTML(url, nombre) {
         if (!url) return '';
-        return `<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+        return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
     }
 
     
@@ -51,21 +51,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!partido) return '';
 
         if (partido.estado === 'TC') {
-            return `<span class="status-pill status-finished">TC</span>`;
+            return html`<span class="status-pill status-finished">TC</span>`;
         }
 
         if (partido.estado === 'MT') {
-            return `<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
+            return html`<span class="status-pill status-live"><span class="live-dot"></span>MT</span>`;
         }
 
         if (partido.estado === 'LIVE' && partido.minuto) {
-            return `<span class="status-pill status-live">
+            return html`<span class="status-pill status-live">
                 <span class="live-dot"></span>
                 ${partido.minuto}${String(partido.minuto).includes('+') ? '' : "'"}
             </span>`;
         }
         
-        return `<span class="status-pill status-scheduled">${formatearFechaPartido(partido.fecha)}</span>`;
+        return html`<span class="status-pill status-scheduled">${formatearFechaPartido(partido.fecha)}</span>`;
     }
 
     function buscarOficialPorPartido(partidosOficiales, partidoBase) {
@@ -329,9 +329,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     partidoDiv.classList.add('match-card-comodin');
                 }
 
-                partidoDiv.innerHTML = `
+                partidoDiv.innerHTML = html`
                     <div class="match-card-header">
-                        ${(resultadoOficialCorrespondiente?.comodin || partidoBase?.comodin) ? '<span class="match-comodin-badge">⭐ COMODÍN</span>' : ''}
+                        ${(resultadoOficialCorrespondiente?.comodin || partidoBase?.comodin) ? html`<span class="match-comodin-badge">⭐ COMODÍN</span>` : ''}
 
                         <div class="match-main">
                             <div class="match-left">
@@ -389,10 +389,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 resultadosContainer.innerHTML = 'Todavía no hay partidos cerrados para mostrar en esta jornada.';
             }
 
-            totalPuntosContainer.innerHTML = `
+            totalPuntosContainer.innerHTML = html`
                 <h3>Total de Puntos Obtenidos en partidos visibles: ${totalPuntos}</h3>
                 ${partidosOcultos > 0 && !mostrarTodos
-                    ? `<p>Hay ${partidosOcultos} partido(s) que aún no han cerrado.</p>`
+                    ? html`<p>Hay ${partidosOcultos} partido(s) que aún no han cerrado.</p>`
                     : ''
                 }
             `;
