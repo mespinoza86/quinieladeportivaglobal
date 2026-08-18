@@ -23,7 +23,7 @@ if (!ownerEmail) fail('Falta MIGRATION_OWNER_EMAIL para asignar la propiedad en 
 
 const coleccionesDominio = [
   'jugadors', 'jornadas', 'resultados', 'resultadooficials', 'trivias',
-  'respuestatrivias', 'equipos', 'pronosticocampeons', 'campeonoficials'
+  'respuestatrivias', 'equipos'
 ];
 
 async function documentosSiExiste(db, nombre) {
@@ -65,7 +65,7 @@ async function main() {
         propietarioId: owner._id,
         estado: 'activa',
         marcadorMigracion,
-        configuracion: { puntuacion: { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, campeon: 20, triviasHabilitadas: true, puntosTriviaDefault: 1 }, incluirExpulsadosEnRanking: true },
+        configuracion: { puntuacion: { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, triviasHabilitadas: true, puntosTriviaDefault: 1 }, incluirExpulsadosEnRanking: true },
         createdAt: now,
         updatedAt: now
       };

@@ -315,7 +315,6 @@ const paginasAdmin = [
   '/enviarresultadostrivias.html',
   '/enviarresultadospartido.html',
   '/enviarresultadostriviaspartido.html',
-  '/campeon-oficial.html',
   '/miembros.html',
   '/configuracion-quiniela.html'
 ];
@@ -433,7 +432,6 @@ const puntuacionDefault = {
   resultadoCorrecto: 3,
   comodinExacto: 7,
   comodinResultado: 4,
-  campeon: 20,
   triviasHabilitadas: true,
   puntosTriviaDefault: 1
 };
@@ -450,7 +448,6 @@ const QuinielaSchema = new mongoose.Schema({
       resultadoCorrecto: { type: Number, default: 3, min: 0 },
       comodinExacto: { type: Number, default: 7, min: 0 },
       comodinResultado: { type: Number, default: 4, min: 0 },
-      campeon: { type: Number, default: 20, min: 0 },
       triviasHabilitadas: { type: Boolean, default: true },
       puntosTriviaDefault: { type: Number, default: 1, min: 0 }
     },
@@ -645,17 +642,32 @@ const EquipoSchema = new mongoose.Schema({
   nombre: { type: String, required: true }
 });
 
-const PronosticoCampeonSchema = new mongoose.Schema({
-  jugador: { type: String, required: true },
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-  campeon: { type: String, required: true },
-  fechaRegistro: { type: Date, default: Date.now }
-});
-
-const CampeonOficialSchema = new mongoose.Schema({
-  campeon: { type: String, required: true },
-  puntos: { type: Number, default: 20 }
-});
+/*
+ * Puntos ya calculados de una jornada terminada (Fase 5).
+ *
+ * Un documento por jornada, con la lista de jugadores dentro, en vez de uno por
+ * jugador y jornada: la tabla de posiciones se arma leyendo tantos documentos
+ * como jornadas, no como jugadores por jornadas.
+ *
+ * `puntuacion` guarda las reglas con las que se calcularon. Es lo que hace que
+ * corregir un resultado años después no arrastre los cambios de configuración
+ * ocurridos desde entonces.
+ */
+const PuntosJornadaSchema = new mongoose.Schema({
+  jornada: { type: String, required: true },
+  puntos: [{
+    jugador: String,
+    puntos: Number,
+    _id: false
+  }],
+  puntuacion: {
+    marcadorExacto: Number,
+    resultadoCorrecto: Number,
+    comodinExacto: Number,
+    comodinResultado: Number
+  },
+  congeladoEn: Date
+}, { timestamps: true });
 
 [
   JugadorSchema,
@@ -665,8 +677,7 @@ const CampeonOficialSchema = new mongoose.Schema({
   triviaSchema,
   respuestaTriviaSchema,
   EquipoSchema,
-  PronosticoCampeonSchema,
-  CampeonOficialSchema
+  PuntosJornadaSchema
 ].forEach(tenantPlugin);
 
 JugadorSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
@@ -674,7 +685,7 @@ JornadaSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
 ResultadoSchema.index({ quinielaId: 1, jugador: 1, jornada: 1 }, { unique: true });
 ResultadoOficialSchema.index({ quinielaId: 1, jornada: 1 }, { unique: true });
 EquipoSchema.index({ quinielaId: 1, nombre: 1 }, { unique: true });
-PronosticoCampeonSchema.index({ quinielaId: 1, jugador: 1 }, { unique: true });
+PuntosJornadaSchema.index({ quinielaId: 1, jornada: 1 }, { unique: true });
 
 /*
  * Único de verdad: sin él, dos envíos simultáneos de la misma respuesta hacían
@@ -694,8 +705,63 @@ const Resultado = mongoose.model('Resultado', ResultadoSchema);
 const ResultadoOficial = mongoose.model('ResultadoOficial', ResultadoOficialSchema);
 const Trivia = mongoose.model('Trivia', triviaSchema);
 const RespuestaTrivia = mongoose.model('RespuestaTrivia', respuestaTriviaSchema);
-const PronosticoCampeon = mongoose.model('PronosticoCampeon', PronosticoCampeonSchema);
-const CampeonOficial = mongoose.model('CampeonOficial', CampeonOficialSchema);
+const PuntosJornada = mongoose.model('PuntosJornada', PuntosJornadaSchema);
+
+/*
+ * Caché por instancia de la tabla de posiciones. Es una optimización de lectura,
+ * no una fuente de verdad: toda escritura que pueda mover el ranking la invalida
+ * y el TTL evita servir datos viejos si una vía futura olvidara hacerlo.
+ */
+const TTL_CACHE_RANKING_MS = Number(process.env.RANKING_CACHE_TTL_MS || 60_000);
+const cacheRanking = new Map();
+
+function claveCacheRanking(quinielaId) {
+  return quinielaId ? String(quinielaId) : null;
+}
+
+function invalidarCacheRanking(quinielaId = tenantContext.getStore()?.quinielaId) {
+  const clave = claveCacheRanking(quinielaId);
+  if (clave) cacheRanking.delete(clave);
+}
+
+function leerCacheRanking(quinielaId) {
+  const clave = claveCacheRanking(quinielaId);
+  const entrada = clave && cacheRanking.get(clave);
+  if (!entrada) return null;
+  if (Date.now() - entrada.creadoEn > TTL_CACHE_RANKING_MS) {
+    cacheRanking.delete(clave);
+    return null;
+  }
+  return entrada.resultados;
+}
+
+function guardarCacheRanking(quinielaId, resultados) {
+  const clave = claveCacheRanking(quinielaId);
+  if (clave) cacheRanking.set(clave, { creadoEn: Date.now(), resultados });
+}
+
+function responderRanking(res, req, resultados) {
+  const paginaSolicitada = req.query.pagina !== undefined || req.query.limite !== undefined;
+  if (!paginaSolicitada) return res.json(resultados); // Compatibilidad con consumidores existentes.
+
+  const pagina = Math.max(1, Number.parseInt(req.query.pagina, 10) || 1);
+  const limite = Math.min(100, Math.max(1, Number.parseInt(req.query.limite, 10) || 25));
+  const jugadores = Object.entries(resultados)
+    .map(([jugador, puntos]) => ({ jugador, ...puntos }))
+    .sort((a, b) => b.total - a.total || a.jugador.localeCompare(b.jugador));
+  const totalJugadores = jugadores.length;
+  const totalPaginas = Math.max(1, Math.ceil(totalJugadores / limite));
+  const paginaFinal = Math.min(pagina, totalPaginas);
+  const inicio = (paginaFinal - 1) * limite;
+
+  return res.json({
+    jugadores: jugadores.slice(inicio, inicio + limite),
+    pagina: paginaFinal,
+    limite,
+    totalJugadores,
+    totalPaginas
+  });
+}
 
 
 const TIPOS_TRIVIA = {
@@ -1070,6 +1136,7 @@ app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar', requireAdmin, as
     { usuarioId: usuario._id, nombre: usuario.username },
     { upsert: true, new: true }
   );
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true });
 });
 
@@ -1080,6 +1147,7 @@ app.patch('/api/quiniela-actual/miembros/:membresiaId/rechazar', requireAdmin, a
   }
   membresia.estado = membresia.estado === 'pendiente_ingreso' ? 'rechazado' : 'activo';
   await membresia.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true });
 });
 
@@ -1095,6 +1163,7 @@ app.patch('/api/quiniela-actual/miembros/:membresiaId/rol', requireAdmin, async 
   }
   membresia.rol = nuevoRol;
   await membresia.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true });
 });
 
@@ -1102,6 +1171,7 @@ app.post('/api/quiniela-actual/solicitar-retiro', async (req, res) => {
   if (req.membership.rol === 'propietario') return res.status(409).json({ error: 'El propietario debe transferir la propiedad antes de solicitar retirarse.' });
   req.membership.estado = 'pendiente_retiro';
   await req.membership.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true, message: 'Solicitud de retiro enviada.' });
 });
 
@@ -1112,6 +1182,7 @@ app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar-retiro', requireAd
   membresia.estado = 'expulsado';
   membresia.retiradoEn = new Date();
   await membresia.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true });
 });
 
@@ -1123,6 +1194,7 @@ app.patch('/api/quiniela-actual/miembros/:membresiaId/expulsar', requireAdmin, a
   membresia.estado = 'expulsado';
   membresia.retiradoEn = new Date();
   await membresia.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true });
 });
 
@@ -1139,7 +1211,7 @@ app.post('/api/quiniela-actual/transferir-propiedad', requireAdmin, async (req, 
 
 app.patch('/api/quiniela-actual/configuracion', requireAdmin, async (req, res) => {
   const entrada = req.body.puntuacion || {};
-  const camposNumericos = ['marcadorExacto', 'resultadoCorrecto', 'comodinExacto', 'comodinResultado', 'campeon', 'puntosTriviaDefault'];
+  const camposNumericos = ['marcadorExacto', 'resultadoCorrecto', 'comodinExacto', 'comodinResultado', 'puntosTriviaDefault'];
   for (const campo of camposNumericos) {
     if (entrada[campo] !== undefined && (!Number.isFinite(Number(entrada[campo])) || Number(entrada[campo]) < 0)) {
       return res.status(400).json({ error: `Puntuación inválida para ${campo}.` });
@@ -1152,6 +1224,7 @@ app.patch('/api/quiniela-actual/configuracion', requireAdmin, async (req, res) =
   if (req.body.incluirExpulsadosEnRanking !== undefined) req.quiniela.configuracion.incluirExpulsadosEnRanking = Boolean(req.body.incluirExpulsadosEnRanking);
   req.quiniela.markModified('configuracion');
   await req.quiniela.save();
+  invalidarCacheRanking(req.quiniela._id);
   res.json({ success: true, configuracion: req.quiniela.configuracion });
 });
 
@@ -1193,8 +1266,6 @@ app.delete('/api/quiniela-actual', requireAdmin, async (req, res) => {
   '/ver-resultados-oficiales',
   '/verResultados',
   '/verResultados_puntos',
-  '/campeon-oficial',
-  '/pronostico-campeon',
   '/importar_partidos',
   '/ver_resultados_trivias'
 ].forEach(route => {
@@ -1308,6 +1379,7 @@ app.post('/api/jornadas', requireAdmin, async (req, res) => {
     },
     { upsert: true }
   );
+  await actualizarPuntosDeJornada(nombre, req.quiniela.configuracion.puntuacion);
 
   const jornadas = await Jornada.find({});
   res.json(jornadas.map(j => [j.nombre, j.partidos]));
@@ -1344,6 +1416,7 @@ app.post('/api/jornadas/importar-api', requireAdmin, async (req, res) => {
       },
       { upsert: true, new: true }
     );
+    await actualizarPuntosDeJornada(nombre, req.quiniela.configuracion.puntuacion);
 
     res.json({
       success: true,
@@ -1363,6 +1436,7 @@ app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {
 
   doc.partidos.push(partido);
   await doc.save();
+  await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
 
   res.json({ success: true });
 });
@@ -1375,6 +1449,7 @@ app.post('/api/jornadas/eliminar-partidos',requireAdmin, async (req, res) => {
 
   indices.sort((a, b) => b - a).forEach(i => doc.partidos.splice(i, 1));
   await doc.save();
+  await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
 
   res.json({ success: true });
 });
@@ -1387,6 +1462,7 @@ app.post('/api/jornadas/comodin',requireAdmin, async (req, res) => {
 
   doc.partidos = partidos;
   await doc.save();
+  await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
 
   res.send('Estado de comodín actualizado');
 });
@@ -2403,6 +2479,13 @@ async function sincronizarJornadaDesdeApi(jornadaNombre, { forzar = false } = {}
 
   await resolverTriviasPendientes(jornadaNombre);
 
+  /*
+   * Si este sync fue el que dio el último partido por terminado, la jornada
+   * queda congelada aquí, con la configuración vigente en ese momento. Es el
+   * momento natural: el que cierra la jornada es el que fija sus puntos.
+   */
+  await actualizarPuntosDeJornada(jornadaNombre, await puntuacionDeLaQuinielaActual());
+
   return resultadosActualizados;
 }
 
@@ -2604,6 +2687,9 @@ app.post('/api/resultados', async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // Si la jornada ya estaba congelada, este pronóstico la obliga a recalcular.
+    await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
+
     const all = await Resultado.find({});
     const resultMap = new Map();
 
@@ -2667,6 +2753,9 @@ app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
       { jugador, jornada, pronosticos: pronosticosFinales },
       { upsert: true, new: true }
     );
+
+    // Si la jornada ya estaba congelada, este pronóstico la obliga a recalcular.
+    await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
 
     res.json({
       success: true,
@@ -2742,6 +2831,9 @@ app.post('/api/resultados-oficiales', requireAdmin, async (req, res) => {
     { jornada, resultados: resultadosConLogos },
     { upsert: true }
   );
+
+  // Carga manual: bloquea los partidos, así que suele cerrar la jornada.
+  await actualizarPuntosDeJornada(jornada, req.quiniela.configuracion.puntuacion);
 
   const all = await ResultadoOficial.find({});
   const resultadosArray = all.map(r => ({
@@ -3295,6 +3387,7 @@ if (partido && partidoYaInicio(partido, oficial)) {
       );
     }
 
+    invalidarCacheRanking(req.quiniela._id);
     res.json({ mensaje: 'Respuestas de trivia guardadas correctamente.' });
 
   } catch (error) {
@@ -3574,6 +3667,7 @@ async function resolverTriviasPendientes(jornadaNombre = null) {
   }
 
   const trivias = await Trivia.find(filtro);
+  let puntosActualizados = false;
 
   for (const trivia of trivias) {
     try {
@@ -3608,12 +3702,15 @@ async function resolverTriviasPendientes(jornadaNombre = null) {
       for (const respuesta of respuestas) {
         respuesta.puntos = respuesta.respuesta === respuestaCorrecta ? trivia.puntos : 0;
         await respuesta.save();
+        puntosActualizados = true;
       }
 
     } catch (error) {
       console.error(`Error resolviendo trivia ${trivia._id}:`, error.message);
     }
   }
+
+  if (puntosActualizados) invalidarCacheRanking();
 }
 
 
@@ -3956,6 +4053,8 @@ app.delete('/api/jornadas/:nombre', requireAdmin, async (req, res) => {
 
     await Resultado.deleteMany({ jornada: nombreJornada });
     await ResultadoOficial.deleteMany({ jornada: nombreJornada });
+    await PuntosJornada.deleteMany({ jornada: nombreJornada });
+    invalidarCacheRanking(req.quiniela._id);
 
     res.json({
       success: true,
@@ -3968,216 +4067,362 @@ app.delete('/api/jornadas/:nombre', requireAdmin, async (req, res) => {
   }
 });
 
-const EQUIPOS_MUNDIAL_2026 = [
-  'México',
-  'Sudáfrica',
-  'República de Corea',
-  'Chequia',
-  'Canadá',
-  'Bosnia y Herzegovina',
-  'Catar',
-  'Suiza',
-  'Brasil',
-  'Marruecos',
-  'Haití',
-  'Escocia',
-  'EE. UU.',
-  'Paraguay',
-  'Australia',
-  'Turquía',
-  'Alemania',
-  'Curazao',
-  'Costa de Marfil',
-  'Ecuador',
-  'Países Bajos',
-  'Japón',
-  'Suecia',
-  'Túnez',
-  'Bélgica',
-  'Egipto',
-  'RI de Irán',
-  'Nueva Zelanda',
-  'España',
-  'Islas de Cabo Verde',
-  'Arabia Saudí',
-  'Uruguay',
-  'Francia',
-  'Senegal',
-  'Irak',
-  'Noruega',
-  'Argentina',
-  'Argelia',
-  'Austria',
-  'Jordania',
-  'Portugal',
-  'RD Congo',
-  'Uzbekistán',
-  'Colombia',
-  'Inglaterra',
-  'Croacia',
-  'Ghana',
-  'Panamá'
-];
+/* ================= Puntos por jornada — Fase 5 (C-03, M-03, M-04) =================
+ *
+ * El problema que resuelve, que eran dos a la vez:
+ *
+ *   1. `/api/resultados-totales` leía seis colecciones completas y recalculaba
+ *      todo el histórico en CADA petición. Veinte personas abriendo la tabla al
+ *      terminar una jornada eran veinte recálculos completos simultáneos.
+ *
+ *   2. Ese recálculo usaba la configuración de puntuación VIGENTE, no la que
+ *      regía cuando se jugó. Subir el marcador exacto de 5 a 10 en marzo
+ *      reescribía las jornadas de enero y con ellas la clasificación de un
+ *      campeonato ya jugado (M-03), mientras las trivias ya guardaban sus puntos
+ *      resueltos en `RespuestaTrivia.puntos` (M-04).
+ *
+ * La regla, decidida el 17 de agosto de 2026:
+ *
+ *   **Una jornada se congela cuando todos sus partidos tienen resultado
+ *   definitivo.** A partir de ahí sus puntos no vuelven a moverse por un cambio
+ *   de configuración; solo se recalculan si un administrador corrige un
+ *   resultado oficial —porque ahí sí cambió un hecho del juego— y en ese caso
+ *   se recalculan con la configuración que la jornada tenía guardada, no con la
+ *   de hoy.
+ *
+ * Los dos problemas se resuelven con lo mismo, y no por casualidad: para poder
+ * guardar los puntos calculados hay que decidir cuándo dejan de valer, y esa
+ * pregunta ES la del congelamiento.
+ */
 
+/** Puntos de un solo partido. Es la regla de puntuación, en un único sitio. */
+function puntosDePartido(pronostico, oficial, puntuacion) {
+  if (!pronostico || !oficial) return 0;
 
+  const valores = [oficial.marcador1, oficial.marcador2, pronostico.marcador1, pronostico.marcador2];
+  const sonNumerosValidos = valores.every(valor => typeof valor === 'number' && !Number.isNaN(valor));
 
-app.get('/api/equipos-mundial', (req, res) => {
-  res.json(EQUIPOS_MUNDIAL_2026.sort());
-});
+  if (!sonNumerosValidos) return 0;
 
-app.get('/api/pronostico-campeon/:jugador', async (req, res) => {
-  const doc = await PronosticoCampeon.findOne({ jugador: req.params.jugador });
-  res.json(doc || null);
-});
+  const esComodin = oficial.comodin;
 
-
-app.post('/api/pronostico-campeon', async (req, res) => {
-  try {
-    const { jugador, password, campeon } = req.body;
-
-    const usuarioSesion = await Usuario.findById(req.session.usuarioId);
-    if (!usuarioSesion || jugador !== usuarioSesion.username) {
-      return res.status(403).json({ error: 'Solo puedes guardar tu propio pronóstico de campeón.' });
-    }
-
-    if (!jugador || !password || !campeon) {
-      return res.status(400).json({ error: 'Jugador, contraseña y campeón son obligatorios' });
-    }
-
-    const jornada1 = await Jornada.findOne({ nombre: 'Jornada1' });
-
-    if (jornada1 && jornada1.fechaCierre) {
-      const ahora = new Date();
-      const fechaCierre = new Date(jornada1.fechaCierre);
-
-      if (ahora > fechaCierre) {
-        return res.status(403).json({
-          error: 'El pronóstico del campeón mundial ya está cerrado porque la Jornada1 ya cerró.'
-        });
-      }
-    }
-
-    const jugadorEncontrado = usuarioSesion;
-
-    if (!jugadorEncontrado) {
-      return res.status(404).json({ error: 'Jugador no encontrado' });
-    }
-
-    const passwordCorrecto = await bcrypt.compare(
-      String(password).trim(),
-      String(jugadorEncontrado.password || '').trim()
-    );
-
-    if (!passwordCorrecto) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
-    }
-
-    await PronosticoCampeon.findOneAndUpdate(
-      { jugador },
-      { jugador, campeon, fechaRegistro: new Date() },
-      { upsert: true, new: true }
-    );
-
-    res.json({ success: true, message: 'Campeón guardado correctamente' });
-
-  } catch (error) {
-    console.error('Error guardando campeón:', error);
-    res.status(500).json({ error: 'Error interno guardando campeón' });
-  }
-});
-
-
-app.get('/api/pronosticos-campeon-publicos', async (req, res) => {
-  try {
-    const miembros = await Membresia.find({
-      quinielaId: req.quiniela._id,
-      estado: { $in: ['activo', 'pendiente_retiro'] }
-    }).populate('usuarioId', 'username');
-    const historicos = await Jugador.find({}).select('nombre').lean();
-    const pronosticos = await PronosticoCampeon.find({});
-    const jornada1 = await Jornada.findOne({ nombre: 'Jornada1' });
-    const cerrada = !jornada1?.fechaCierre || new Date(jornada1.fechaCierre) <= new Date();
-    const usuario = await Usuario.findById(req.session.usuarioId);
-
-    const mapaPronosticos = new Map();
-
-    pronosticos.forEach(p => {
-      mapaPronosticos.set(p.jugador, p.campeon);
-    });
-
-    const nombres = new Set([
-      ...miembros.filter(m => m.usuarioId).map(m => m.usuarioId.username),
-      ...historicos.map(j => j.nombre)
-    ]);
-    const resultado = Array.from(nombres).sort((a, b) => a.localeCompare(b)).map(nombre => ({
-      jugador: nombre,
-      campeon: cerrada || nombre === usuario.username
-        ? (mapaPronosticos.get(nombre) || null)
-        : null
-    }));
-
-    res.json(resultado);
-
-  } catch (error) {
-    console.error('Error obteniendo pronósticos públicos de campeón:', error);
-    res.status(500).json({ error: 'Error obteniendo pronósticos de campeón' });
-  }
-});
-
-
-app.get('/api/pronosticos-campeon', requireAdmin, async (req, res) => {
-  const docs = await PronosticoCampeon.find({}).sort({ jugador: 1 });
-  res.json(docs);
-});
-
-app.get('/api/campeon-oficial', async (req, res) => {
-  const doc = await CampeonOficial.findOne({});
-  res.json(doc || null);
-});
-
-app.post('/api/campeon-oficial', requireAdmin, async (req, res) => {
-  const { campeon } = req.body;
-
-  if (!campeon) {
-    return res.status(400).json({ error: 'Debe seleccionar el campeón oficial' });
+  if (oficial.marcador1 === pronostico.marcador1 && oficial.marcador2 === pronostico.marcador2) {
+    return esComodin ? puntuacion.comodinExacto : puntuacion.marcadorExacto;
   }
 
-  await CampeonOficial.findOneAndUpdate(
-    {},
-    { campeon, puntos: req.quiniela.configuracion.puntuacion.campeon },
-    { upsert: true, new: true }
+  const signo = (uno, dos) => (uno > dos ? 'gano' : uno < dos ? 'perdio' : 'empato');
+
+  if (signo(oficial.marcador1, oficial.marcador2) === signo(pronostico.marcador1, pronostico.marcador2)) {
+    return esComodin ? puntuacion.comodinResultado : puntuacion.resultadoCorrecto;
+  }
+
+  return 0;
+}
+
+/**
+ * Puntos de un jugador en una jornada.
+ *
+ * El vínculo partido↔pronóstico es **por posición en el array**, que es una
+ * deuda conocida (M-02) y se conserva tal cual: cambiarla aquí alteraría
+ * puntuaciones ya emitidas. Migrar a un `partidoId` estable es la Fase 7.
+ */
+function puntosDeJornada(partidos, pronosticos, oficiales, puntuacion) {
+  let total = 0;
+
+  (partidos || []).forEach((partido, indice) => {
+    total += puntosDePartido((pronosticos || [])[indice], (oficiales || [])[indice], puntuacion);
+  });
+
+  return total;
+}
+
+/**
+ * Estadísticas para ordenar una clasificación por jornada. No cambian los
+ * puntos: solo ordenan visualmente a quienes empataron en el marcador total.
+ */
+function estadisticasDeJornada(partidos, pronosticos, oficiales, puntuacion) {
+  let puntos = 0;
+  let marcadoresExactos = 0;
+  let resultadosCorrectos = 0;
+  let diferenciaTotalGoles = 0;
+
+  (partidos || []).forEach((partido, indice) => {
+    const pronostico = (pronosticos || [])[indice];
+    const oficial = (oficiales || [])[indice];
+    puntos += puntosDePartido(pronostico, oficial, puntuacion);
+
+    if (!pronostico || !oficial) return;
+    const valores = [oficial.marcador1, oficial.marcador2, pronostico.marcador1, pronostico.marcador2];
+    if (!valores.every(valor => typeof valor === 'number' && !Number.isNaN(valor))) return;
+
+    const exacto = oficial.marcador1 === pronostico.marcador1 && oficial.marcador2 === pronostico.marcador2;
+    if (exacto) marcadoresExactos += 1;
+
+    const signo = (uno, dos) => (uno > dos ? 1 : uno < dos ? -1 : 0);
+    if (signo(oficial.marcador1, oficial.marcador2) === signo(pronostico.marcador1, pronostico.marcador2)) {
+      resultadosCorrectos += 1;
+    }
+
+    diferenciaTotalGoles +=
+      Math.abs(oficial.marcador1 - pronostico.marcador1) +
+      Math.abs(oficial.marcador2 - pronostico.marcador2);
+  });
+
+  return { puntos, marcadoresExactos, resultadosCorrectos, diferenciaTotalGoles };
+}
+
+/**
+ * Una jornada está terminada cuando **todos** sus partidos tienen un resultado
+ * oficial definitivo: el sincronizador lo dio por terminado (`TC`) o un
+ * administrador lo bloqueó al cargarlo a mano.
+ *
+ * Si falta el resultado de un solo partido, la jornada sigue viva y sus puntos
+ * se calculan al vuelo, como siempre. Esto es lo que hace que la tabla siga
+ * moviéndose durante la jornada en curso.
+ */
+function jornadaEstaFinalizada(partidos, oficiales) {
+  if (!partidos?.length) return false;
+  if (!oficiales || oficiales.length < partidos.length) return false;
+
+  return partidos.every((partido, indice) => {
+    const oficial = oficiales[indice];
+    if (!oficial) return false;
+    return oficial.bloqueadoFinal === true || oficial.estado === 'TC';
+  });
+}
+
+/**
+ * Calcula y graba los puntos de una jornada terminada.
+ *
+ * Devuelve `null` si la jornada todavía no está terminada, que es la señal de
+ * "esta aún se calcula al vuelo".
+ */
+async function congelarPuntosDeJornada(jornadaNombre, puntuacion) {
+  const jornadaDoc = await Jornada.findOne({ nombre: jornadaNombre }).lean();
+  if (!jornadaDoc) return null;
+
+  const oficial = await ResultadoOficial.findOne({ jornada: jornadaNombre }).lean();
+  if (!oficial) return null;
+
+  if (!jornadaEstaFinalizada(jornadaDoc.partidos, oficial.resultados)) return null;
+
+  const pronosticos = await Resultado.find({ jornada: jornadaNombre }).lean();
+
+  const puntos = pronosticos.map(registro => ({
+    jugador: registro.jugador,
+    puntos: puntosDeJornada(jornadaDoc.partidos, registro.pronosticos, oficial.resultados, puntuacion)
+  }));
+
+  /*
+   * Se guarda la configuración usada junto a los puntos. Sin ella, corregir un
+   * resultado meses después recalcularía la jornada con las reglas de hoy, que
+   * es exactamente el problema que se quería quitar.
+   */
+  await PuntosJornada.findOneAndUpdate(
+    { jornada: jornadaNombre },
+    {
+      jornada: jornadaNombre,
+      puntos,
+      puntuacion: {
+        marcadorExacto: puntuacion.marcadorExacto,
+        resultadoCorrecto: puntuacion.resultadoCorrecto,
+        comodinExacto: puntuacion.comodinExacto,
+        comodinResultado: puntuacion.comodinResultado
+      },
+      congeladoEn: new Date()
+    },
+    { upsert: true }
   );
 
-  res.json({ success: true, message: 'Campeón oficial guardado correctamente' });
+  return puntos;
+}
+
+/**
+ * Punto único de entrada tras cualquier escritura que pueda alterar los puntos
+ * de una jornada: resultados oficiales, pronósticos, o borrado de la jornada.
+ *
+ * Congela si acaba de terminar, recalcula si ya estaba congelada, y descongela
+ * si dejó de estar terminada —por ejemplo si un administrador reabre un partido—.
+ */
+async function actualizarPuntosDeJornada(jornadaNombre, puntuacionActual) {
+  if (!jornadaNombre) return null;
+
+  // Toda alteración de una jornada puede cambiar su fila y el total del ranking.
+  invalidarCacheRanking();
+
+  const existente = await PuntosJornada.findOne({ jornada: jornadaNombre })
+    .select('puntuacion')
+    .lean();
+
+  /*
+   * Si ya estaba congelada se recalcula con SU configuración, no con la de hoy.
+   * De lo contrario, corregir un marcador equivocado colaría de tapadillo todos
+   * los cambios de puntuación ocurridos desde que la jornada terminó.
+   */
+  const puntuacion = existente?.puntuacion || puntuacionActual;
+
+  const congelado = await congelarPuntosDeJornada(jornadaNombre, puntuacion);
+
+  if (!congelado && existente) {
+    await PuntosJornada.deleteOne({ jornada: jornadaNombre });
+  }
+
+  return congelado;
+}
+
+/** La puntuación vigente de la quiniela del contexto actual. */
+async function puntuacionDeLaQuinielaActual() {
+  const quinielaId = tenantContext.getStore()?.quinielaId;
+  if (!quinielaId) return puntuacionDefault;
+
+  const quiniela = await Quiniela.findById(quinielaId).select('configuracion').lean();
+
+  return quiniela?.configuracion?.puntuacion || puntuacionDefault;
+}
+
+/* ================= Clasificación por jornada ================= */
+app.get('/api/clasificacion-jornada', async (req, res) => {
+  try {
+    const jornadas = await Jornada.find({}).sort({ createdAt: -1 }).lean();
+    if (!jornadas.length) return res.json({ jornadas: [], jornada: null, estado: null, clasificacion: [] });
+
+    const jornadaNombre = String(req.query.jornada || jornadas[0].nombre);
+    const jornada = jornadas.find(item => item.nombre === jornadaNombre);
+    if (!jornada) return res.status(404).json({ error: 'Jornada no encontrada.' });
+
+    let [oficial, pronosticos, materializada, miembrosRanking, jugadoresHistoricos] = await Promise.all([
+      ResultadoOficial.findOne({ jornada: jornada.nombre }).lean(),
+      Resultado.find({ jornada: jornada.nombre }).lean(),
+      PuntosJornada.findOne({ jornada: jornada.nombre }).lean(),
+      Membresia.find({
+        quinielaId: req.quiniela._id,
+        estado: req.quiniela.configuracion.incluirExpulsadosEnRanking
+          ? { $in: ['activo', 'pendiente_retiro', 'expulsado'] }
+          : { $in: ['activo', 'pendiente_retiro'] }
+      }).populate('usuarioId', 'username'),
+      Jugador.find({}).select('nombre').lean()
+    ]);
+
+    const oficiales = oficial?.resultados || [];
+    const confirmada = jornadaEstaFinalizada(jornada.partidos, oficiales);
+    if (confirmada && !materializada) {
+      await actualizarPuntosDeJornada(jornada.nombre, req.quiniela.configuracion.puntuacion);
+      materializada = await PuntosJornada.findOne({ jornada: jornada.nombre }).lean();
+    }
+    const puntuacion = materializada?.puntuacion || req.quiniela.configuracion.puntuacion;
+    const puntosMaterializados = new Map((materializada?.puntos || []).map(item => [item.jugador, item.puntos || 0]));
+    const pronosticosPorJugador = new Map(pronosticos.map(item => [item.jugador, item.pronosticos]));
+    const nombres = new Set([
+      ...miembrosRanking.filter(item => item.usuarioId).map(item => item.usuarioId.username),
+      ...jugadoresHistoricos.map(item => item.nombre).filter(Boolean)
+    ]);
+
+    const clasificacion = Array.from(nombres).map(jugador => {
+      const estadisticas = estadisticasDeJornada(
+        jornada.partidos,
+        pronosticosPorJugador.get(jugador),
+        oficiales,
+        puntuacion
+      );
+      return {
+        jugador,
+        puntos: confirmada && materializada ? (puntosMaterializados.get(jugador) || 0) : estadisticas.puntos,
+        marcadoresExactos: estadisticas.marcadoresExactos,
+        resultadosCorrectos: estadisticas.resultadosCorrectos,
+        diferenciaTotalGoles: estadisticas.diferenciaTotalGoles
+      };
+    }).sort((a, b) =>
+      b.puntos - a.puntos ||
+      b.marcadoresExactos - a.marcadoresExactos ||
+      b.resultadosCorrectos - a.resultadosCorrectos ||
+      a.diferenciaTotalGoles - b.diferenciaTotalGoles ||
+      a.jugador.localeCompare(b.jugador)
+    );
+
+    const empatesPorPuntos = new Map();
+    clasificacion.forEach(fila => {
+      empatesPorPuntos.set(fila.puntos, (empatesPorPuntos.get(fila.puntos) || 0) + 1);
+    });
+
+    let puesto = 0;
+    let puntosAnteriores = null;
+    clasificacion.forEach((fila, indice) => {
+      if (fila.puntos !== puntosAnteriores) puesto = indice + 1;
+      fila.puesto = puesto;
+      fila.empate = empatesPorPuntos.get(fila.puntos) > 1;
+      puntosAnteriores = fila.puntos;
+    });
+
+    res.json({
+      jornadas: jornadas.map(item => ({ nombre: item.nombre })),
+      jornada: jornada.nombre,
+      estado: confirmada ? 'confirmada' : 'provisional',
+      clasificacion
+    });
+  } catch (error) {
+    console.error('Error calculando clasificación por jornada:', error);
+    res.status(500).json({ error: 'Error calculando la clasificación por jornada.' });
+  }
 });
 
-
+/*
+ * La tabla de posiciones.
+ *
+ * Antes leía seis colecciones completas y recalculaba todo el histórico en cada
+ * petición (C-03). Ahora las jornadas terminadas aportan un número ya guardado,
+ * y solo las que siguen vivas se calculan al vuelo. Cuando toda la temporada
+ * está cerrada, ni `Resultado` ni `ResultadoOficial` llegan a leerse.
+ */
 app.get('/api/resultados-totales', async (req, res) => {
   try {
+    const cacheado = leerCacheRanking(req.quiniela._id);
+    if (cacheado) return responderRanking(res, req, cacheado);
+
+    const puntuacionActual = req.quiniela.configuracion.puntuacion;
+
     const miembrosRanking = await Membresia.find({
       quinielaId: req.quiniela._id,
       estado: req.quiniela.configuracion.incluirExpulsadosEnRanking
         ? { $in: ['activo', 'pendiente_retiro', 'expulsado'] }
         : { $in: ['activo', 'pendiente_retiro'] }
     }).populate('usuarioId', 'username');
+
     const jugadoresHistoricos = await Jugador.find({}).select('nombre').lean();
+
     const nombresJugadores = new Set([
       ...miembrosRanking.filter(m => m.usuarioId).map(m => m.usuarioId.username),
       ...jugadoresHistoricos.map(j => j.nombre).filter(Boolean)
     ]);
+
     const jugadores = Array.from(nombresJugadores).map(nombre => ({ nombre }));
-    const jornadas = await Jornada.find({});
-    const resultados = await Resultado.find({});
-    const oficiales = await ResultadoOficial.find({});
-    const pronosticosCampeon = await PronosticoCampeon.find({});
-    const campeonOficial = await CampeonOficial.findOne({});
-    const respuestasTrivia = await RespuestaTrivia.find({});
 
-    const mapCampeon = new Map();
+    const jornadas = await Jornada.find({}).lean();
 
-    pronosticosCampeon.forEach(p => {
-      mapCampeon.set(p.jugador, p.campeon);
-    });
+    /* ---------- Lo ya congelado: una consulta, un documento por jornada ---------- */
+
+    const congeladas = await PuntosJornada.find({}).lean();
+
+    const puntosCongelados = new Map();
+    const jornadasCongeladas = new Set();
+
+    for (const doc of congeladas) {
+      jornadasCongeladas.add(doc.jornada);
+      for (const entrada of doc.puntos || []) {
+        puntosCongelados.set(`${entrada.jugador}_${doc.jornada}`, entrada.puntos || 0);
+      }
+    }
+
+    /* ---------- Lo que sigue vivo: solo eso se lee y se calcula ---------- */
+
+    const jornadasVivas = jornadas.filter(j => !jornadasCongeladas.has(j.nombre));
+    const nombresVivos = jornadasVivas.map(j => j.nombre);
+
+    const [resultados, oficiales] = nombresVivos.length
+      ? await Promise.all([
+          Resultado.find({ jornada: { $in: nombresVivos } }).lean(),
+          ResultadoOficial.find({ jornada: { $in: nombresVivos } }).lean()
+        ])
+      : [[], []];
 
     const mapRes = new Map();
     resultados.forEach(r => mapRes.set(`${r.jugador}_${r.jornada}`, r.pronosticos));
@@ -4185,91 +4430,74 @@ app.get('/api/resultados-totales', async (req, res) => {
     const mapOficial = new Map();
     oficiales.forEach(r => mapOficial.set(r.jornada, r.resultados));
 
-    const mapTrivias = new Map();
+    /* ---------- Trivias ---------- */
 
+    const respuestasTrivia = await RespuestaTrivia.find({}).select('jugador puntos').lean();
+
+    const mapTrivias = new Map();
     respuestasTrivia.forEach(r => {
-      const puntosActuales = mapTrivias.get(r.jugador) || 0;
-      mapTrivias.set(r.jugador, puntosActuales + (r.puntos || 0));
+      mapTrivias.set(r.jugador, (mapTrivias.get(r.jugador) || 0) + (r.puntos || 0));
     });
+
+    /* ---------- Armado de la tabla ---------- */
 
     const resultadosTotales = {};
 
-    const resultado = (m1, m2) => {
-      if (m1 > m2) return 'gano';
-      if (m1 < m2) return 'perdio';
-      return 'empato';
-    };
-
-    for (let j of jugadores) {
+    for (const jugador of jugadores) {
       let totalPuntos = 0;
-      resultadosTotales[j.nombre] = {};
+      resultadosTotales[jugador.nombre] = {};
 
-      let puntosCampeon = 0;
-
-      const campeonJugador = mapCampeon.get(j.nombre);
-
-      if (
-        campeonOficial &&
-        campeonJugador &&
-        String(campeonJugador).trim().toLowerCase() ===
-        String(campeonOficial.campeon).trim().toLowerCase()
-      ) {
-        puntosCampeon = campeonOficial.puntos ?? req.quiniela.configuracion.puntuacion.campeon;
-      }
-
-      resultadosTotales[j.nombre]['Campeón Mundial'] = puntosCampeon;
-      totalPuntos += puntosCampeon;
-
-      const puntosTrivias = mapTrivias.get(j.nombre) || 0;
-      resultadosTotales[j.nombre]['Trivias'] = puntosTrivias;
+      const puntosTrivias = mapTrivias.get(jugador.nombre) || 0;
+      resultadosTotales[jugador.nombre]['Trivias'] = puntosTrivias;
       totalPuntos += puntosTrivias;
 
-      for (let jornada of jornadas) {
-        const key = `${j.nombre}_${jornada.nombre}`;
-        const pronosticos = mapRes.get(key) || [];
-        const oficialesJornada = mapOficial.get(jornada.nombre) || [];
+      for (const jornada of jornadas) {
+        const clave = `${jugador.nombre}_${jornada.nombre}`;
 
-        let puntosJornada = 0;
+        const puntosJornada = jornadasCongeladas.has(jornada.nombre)
+          // Terminada: el número que se grabó cuando cerró. No se recalcula.
+          ? (puntosCongelados.get(clave) || 0)
+          // Viva: se calcula al vuelo con la configuración de hoy.
+          : puntosDeJornada(
+              jornada.partidos,
+              mapRes.get(clave),
+              mapOficial.get(jornada.nombre),
+              puntuacionActual
+            );
 
-        jornada.partidos.forEach((partido, index) => {
-          const p = pronosticos[index];
-          const o = oficialesJornada[index];
-
-          if (!p || !o) return;
-
-          const valores = [o.marcador1, o.marcador2, p.marcador1, p.marcador2];
-          const sonNumerosValidos = valores.every(val =>
-            typeof val === 'number' && !isNaN(val)
-          );
-
-          if (!sonNumerosValidos) return;
-
-          const esComodin = o.comodin;
-
-          if (o.marcador1 === p.marcador1 && o.marcador2 === p.marcador2) {
-            puntosJornada += esComodin
-              ? req.quiniela.configuracion.puntuacion.comodinExacto
-              : req.quiniela.configuracion.puntuacion.marcadorExacto;
-          } else {
-            const rOf = resultado(o.marcador1, o.marcador2);
-            const rPr = resultado(p.marcador1, p.marcador2);
-
-            if (rOf === rPr) {
-              puntosJornada += esComodin
-                ? req.quiniela.configuracion.puntuacion.comodinResultado
-                : req.quiniela.configuracion.puntuacion.resultadoCorrecto;
-            }
-          }
-        });
-
-        resultadosTotales[j.nombre][jornada.nombre] = puntosJornada;
+        resultadosTotales[jugador.nombre][jornada.nombre] = puntosJornada;
         totalPuntos += puntosJornada;
       }
 
-      resultadosTotales[j.nombre].total = totalPuntos;
+      resultadosTotales[jugador.nombre].total = totalPuntos;
     }
 
-    res.json(resultadosTotales);
+    /*
+     * Red de seguridad: una jornada que ya terminó pero que nadie congeló al
+     * cerrarse —datos migrados, o resultados escritos antes de la Fase 5— se
+     * congela aquí. En condiciones normales no hace nada, porque el
+     * congelamiento ocurre en el momento en que la jornada termina.
+     *
+     * Va ANTES de responder a propósito. Hacerlo después dejaba el endpoint sin
+     * determinar: quien leyera la tabla y consultara acto seguido si la jornada
+     * estaba congelada podía encontrarse con que todavía no, según hubiera
+     * terminado o no una escritura que ya nadie estaba esperando. El coste es
+     * una escritura, y solo la primera vez.
+     */
+    for (const jornada of jornadasVivas) {
+      const oficialJornada = mapOficial.get(jornada.nombre);
+      if (!jornadaEstaFinalizada(jornada.partidos, oficialJornada)) continue;
+
+      try {
+        await congelarPuntosDeJornada(jornada.nombre, puntuacionActual);
+      } catch (error) {
+        // Que no se pueda congelar no debe impedir ver la tabla.
+        console.error(`Error congelando "${jornada.nombre}":`, error.message);
+      }
+    }
+
+    guardarCacheRanking(req.quiniela._id, resultadosTotales);
+    return responderRanking(res, req, resultadosTotales);
 
   } catch (error) {
     console.error('Error calculando resultados totales:', error);
@@ -4480,7 +4708,8 @@ module.exports = {
   Fixture, JobLock,
   // Modelos de dominio, todos con aislamiento por quiniela
   Jugador, Jornada, Resultado, ResultadoOficial,
-  Trivia, RespuestaTrivia, Equipo, PronosticoCampeon, CampeonOficial,
+  Trivia, RespuestaTrivia, Equipo,
+  PuntosJornada,
   // Lógica de dominio bajo prueba
   resolverTriviasPendientes,
   resolverTriviasDeTodasLasQuinielas,
@@ -4504,5 +4733,12 @@ module.exports = {
   proveedorDeEventos,
   metricasSync,
   VENTANAS_SYNC_MS,
-  CERROJO_SYNC
+  CERROJO_SYNC,
+  // Puntos por jornada (Fase 5)
+  puntosDePartido,
+  puntosDeJornada,
+  estadisticasDeJornada,
+  jornadaEstaFinalizada,
+  congelarPuntosDeJornada,
+  actualizarPuntosDeJornada
 };

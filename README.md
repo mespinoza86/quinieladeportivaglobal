@@ -1,6 +1,6 @@
 # Quiniela Deportiva Global
 
-Aplicación multi-quiniela con cuentas personales, roles por quiniela, jornadas, pronósticos, resultados oficiales, trivias, campeón y puntuación configurable.
+Aplicación multi-quiniela con cuentas personales, roles por quiniela, jornadas, pronósticos, resultados oficiales, trivias y puntuación configurable.
 
 ## Requisitos
 

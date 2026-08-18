@@ -33,8 +33,7 @@ test('el servidor solo acepta la URI multi-quiniela', () => {
 test('los modelos deportivos reciben aislamiento por quiniela', () => {
   for (const schema of [
     'JugadorSchema', 'JornadaSchema', 'ResultadoSchema', 'ResultadoOficialSchema',
-    'triviaSchema', 'respuestaTriviaSchema', 'EquipoSchema',
-    'PronosticoCampeonSchema', 'CampeonOficialSchema'
+    'triviaSchema', 'respuestaTriviaSchema', 'EquipoSchema', 'PuntosJornadaSchema'
   ]) {
     assert.match(server, new RegExp(`\\b${schema}\\b`));
   }
@@ -257,6 +256,90 @@ test('el cerrojo de sincronización caduca solo', () => {
   assert.match(serverSinComentarios, /const TTL_CERROJO_SYNC_MS/);
   assert.match(serverSinComentarios, /expiraEn: \{ \$lte: ahora \}/);
   assert.match(serverSinComentarios, /if \(error\?\.code === 11000\) return false;/);
+});
+
+test('una jornada terminada congela sus puntos con su propia configuración', () => {
+  assert.match(server, /const PuntosJornadaSchema/);
+  assert.match(serverSinComentarios, /function jornadaEstaFinalizada/);
+
+  // Qué cuenta como terminado, que es la regla que decide si se congela.
+  assert.match(
+    serverSinComentarios,
+    /oficial\.bloqueadoFinal === true \|\| oficial\.estado === 'TC'/
+  );
+
+  /*
+   * Lo que impide que corregir un marcador equivocado arrastre todos los
+   * cambios de puntuación ocurridos desde que la jornada cerró: al recalcular
+   * se usa la configuración guardada, y solo se cae a la actual si la jornada
+   * no estaba congelada todavía.
+   */
+  assert.match(
+    serverSinComentarios,
+    /const puntuacion = existente\?\.puntuacion \|\| puntuacionActual;/
+  );
+
+  // La tabla ya no recalcula el histórico: lo lee.
+  assert.match(serverSinComentarios, /jornadasCongeladas\.has\(jornada\.nombre\)/);
+});
+
+test('toda escritura de resultados oficiales actualiza los puntos', () => {
+  /*
+   * Tripwire deliberado. Si alguien añade una ruta que escribe
+   * `ResultadoOficial` y olvida actualizar los puntos, una jornada congelada se
+   * quedaría enseñando el número viejo para siempre, sin que nada falle a la
+   * vista. Esta prueba no puede comprobar la correspondencia una a una, así que
+   * cuenta: al cambiar el número, hay que mirar el sitio nuevo y decidir.
+   */
+  const escrituras = serverSinComentarios.match(
+    /ResultadoOficial\.(findOneAndUpdate|deleteMany|updateOne|updateMany)\(/g
+  ) || [];
+
+  assert.equal(escrituras.length, 3,
+    'Cambió el número de sitios que escriben resultados oficiales (eran 3: sync, ' +
+    'carga manual y borrado de jornada). Comprueba que el nuevo llame a ' +
+    'actualizarPuntosDeJornada o borre PuntosJornada.');
+
+  const actualizaciones = serverSinComentarios.match(/await actualizarPuntosDeJornada\(/g) || [];
+  assert.ok(actualizaciones.length >= 3,
+    'Faltan llamadas a actualizarPuntosDeJornada tras las escrituras');
+
+  assert.match(serverSinComentarios, /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}\)/);
+});
+
+test('toda edición de una jornada invalida o recalcula sus puntos materializados', () => {
+  /*
+   * La puntuación depende de la composición y el orden de `partidos`. Una
+   * jornada congelada no puede conservar su número viejo si se importa de nuevo,
+   * se añade/elimina un partido o se cambia el comodín.
+   */
+  const escrituras = serverSinComentarios.match(
+    /\bJornada\.(findOneAndUpdate|findOneAndDelete)\(/g
+  ) || [];
+
+  assert.equal(escrituras.length, 3,
+    'Cambió el número de escrituras directas de Jornada; comprueba su invalidación');
+
+  const edicionesPorDocumento = serverSinComentarios.match(/await doc\.save\(\);/g) || [];
+  assert.equal(edicionesPorDocumento.length, 3,
+    'Cambió el número de ediciones de Jornada por documento; comprueba su invalidación');
+
+  const actualizaciones = serverSinComentarios.match(/await actualizarPuntosDeJornada\(/g) || [];
+  assert.ok(actualizaciones.length >= 8,
+    'Cada edición de Jornada y Resultado debe actualizar PuntosJornada');
+
+  assert.match(
+    serverSinComentarios,
+    /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}\);\s+invalidarCacheRanking\(req\.quiniela\._id\);/
+  );
+});
+
+test('el ranking tiene caché por quiniela y paginación opcional compatible', () => {
+  assert.match(serverSinComentarios, /const cacheRanking = new Map\(\)/);
+  assert.match(serverSinComentarios, /function invalidarCacheRanking/);
+  assert.match(serverSinComentarios, /function responderRanking/);
+  assert.match(serverSinComentarios, /req\.query\.pagina !== undefined \|\| req\.query\.limite !== undefined/);
+  assert.match(serverSinComentarios, /Math\.min\(100, Math\.max\(1,/);
 });
 
 test('la migración es simulación por defecto y separa origen de destino', () => {

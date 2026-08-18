@@ -366,14 +366,22 @@ async function sembrarJornadaDePrueba(quinielaId, jugador) {
     { equipo1: 'Lambda', equipo2: 'Mu' }
   ];
 
+  /*
+   * `estado: 'TC'` y `bloqueadoFinal` no son adorno: desde la Fase 5 son lo que
+   * distingue una jornada terminada —cuyos puntos se congelan— de una en curso,
+   * que se sigue calculando al vuelo. Así es como queda un partido real cuando
+   * el sincronizador lo da por acabado o un administrador lo carga a mano.
+   */
+  const terminado = { estado: 'TC', bloqueadoFinal: true };
+
   //                        oficial      pronóstico    comodín  → puntos esperados
   const oficiales = [
-    { ...partidos[0], marcador1: 2, marcador2: 1, comodin: false }, // exacto        → 5
-    { ...partidos[1], marcador1: 0, marcador2: 0, comodin: false }, // solo signo    → 3
-    { ...partidos[2], marcador1: 3, marcador2: 0, comodin: true },  // exacto comodín→ 7
-    { ...partidos[3], marcador1: 1, marcador2: 2, comodin: true },  // signo comodín → 4
-    { ...partidos[4], marcador1: 1, marcador2: 0, comodin: false }, // sin pronóstico→ 0
-    { ...partidos[5], marcador1: 2, marcador2: 2, comodin: false }  // signo erróneo → 0
+    { ...partidos[0], ...terminado, marcador1: 2, marcador2: 1, comodin: false }, // exacto        → 5
+    { ...partidos[1], ...terminado, marcador1: 0, marcador2: 0, comodin: false }, // solo signo    → 3
+    { ...partidos[2], ...terminado, marcador1: 3, marcador2: 0, comodin: true },  // exacto comodín→ 7
+    { ...partidos[3], ...terminado, marcador1: 1, marcador2: 2, comodin: true },  // signo comodín → 4
+    { ...partidos[4], ...terminado, marcador1: 1, marcador2: 0, comodin: false }, // sin pronóstico→ 0
+    { ...partidos[5], ...terminado, marcador1: 2, marcador2: 2, comodin: false }  // signo erróneo → 0
   ];
 
   const pronosticos = [
@@ -409,7 +417,6 @@ test('el motor de puntuación aplica las cuatro reglas de acierto', async () => 
 
   assert.equal(mio.Jornada1, esperadoJornada,
     'Marcador exacto 5, solo signo 3, exacto con comodín 7, signo con comodín 4');
-  assert.equal(mio['Campeón Mundial'], 0);
   assert.equal(mio.Trivias, 0);
   assert.equal(mio.total, esperadoJornada);
 });
@@ -434,22 +441,6 @@ test('un pronóstico sin marcadores no suma ni resta', async () => {
 
   const res = await agente.get('/api/resultados-totales');
   assert.equal(res.body[datos.username].JornadaNula, 0);
-});
-
-test('el campeón acertado suma, ignorando mayúsculas y espacios', async () => {
-  const { agente, datos } = await cuentaNueva('campeon');
-  const quiniela = await quinielaNueva(agente, 'Campeon Mundial');
-  const id = new mongoose.Types.ObjectId(quiniela.id);
-
-  await enQuiniela(id, async () => {
-    await srv.PronosticoCampeon.create({ jugador: datos.username, campeon: '  argentina  ' });
-    await srv.CampeonOficial.create({ campeon: 'ARGENTINA', puntos: 20 });
-  });
-
-  const res = await agente.get('/api/resultados-totales');
-  assert.equal(res.body[datos.username]['Campeón Mundial'], 20,
-    'La comparación debe normalizar mayúsculas y espacios sobrantes');
-  assert.equal(res.body[datos.username].total, 20);
 });
 
 test('los puntos de trivia se suman al total', async () => {
@@ -489,38 +480,309 @@ test('S-10: el índice único impide duplicar la respuesta de una trivia', async
   );
 });
 
-test('M-03: cambiar la puntuación reescribe el histórico (comportamiento actual)', async () => {
+test('M-03: cambiar la puntuación ya NO reescribe el histórico', async () => {
   /*
-   * Esto NO es una corrección: fija el comportamiento vigente para que quede
-   * documentado y para que, cuando la Fase 5 decida congelar los puntos al
-   * cerrar la jornada, el cambio sea deliberado y esta prueba falle a
-   * propósito.
+   * Esta prueba estaba escrita al revés hasta la Fase 5, y a propósito: fijaba
+   * el comportamiento de entonces —los puntos se recalculaban con la
+   * configuración vigente, así que subir marcadorExacto a mitad de temporada
+   * reescribía las jornadas ya jugadas— para que el día que se decidiera
+   * congelar, el cambio fuera deliberado y esta prueba fallara.
    *
-   * Hoy los puntos de partido se recalculan con la configuración actual, así
-   * que subir marcadorExacto a mitad de temporada reescribe las jornadas ya
-   * jugadas. Los puntos de trivia, en cambio, sí quedan congelados en
-   * RespuestaTrivia.puntos: dos criterios distintos conviviendo (M-04).
+   * Ese día fue el 17 de agosto de 2026. Ahora comprueba lo contrario.
    */
   const { agente, datos } = await cuentaNueva('historico');
-  const quiniela = await quinielaNueva(agente, 'Historico Movil');
+  const quiniela = await quinielaNueva(agente, 'Historico Congelado');
   const id = new mongoose.Types.ObjectId(quiniela.id);
 
-  const antes = await sembrarJornadaDePrueba(id, datos.username);
+  const esperado = await sembrarJornadaDePrueba(id, datos.username);
+
+  // Primera lectura: la jornada está terminada, así que aquí queda congelada.
+  const antes = await agente.get('/api/resultados-totales');
+  assert.equal(antes.body[datos.username].Jornada1, esperado);
+
+  const congelada = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'Jornada1' }));
+  assert.ok(congelada, 'Una jornada terminada debe quedar congelada al leerse');
+  assert.equal(congelada.puntuacion.marcadorExacto, 5,
+    'Se guarda la configuración con la que se calculó');
 
   const activar = await agente.post('/api/admin-mode/activar').send({ password: 'contrasena-larga-1' });
   assert.equal(activar.status, 200);
 
   const cambio = await agente.patch('/api/quiniela-actual/configuracion')
-    .send({ puntuacion: { marcadorExacto: 50, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, campeon: 20 } });
+    .send({ puntuacion: { marcadorExacto: 50, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, puntosTriviaDefault: 1 } });
   assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
 
-  const res = await agente.get('/api/resultados-totales');
-  const despues = res.body[datos.username].Jornada1;
+  const despues = await agente.get('/api/resultados-totales');
 
-  assert.notEqual(despues, antes,
-    'Con la configuración nueva, una jornada ya jugada cambia de puntuación');
-  assert.equal(despues, 50 + 3 + 7 + 4,
-    'El marcador exacto pasa a valer 50 también en el pasado');
+  assert.equal(despues.body[datos.username].Jornada1, esperado,
+    'Una jornada ya terminada no cambia de puntuación porque se cambie la configuración');
+  assert.equal(despues.body[datos.username].total, antes.body[datos.username].total,
+    'Y por tanto el total tampoco se mueve');
+});
+
+test('una jornada en curso sí se calcula con la configuración vigente', async () => {
+  /*
+   * El congelamiento es para lo terminado. Mientras la jornada está viva, la
+   * tabla debe seguir el marcador en tiempo real y las reglas de hoy: si no,
+   * un administrador no podría corregir la puntuación antes de que empiece a
+   * contar de verdad.
+   */
+  const { agente, datos } = await cuentaNueva('encurso');
+  const quiniela = await quinielaNueva(agente, 'Jornada Viva');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  const partidos = [{ equipo1: 'Uno', equipo2: 'Dos' }, { equipo1: 'Tres', equipo2: 'Cuatro' }];
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'JornadaViva', partidos });
+    await srv.ResultadoOficial.create({
+      jornada: 'JornadaViva',
+      resultados: [
+        { ...partidos[0], marcador1: 1, marcador2: 0, estado: 'TC', bloqueadoFinal: true },
+        // El segundo sigue en juego: la jornada no está terminada.
+        { ...partidos[1], marcador1: 0, marcador2: 0, estado: 'LIVE', bloqueadoFinal: false }
+      ]
+    });
+    await srv.Resultado.create({
+      jugador: datos.username,
+      jornada: 'JornadaViva',
+      pronosticos: [
+        { ...partidos[0], marcador1: 1, marcador2: 0 },
+        { ...partidos[1], marcador1: 0, marcador2: 0 }
+      ]
+    });
+  });
+
+  const antes = await agente.get('/api/resultados-totales');
+  assert.equal(antes.body[datos.username].JornadaViva, 10, 'Dos marcadores exactos a 5 puntos');
+
+  const sinCongelar = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'JornadaViva' }));
+  assert.equal(sinCongelar, null, 'Una jornada con un partido en juego no se congela');
+
+  await agente.post('/api/admin-mode/activar').send({ password: 'contrasena-larga-1' });
+  await agente.patch('/api/quiniela-actual/configuracion')
+    .send({ puntuacion: { marcadorExacto: 50, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, puntosTriviaDefault: 1 } });
+
+  const despues = await agente.get('/api/resultados-totales');
+  assert.equal(despues.body[datos.username].JornadaViva, 100,
+    'Mientras la jornada vive, manda la configuración de hoy');
+});
+
+test('corregir un resultado recalcula con la puntuación congelada, no con la de hoy', async () => {
+  /*
+   * El caso que hace falta acertar para que el congelamiento sirva de algo.
+   *
+   * Un administrador corrige meses después un marcador que estaba mal. La
+   * jornada TIENE que recalcularse —cambió un hecho del juego— pero con las
+   * reglas que regían cuando se jugó. Si se recalculara con las de hoy, bastaría
+   * corregir una errata para colar todos los cambios de puntuación acumulados.
+   */
+  const { agente, datos } = await cuentaNueva('correccion');
+  const quiniela = await quinielaNueva(agente, 'Correccion Tardia');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await sembrarJornadaDePrueba(id, datos.username);
+
+  await agente.get('/api/resultados-totales');   // congela con marcadorExacto = 5
+
+  await agente.post('/api/admin-mode/activar').send({ password: 'contrasena-larga-1' });
+  await agente.patch('/api/quiniela-actual/configuracion')
+    .send({ puntuacion: { marcadorExacto: 50, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4, puntosTriviaDefault: 1 } });
+
+  /*
+   * La corrección: el primer partido no fue 2-1 sino 4-0. El jugador había
+   * pronosticado 2-1, así que pierde el acierto exacto (5) y conserva el signo
+   * (3), porque en ambos casos ganó el local.
+   */
+  const oficialCorregido = await enQuiniela(id, () => srv.ResultadoOficial.findOne({ jornada: 'Jornada1' }));
+  const resultadosCorregidos = oficialCorregido.resultados.map((r, indice) =>
+    indice === 0 ? { ...r.toObject(), marcador1: 4, marcador2: 0 } : r.toObject()
+  );
+
+  const envio = await agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'Jornada1', resultados: resultadosCorregidos });
+  assert.equal(envio.status, 200, JSON.stringify(envio.body));
+
+  const res = await agente.get('/api/resultados-totales');
+
+  assert.equal(res.body[datos.username].Jornada1, 3 + 3 + 7 + 4,
+    'Se recalcula con la puntuación congelada (exacto=5 → ahora signo=3), no con la de hoy (50)');
+
+  const congelada = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'Jornada1' }));
+  assert.equal(congelada.puntuacion.marcadorExacto, 5,
+    'La jornada conserva la configuración con la que se cerró');
+});
+
+test('C-03: con todo congelado, la tabla no lee los pronósticos', async () => {
+  /*
+   * El arreglo de rendimiento, comprobado por donde se nota: no en el tiempo
+   * —que en una prueba mide ruido— sino en si la consulta llega a hacerse.
+   *
+   * Antes, cada carga de la tabla leía `Resultado` y `ResultadoOficial`
+   * completos, con sus arrays de pronósticos, y recalculaba todo desde cero.
+   * Con las jornadas congeladas, esas dos colecciones no se tocan.
+   */
+  const { agente, datos } = await cuentaNueva('lecturas');
+  const quiniela = await quinielaNueva(agente, 'Sin Lecturas');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await sembrarJornadaDePrueba(id, datos.username);
+  await agente.get('/api/resultados-totales');   // congela
+
+  const originalResultado = srv.Resultado.find;
+  const originalOficial = srv.ResultadoOficial.find;
+
+  let lecturasDePronosticos = 0;
+  let lecturasDeOficiales = 0;
+
+  srv.Resultado.find = function (...args) {
+    lecturasDePronosticos += 1;
+    return originalResultado.apply(this, args);
+  };
+  srv.ResultadoOficial.find = function (...args) {
+    lecturasDeOficiales += 1;
+    return originalOficial.apply(this, args);
+  };
+
+  try {
+    const res = await agente.get('/api/resultados-totales');
+    assert.equal(res.status, 200);
+    assert.equal(res.body[datos.username].Jornada1, 19, 'Y el número sigue siendo el correcto');
+  } finally {
+    srv.Resultado.find = originalResultado;
+    srv.ResultadoOficial.find = originalOficial;
+  }
+
+  assert.equal(lecturasDePronosticos, 0,
+    'Con todas las jornadas congeladas no hace falta leer un solo pronóstico');
+  assert.equal(lecturasDeOficiales, 0,
+    'Ni un solo resultado oficial');
+});
+
+test('Fase 5: editar una jornada descongela sus puntos materializados', async () => {
+  const { agente, datos } = await cuentaNueva('edita_jornada');
+  const quiniela = await quinielaNueva(agente, 'Edicion de Jornada');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await sembrarJornadaDePrueba(id, datos.username);
+  await agente.get('/api/resultados-totales'); // deja Jornada1 congelada
+
+  const antes = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'Jornada1' }));
+  assert.ok(antes, 'La jornada debe estar congelada antes de editarla');
+
+  const activar = await agente.post('/api/admin-mode/activar').send({ password: 'contrasena-larga-1' });
+  assert.equal(activar.status, 200);
+
+  const edicion = await agente.post('/api/jornadas/agregar-partido').send({
+    jornada: 'Jornada1',
+    partido: { equipo1: 'Nuevo', equipo2: 'Partido' }
+  });
+  assert.equal(edicion.status, 200, JSON.stringify(edicion.body));
+
+  const despues = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'Jornada1' }));
+  assert.equal(despues, null,
+    'Al faltar resultado oficial para el partido nuevo, la jornada deja de estar congelada');
+});
+
+test('Fase 5: la caché se invalida y el ranking se puede paginar', async () => {
+  const { agente, datos } = await cuentaNueva('cache_ranking');
+  const quiniela = await quinielaNueva(agente, 'Cache y Paginas');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await enQuiniela(id, async () => {
+    await srv.Jugador.create({ nombre: 'Historico Uno' });
+    await srv.Jugador.create({ nombre: 'Historico Dos' });
+  });
+
+  const primera = await agente.get('/api/resultados-totales');
+  assert.equal(primera.status, 200);
+  assert.ok(primera.body[datos.username]);
+
+  const originalFind = srv.Jornada.find;
+  let lecturasDeJornadas = 0;
+  srv.Jornada.find = function (...args) {
+    lecturasDeJornadas += 1;
+    return originalFind.apply(this, args);
+  };
+
+  try {
+    const paginada = await agente.get('/api/resultados-totales?pagina=1&limite=1');
+    assert.equal(paginada.status, 200, JSON.stringify(paginada.body));
+    assert.equal(paginada.body.pagina, 1);
+    assert.equal(paginada.body.limite, 1);
+    assert.equal(paginada.body.totalJugadores, 3);
+    assert.equal(paginada.body.totalPaginas, 3);
+    assert.equal(paginada.body.jugadores.length, 1);
+    assert.equal(lecturasDeJornadas, 0, 'La segunda lectura debe salir de caché');
+
+    const activar = await agente.post('/api/admin-mode/activar').send({ password: 'contrasena-larga-1' });
+    assert.equal(activar.status, 200);
+    const cambio = await agente.patch('/api/quiniela-actual/configuracion')
+      .send({ incluirExpulsadosEnRanking: false });
+    assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
+
+    const trasInvalidar = await agente.get('/api/resultados-totales?pagina=1&limite=1');
+    assert.equal(trasInvalidar.status, 200);
+    assert.ok(lecturasDeJornadas > 0, 'Cambiar la configuración debe invalidar la caché');
+  } finally {
+    srv.Jornada.find = originalFind;
+  }
+});
+
+test('la clasificación por jornada es provisional, ordena empates y no suma trivias', async () => {
+  const { agente, datos } = await cuentaNueva('clasificacion');
+  const quiniela = await quinielaNueva(agente, 'Tabla por Jornada');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+  const partido = { equipo1: 'Uno', equipo2: 'Dos' };
+
+  await enQuiniela(id, async () => {
+    await srv.Quiniela.updateOne(
+      { _id: id },
+      { $set: { 'configuracion.puntuacion.resultadoCorrecto': 5 } }
+    );
+    await srv.Jugador.create({ nombre: 'Rival Empatado' });
+    await srv.Jornada.create({ nombre: 'Jornada Clasificacion', partidos: [partido] });
+    await srv.ResultadoOficial.create({
+      jornada: 'Jornada Clasificacion',
+      resultados: [{ ...partido, marcador1: 2, marcador2: 1, estado: 'LIVE', bloqueadoFinal: false }]
+    });
+    await srv.Resultado.create({
+      jugador: datos.username,
+      jornada: 'Jornada Clasificacion',
+      pronosticos: [{ ...partido, marcador1: 2, marcador2: 1 }]
+    });
+    await srv.Resultado.create({
+      jugador: 'Rival Empatado',
+      jornada: 'Jornada Clasificacion',
+      pronosticos: [{ ...partido, marcador1: 3, marcador2: 2 }]
+    });
+    await srv.RespuestaTrivia.create({ jugador: 'Rival Empatado', triviaId: 'fuera-de-jornada', respuesta: 'Sí', puntos: 99 });
+  });
+
+  const provisional = await agente.get('/api/clasificacion-jornada');
+  assert.equal(provisional.status, 200, JSON.stringify(provisional.body));
+  assert.equal(provisional.body.jornada, 'Jornada Clasificacion', 'Por defecto usa la jornada más reciente');
+  assert.equal(provisional.body.estado, 'provisional');
+  assert.equal(provisional.body.clasificacion.length, 2);
+  assert.equal(provisional.body.clasificacion[0].jugador, datos.username,
+    'A igualdad de puntos, el marcador exacto ordena primero');
+  assert.equal(provisional.body.clasificacion[0].puntos, 5);
+  assert.equal(provisional.body.clasificacion[1].puntos, 5,
+    'Los puntos permanecen empatados; las trivias no se incluyen');
+  assert.equal(provisional.body.clasificacion[0].puesto, 1);
+  assert.equal(provisional.body.clasificacion[1].puesto, 1);
+  assert.equal(provisional.body.clasificacion[0].empate, true);
+
+  await enQuiniela(id, () => srv.ResultadoOficial.updateOne(
+    { jornada: 'Jornada Clasificacion' },
+    { $set: { 'resultados.0.estado': 'TC', 'resultados.0.bloqueadoFinal': true } }
+  ));
+
+  const confirmada = await agente.get('/api/clasificacion-jornada?jornada=Jornada%20Clasificacion');
+  assert.equal(confirmada.status, 200);
+  assert.equal(confirmada.body.estado, 'confirmada');
+  const materializada = await enQuiniela(id, () => srv.PuntosJornada.findOne({ jornada: 'Jornada Clasificacion' }));
+  assert.ok(materializada, 'Una jornada confirmada queda materializada');
 });
 
 /* ================================================================

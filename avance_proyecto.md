@@ -22,6 +22,16 @@
 **Fases 0 a 4 completadas.** Las cuatro primeras el 16 de agosto de 2026; la
 Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— el 17.
 
+**La Fase 5 está implementada en el árbol de trabajo, pero todavía no está
+confirmada en Git.** `PuntosJornada` materializa las jornadas terminadas, la
+puntuación histórica se congela con sus reglas originales, el ranking tiene caché
+por quiniela con invalidación por evento y la tabla general se pagina en la
+interfaz. Las **75 pruebas** actuales pasan. Además existe una tabla por jornada:
+por defecto abre la más reciente y muestra una clasificación provisional o
+confirmada que excluye permanentemente las trivias. La paginación de los demás listados
+del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
+resuelta de la tabla general.
+
 | Fase | Qué se hizo | Bitácora |
 |---|---|---|
 | **0** | Higiene: `NODE_ENV`, CORS, parser único, −63 paquetes, `legacy-data/` | 003 |
@@ -41,8 +51,9 @@ misma caché. Ver §9.4 y la bitácora 010.
 ### Estado de Git
 
 ```
-f15dad3  Fase 4: rediseno del sincronizador (C-01 y C-05)      ← fase-4-sincronizador (HEAD)
-e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main
+73b6ca0  Anotar el hash de la Fase 4 en el documento          ← fase-4-sincronizador (HEAD)
+f15dad3  Fase 4: rediseno del sincronizador (C-01 y C-05)
+e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main, origin/main
 d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia
 a2e91df  Fase 3: red de seguridad de pruebas de integracion
 200c3c0  Fase 2: cerrar la fuga entre quinielas y los bugs de dominio
@@ -53,7 +64,12 @@ f92462b  Implementar arquitectura multi-quiniela
 
 La cadena de cinco ramas encadenadas **ya se fusionó**: el 17 de agosto se llevó
 `fase-3-pruebas` a `main` con avance rápido y se borraron las cuatro ramas
-intermedias. `origin/main` sigue en `f92462b` —falta empujar—.
+intermedias. `main` y `origin/main` están en `e2f8d3f`; la rama actual está dos
+commits por delante y todavía falta fusionarla a `main` y empujar ese avance.
+
+El árbol de trabajo **no está limpio**: `server.js`, `test/architecture.test.js`
+y `test/integracion.test.js` contienen el trabajo local de la Fase 5 descrito
+arriba. Debe conservarse; no corresponde descartarlo al cambiar de tarea.
 
 > ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
 > `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
@@ -81,10 +97,10 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 66 pruebas (~14 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 45 de integración
+npm test                   # las 75 pruebas (~14 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 50 de integración
 npm run check              # comprobación de sintaxis
-npm audit --omit=dev       # 0 vulnerabilidades al cierre del 17-ago
+npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
 
 ### Lo siguiente: Fase 5 — rendimiento del ranking (C-03)
@@ -94,15 +110,14 @@ Con el sincronizador arreglado, el siguiente cuello de botella es la lectura.
 ranking histórico **en cada petición**. Hoy no se nota; con temporadas
 acumuladas y varias quinielas activas, sí.
 
-El plan está en §16, Fase 5 (puntos 34–37):
+El plan está en §16, Fase 5 (puntos 34–37). Estado real del trabajo local:
 
-1. Materializar los puntos por jornada en una colección `PuntosJornada`,
-   recalculada solo cuando cambia un resultado oficial de esa jornada.
-2. **Decidir la política de congelamiento**, que resuelve M-03 y M-04 de una vez:
-   hoy los puntos de trivia quedan congelados y los de partido no, así que
-   cambiar la configuración de puntuación reescribe el histórico.
-3. Caché del ranking con invalidación por evento.
-4. Paginación en los listados (M-26).
+1. ✅ `PuntosJornada` está implementado localmente, incluidas las invalidaciones
+   al editar la jornada, los pronósticos o los resultados oficiales.
+2. ✅ La jornada se congela cuando todos los partidos son definitivos; una
+   corrección posterior usa las reglas guardadas de esa jornada.
+3. ✅ Caché en memoria por quiniela, con TTL de 60 s e invalidación por evento.
+4. 🟡 La tabla general ya está paginada; los demás listados (M-26) siguen pendientes.
 
 El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo.
 
@@ -111,8 +126,8 @@ El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo
 | # | Decisión | Por qué importa |
 |---|---|---|
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `origin/main` lleva desde julio sin recibir nada |
-| **M-03/M-04** | ¿Los puntos de una jornada se congelan al cerrarla? | Hoy cambiar la puntuación reescribe partidas ya jugadas. Es la decisión que abre la Fase 5 |
+| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `main` y `origin/main` todavía no contienen la Fase 4 ni el trabajo local de la Fase 5 |
+| **M-03/M-04** | Política de congelamiento implementada localmente | Se congela al quedar definitivos todos los partidos y las correcciones conservan las reglas originales |
 | **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
 
 ### Pendientes menores, cuando toque
@@ -170,7 +185,7 @@ quinielas con roles independientes en cada una.
 
 | Dimensión | Estado | Comentario |
 |---|---|---|
-| Funcionalidad de dominio | 🟢 Muy completa | Jornadas, pronósticos, resultados oficiales, trivias, campeón, ranking |
+| Funcionalidad de dominio | 🟢 Muy completa | Jornadas, pronósticos, resultados oficiales, trivias y ranking |
 | Multi-tenancy | 🟡 Funciona, con fugas | Aislamiento por `AsyncLocalStorage` correcto en el 95% de rutas; hay fugas en el job de trivias |
 | Seguridad | 🟡 Base sólida, faltan capas | bcrypt, sesiones en Mongo, roles, Admin Mode. Faltan rate limiting, headers, verificación de correo |
 | Escalabilidad | 🔴 Bloqueante | El auto-sync global con APIFootball no escala más allá de unas pocas quinielas |
@@ -235,9 +250,9 @@ otros dos son las Fases 6 y 5.
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `architecture.test.js` | 66 (73 con cambios sin confirmar) | 6 pruebas de invariantes arquitectónicas |
+| `architecture.test.js` | 366 | 25 pruebas de invariantes arquitectónicas |
 
-### 2.4 `public/` — 30 páginas HTML
+### 2.4 `public/` — 32 páginas HTML
 
 Servidas estáticamente desde `express.static`.
 
@@ -245,19 +260,20 @@ Servidas estáticamente desde `express.static`.
 `reglamento_quiniela.html`
 
 **De participante:** `llenar_jornada_user.html`, `llenar_trivia.html`,
-`pronostico-campeon.html`, `ver_jornadas.html`, `ver_jugadores.html`,
+`ver_jornadas.html`, `ver_jugadores.html`,
 `verResultados.html`, `verResultados_puntos.html`, `resultados-totales.html`,
+`clasificacion-jornada.html`,
 `ver-resultados-oficiales.html`, `ver_resultados_trivias.html`,
-`ver-pronosticos-campeon.html`, `ver_resultados_totales_de_jugadores.html`
+`ver_resultados_totales_de_jugadores.html`
 
 **De administración (listadas en `paginasAdmin`):** `adminmode.html`, `jugadores.html`,
 `jornadas.html`, `importar_partidos.html`, `resultados.html`,
 `agregar-resultados-oficiales.html`, `generar_reporte.html`, `enviarresultados.html`,
 `copiarresultadojugador.html`, `admin_trivias.html`, `enviarresultadostrivias.html`,
 `enviarresultadospartido.html`, `enviarresultadostriviaspartido.html`,
-`campeon-oficial.html`, `miembros.html`, `configuracion-quiniela.html`
+`miembros.html`, `configuracion-quiniela.html`
 
-### 2.5 `private/js/` — 39 scripts
+### 2.5 `private/js/` — 33 scripts
 
 Servidos por la ruta `GET /js/:filename`, que lee de `private/js/`. Es un pseudo-ocultamiento:
 el navegador los descarga igual. **No hay ningún secreto ahí, pero tampoco hay ninguna
@@ -340,6 +356,7 @@ Presentes en `.env`:
 | `SYNC_INTERVALO_MS` | No | **Fase 4.** Cada cuánto corre un ciclo del planificador. Por defecto 60.000 |
 | `SYNC_CONCURRENCIA` | No | **Fase 4.** Consultas simultáneas al proveedor. Por defecto 4 |
 | `JOBS_HABILITADOS` | No | **Fase 4.** Si esta instancia ejecuta los trabajos periódicos. Por defecto `true` |
+| `RANKING_CACHE_TTL_MS` | No | **Fase 5.** Vida máxima de la caché de ranking por quiniela; por defecto 60.000. Las escrituras relevantes la invalidan antes |
 
 Variables que el código espera pero no están en `.env` (solo se usan al migrar):
 `MONGO_URI_LEGACY_READONLY`, `LEGACY_DB_NAME`, `TARGET_DB_NAME`,
@@ -460,7 +477,6 @@ sí. Ese era el hallazgo C-05.
 | `configuracion.puntuacion.resultadoCorrecto` | Number | por defecto 3, min 0 |
 | `configuracion.puntuacion.comodinExacto` | Number | por defecto 7, min 0 |
 | `configuracion.puntuacion.comodinResultado` | Number | por defecto 4, min 0 |
-| `configuracion.puntuacion.campeon` | Number | por defecto 20, min 0 |
 | `configuracion.puntuacion.triviasHabilitadas` | Boolean | por defecto `true` |
 | `configuracion.puntuacion.puntosTriviaDefault` | Number | por defecto 1, min 0 |
 | `configuracion.incluirExpulsadosEnRanking` | Boolean | por defecto `true` |
@@ -629,25 +645,21 @@ con `upsert` puede duplicar bajo concurrencia → puntos dobles.
 
 Índice único: `{ quinielaId: 1, nombre: 1 }`
 
-#### `pronosticocampeons` — modelo `PronosticoCampeon`
+#### `puntosjornadas` — modelo `PuntosJornada` *(Fase 5)*
 
-| Campo | Tipo |
-|---|---|
-| `jugador` | String requerido |
-| `usuarioId` | ObjectId → `Usuario` |
-| `campeon` | String requerido |
-| `fechaRegistro` | Date |
+Materializado histórico de una jornada ya terminada. Lleva `quinielaId` mediante
+`tenantPlugin` y tiene índice único `{ quinielaId, jornada }`.
 
-Índice único: `{ quinielaId: 1, jugador: 1 }`
+| Campo | Tipo | Notas |
+|---|---|---|
+| `jornada` | String | nombre de la jornada congelada |
+| `puntos[]` | `{ jugador, puntos }` | una entrada por jugador, sin `_id` interno para limitar tamaño |
+| `puntuacion` | Object | las cuatro reglas de marcador usadas al congelar |
+| `congeladoEn` | Date | cuándo se fijó o recalculó por una corrección oficial |
 
-#### `campeonoficials` — modelo `CampeonOficial`
-
-| Campo | Tipo |
-|---|---|
-| `campeon` | String requerido |
-| `puntos` | Number, por defecto 20 |
-
-Un solo documento por quiniela (se usa `findOne({})` + `findOneAndUpdate({})`).
+Se guarda **un documento por jornada**, no uno por jugador. El ranking lee pocos
+documentos (uno por jornada) y pagina la salida HTTP; al corregirse un resultado se
+reescribe el arreglo de esa jornada con la configuración histórica almacenada.
 
 ### 4.3 Diagrama de relaciones
 
@@ -659,11 +671,10 @@ Usuario ──1:N── Membresia ──N:1── Quiniela
    └──> Jugador                       ├──> Jornada ──(por índice de array)──┐
    └──> Resultado.jugador             ├──> Resultado ────────────────────────┤
    └──> RespuestaTrivia.jugador       ├──> ResultadoOficial ─────────────────┤
-   └──> PronosticoCampeon.jugador     ├──> Trivia ───────────────────────────┘
+                                      ├──> Trivia ───────────────────────────┘
                                       ├──> RespuestaTrivia ──(por triviaId string)
                                       ├──> Equipo
-                                      ├──> PronosticoCampeon
-                                      └──> CampeonOficial
+                                      └──> PuntosJornada
 ```
 
 **Dos debilidades estructurales del modelo:**
@@ -820,7 +831,7 @@ enviaría por HTTP plano.
 |---|---|
 | `propietario` | Todo lo de `admin` + transferir propiedad + eliminar la quiniela |
 | `admin` | Aprobar/rechazar ingresos y retiros, expulsar, cambiar roles, archivar, configurar puntuación, gestionar jornadas/trivias/resultados |
-| `user` | Pronosticar, responder trivias, elegir campeón, ver rankings |
+| `user` | Pronosticar, responder trivias y ver rankings |
 
 **Invariantes protegidas en el código:**
 - No se puede degradar al último administrador (`administradores <= 1` → 409).
@@ -955,6 +966,7 @@ el HTML de `/jornadas.html`. No es una fuga de datos porque las APIs sí exigen
 | POST | `/api/resultados-oficiales` | `requireAdmin` — marca `origen:'manual'` |
 | GET | `/api/resultados-oficiales/:jornada` | `/api` gate |
 | GET | `/api/resultados-totales` | `/api` gate — ranking completo |
+| GET | `/api/clasificacion-jornada?jornada=…` | `/api` gate — clasificación de una jornada; sin parámetro usa la más reciente |
 
 ### 7.8 Trivias
 
@@ -980,19 +992,12 @@ el HTML de `/jornadas.html`. No es una fuga de datos porque las APIs sí exigen
 registradas **antes** de `/api/trivias/:jornadaNombre`, así que funcionan. Pero es
 frágil: una jornada llamada literalmente `"activas"` sería inalcanzable.
 
-### 7.9 Equipos y campeón
+### 7.9 Equipos
 
 | Método | Ruta | Guardia |
 |---|---|---|
 | GET | `/api/equipos` | `/api` gate |
 | POST | `/actualizar-equipos` | `requireAdmin` |
-| GET | `/api/equipos-mundial` | `/api` gate — **lista de 48 selecciones incrustada en el código** |
-| GET | `/api/pronostico-campeon/:jugador` | `/api` gate |
-| POST | `/api/pronostico-campeon` | `/api` gate — exige contraseña, cierra con `Jornada1` |
-| GET | `/api/pronosticos-campeon-publicos` | `/api` gate |
-| GET | `/api/pronosticos-campeon` | `requireAdmin` |
-| GET | `/api/campeon-oficial` | `/api` gate |
-| POST | `/api/campeon-oficial` | `requireAdmin` |
 
 ### 7.10 Depuración (todas con `requireAdmin`)
 
@@ -1028,19 +1033,15 @@ resultado oficial **en la misma posición del array**:
 | Solo acierta el signo, comodín | `configuracion.puntuacion.comodinResultado` (4) |
 | Cualquier marcador no numérico | 0 (se omite el partido) |
 
-Más dos bloques adicionales:
-
-- **Campeón Mundial:** si `PronosticoCampeon.campeon` coincide (sin distinguir
-  mayúsculas ni espacios) con `CampeonOficial.campeon`, suma `campeonOficial.puntos`
-  (que se fijó al guardar el campeón oficial desde la configuración).
-- **Trivias:** suma de `RespuestaTrivia.puntos` de todas las respuestas del jugador.
+Más un bloque adicional: **Trivias**, suma de `RespuestaTrivia.puntos` de todas las
+respuestas del jugador.
 
 ### 8.2 Forma de la respuesta
 
 ```json
 {
-  "Marco":  { "Campeón Mundial": 20, "Trivias": 3, "Jornada1": 12, "Jornada2": 8, "total": 43 },
-  "Andrea": { "Campeón Mundial": 0,  "Trivias": 5, "Jornada1": 9,  "Jornada2": 15, "total": 29 }
+  "Marco":  { "Trivias": 3, "Jornada1": 12, "Jornada2": 8, "total": 23 },
+  "Andrea": { "Trivias": 5, "Jornada1": 9,  "Jornada2": 15, "total": 29 }
 }
 ```
 
@@ -1330,9 +1331,8 @@ Es un patrón coherente y correcto, pero **está copiado y pegado en ~25 archivo
 
 ### 12.2 Qué copia
 
-Las nueve colecciones de dominio: `jugadors`, `jornadas`, `resultados`,
-`resultadooficials`, `trivias`, `respuestatrivias`, `equipos`, `pronosticocampeons`,
-`campeonoficials`.
+Las siete colecciones de dominio migrables: `jugadors`, `jornadas`, `resultados`,
+`resultadooficials`, `trivias`, `respuestatrivias` y `equipos`.
 
 Cada documento recibe `quinielaId`, `legacyId` y `migratedAt`; se descarta el `_id`
 original.
@@ -1354,22 +1354,22 @@ conectada ni modificada.
 
 ## 13. Pruebas y verificación
 
-### 13.1 Suite actual — 66 pruebas
+### 13.1 Suite actual — 75 pruebas
 
-Estado tras la Fase 4 (17 de agosto de 2026). Corren en **~14 segundos, sin red y
+Estado tras añadir la clasificación por jornada (17 de agosto de 2026). Corren en **~14 segundos, sin red y
 sin tocar la base real**. La primera corrida en una máquina nueva tarda más:
 `mongodb-memory-server` descarga su binario una sola vez.
 
 ```bash
-npm test                   # las dos suites: 66 pruebas
-npm run test:arquitectura  # 21 sobre el texto del código
-npm run test:integracion   # 45 contra un MongoDB en memoria
+npm test                   # las dos suites: 75 pruebas
+npm run test:arquitectura  # 25 sobre el texto del código
+npm run test:integracion   # 50 contra un MongoDB en memoria
 ```
 
 | Suite | Pruebas | Qué comprueba |
 |---|---:|---|
-| `test/architecture.test.js` | 21 | Invariantes estructurales por expresiones regulares sobre `server.js` y `migrate-legacy.js` |
-| `test/integracion.test.js` | 45 | El servidor en ejecución: HTTP real con `supertest` contra `mongodb-memory-server` |
+| `test/architecture.test.js` | 25 | Invariantes estructurales por expresiones regulares sobre `server.js` y `migrate-legacy.js` |
+| `test/integracion.test.js` | 50 | El servidor en ejecución: HTTP real con `supertest` contra `mongodb-memory-server` |
 
 ### 13.2 Las dos naturalezas, y para qué sirve cada una
 
@@ -1391,7 +1391,7 @@ abren sesiones, escriben en la base y leen la respuesta HTTP.
 | Área | Estado |
 |---|---|
 | Aislamiento multi-inquilino (C-02) | ✅ Verificado en ejecución, incluidas escrituras y borrados |
-| Motor de puntuación | ✅ Las cuatro reglas, marcadores nulos, campeón y trivias |
+| Motor de puntuación | ✅ Las cuatro reglas, marcadores nulos y trivias |
 | Invariantes de roles | ✅ Último administrador, autoexpulsión, Admin Mode, transferencia |
 | Autenticación | ✅ Unicidad, mensajes que no filtran, login por usuario o correo |
 | Índices únicos | ✅ S-10 verificado en ejecución |
@@ -1522,12 +1522,10 @@ en la interfaz.**
 
 | ID | Hallazgo | Ubicación |
 |---|---|---|
-| **M-01** | El vínculo con el jugador es por `username` (cadena), no por `ObjectId` | modelos `Resultado`, `RespuestaTrivia`, `PronosticoCampeon`, `Jugador` |
+| **M-01** | El vínculo con el jugador es por `username` (cadena), no por `ObjectId` | modelos `Resultado`, `RespuestaTrivia`, `Jugador` |
 | **M-02** | El vínculo partido↔pronóstico es por índice de array, sin identidad estable | `Jornada.partidos[]` |
 | **M-03** | Cambiar la configuración de puntuación **reescribe el histórico** de jornadas ya jugadas | `server.js:3378-3407` |
 | **M-04** | Incoherencia: los puntos de trivia sí quedan congelados; los de partido no | `Trivia`/`RespuestaTrivia` vs. `/api/resultados-totales` |
-| **M-05** | `EQUIPOS_MUNDIAL_2026`: 48 selecciones **incrustadas en el código** | `server.js:3115-3164` |
-| **M-06** | El cierre del pronóstico de campeón depende de una jornada llamada literalmente `"Jornada1"` | `server.js:3191`, `3242` |
 | **M-07** | `partidoYaInicio()` y `parseFechaPartido()` están **definidas dos veces**; gana la segunda | `server.js:1687-1708` vs. `1738-1768` |
 | **M-08** | `/generar_reporte` registrada dos veces | `server.js:911` y `3560` |
 | **M-09** | `/api/football/leagues` y `/api/football/leagues-test` son idénticas | `server.js:1180-1209` |
@@ -1649,7 +1647,7 @@ Ver bitácora, entrada 007.
 | # | Tarea | Estado |
 |---:|---|---|
 | 22 | Montar `mongodb-memory-server` + `supertest` | ✅ Arnés funcionando, ~8 s por corrida |
-| 23 | Pruebas del motor de puntuación | ✅ Las cuatro reglas, marcadores nulos, campeón y trivias |
+| 23 | Pruebas del motor de puntuación | ✅ Las cuatro reglas, marcadores nulos y trivias |
 | 24 | **Pruebas de aislamiento multi-inquilino** | ✅ **C-02 verificado en ejecución**, ver Anexo B |
 | 25 | Pruebas de las invariantes de roles | ✅ Último administrador, autoexpulsión, Admin Mode y transferencia de propiedad |
 | 26 | Pruebas de normalización de APIFootball | ✅ Estados, filtro de goles, marcador a 90' y equipos invertidos |
@@ -1682,11 +1680,17 @@ quinielas**.
 
 34. **Materializar los puntos por jornada** en una colección `PuntosJornada`
     `{quinielaId, jugador, jornada, puntos, calculadoEn}`, recalculada solo cuando
-    cambia un resultado oficial de esa jornada. **(C-03)**
+    cambia un resultado oficial de esa jornada. **(C-03)** ✅ Implementado en el
+    árbol local como un documento por jornada con un arreglo de jugadores; las
+    ediciones de jornada, pronósticos y oficiales lo recalculan o invalidan.
 35. Decidir y aplicar la política de congelamiento: **congelar los puntos al cerrar
-    la jornada** resuelve M-03 y M-04 de una vez.
-36. Caché en memoria (o Redis) del ranking con invalidación por evento.
-37. Paginación en todos los listados. **(M-26)**
+    la jornada** resuelve M-03 y M-04 de una vez. ✅ **Implementada localmente:**
+    todos los partidos deben ser definitivos; una corrección posterior conserva
+    las reglas originales.
+36. Caché en memoria (o Redis) del ranking con invalidación por evento. ✅ Caché
+    en memoria por quiniela, TTL configurable e invalidación tras mutaciones.
+37. Paginación en todos los listados. **(M-26)** 🟡 La tabla general ya usa
+    paginación de servidor; el resto de listados queda como deuda transversal.
 
 ### Fase 6 — Modularizar el monolito (3–4 sesiones)
 
@@ -1701,7 +1705,7 @@ src/
   middleware/     auth.js, tenant.js, adminMode.js, rateLimit.js, errors.js
   services/       apifootball.js, sync.js, trivias.js, puntuacion.js, ranking.js
   routes/         auth.js, quinielas.js, miembros.js, jornadas.js, resultados.js,
-                  trivias.js, campeon.js, football.js, debug.js
+                  trivias.js, football.js, debug.js
   jobs/           syncScheduler.js, triviaResolver.js
   app.js
 server.js         → solo arranque
@@ -1715,19 +1719,16 @@ worker.js         → solo jobs
 
 41. **Verificación de correo** (el modelo ya está listo). **(S-08)**
 42. **Recuperación de contraseña.** **(S-09)**
-43. **Configuración de campeonato por quiniela**: sustituir `EQUIPOS_MUNDIAL_2026`
-    por una lista configurable, y `"Jornada1"` por una `fechaCierreCampeon` explícita.
-    **(M-05, M-06)**
-44. **Identidad estable**: migrar los vínculos de `username` a `usuarioId`, y de
+43. **Identidad estable**: migrar los vínculos de `username` a `usuarioId`, y de
     índice de array a `partidoId`. **(M-01, M-02)**
-45. **Registro de auditoría** de acciones administrativas. **(M-28)**
-46. **Notificaciones** por correo o push: solicitud de ingreso, aprobación, cierre
+44. **Registro de auditoría** de acciones administrativas. **(M-28)**
+45. **Notificaciones** por correo o push: solicitud de ingreso, aprobación, cierre
     de jornada, resultados publicados. **(M-29)**
-47. **Rotación y caducidad del código de ingreso.** **(M-27)**
-48. **Resolución manual de trivias** cuando el API falla.
-49. **Escapado sistemático en el frontend**: función `escapar()` compartida o
+46. **Rotación y caducidad del código de ingreso.** **(M-27)**
+47. **Resolución manual de trivias** cuando el API falla.
+48. **Escapado sistemático en el frontend**: función `escapar()` compartida o
     migración a `textContent`. **(S-04)**
-50. **Observabilidad**: `pino` para logs estructurados, métricas Prometheus,
+49. **Observabilidad**: `pino` para logs estructurados, métricas Prometheus,
     Sentry para errores. **(M-24)**
 
 ### Resumen de prioridades
@@ -3022,6 +3023,278 @@ mirara el resultado habría pasado igual antes y después.
 **Pendiente / siguiente paso:** **Fase 5 — rendimiento del ranking (C-03)**, que
 arranca con una decisión de producto: si los puntos de una jornada se congelan al
 cerrarla (M-03, M-04).
+
+---
+
+### 📌 Entrada 011 — 17 de agosto de 2026 — Auditoría de continuidad y Fase 5 en curso
+
+**Objetivo:** releer íntegramente la fuente de verdad del proyecto, contrastarla
+con el repositorio real y dejar un punto de reanudación exacto antes de continuar.
+
+**Qué se hizo:**
+
+1. Se leyeron completas las 3.052 líneas de `avance_proyecto.md`, incluidos el
+   análisis original, los dos anexos, las diez entradas anteriores y la plantilla
+   de mantenimiento.
+2. Se contrastaron rama, historial, árbol de trabajo, dependencias, scripts,
+   modelos, rutas críticas, sincronizador, ranking y pruebas con lo documentado.
+3. Se confirmó que `main` y `origin/main` están en `e2f8d3f`, mientras
+   `fase-4-sincronizador` está dos commits por delante, en `73b6ca0`.
+4. Se encontró trabajo local **sin confirmar** posterior a la Entrada 010:
+   553 inserciones y 91 eliminaciones en `server.js` y las dos suites de pruebas.
+   No se descartó ni se modificó ese trabajo.
+5. Se identificó que ese diff inicia la Fase 5: añade el modelo multi-inquilino
+   `PuntosJornada`, extrae la regla de puntos a funciones reutilizables, congela
+   jornadas terminadas y hace que el ranking lea el materializado en vez de las
+   colecciones completas de pronósticos y oficiales.
+6. Se verificó la política codificada: una jornada se congela cuando todos sus
+   partidos están en `TC` o `bloqueadoFinal`; cambiar después la configuración no
+   reescribe el pasado, y corregir un marcador recalcula usando la puntuación
+   guardada de esa jornada.
+7. Se actualizó el punto de partida y el roadmap para distinguir claramente lo
+   completado, lo que está en curso y lo que aún no se inició.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Estado real de Git y pruebas, Fase 5 marcada en curso, hallazgos de revisión y esta entrada |
+
+> Los cambios ya existentes de `server.js`, `test/architecture.test.js` y
+> `test/integracion.test.js` fueron únicamente inspeccionados; esta auditoría no
+> los creó ni los alteró.
+
+**Verificación:**
+
+```
+git diff --check          → limpio
+npm run check             → sintaxis válida
+npm test                  → 71/71 (23 arquitectura + 48 integración)
+duración                  → ~8,2 s, sin red y sin tocar la base real
+npm audit --omit=dev      → 0 vulnerabilidades
+git status                → Fase 5 local sin confirmar + este documento modificado
+```
+
+**Hallazgos nuevos:**
+
+- **Invalidación incompleta de la Fase 5:** el materializado se actualiza al
+  cambiar pronósticos o resultados oficiales y se borra al eliminar la jornada,
+  pero no al modificar `Jornada.partidos` desde las rutas de crear/importar,
+  agregar, eliminar partidos o cambiar comodín. Como `puntosDeJornada()` depende
+  del orden, cantidad y bandera `comodin` de ese arreglo, una jornada ya congelada
+  puede mostrar puntos obsoletos. Debe corregirse o impedir esas mutaciones una vez
+  cerrada antes de confirmar la Fase 5.
+- **Forma de `PuntosJornada` por decidir:** el roadmap proponía un documento por
+  jugador y jornada; el trabajo local usa un documento por jornada con todos los
+  jugadores dentro. Reduce el número de documentos leídos, pero hace crecer un
+  solo documento, reescribe todo su arreglo en cada corrección y condiciona la
+  paginación del punto 37. No es necesariamente incorrecto, pero sí una decisión
+  de escala que debe ser explícita.
+- **C-03 está mitigado, no cerrado:** con todo congelado ya no se leen
+  `Resultado` ni `ResultadoOficial`, pero el endpoint todavía arma y devuelve la
+  clasificación completa. Faltan la caché con invalidación (punto 36) y la
+  paginación (punto 37).
+- La cifra vigente es **71 pruebas**, no 66. El documento conservaba correctamente
+  66 como cierre histórico de la Fase 4, pero el punto de partida ya necesitaba
+  reflejar el árbol local.
+
+**Pendiente / siguiente paso:** terminar la primera parte de la Fase 5 sobre el
+trabajo local existente: cerrar todas las invalidaciones de `PuntosJornada`, decidir
+su forma de almacenamiento pensando en la paginación, añadir las pruebas de esas
+decisiones y solo entonces documentar/confirmar los puntos 34 y 35. Después siguen
+la caché del ranking y la paginación; la Fase 5 todavía no debe marcarse completa.
+
+---
+
+### 📌 Entrada 012 — 17 de agosto de 2026 — Fase 5: ranking materializado, caché y paginación
+
+**Objetivo:** cerrar el cuello de botella C-03 de la tabla general, fijar una
+política histórica coherente de puntuación y protegerla frente a todas las rutas
+que pueden modificar una jornada.
+
+**Qué se hizo:**
+
+1. Se completó `PuntosJornada`, con un documento aislado por quiniela y jornada.
+   Guarda los puntos de todos los jugadores, la configuración que los produjo y
+   la fecha de congelamiento. Los subdocumentos de puntos no llevan `_id`, para no
+   desperdiciar espacio por jugador.
+2. Se consolidó la política de producto: una jornada se congela cuando todos sus
+   partidos están `TC` o `bloqueadoFinal`. Cambiar la puntuación después no mueve
+   el histórico; una corrección oficial recalcula con las reglas guardadas de la
+   propia jornada.
+3. Se cerró la invalidación que detectó la Entrada 011. Crear/importar jornadas,
+   agregar o quitar partidos y cambiar comodines ahora llaman a
+   `actualizarPuntosDeJornada()`. Si la jornada deja de estar completa, se elimina
+   el materializado; si sigue terminada, se recalcula con su configuración histórica.
+4. Se añadió caché en memoria por quiniela para `/api/resultados-totales`, con TTL
+   configurable mediante `RANKING_CACHE_TTL_MS` (60 s por defecto). Se invalida en
+   cambios de resultados, jornadas, pronósticos, membresías, trivias y campeón.
+5. Se añadió paginación de servidor opcional al ranking:
+   `GET /api/resultados-totales?pagina=1&limite=25`. Sin parámetros conserva la
+   respuesta histórica de objeto para no romper consumidores existentes.
+6. La interfaz `resultados-totales.html` consume la versión paginada, ordenada por
+   total descendente, y muestra controles Anterior/Siguiente. El límite máximo por
+   petición es 100.
+7. Se añadieron cuatro pruebas de arquitectura y dos de integración: edición de
+   jornada congelada, caché, invalidación y paginación.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | `PuntosJornada`, congelamiento, invalidación completa, caché y respuesta paginada del ranking |
+| `private/js/resultados-totales.js` | Carga paginada y controles de navegación |
+| `public/resultados-totales.html` | Contenedor accesible de paginación |
+| `test/architecture.test.js` | Invariantes de edición de jornada, caché y paginación |
+| `test/integracion.test.js` | Casos reales de descongelamiento, caché e interfaz API paginada |
+| `.env.example` | `RANKING_CACHE_TTL_MS` |
+| `avance_proyecto.md` | Modelo, configuración, roadmap, pruebas y esta entrada |
+
+**Verificación:**
+
+```
+npm run check             → sintaxis válida
+node --check private/js/resultados-totales.js → sintaxis válida
+npm test                  → 75/75 (25 arquitectura + 50 integración)
+duración                  → ~18 s, sin red y sin tocar la base real
+npm audit --omit=dev      → 0 vulnerabilidades
+git diff --check          → limpio
+```
+
+**Hallazgos nuevos:**
+
+- **M-26 sigue parcialmente abierto.** La tabla general, que era el punto crítico
+  de C-03, ya pagina en el servidor. Los demás listados de la aplicación siguen
+  devolviendo colecciones completas y requieren una fase transversal propia para
+  paginarse sin romper sus interfaces.
+- La caché es **por instancia**, igual que las métricas del sincronizador. Para un
+  despliegue con varias instancias es correcta gracias a la invalidación local y
+  al TTL corto, pero Redis sería el siguiente paso si se necesita coherencia
+  inmediata entre procesos.
+
+**Pendiente / siguiente paso:** confirmar este trabajo de la Fase 5 en Git tras una
+prueba de humo visual de la tabla general. Después, decidir si la paginación del
+resto de listados se convierte en una subfase específica de M-26 o se aborda junto
+con la modularización de la Fase 6. C-03, M-03 y M-04 quedan resueltos en el árbol
+local; M-26 no se debe cerrar todavía.
+
+---
+
+### 📌 Entrada 013 — 17 de agosto de 2026 — Retiro del módulo de Campeón del Mundo
+
+**Objetivo:** eliminar la funcionalidad específica del Mundial que ya no forma
+parte del producto, sin dejar rutas, puntuaciones ni pantallas huérfanas.
+
+**Qué se hizo:**
+
+1. Se retiraron los modelos `PronosticoCampeon` y `CampeonOficial`, sus índices y
+   las dos colecciones de la lista de migración heredada.
+2. Se eliminaron las siete rutas HTTP asociadas, incluida la lista fija de equipos
+   del Mundial y toda la lógica de puntos extra en el ranking.
+3. Se quitó el campo `campeon` de la configuración de puntuación y de la interfaz
+   de configuración de quiniela.
+4. Se eliminaron las tres páginas, sus tres scripts, los accesos desde Inicio y
+   Admin Mode, y los estilos exclusivos de esa tabla.
+5. Se actualizó el ranking para que solo priorice Trivias como columna especial y
+   se retiró la prueba específica de campeón.
+6. Se conservan intactos los filtros de importación que mencionan competiciones
+   mundialistas: sirven para buscar partidos y no pertenecen al módulo eliminado.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Modelos, rutas, configuración y cálculo de campeón eliminados |
+| `scripts/migrate-legacy.js` | Ya no importa colecciones de campeón |
+| `public/*` y `private/js/*` | Tres pantallas/scripts eliminados; enlaces y configuración limpiados |
+| `private/css/styles.css` | Estilos exclusivos retirados |
+| `test/*` | Pruebas y expectativas de campeón retiradas |
+| `README.md` | Descripción de producto actualizada |
+| `avance_proyecto.md` | Inventario, modelo, endpoints, ranking, roadmap y esta entrada |
+
+**Verificación:**
+
+```
+npm run check             → sintaxis válida
+npm test                  → 74/74 (25 arquitectura + 49 integración)
+duración                  → ~14 s, sin red y sin tocar la base real
+```
+
+**Hallazgos nuevos:**
+
+- El código ya no lee ni escribe `pronosticocampeons` ni `campeonoficials`, pero
+  **los documentos históricos existentes no se borraron de MongoDB**. Eliminar
+  datos de producción es una operación irreversible y requiere una orden
+  explícita separada; mientras tanto son datos inactivos e inocuos.
+- Las referencias al campeón en entradas históricas previas se conservan como
+  bitácora de lo que existió. El estado vigente del documento ya no lo incluye.
+
+**Pendiente / siguiente paso:** prueba de humo visual de Inicio, Admin Mode,
+Configuración de quiniela y Tabla General. Si después se quiere limpiar también las
+dos colecciones históricas de Atlas, primero se debe confirmar explícitamente la
+base y el alcance del borrado.
+
+---
+
+### 📌 Entrada 014 — 17 de agosto de 2026 — Clasificación por jornada
+
+**Objetivo:** añadir una tabla independiente para consultar quién ganó cada
+jornada, sin mezclar puntos de trivias con los pronósticos de partidos.
+
+**Qué se hizo:**
+
+1. Se creó `GET /api/clasificacion-jornada`. Sin parámetro selecciona la jornada
+   creada más recientemente; `?jornada=…` permite consultar cualquiera de la
+   quiniela activa.
+2. La respuesta indica `estado: 'provisional'` mientras quede algún partido sin
+   resultado definitivo y `estado: 'confirmada'` cuando todos estén `TC` o
+   bloqueados como finales. Una jornada confirmada reutiliza `PuntosJornada` y se
+   materializa si aún no existía; una provisional calcula el estado actual.
+3. La clasificación considera **solo puntos de pronósticos de partidos**. Las
+   trivias no se leen ni se suman en esta pantalla, por decisión de producto.
+4. Los empates conservan exactamente los mismos puntos y el mismo puesto. Para
+   ordenar visualmente filas con igual puntaje se usan, en este orden: más
+   marcadores exactos, más resultados correctos y menor diferencia total de goles
+   pronosticados respecto al marcador oficial. Si todo coincide, siguen empatados.
+5. Se añadió `clasificacion-jornada.html`, con selector de jornada, estado visible,
+   puestos 1.º, 2.º, 3.º…, criterios de orden y enlace de regreso.
+6. La barra inferior de las pantallas existentes sustituye **Reglamento** por
+   **Por jornada**. El reglamento sigue disponible desde la tarjeta de Inicio;
+   no se eliminó su página.
+7. Se añadió una prueba de integración que cubre la jornada más reciente por
+   defecto, el estado provisional, un empate ordenado por marcador exacto, la
+   exclusión de trivia y la confirmación/materialización al cerrar la jornada.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Estadísticas de desempate visual y endpoint de clasificación por jornada |
+| `public/clasificacion-jornada.html` | Nueva pantalla de consulta y tabla de posiciones |
+| `private/js/clasificacion-jornada.js` | Carga inicial, selector y renderizado seguro de la clasificación |
+| `public/*.html` | Barra inferior actualizada de Reglamento a Por jornada |
+| `test/integracion.test.js` | Caso provisional, empate, exclusión de trivias y jornada confirmada |
+| `avance_proyecto.md` | Endpoint, contador de pruebas, estado vigente y esta entrada |
+
+**Verificación:**
+
+```
+npm run check                              → sintaxis válida
+node --check private/js/clasificacion-jornada.js → sintaxis válida
+npm test                                   → 75/75 (25 arquitectura + 50 integración)
+```
+
+**Hallazgos nuevos:**
+
+- El estado provisional se calcula directamente a partir de los marcadores
+  oficiales disponibles; no congela puntos ni altera el histórico.
+- Los criterios de desempate solo ordenan la vista. No cambian puntos, puestos ni
+  declaran un ganador único cuando existe igualdad de puntaje.
+
+**Pendiente / siguiente paso:** realizar una prueba de humo visual con una jornada
+en curso y una finalizada. Si más adelante se necesita otra política de desempate,
+debe añadirse como configuración explícita de administración, no cambiar esta regla
+por defecto silenciosamente.
 
 ---
 

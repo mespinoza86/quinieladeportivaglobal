@@ -1228,31 +1228,6 @@ button + button {
   overflow-x: auto;
 }
 
-.campeon-table {
-  min-width: 100%;
-  table-layout: fixed;
-}
-
-.campeon-table th,
-.campeon-table td {
-  white-space: normal;
-  word-break: break-word;
-}
-
-.campeon-table th:first-child,
-.campeon-table td:first-child {
-  width: 35%;
-}
-
-.campeon-table th:last-child,
-.campeon-table td:last-child {
-  width: 65%;
-}
-
-.campeon-table td {
-  font-size: 14px;
-}
-
 .partido-comodin {
   position: relative;
   border: 2px solid #facc15;
