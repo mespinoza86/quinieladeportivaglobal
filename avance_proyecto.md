@@ -19,18 +19,25 @@
 
 ### Dónde estamos
 
-**Fases 0 a 4 completadas.** Las cuatro primeras el 16 de agosto de 2026; la
-Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— el 17.
+**Fases 0 a 5 completadas**, y con ellas la Fase 6 de endurecimiento
+(entradas 016–023 del 18 de agosto de 2026).
 
-**La Fase 5 y las mejoras posteriores ya están en `main` y en `origin`**, fusionadas
-el 18 de agosto de 2026. `PuntosJornada` materializa las jornadas terminadas, la
-puntuación histórica se congela con sus reglas originales, el ranking tiene caché
-por quiniela con invalidación por evento y la tabla general se pagina en la
-interfaz. Las **105 pruebas** actuales pasan. Además existe una tabla por jornada:
-por defecto abre la más reciente y muestra una clasificación provisional o
-confirmada que excluye permanentemente las trivias. La paginación de los demás listados
-del sistema (M-26) queda pendiente: no se debe confundir con la paginación ya
-resuelta de la tabla general.
+**Las cinco prioridades altas de la auditoría (Entrada 015) están cerradas:**
+plazos del sincronizador, validación de dominio, privacidad de pronósticos,
+S-04 (inyección de HTML) y transacciones. La red de pruebas pasó de 75 a **105
+pruebas** más **18 de navegador** con Playwright, en escritorio y móvil.
+
+Dos cambios de producto que conviene tener presentes al retomar:
+
+- **El cierre es POR PARTIDO, no por jornada.** La jornada ya no tiene
+  `fechaCierre`: un partido se cierra a su hora de inicio, y ahí mismo su
+  pronóstico deja de poder editarse y pasa a ser visible para los demás. Una
+  sola regla para las dos cosas (Entrada 019).
+- **El módulo de Campeón del Mundo se retiró** (Entrada 013). Sus dos
+  colecciones siguen en Mongo, inertes.
+
+Sigue pendiente la paginación de los demás listados (M-26): no se debe confundir
+con la de la tabla general, que sí está resuelta.
 
 | Fase | Qué se hizo | Bitácora |
 |---|---|---|
@@ -59,26 +66,40 @@ misma caché. Ver §9.4 y la bitácora 010.
 ### Estado de Git
 
 ```
-64ec3ce  Applying changes for tabla por jornada               ← fase-4-sincronizador (HEAD)
-73b6ca0  Anotar el hash de la Fase 4 en el documento
-f15dad3  Fase 4: rediseno del sincronizador (C-01 y C-05)
-e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main, origin/main
-d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia
-a2e91df  Fase 3: red de seguridad de pruebas de integracion
-200c3c0  Fase 2: cerrar la fuga entre quinielas y los bugs de dominio
-f454d81  Fase 1: seguridad de base y resiliencia de la conexion
-c17d131  Fase 0: higiene previa al trabajo de escalado
-f92462b  Implementar arquitectura multi-quiniela
+71f076f Primeras pruebas de navegador con Playwright
+1185c08 Transacciones en las secuencias de varias escrituras
+01dcfe5 S-04: construccion de HTML sin agujeros de inyeccion
+a1b37da La cache del ranking sobrevive al minuto en vivo
+d0724be El cierre es por partido, no por jornada
+4f6b46b Ojo para ver la contrasena y mensaje unificado al fallar
+2e2730f Endurecimiento 017: validacion de dominio y privacidad de pronosticos
+6c4013e Endurecimiento 016: plazos del sincronizador y lectura de la tabla por jornada
+19f31b5 fixing md file
+64ec3ce Applying changes for tabla por jornada
+73b6ca0 Anotar el hash de la Fase 4 en el documento de avance
+f15dad3 Fase 4: rediseno del sincronizador (C-01 y C-05)
+e2f8d3f Dejar el punto de partida para retomar el trabajo
+d55dabb Cerrar la Fase 3: trivias, marcador a 90 y transferencia
 ```
 
-La cadena de cinco ramas encadenadas **ya se fusionó**: el 17 de agosto se llevó
-`fase-3-pruebas` a `main` con avance rápido y se borraron las cuatro ramas
-intermedias. `main` y `origin/main` están en `e2f8d3f`; la rama actual está dos
-commits por delante y todavía falta fusionarla a `main` y empujar ese avance.
+Los ocho commits del 18 de agosto (entradas 016–023) se hicieron en ramas cortas.
+**Al escribir esto, `main` y `origin/main` están en `d0724be`**: los cuatro
+últimos —caché del ranking, S-04, transacciones y Playwright— viven todavía en
+la rama `e2e-playwright` y falta llevarlos a `main`:
 
-El árbol de trabajo estaba limpio al terminar la auditoría de la Entrada 015.
-La única modificación posterior a ese punto es la propia documentación de dicha
-auditoría; no se debe confundir con trabajo funcional pendiente.
+```bash
+git checkout main
+git merge --ff-only e2e-playwright
+git push origin main
+```
+
+> ⚠️ Esta lista es una foto y envejece. **Comprueba con `git log --oneline` y
+> `git branch -vv` dónde está `main` de verdad** antes de fiarte de ella; el
+> bloque anterior a este llevaba desactualizado desde la Entrada 015.
+
+Hecha la fusión, las ramas `fase-4-sincronizador`, `fase-6-endurecimiento`,
+`cache-ranking`, `s04-xss`, `transacciones` y `e2e-playwright` quedan contenidas
+en `main` y se pueden borrar con `git branch -d`.
 
 > ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
 > `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
@@ -114,23 +135,28 @@ npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 ```
 
-### Lo siguiente: endurecimiento antes de producción
+### Lo siguiente
 
-Con el sincronizador arreglado, el siguiente cuello de botella es la lectura.
-`/api/resultados-totales` lee **seis colecciones completas** y recalcula todo el
-ranking histórico **en cada petición**. Hoy no se nota; con temporadas
-acumuladas y varias quinielas activas, sí.
+Por orden de valor, y ninguna es ya una prioridad alta de la auditoría:
 
-El plan de Fase 5 está en §16 (puntos 34–37). Estado real confirmado localmente:
+1. **Ampliar las pruebas de navegador** a las pantallas de resultados y trivias,
+   que son las que más plantillas tienen y las que más se han tocado.
+2. **Endurecer la CSP.** El escapado de S-04 es hoy la **única** línea de
+   defensa: la política sigue permitiendo `unsafe-inline` en `script-src` y en
+   `script-src-attr` porque el frontend tiene 63 manejadores `onclick=` en
+   atributo. Convertirlos a `addEventListener` permitiría cerrarla, y entonces
+   el escapado pasaría a ser defensa en profundidad.
+3. **Integración continua.** Ahora ya hay algo que ejecutar: `npm test`,
+   `npm run test:e2e` y `npm audit`.
+4. **M-26**, la paginación de los listados restantes. `GET /api/resultados` es el
+   caso de manual: devuelve todos los pronósticos de todas las jornadas.
+5. **Fase 6 de modularización.** `server.js` pasa de 5.000 líneas. Ya hay red de
+   pruebas suficiente para dividirlo con seguridad.
 
-1. ✅ `PuntosJornada` está implementado, incluidas las invalidaciones
-   al editar la jornada, los pronósticos o los resultados oficiales.
-2. ✅ La jornada se congela cuando todos los partidos son definitivos; una
-   corrección posterior usa las reglas guardadas de esa jornada.
-3. ✅ Caché en memoria por quiniela, con TTL de 60 s e invalidación por evento.
-4. 🟡 La tabla general ya está paginada; los demás listados (M-26) siguen pendientes.
-
-El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo.
+Y los medios sin resolver de la Entrada 015: una jornada aplazada o cancelada
+queda provisional para siempre; la "última jornada" se elige por `createdAt` y no
+por orden competitivo; y no hay política escrita sobre los miembros que entran a
+mitad de temporada.
 
 ### Decisiones abiertas que dependen del usuario
 
@@ -153,6 +179,16 @@ El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo
   siguiendo los mismos partidos. Desde la Entrada 016 también conviene mirar
   `ciclosAbandonadosPorTiempo`: si crece, el proveedor está tardando más que el
   plazo del ciclo y hay que revisar `APIFOOTBALL_TIMEOUT_MS`.
+- **Vigilar `syncsSinCambioDePuntos`** en el primer domingo con partidos en
+  vivo: debe crecer mucho más deprisa que `jornadasReescritas`. Si no, la caché
+  del ranking se está tirando sin motivo (Entrada 020).
+- **Las pruebas de navegador necesitan `npx playwright install chromium`** una
+  vez por máquina. Los navegadores no van en el repositorio.
+- **Código muerto localizado y no retirado:** `private/js/llenar_jornada.js` no
+  lo carga ninguna pantalla —las dos de llenar jornada usan
+  `llenar_jornada_user.js`—, y `server.js` conserva el marcador
+  `////////////borrar borrar` y el bloque comentado de `footballApi`. Todo ello
+  es material para la fase de modularización.
 
 ---
 
