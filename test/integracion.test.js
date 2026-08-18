@@ -818,3 +818,330 @@ test('M-11: no se anulan los goles de jugadores con "var" en el apellido', () =>
     srv.esGolApiFootball({ home_scorer: 'X. Jugador', score_info_time: 'penalty' }), false
   );
 });
+
+/* ================================================================
+ * Fase 4 — Sincronizador: deduplicación, ventanas y cerrojo
+ *
+ * Ninguna de estas pruebas toca la red. El sincronizador habla con el
+ * proveedor por un único punto —`proveedorDeEventos`— y aquí se sustituye por
+ * eventos sintéticos que además CUENTAN las consultas. Ese conteo es el objeto
+ * de la prueba: el hallazgo C-01 no era un error de resultado, era un error de
+ * cuántas veces se preguntaba.
+ * ================================================================ */
+
+/** Sustituye el proveedor por uno sintético que lleva la cuenta de consultas. */
+function proveedorFalso(eventosPorId = {}) {
+  const consultas = { porId: [], porFecha: [] };
+
+  const originalPorId = srv.proveedorDeEventos.porId;
+  const originalPorFecha = srv.proveedorDeEventos.porFecha;
+
+  srv.proveedorDeEventos.porId = async (id) => {
+    consultas.porId.push(String(id));
+    return eventosPorId[String(id)] || null;
+  };
+
+  srv.proveedorDeEventos.porFecha = async (partido) => {
+    consultas.porFecha.push(partido);
+    return null;
+  };
+
+  return {
+    consultas,
+    /** Cuántas veces se preguntó por un partido concreto. */
+    vecesConsultado(id) {
+      return consultas.porId.filter(consultado => consultado === String(id)).length;
+    },
+    restaurar() {
+      srv.proveedorDeEventos.porId = originalPorId;
+      srv.proveedorDeEventos.porFecha = originalPorFecha;
+    }
+  };
+}
+
+/** Evento con la forma que devuelve APIFootball para un partido terminado. */
+function eventoTerminado(idPartido, local, visita, golesLocal, golesVisita) {
+  return {
+    match_id: String(idPartido),
+    match_status: 'Finished',
+    match_live: '0',
+    match_hometeam_name: local,
+    match_awayteam_name: visita,
+    match_hometeam_score: String(golesLocal),
+    match_awayteam_score: String(golesVisita),
+    match_hometeam_ft_score: String(golesLocal),
+    match_awayteam_ft_score: String(golesVisita),
+    goalscorer: [],
+    cards: []
+  };
+}
+
+test('C-01: un partido seguido por dos quinielas se consulta UNA vez', async () => {
+  const { agente: agenteA } = await cuentaNueva('sync_a');
+  const { agente: agenteB } = await cuentaNueva('sync_b');
+  const quinielaA = await quinielaNueva(agenteA, 'Sync Alfa');
+  const quinielaB = await quinielaNueva(agenteB, 'Sync Beta');
+
+  const idA = new mongoose.Types.ObjectId(quinielaA.id);
+  const idB = new mongoose.Types.ObjectId(quinielaB.id);
+
+  // El mismo partido real, seguido desde dos quinielas distintas.
+  const partido = {
+    equipo1: 'Costa Rica',
+    equipo2: 'Panamá',
+    apiFixtureId: '900001',
+    apiDate: '2026-06-20 15:00'
+  };
+
+  await enQuiniela(idA, () => srv.Jornada.create({ nombre: 'JornadaSync', partidos: [partido] }));
+  await enQuiniela(idB, () => srv.Jornada.create({ nombre: 'JornadaSync', partidos: [partido] }));
+
+  await srv.Fixture.deleteMany({ clave: '900001' });
+
+  const proveedor = proveedorFalso({
+    900001: eventoTerminado(900001, 'Costa Rica', 'Panamá', 2, 1)
+  });
+
+  try {
+    await srv.ejecutarCicloDeSincronizacion();
+  } finally {
+    proveedor.restaurar();
+  }
+
+  /*
+   * El corazón de la Fase 4. Antes eran dos consultas —una por quiniela— y con
+   * cuarenta quinielas habrían sido cuarenta. Ahora el partido es uno solo.
+   */
+  assert.equal(proveedor.vecesConsultado('900001'), 1,
+    'El mismo partido debe consultarse una sola vez aunque lo sigan varias quinielas');
+
+  // Y aun así las DOS quinielas quedan con su resultado escrito.
+  const oficialA = await enQuiniela(idA, () => srv.ResultadoOficial.findOne({ jornada: 'JornadaSync' }));
+  const oficialB = await enQuiniela(idB, () => srv.ResultadoOficial.findOne({ jornada: 'JornadaSync' }));
+
+  assert.ok(oficialA, 'La quiniela A debe quedar sincronizada');
+  assert.ok(oficialB, 'La quiniela B debe quedar sincronizada');
+  assert.equal(oficialA.resultados[0].marcador1, 2);
+  assert.equal(oficialA.resultados[0].marcador2, 1);
+  assert.equal(oficialB.resultados[0].marcador1, 2);
+  assert.equal(oficialB.resultados[0].estado, 'TC');
+
+  // Cada resultado vive en su propia quiniela, no en un documento compartido.
+  assert.notEqual(oficialA._id.toString(), oficialB._id.toString());
+  assert.equal(oficialA.quinielaId.toString(), idA.toString());
+  assert.equal(oficialB.quinielaId.toString(), idB.toString());
+});
+
+test('un partido terminado no se vuelve a consultar nunca', async () => {
+  await srv.Fixture.deleteMany({ clave: '900002' });
+
+  await srv.Fixture.create({
+    clave: '900002',
+    apiFixtureId: '900002',
+    estado: 'TC',
+    proximaConsulta: null,
+    evento: eventoTerminado(900002, 'A', 'B', 1, 0)
+  });
+
+  const catalogo = new Map([['900002', {
+    clave: '900002',
+    apiFixtureId: '900002',
+    apiDate: '2026-06-01 12:00',
+    busqueda: { fecha: '2026-06-01', ligaId: '', equipo1: 'A', equipo2: 'B' }
+  }]]);
+
+  const proveedor = proveedorFalso();
+
+  try {
+    const refrescadas = await srv.refrescarFixturesPendientes(catalogo);
+    assert.equal(refrescadas.size, 0);
+  } finally {
+    proveedor.restaurar();
+  }
+
+  assert.equal(proveedor.consultas.porId.length, 0,
+    'Un partido con estado TC ya no puede cambiar: consultarlo es cuota tirada');
+});
+
+test('dentro de su ventana, un partido tampoco se consulta', async () => {
+  await srv.Fixture.deleteMany({ clave: '900003' });
+
+  await srv.Fixture.create({
+    clave: '900003',
+    apiFixtureId: '900003',
+    estado: 'PROGRAMADO',
+    // Todavía faltan horas para que toque preguntar otra vez.
+    proximaConsulta: new Date(Date.now() + 3 * 60 * 60 * 1000)
+  });
+
+  const catalogo = new Map([['900003', {
+    clave: '900003',
+    apiFixtureId: '900003',
+    apiDate: '2026-07-01 12:00',
+    busqueda: { fecha: '2026-07-01', ligaId: '', equipo1: 'A', equipo2: 'B' }
+  }]]);
+
+  const proveedor = proveedorFalso();
+
+  try {
+    await srv.refrescarFixturesPendientes(catalogo);
+    assert.equal(proveedor.consultas.porId.length, 0, 'La ventana aún no ha vencido');
+
+    // Con `forzar`, que es lo que hace un administrador al pulsar "sincronizar".
+    await srv.refrescarFixturesPendientes(catalogo, { forzar: true });
+    assert.equal(proveedor.consultas.porId.length, 1,
+      'La petición manual sí debe saltarse la ventana');
+  } finally {
+    proveedor.restaurar();
+  }
+});
+
+test('la ventana de consulta depende del estado y nunca se salta el inicio', () => {
+  const ahora = new Date('2026-06-20T12:00:00Z');
+  const minutos = (fecha) => Math.round((fecha.getTime() - ahora.getTime()) / 60000);
+
+  // Terminado: nunca más.
+  assert.equal(srv.calcularProximaConsulta('TC', '2026-06-20 06:00', ahora), null);
+
+  // En vivo: cada minuto.
+  assert.equal(minutos(srv.calcularProximaConsulta('LIVE', '2026-06-20 05:00', ahora)), 1);
+  assert.equal(minutos(srv.calcularProximaConsulta('MT', '2026-06-20 05:00', ahora)), 1);
+
+  /*
+   * Costa Rica es UTC-6, así que "2026-06-20 12:30" son las 18:30 UTC: faltan
+   * seis horas y media, que es la ventana "lejano".
+   */
+  const lejano = srv.calcularProximaConsulta('PROGRAMADO', '2026-06-20 12:30', ahora);
+  assert.equal(minutos(lejano), 360, 'Un partido lejano se revisa cada seis horas');
+
+  // "07:30" en Costa Rica son las 13:30 UTC: falta hora y media.
+  const inminente = srv.calcularProximaConsulta('PROGRAMADO', '2026-06-20 07:30', ahora);
+  assert.equal(minutos(inminente), 15, 'A hora y media del inicio se revisa cada quince minutos');
+
+  /*
+   * El tope que evita el error silencioso: un partido que empieza dentro de
+   * cinco minutos cae en la ventana "inminente" de quince, y sin el tope se
+   * consultaría por primera vez diez minutos después de haber empezado.
+   */
+  const casiEmpieza = srv.calcularProximaConsulta('PROGRAMADO', '2026-06-20 06:05', ahora);
+  assert.equal(minutos(casiEmpieza), 5, 'La consulta se adelanta al pitido inicial');
+
+  // Sin fecha del proveedor no hay nada que calcular: media hora.
+  assert.equal(minutos(srv.calcularProximaConsulta('PROGRAMADO', '', ahora)), 30);
+});
+
+test('el cerrojo impide que dos instancias sincronicen a la vez', async () => {
+  await srv.JobLock.deleteMany({ nombre: srv.CERROJO_SYNC });
+
+  const primero = await srv.tomarCerrojo(srv.CERROJO_SYNC, 60 * 1000);
+  assert.equal(primero, true, 'El primero en llegar se lo lleva');
+
+  const segundo = await srv.tomarCerrojo(srv.CERROJO_SYNC, 60 * 1000);
+  assert.equal(segundo, false, 'Mientras esté vivo, nadie más puede tomarlo');
+
+  /*
+   * Un ciclo que arranca con el cerrojo tomado se retira sin hacer nada. Eso es
+   * lo que evita que N instancias del proceso web hagan N sincronizaciones
+   * simultáneas, que era el hallazgo C-05.
+   */
+  const resultado = await srv.ejecutarCicloDeSincronizacion();
+  assert.equal(resultado.omitido, true);
+
+  await srv.soltarCerrojo(srv.CERROJO_SYNC);
+
+  const tercero = await srv.tomarCerrojo(srv.CERROJO_SYNC, 60 * 1000);
+  assert.equal(tercero, true, 'Una vez suelto, vuelve a estar disponible');
+
+  await srv.soltarCerrojo(srv.CERROJO_SYNC);
+});
+
+test('un cerrojo caducado se puede volver a tomar', async () => {
+  await srv.JobLock.deleteMany({ nombre: 'cerrojo-de-prueba' });
+
+  // Lo toma alguien que luego "muere" sin soltarlo.
+  assert.equal(await srv.tomarCerrojo('cerrojo-de-prueba', 50), true);
+  assert.equal(await srv.tomarCerrojo('cerrojo-de-prueba', 50), false);
+
+  /*
+   * Sin caducidad, un proceso que cae a mitad de ciclo dejaría la
+   * sincronización parada para siempre. Se comprueba pidiéndolo con un "ahora"
+   * posterior al vencimiento, sin esperas reales.
+   */
+  const despues = new Date(Date.now() + 5 * 60 * 1000);
+  assert.equal(await srv.tomarCerrojo('cerrojo-de-prueba', 50, despues), true);
+
+  await srv.JobLock.deleteMany({ nombre: 'cerrojo-de-prueba' });
+});
+
+test('sincronizarJornadaDesdeApi se niega a correr sin contexto de quiniela', async () => {
+  await assert.rejects(
+    () => srv.sincronizarJornadaDesdeApi('JornadaSync'),
+    /requiere contexto de quiniela/,
+    'Sin contexto escribiría los resultados de una quiniela en otra'
+  );
+});
+
+test('el limitador de concurrencia nunca supera su tope', async () => {
+  let simultaneas = 0;
+  let maximo = 0;
+
+  const items = Array.from({ length: 20 }, (unused, indice) => indice);
+
+  await srv.conLimiteDeConcurrencia(items, 4, async () => {
+    simultaneas += 1;
+    maximo = Math.max(maximo, simultaneas);
+    await new Promise(resolver => setTimeout(resolver, 1));
+    simultaneas -= 1;
+  });
+
+  assert.ok(maximo <= 4, `Se abrieron ${maximo} consultas a la vez, el tope es 4`);
+  assert.ok(maximo > 1, 'Con tope 4 y veinte tareas debería haber paralelismo real');
+});
+
+test('un fallo del proveedor no borra el último marcador conocido', async () => {
+  await srv.Fixture.deleteMany({ clave: '900004' });
+
+  await srv.Fixture.create({
+    clave: '900004',
+    apiFixtureId: '900004',
+    estado: 'LIVE',
+    proximaConsulta: new Date(Date.now() - 60 * 1000),
+    evento: eventoTerminado(900004, 'A', 'B', 1, 1)
+  });
+
+  const catalogo = new Map([['900004', {
+    clave: '900004',
+    apiFixtureId: '900004',
+    apiDate: '2026-07-01 12:00',
+    busqueda: { fecha: '2026-07-01', ligaId: '', equipo1: 'A', equipo2: 'B' }
+  }]]);
+
+  const originalPorId = srv.proveedorDeEventos.porId;
+  const originalPorFecha = srv.proveedorDeEventos.porFecha;
+
+  srv.proveedorDeEventos.porId = async () => { throw new Error('ECONNRESET'); };
+  srv.proveedorDeEventos.porFecha = async () => { throw new Error('ECONNRESET'); };
+
+  try {
+    await srv.refrescarFixturesPendientes(catalogo);
+  } finally {
+    srv.proveedorDeEventos.porId = originalPorId;
+    srv.proveedorDeEventos.porFecha = originalPorFecha;
+  }
+
+  const guardado = await srv.Fixture.findOne({ clave: '900004' }).lean();
+
+  /*
+   * Un corte de red no es información sobre el partido. Sobrescribir con vacío
+   * borraría un marcador bueno y dejaría a los jugadores viendo un partido sin
+   * resultado hasta la siguiente consulta afortunada.
+   */
+  assert.ok(guardado.evento, 'El evento anterior debe conservarse');
+  assert.equal(guardado.estado, 'LIVE');
+  assert.equal(guardado.fallosConsecutivos, 1);
+  assert.match(guardado.ultimoError, /ECONNRESET/);
+
+  // Y el reintento se espacia, en vez de martillear al proveedor caído.
+  const espera = new Date(guardado.proximaConsulta).getTime() - Date.now();
+  assert.ok(espera > 5 * 60 * 1000, 'Tras un fallo la siguiente consulta debe espaciarse');
+});

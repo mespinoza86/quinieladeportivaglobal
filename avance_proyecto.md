@@ -12,14 +12,15 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 16 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 17 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
 
 ### Dónde estamos
 
-**Fases 0, 1, 2 y 3 completadas** en una sola sesión, el 16 de agosto de 2026.
+**Fases 0 a 4 completadas.** Las cuatro primeras el 16 de agosto de 2026; la
+Fase 4 —el rediseño del sincronizador, que era *el* bloqueante de escala— el 17.
 
 | Fase | Qué se hizo | Bitácora |
 |---|---|---|
@@ -27,35 +28,37 @@
 | **1** | Seguridad: helmet, rate limiting, índices, sondas de salud, reintentos de conexión | 006 |
 | **2** | **Cerrada la fuga C-02** entre quinielas + 4 bugs de dominio | 007 |
 | **3** | Red de pruebas: de **6 a 53 pruebas**, con MongoDB en memoria | 008, 009 |
+| **4** | **Cerrados C-01 y C-05**: caché de partidos compartida, ventanas por estado, cerrojo distribuido | 010 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
 
-### Estado de Git — ⚠️ cinco ramas encadenadas sin fusionar
+**El consumo de APIFootball dejó de crecer con el número de quinielas.** Antes,
+cien quinielas siguiendo los mismos partidos costaban cien veces más cuota que
+una. Ahora cuestan lo mismo: el partido se consulta una vez y todas leen de la
+misma caché. Ver §9.4 y la bitácora 010.
+
+### Estado de Git
 
 ```
-d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia   ← fase-3-pruebas (HEAD)
+(pendiente de fusionar)  Fase 4: rediseno del sincronizador   ← fase-4-sincronizador (HEAD)
+e2f8d3f  Dejar el punto de partida para retomar el trabajo    ← main
+d55dabb  Cerrar la Fase 3: trivias, marcador a 90 y transferencia
 a2e91df  Fase 3: red de seguridad de pruebas de integracion
 200c3c0  Fase 2: cerrar la fuga entre quinielas y los bugs de dominio
 f454d81  Fase 1: seguridad de base y resiliencia de la conexion
-c723c38  Documentar el fallo de resolucion SRV y endurecer .gitignore
-0d88769  Documentar el incidente de conexion y sus hallazgos
-c7181a2  Registrar la Fase 0 en el documento de avance
 c17d131  Fase 0: higiene previa al trabajo de escalado
-05a8054  Completar el flujo de Admin Mode en la interfaz
-04f6de0  Dejar de rastrear node_modules
-f92462b  Implementar arquitectura multi-quiniela                     ← main sigue aquí
+f92462b  Implementar arquitectura multi-quiniela
 ```
 
-Cada rama se creó sobre la anterior, así que **`fase-3-pruebas` contiene todo**.
-Para llevarlo a `main` de una vez:
+La cadena de cinco ramas encadenadas **ya se fusionó**: el 17 de agosto se llevó
+`fase-3-pruebas` a `main` con avance rápido y se borraron las cuatro ramas
+intermedias. `origin/main` sigue en `f92462b` —falta empujar—.
 
-```bash
-git checkout main
-git merge fase-3-pruebas      # avance rápido, sin conflictos
-```
-
-Las ramas intermedias pueden borrarse después.
+> ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
+> `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
+> borra del árbol al retroceder. El síntoma es `Cannot find module 'mongoose'`.
+> La cura es `npm install`, no reinstalar nada más.
 
 ### ⚠️ Antes de arrancar la aplicación, lee esto
 
@@ -78,38 +81,38 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 53 pruebas (~8 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 36 de integración
+npm test                   # las 66 pruebas (~14 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 45 de integración
 npm run check              # comprobación de sintaxis
-npm audit --omit=dev       # 0 vulnerabilidades al cierre del 16-ago
+npm audit --omit=dev       # 0 vulnerabilidades al cierre del 17-ago
 ```
 
-### Lo siguiente: Fase 4 — rediseño del sincronizador (C-01)
+### Lo siguiente: Fase 5 — rendimiento del ranking (C-03)
 
-Es **el bloqueante real de escala** y el trabajo más grande del roadmap. Hoy el
-auto-sync hace una llamada a APIFootball **por cada partido de cada quiniela cada 30
-segundos**: con 20 quinielas se agota una cuota mensual típica en media hora.
+Con el sincronizador arreglado, el siguiente cuello de botella es la lectura.
+`/api/resultados-totales` lee **seis colecciones completas** y recalcula todo el
+ranking histórico **en cada petición**. Hoy no se nota; con temporadas
+acumuladas y varias quinielas activas, sí.
 
-El plan está detallado en §16, Fase 4 (puntos 28–33). En resumen:
+El plan está en §16, Fase 5 (puntos 34–37):
 
-1. Extraer el sync a un proceso aparte o a un planificador con bloqueo distribuido.
-2. Sustituir la autollamada HTTP a `localhost` por una llamada de función directa
-   envuelta en `tenantContext.run`.
-3. **Deduplicar por `apiFixtureId`**: si 40 quinielas siguen el mismo partido, es
-   *una* llamada al API, no 40. Introducir una colección `fixtures` global como
-   caché compartida.
-4. Ventanas de sincronización según el estado real del partido (terminado → nunca;
-   en vivo → cada minuto; lejano → cada 6 horas).
-5. Paralelismo controlado y registro del consumo de cuota.
+1. Materializar los puntos por jornada en una colección `PuntosJornada`,
+   recalculada solo cuando cambia un resultado oficial de esa jornada.
+2. **Decidir la política de congelamiento**, que resuelve M-03 y M-04 de una vez:
+   hoy los puntos de trivia quedan congelados y los de partido no, así que
+   cambiar la configuración de puntuación reescribe el histórico.
+3. Caché del ranking con invalidación por evento.
+4. Paginación en los listados (M-26).
 
-Ya es prudente meterle mano: hay 53 pruebas debajo.
+El punto 2 es una decisión de producto, no solo técnica: ver la tabla de abajo.
 
 ### Decisiones abiertas que dependen del usuario
 
 | # | Decisión | Por qué importa |
 |---|---|---|
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| — | ¿Se fusiona la cadena de ramas a `main`? | Cinco ramas encadenadas son frágiles de mantener |
+| — | ¿Se fusiona `fase-4-sincronizador` a `main` y se empuja a `origin`? | `origin/main` lleva desde julio sin recibir nada |
+| **M-03/M-04** | ¿Los puntos de una jornada se congelan al cerrarla? | Hoy cambiar la puntuación reescribe partidas ya jugadas. Es la decisión que abre la Fase 5 |
 | **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
 
 ### Pendientes menores, cuando toque
@@ -119,6 +122,10 @@ Ya es prudente meterle mano: hay 53 pruebas debajo.
   varias quinielas y dos coincidan en el nombre de una jornada.
 - En Render, definir `NODE_ENV=production`, `ALLOWED_ORIGINS` y
   `DEBUG_ENDPOINTS=false`, y configurar `/readyz` como health check del servicio.
+- **Vigilar `/api/admin/sync-metricas` tras el primer despliegue de la Fase 4.**
+  Es la forma de comprobar en producción que la deduplicación hace lo que dice:
+  `consultasAhorradasPorDeduplicacion` debe crecer en cuanto haya dos quinielas
+  siguiendo los mismos partidos.
 
 ---
 
@@ -154,7 +161,12 @@ puro sin framework. Ya realizó la transición desde una aplicación de una sola
 quiniela (mundialista) hacia un modelo donde cada usuario puede pertenecer a varias
 quinielas con roles independientes en cada una.
 
-**Estado de madurez actual:**
+> **Esta sección es la foto del 14 de agosto de 2026**, el día del análisis
+> inicial. Se conserva tal cual porque es el punto de comparación. El estado
+> vigente está en el **punto de partida**, arriba del todo, y el resumen de qué
+> cambió, en la tabla del final de esta sección.
+
+**Estado de madurez el 14 de agosto de 2026:**
 
 | Dimensión | Estado | Comentario |
 |---|---|---|
@@ -175,6 +187,20 @@ quinielas con roles independientes en cada una.
    no hay separación entre rutas, lógica de negocio, modelos e integraciones.
 3. **El ranking (`/api/resultados-totales`) recalcula todo en memoria en cada
    petición** leyendo colecciones completas sin paginación ni caché.
+
+**Cómo ha cambiado ese cuadro, al 17 de agosto de 2026:**
+
+| Dimensión | 14 de agosto | Hoy |
+|---|---|---|
+| Multi-tenancy | 🟡 Funciona, con fugas | 🟢 Fuga C-02 cerrada y **verificada en ejecución** (Fases 2 y 3) |
+| Seguridad | 🟡 Base sólida, faltan capas | 🟢 helmet, rate limiting, índices únicos, sesión regenerada, `/debug/*` tras bandera (Fase 1). Quedan S-04, S-08 y S-09 |
+| Escalabilidad | 🔴 Bloqueante | 🟢 Sincronizador rediseñado: el coste dejó de depender del número de quinielas (Fase 4) |
+| Mantenibilidad | 🔴 Bloqueante | 🔴 Sin cambios: `server.js` sigue siendo un solo archivo, ahora de más de 4.500 líneas. Es la Fase 6 |
+| Observabilidad | 🔴 Ausente | 🟡 `/healthz`, `/readyz` y `/api/admin/sync-metricas`. Faltan logs estructurados y trazas (M-24) |
+| Pruebas | 🟡 Mínimas | 🟢 **66 pruebas**, 45 de ellas de integración contra MongoDB en memoria |
+
+De los tres bloqueantes de arriba, **el primero está resuelto** (Fase 4) y los
+otros dos son las Fases 6 y 5.
 
 ---
 
@@ -308,15 +334,21 @@ Presentes en `.env`:
 | `SESSION_SECRET` | Sí en producción | En desarrollo usa `'solo-desarrollo-cambiar'` |
 | `APIFOOTBALL_COM_KEY` | Sí para sincronizar | Sin ella las rutas de fútbol devuelven 500 |
 | `PORT` | No | Por defecto 3000 |
-| `NODE_EN` | — | ⚠️ **ERRATA**: debe ser `NODE_ENV` (ver hallazgo S-01) |
+| `NODE_EN` | — | ⚠️ **ERRATA** corregida en la Fase 0. Hoy es `NODE_ENV` (hallazgo S-01) |
+| `ALLOWED_ORIGINS` | No | Añadida en la Fase 0. Orígenes CORS separados por comas |
+| `DEBUG_ENDPOINTS` | No | Añadida en la Fase 1. Con cualquier valor distinto de `true`, los `/debug/*` responden 404 |
+| `SYNC_INTERVALO_MS` | No | **Fase 4.** Cada cuánto corre un ciclo del planificador. Por defecto 60.000 |
+| `SYNC_CONCURRENCIA` | No | **Fase 4.** Consultas simultáneas al proveedor. Por defecto 4 |
+| `JOBS_HABILITADOS` | No | **Fase 4.** Si esta instancia ejecuta los trabajos periódicos. Por defecto `true` |
 
 Variables que el código espera pero no están en `.env` (solo se usan al migrar):
 `MONGO_URI_LEGACY_READONLY`, `LEGACY_DB_NAME`, `TARGET_DB_NAME`,
 `MIGRATION_OWNER_EMAIL`, `MIGRATION_POOL_NAME`.
 
-⚠️ **`.env.example` fue eliminado del árbol de trabajo** (aparece como ` D` en
-`git status`) pero sigue en el último commit. Como el README manda copiarlo, hay
-que restaurarlo o actualizar el README.
+> **Nota histórica:** cuando se escribió este inventario, `.env.example` estaba
+> eliminado del árbol de trabajo pese a que el README manda copiarlo. Se restauró
+> y amplió en la Fase 0 (hallazgo M-22), y desde la Fase 4 documenta también las
+> tres variables del sincronizador.
 
 ---
 
@@ -370,13 +402,29 @@ El orden importa mucho y tiene consecuencias:
 
 ### 3.3 Trabajos en segundo plano
 
+**Estado vigente (Fases 2 y 4):**
+
+| Job | Disparo | Alcance |
+|---|---|---|
+| `ejecutarCicloDeSincronizacion()` | `setInterval` cada `SYNC_INTERVALO_MS` (60 s), con **cerrojo distribuido** | Recorre las quinielas **activas**, cada una en su contexto. Los partidos se consultan una sola vez, deduplicados, y solo si su ventana venció |
+| `resolverTriviasDeTodasLasQuinielas()` | `setInterval` cada 5 min | Itera las quinielas activas y resuelve **dentro del contexto de cada una** |
+| `sincronizarJornadaDesdeApi()` | Al final de cada ciclo, y desde la ruta manual | Una jornada, **exige contexto de inquilino** |
+
+Siguen siendo jobs **dentro del proceso web**, pero ya no se estorban entre
+instancias: el cerrojo de `joblocks` garantiza que solo una sincronice a la vez.
+La bandera `JOBS_HABILITADOS` permite, cuando convenga, dejarlos en una única
+instancia trabajadora sin tocar el código.
+
+**Cómo era antes (14 de agosto de 2026):**
+
 | Job | Disparo | Alcance |
 |---|---|---|
 | `sincronizarTodasLasJornadasDesdeApi()` | Middleware, si pasaron ≥30 s desde la última | Todas las quinielas del sistema |
 | `resolverTriviasPendientes()` | `setInterval` cada 5 min + al final de cada sync | Sin contexto de inquilino → global |
 
-Ambos son **jobs dentro del proceso web**. En cuanto haya más de una instancia
-(escalado horizontal), se duplican y compiten entre sí.
+Ambos eran **jobs dentro del proceso web** cuyo estado vivía en variables de
+módulo: en cuanto hubiera más de una instancia se duplicaban y competían entre
+sí. Ese era el hallazgo C-05.
 
 ---
 
@@ -434,6 +482,43 @@ Ambos son **jobs dentro del proceso web**. En cuanto haya más de una instancia
 #### `sesiones`
 
 Gestionada por `connect-mongo`. TTL de 14 días.
+
+#### `fixtures` — modelo `Fixture` *(Fase 4)*
+
+Caché compartida del estado real de cada partido según APIFootball. **No lleva
+`quinielaId` a propósito:** es justo la pieza que debe compartirse entre
+quinielas, y aislarla reintroduciría el hallazgo C-01.
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `clave` | String | requerida, única, indexada. Identidad compartida del partido |
+| `apiFixtureId` | String | id del proveedor, vacío si el partido se importó sin él |
+| `busqueda.fecha` | String | lo mínimo para volver a buscar el partido si el id no da resultado |
+| `busqueda.ligaId` | String | |
+| `busqueda.equipo1` / `equipo2` | String | |
+| `evento` | Mixed | la respuesta cruda del proveedor, tal cual |
+| `estado` | String | `TC` | `LIVE` | `MT` | `PROGRAMADO` | `DESCONOCIDO` |
+| `apiDate` | String | fecha y hora de inicio, en formato del proveedor |
+| `consultadoEn` | Date | |
+| `proximaConsulta` | Date | indexada. **`null` significa "nunca más": el partido terminó** |
+| `fallosConsecutivos` | Number | alimenta el espaciado tras un error |
+| `ultimoError` | String | |
+
+La **clave** es el `apiFixtureId` cuando existe y, si no, una clave sintética
+`sin-id:<fecha>:<equipo1>|<equipo2>` con los nombres normalizados. Así, dos
+quinielas que importaron el mismo partido sin id tampoco lo consultan por
+separado.
+
+#### `joblocks` — modelo `JobLock` *(Fase 4)*
+
+Cerrojo distribuido de los trabajos periódicos. Tampoco lleva `quinielaId`.
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `nombre` | String | requerido, único. Hoy solo `sincronizacion-global` |
+| `instancia` | String | `<pid>-<aleatorio>`, para que cada quien suelte lo suyo |
+| `tomadoEn` | Date | |
+| `expiraEn` | Date | requerido. **Caduca solo**: una instancia que muere no deja el sistema bloqueado |
 
 ### 4.2 Colecciones de dominio (todas con `quinielaId`)
 
@@ -1022,6 +1107,14 @@ Es una solución bien pensada al problema real de las eliminatorias.
 
 ### 9.4 El auto-sync global — EL PROBLEMA DE ESCALA
 
+> ✅ **RESUELTO en la Fase 4** (17 de agosto de 2026, bitácora 010). Lo que sigue
+> describe el mecanismo **anterior** y se conserva porque explica *por qué* el
+> rediseño era necesario y qué medía cada número. El diseño vigente
+> —caché compartida de partidos, ventanas por estado y cerrojo distribuido— está
+> en §16, Fase 4, y en la bitácora 010.
+
+#### Cómo era antes
+
 ```js
 let ultimaSyncGlobal = 0;
 let syncEnProceso = false;
@@ -1079,9 +1172,27 @@ Los planes típicos de APIFootball rondan las 30.000 peticiones **al mes**. Con
   simultáneos.
 - El nombre de la constante (`CINCO_MINUTOS`) miente sobre su valor (30 s).
 
-**Rediseño necesario (detallado en §16):** planificador desacoplado, agrupación de
-partidos por `apiFixtureId` para deduplicar entre quinielas, y ventanas de
-sincronización basadas en la hora real de los partidos.
+#### Cómo es ahora
+
+Los siete problemas de la lista de arriba están cerrados:
+
+| Problema anterior | Qué lo resuelve |
+|---|---|
+| Se dispara con el tráfico de los usuarios | `setInterval` propio, `SYNC_INTERVALO_MS` |
+| Una llamada al API por partido **y por quiniela** | Caché compartida `fixtures`, con clave por partido |
+| Se autollama por HTTP a `localhost` | `sincronizarJornadaDesdeApi()` dentro de `tenantContext.run` |
+| Resincroniza partidos terminados eternamente | Estado `TC` → `proximaConsulta = null`, nunca más |
+| No distingue quinielas activas de archivadas | El ciclo solo recorre las `activa` |
+| `for` secuencial: un timeout retrasa todo | Limitador de concurrencia, `SYNC_CONCURRENCIA` |
+| `syncEnProceso` en memoria: dos instancias, dos syncs | Cerrojo distribuido en `joblocks` |
+
+Y el token interno que existía solo para que la autollamada se saltara su propia
+autenticación —una vía que concedía rol de administrador sin sesión— se eliminó
+con ella.
+
+**El coste dejó de depender del número de quinielas.** Con 100 quinielas
+siguiendo los mismos 30 partidos se pasa de ~360.000 llamadas por hora a menos de
+1.800, y a **cero** cuando esos partidos han terminado.
 
 ---
 
@@ -1243,21 +1354,22 @@ conectada ni modificada.
 
 ## 13. Pruebas y verificación
 
-### 13.1 Suite actual — 53 pruebas
+### 13.1 Suite actual — 66 pruebas
 
-Estado tras la Fase 3 (16 de agosto de 2026). Corren en **~8 segundos, sin red y sin
-tocar la base real**.
+Estado tras la Fase 4 (17 de agosto de 2026). Corren en **~14 segundos, sin red y
+sin tocar la base real**. La primera corrida en una máquina nueva tarda más:
+`mongodb-memory-server` descarga su binario una sola vez.
 
 ```bash
-npm test                   # las dos suites: 53 pruebas
-npm run test:arquitectura  # 17 sobre el texto del código
-npm run test:integracion   # 36 contra un MongoDB en memoria
+npm test                   # las dos suites: 66 pruebas
+npm run test:arquitectura  # 21 sobre el texto del código
+npm run test:integracion   # 45 contra un MongoDB en memoria
 ```
 
 | Suite | Pruebas | Qué comprueba |
 |---|---:|---|
-| `test/architecture.test.js` | 17 | Invariantes estructurales por expresiones regulares sobre `server.js` y `migrate-legacy.js` |
-| `test/integracion.test.js` | 36 | El servidor en ejecución: HTTP real con `supertest` contra `mongodb-memory-server` |
+| `test/architecture.test.js` | 21 | Invariantes estructurales por expresiones regulares sobre `server.js` y `migrate-legacy.js` |
+| `test/integracion.test.js` | 45 | El servidor en ejecución: HTTP real con `supertest` contra `mongodb-memory-server` |
 
 ### 13.2 Las dos naturalezas, y para qué sirve cada una
 
@@ -1289,8 +1401,6 @@ abren sesiones, escriben en la base y leen la respuesta HTTP.
 
 ### 13.4 Lo que sigue sin cubrirse
 
-- **El sincronizador con APIFootball.** Es justo lo que reescribe la Fase 4, así que
-  las pruebas van con ella.
 - **El frontend.** 39 scripts sin ninguna prueba. Ligado al hallazgo S-04 (XSS).
 - **Concurrencia real**: dos usuarios escribiendo a la vez el mismo pronóstico.
 
@@ -1372,22 +1482,23 @@ en la interfaz.**
 | **M-09** | `/api/football/leagues-test` duplicada | Fase 2 |
 | **M-11** | `esGolApiFootball` anulaba goles de "Varela", "Varane"… | Fase 2 |
 | **M-15** | Constante `CINCO_MINUTOS` con valor de 30 segundos | Fase 2 |
+| **C-01** | El auto-sync consultaba el API una vez por partido **y por quiniela** | Fase 4 — caché compartida, ventanas por estado y fin de la autollamada HTTP |
+| **C-05** | Los trabajos vivían en el proceso web con estado en variables de módulo | Fase 4 — cerrojo distribuido en `joblocks` y bandera `JOBS_HABILITADOS` |
 
 ### 🔴 Críticos — bloquean el crecimiento
 
 | ID | Hallazgo | Ubicación | Efecto |
 |---|---|---|---|
-| **C-01** | El auto-sync consulta APIFootball una vez por partido de **todo el sistema** cada 30 s | `server.js:132-163`, `1350-1371`, `1489-1656` | Cuota del proveedor agotada con ~20 quinielas; saturación del proceso web |
-| **C-02** | `resolverTriviasPendientes()` desde `setInterval` corre **sin contexto de inquilino** y consulta `ResultadoOficial` sin filtrar por quiniela | `server.js:2781-2833`, `2846-2850` | Fuga entre quinielas: trivias resueltas con datos de otra quiniela cuando comparten nombre de jornada |
 | **C-03** | `/api/resultados-totales` lee 6 colecciones completas y recalcula todo el ranking en cada petición | `server.js:3299-3422` | Latencia creciente y consumo de memoria proporcional al histórico total |
-| **C-04** | `server.js` monolítico de 3.584 líneas con 96 handlers | todo el archivo | Cada cambio es riesgoso; imposible dividir el trabajo entre varias personas |
-| **C-05** | Los jobs viven dentro del proceso web con estado en variables de módulo (`ultimaSyncGlobal`, `syncEnProceso`) | `server.js:129-130` | Impide el escalado horizontal: N instancias = N syncs simultáneos |
+| **C-04** | `server.js` monolítico de más de 4.500 líneas | todo el archivo | Cada cambio es riesgoso; imposible dividir el trabajo entre varias personas |
 | **C-06** | La base vive en un clúster **MongoDB Atlas M0 gratuito**, que Atlas **pausa automáticamente** tras un periodo de inactividad | infraestructura | La aplicación queda muerta sola, sin aviso y sin recuperación. Detectado en producción el 16-ago-2026, ver bitácora 004 |
 
-> **Nota sobre las referencias de línea:** los números de `server.js` de estas tablas
-> corresponden al estado analizado el 14 de agosto de 2026 (commit `f92462b`).
-> Tras la Fase 0 están desplazados unas pocas líneas en la zona de cabecera del
-> archivo. El resto de las referencias sigue siendo válido.
+> **Nota sobre las referencias de línea:** los números de `server.js` de estas
+> tablas corresponden al estado analizado el 14 de agosto de 2026 (commit
+> `f92462b`). **Ya no son fiables**: tras la Fase 4 el archivo creció de 3.584 a
+> más de 4.500 líneas y zonas enteras se reescribieron. Sirven para saber *en qué
+> parte* del archivo mirar, no como coordenada exacta; para localizar algo, busca
+> por nombre de función.
 
 ### 🟠 Altos — corregir antes de abrir al público
 
@@ -1464,6 +1575,7 @@ copiar las colecciones a una base con nombre propio y cambiar la URI a la vez.
 | **B-08** | `/debug/trivia-goles/:matchId` fuera del prefijo `/api` |
 | **B-09** | Sin `engines` en `package.json` pese a que el README exige Node 20+ |
 | **B-10** | Sin `LICENSE` real (`"license": "ISC"` sin archivo) |
+| **B-11** | `sincronizarJornadaDesdeApi` reescribe el array completo de `ResultadoOficial.resultados` aunque solo cambie un partido. Correcto, pero desperdicia escritura; se resuelve con la Fase 5 |
 
 ---
 
@@ -1546,27 +1658,25 @@ Ver bitácora, entrada 007.
 **Total: 53 pruebas** (17 de arquitectura + 36 de integración), de **6** al empezar
 el día. Sin red y sin tocar la base real.
 
-### Fase 4 — Rediseño del sincronizador (2–3 sesiones) ← *el bloqueante real*
+### ✅ Fase 4 — Rediseño del sincronizador — COMPLETADA el 17 de agosto de 2026
 
-28. **Extraer el sync a un proceso separado** (`worker.js`) o a un planificador
-    con bloqueo distribuido en MongoDB. **(C-05)**
-29. **Sustituir la autollamada HTTP por una llamada de función directa** envuelta en
-    `tenantContext.run`. **(C-01)**
-30. **Deduplicar por `apiFixtureId`**: si 40 quinielas siguen el mismo partido, es
-    **una** llamada al API, no 40. Introducir una colección `fixtures` global
-    (sin `quinielaId`) como caché compartida del estado real del partido.
-31. **Ventanas de sincronización inteligentes**:
-    - Partido `TC` y `bloqueadoFinal` → nunca más se consulta.
-    - Partido a más de 2 h de su inicio → cada 6 h.
-    - Partido dentro de las 2 h previas → cada 15 min.
-    - Partido `LIVE`/`MT` → cada 60 s.
-    - Quinielas archivadas o eliminadas → nunca.
-32. **Paralelismo controlado** con un limitador de concurrencia y reintentos con
-    retroceso exponencial.
-33. **Registrar el consumo de cuota** de APIFootball y exponerlo como métrica.
+*Era el bloqueante real de escala.* Ver bitácora, entrada 010.
 
-**Efecto esperado:** de ~3.000 llamadas cada 30 s con 100 quinielas a **decenas de
-llamadas por minuto**, independientemente del número de quinielas.
+| # | Tarea | Estado |
+|---:|---|---|
+| 28 | Planificador con bloqueo distribuido **(C-05)** | ✅ Colección `joblocks`, cerrojo con caducidad de 5 min. Se optó por el cerrojo en vez de `worker.js`: mismo efecto, sin partir el despliegue. La bandera `JOBS_HABILITADOS` deja la puerta abierta a separarlo |
+| 29 | Llamada de función directa en vez de autollamada HTTP **(C-01)** | ✅ `sincronizarJornadaDesdeApi()` dentro de `tenantContext.run`. La ruta quedó como envoltura fina |
+| + | Retirar `INTERNAL_SYNC_TOKEN` y su puerta | ✅ *Consecuencia del punto 29:* concedía rol de administrador sin sesión y solo existía para la autollamada |
+| 30 | Deduplicar por partido | ✅ Colección global `fixtures`, con clave sintética para los partidos sin `apiFixtureId` |
+| 31 | Ventanas de sincronización | ✅ Terminado nunca, en vivo 60 s, inminente 15 min, lejano 6 h, más un tope que impide saltarse el inicio y un umbral de abandono |
+| 32 | Paralelismo controlado | ✅ Limitador propio, `SYNC_CONCURRENCIA`. El retroceso tras un fallo es la ventana de error de 10 min |
+| 33 | Registrar el consumo de cuota | ✅ `GET /api/admin/sync-metricas`, con `consultasAhorradasPorDeduplicacion`. Contadores por instancia: consolidarlos es M-24 |
+| + | Pruebas del sincronizador | ✅ 13 nuevas, de 53 a **66** |
+
+**Efecto medido:** con 100 quinielas siguiendo los mismos 30 partidos, de ~360.000
+llamadas por hora a menos de 1.800, y a **cero** cuando esos partidos terminaron.
+Lo importante no es el factor: es que **el coste dejó de depender del número de
+quinielas**.
 
 ### Fase 5 — Rendimiento del ranking (1–2 sesiones)
 
@@ -1624,9 +1734,9 @@ worker.js         → solo jobs
 
 | Prioridad | Fases | Por qué |
 |---|---|---|
-| **Ahora** | 0, 1, 2 | Riesgo real, esfuerzo bajo, sin refactorización |
-| **Antes de crecer** | 3, 4 | Sin la Fase 4 el sistema no soporta la escala; sin la 3 la 4 es imprudente |
-| **Al crecer** | 5, 6 | Rendimiento y mantenibilidad |
+| ✅ **Hecho** | 0, 1, 2, 3, 4 | Riesgo real cerrado, red de pruebas puesta y escala desbloqueada |
+| **Ahora** | 5 | El ranking es el siguiente cuello de botella, y arrastra una decisión de producto (M-03, M-04) |
+| **Al crecer** | 6 | Mantenibilidad: el monolito sigue siendo un solo archivo |
 | **Continuo** | 7 | Producto |
 
 ---
@@ -2715,6 +2825,203 @@ duración          → ~8 s, sin red y sin tocar la base real
 
 **Pendiente / siguiente paso:** **Fase 4 — rediseño del sincronizador (C-01)**, el
 bloqueante real de escala, ya con red de seguridad debajo.
+
+---
+
+### 📌 Entrada 010 — 17 de agosto de 2026 — Fase 4: rediseño del sincronizador
+
+**Objetivo:** cerrar **C-01** —el consumo de APIFootball crecía con el número de
+quinielas— y **C-05** —los trabajos periódicos guardaban su estado en variables
+de módulo, que impiden escalar horizontalmente—. Era el bloqueante real de
+escala y el trabajo más grande del roadmap.
+
+**Antes que nada, la fusión pendiente.** Las cinco ramas encadenadas se llevaron
+a `main` con avance rápido (`git merge --ff-only fase-3-pruebas`) y se borraron
+las cuatro intermedias. `main` pasó de `f92462b` a `e2f8d3f`.
+
+> **Efecto colateral que conviene recordar:** al cambiar a `main`, git **borró
+> `node_modules`**. Estaban versionados hasta el commit `04f6de0`, así que
+> retroceder por debajo de ese punto los elimina del árbol de trabajo. El
+> síntoma fue `Cannot find module 'mongoose'` en la siguiente corrida de
+> pruebas, que parece corrupción del entorno y no lo es. Se arregla con
+> `npm install`.
+
+---
+
+#### Lo que se cambió
+
+**1. El disparador ya no es el tráfico de los usuarios.**
+
+Desapareció el `app.use` que, en cada petición, comprobaba si habían pasado
+treinta segundos para lanzar una sincronización de todo el sistema. Lo sustituye
+un `setInterval` propio (`SYNC_INTERVALO_MS`, 60 s por defecto).
+
+El cambio no es cosmético. Atar el consumo del API externo al tráfico entrante
+significaba que el coste dependía de cuánta gente estuviera navegando, y que un
+sistema sin visitas no se sincronizaba nunca.
+
+**2. Una caché de partidos compartida entre quinielas — el corazón del arreglo.**
+
+Nueva colección global `fixtures`, **deliberadamente sin `quinielaId`**. Cada
+documento es el estado real de un partido según el proveedor, identificado por
+una **clave compartida**: el `apiFixtureId` cuando existe y, si no, una clave
+sintética de fecha y equipos normalizados.
+
+Si cuarenta quinielas siguen el mismo partido del Mundial, el partido sigue
+siendo uno y se consulta **una vez**. Antes se consultaba cuarenta.
+
+> Es el único sitio del sistema donde compartir datos entre quinielas es lo
+> correcto, y por eso hay una prueba de arquitectura que **falla si alguien
+> añade `FixtureSchema` a la lista de `tenantPlugin`**. Aislarlo "por
+> coherencia" reintroduciría C-01 sin que nadie se diera cuenta.
+
+**3. Ventanas de consulta según el estado real del partido.**
+
+| Estado del partido | Cada cuánto se consulta |
+|---|---|
+| Terminado (`TC`) | **Nunca más** |
+| En vivo (`LIVE`, `MT`) | 60 s |
+| A menos de 2 h del inicio | 15 min |
+| A más de 2 h | 6 h |
+| Sin fecha conocida | 30 min |
+| Tras un fallo del proveedor | 10 min |
+
+**El detalle que no es obvio:** la próxima consulta nunca se pospone más allá
+del pitido inicial. Un partido que empieza en tres horas cae en la ventana
+"lejano" de seis y, sin ese tope, se habría consultado por primera vez **tres
+horas después de haber empezado**. La prueba lo fija explícitamente.
+
+También hay un umbral de abandono: un partido cuya hora de inicio pasó hace más
+de cuatro horas y que el proveedor sigue sin dar por empezado —aplazado,
+cancelado o mal enlazado— vuelve a la ventana lenta, en vez de consultarse cada
+minuto para siempre.
+
+**4. Se acabó la autollamada HTTP, y con ella una puerta trasera.**
+
+El sincronizador se llamaba a sí mismo por `http://localhost:PORT/...`, una vez
+por jornada. Para poder saltarse su propia autenticación llevaba un
+`INTERNAL_SYNC_TOKEN` que, presentado en una cabecera junto a un `x-quiniela-id`,
+concedía **rol de administrador sin sesión** sobre la quiniela indicada.
+
+El cuerpo de la ruta se extrajo a `sincronizarJornadaDesdeApi(nombre)`, que
+**exige contexto de inquilino** igual que `resolverTriviasPendientes()`. El
+planificador la invoca dentro de `tenantContext.run`, y la ruta HTTP quedó como
+una envoltura fina de cuatro líneas.
+
+Con la autollamada fuera, el token y su puerta se eliminaron por completo. Una
+vía que concede permisos de administrador sin sesión es superficie de ataque que
+ya no hay que mantener; hay una prueba de arquitectura que impide que vuelva.
+
+**5. Cerrojo distribuido (C-05).**
+
+Nueva colección global `joblocks`. El cerrojo se toma con un `findOneAndUpdate`
+filtrando por `expiraEn` vencido y con `upsert`: si otra instancia lo tiene vivo,
+el filtro no encuentra nada, el upsert intenta insertar y **choca contra el
+índice único**. Ese choque —código 11000— *es* la respuesta "lo tiene otro", no
+un error que haya que propagar.
+
+Caduca a los cinco minutos, porque una instancia que muere a mitad de ciclo no
+suelta nada y sin caducidad la sincronización quedaría parada para siempre.
+
+Se añadió además la bandera `JOBS_HABILITADOS`. Hoy los trabajos corren dentro
+del proceso web y el cerrojo basta; la bandera existe para poder separar el
+despliegue —unas instancias solo atienden peticiones, otra hace de trabajador—
+**sin tener que partir el código antes**.
+
+**6. Paralelismo controlado y métricas de cuota.**
+
+Las consultas al proveedor van por un limitador de concurrencia propio
+(`SYNC_CONCURRENCIA`, 4 por defecto): diez líneas en vez de una dependencia. Sin
+él, un ciclo con doscientos partidos abriría doscientas peticiones simultáneas y
+el proveedor respondería con limitación de tasa.
+
+`GET /api/admin/sync-metricas` (requiere Admin Mode) expone ciclos, llamadas al
+API, errores, partidos seguidos, fixtures únicos, consultas evitadas por ventana
+y duración del último ciclo. El campo **`consultasAhorradasPorDeduplicacion`** es
+la medida directa de C-01: cuántas llamadas se habrían hecho de más por seguir el
+mismo partido desde varias quinielas.
+
+Los contadores son **por instancia** y se reinician con el proceso. Consolidarlos
+es trabajo de la observabilidad (M-24).
+
+---
+
+#### El efecto, en números
+
+Con 100 quinielas siguiendo los mismos 30 partidos:
+
+| | Antes | Ahora |
+|---|---:|---:|
+| Llamadas al API por ciclo | 3.000 | ≤ 30 |
+| Ciclos por hora | 120 | 60 |
+| Llamadas por hora | **360.000** | **≤ 1.800** |
+| …con los partidos ya terminados | 360.000 | **0** |
+
+La última fila es la que más pesa en la práctica: una jornada que terminó hace
+tres meses se resincronizaba eternamente. Ahora, en cuanto un partido llega a
+`TC`, no se vuelve a consultar jamás.
+
+Y lo importante no es el factor de reducción, sino que **el coste dejó de
+depender del número de quinielas**: cien quinielas siguiendo los mismos partidos
+cuestan hoy lo mismo que una.
+
+---
+
+**Verificación:**
+
+```
+npm run check            → válido
+npm test                 → 66/66  (21 arquitectura + 45 integración)
+duración                 → ~14 s, sin red y sin tocar la base real
+npm audit --omit=dev     → 0 vulnerabilidades
+```
+
+**De 53 a 66 pruebas.** Las 13 nuevas:
+
+| Prueba | Qué fija |
+|---|---|
+| **C-01 en ejecución** | Dos quinielas siguen el mismo partido → el proveedor se consulta **una vez**, y **las dos** quedan con su resultado escrito, cada una en su documento |
+| Partido terminado | Con estado `TC`, cero consultas: la cuota no se gasta en algo que no puede cambiar |
+| Ventana vigente | Dentro de su ventana no se consulta; con `forzar` —el botón "sincronizar" del administrador— sí |
+| Cálculo de ventanas | Los seis casos, incluido el tope que impide saltarse el pitido inicial |
+| Cerrojo | Dos tomas seguidas: la segunda falla; un ciclo con el cerrojo ajeno se retira sin hacer nada |
+| Cerrojo caducado | Se puede volver a tomar, sin esperas reales en la prueba |
+| Contexto obligatorio | `sincronizarJornadaDesdeApi` se niega a correr sin quiniela |
+| Limitador | Con tope 4 y veinte tareas, nunca hay más de 4 a la vez, y hay paralelismo real |
+| Fallo del proveedor | Un `ECONNRESET` **no borra** el último marcador conocido, cuenta el fallo y espacia el reintento |
+| Arquitectura (5) | Ni middleware por petición, ni autollamada, ni token interno; caché y cerrojo sin `quinielaId`; ventanas declaradas; cerrojo con caducidad |
+
+**La costura que hizo posible probar esto:** el sincronizador habla con el
+proveedor por un único punto, `proveedorDeEventos`, que las pruebas sustituyen
+por eventos sintéticos **que cuentan las consultas**. Ese conteo *es* el objeto
+de la prueba: C-01 nunca fue un error de resultado —los marcadores salían
+bien— sino un error de **cuántas veces se preguntaba**. Una prueba que solo
+mirara el resultado habría pasado igual antes y después.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | Modelos globales `Fixture` y `JobLock`; núcleo del sincronizador (~430 líneas); `sincronizarJornadaDesdeApi` extraída de la ruta; retirados el middleware de auto-sync, `INTERNAL_SYNC_TOKEN` y su puerta; planificador, `JOBS_HABILITADOS` y `/api/admin/sync-metricas` |
+| `test/architecture.test.js` | La prueba de la constante vieja sustituida por 5 nuevas |
+| `test/integracion.test.js` | 8 pruebas nuevas del sincronizador |
+| `.env.example` | `SYNC_INTERVALO_MS`, `SYNC_CONCURRENCIA`, `JOBS_HABILITADOS` |
+| `avance_proyecto.md` | §2.9, §4.1, §9.4, §13, §15, §16, punto de partida y esta entrada |
+
+**Hallazgos nuevos:**
+
+- **B-11 (bajo):** `sincronizarJornadaDesdeApi` sigue reescribiendo el array
+  completo de `ResultadoOficial.resultados` aunque solo haya cambiado un partido.
+  Es correcto, pero desperdicia escritura; se resuelve solo cuando la Fase 5
+  materialice los puntos por jornada.
+- El volcado `===== SYNC LIVE =====` por consola se conservó. Con el mecanismo
+  anterior era ruido constante; ahora solo aparece cuando un partido está de
+  verdad en curso, así que pasa a ser útil. Cuando llegue el logging
+  estructurado (M-24) debe convertirse en un evento con nivel.
+
+**Pendiente / siguiente paso:** **Fase 5 — rendimiento del ranking (C-03)**, que
+arranca con una decisión de producto: si los puntos de una jornada se congelan al
+cerrarla (M-03, M-04).
 
 ---
 

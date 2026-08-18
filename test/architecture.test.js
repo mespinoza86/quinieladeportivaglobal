@@ -195,9 +195,68 @@ test('los goles anulados por VAR se detectan por palabra completa', () => {
   assert.match(serverSinComentarios, /\/\\bvar\\b\/\.test\(info\)/);
 });
 
-test('la constante del auto-sync declara su valor real', () => {
+test('el sincronizador no se dispara desde el tráfico de los usuarios', () => {
+  // El middleware por petición y su estado en variables de módulo ya no están.
   assert.doesNotMatch(serverSinComentarios, /CINCO_MINUTOS/);
-  assert.match(serverSinComentarios, /const INTERVALO_MINIMO_ENTRE_SYNCS_MS = 30 \* 1000/);
+  assert.doesNotMatch(serverSinComentarios, /INTERVALO_MINIMO_ENTRE_SYNCS_MS/);
+  assert.doesNotMatch(serverSinComentarios, /syncEnProceso/);
+  assert.doesNotMatch(serverSinComentarios, /sincronizarTodasLasJornadasDesdeApi/);
+
+  // Ahora el ritmo lo marca un planificador propio.
+  assert.match(serverSinComentarios, /const INTERVALO_CICLO_SYNC_MS/);
+  assert.match(serverSinComentarios, /setInterval\(\(\) => \{\s*tickDeSincronizacion\(\);/);
+});
+
+test('el sincronizador no se autollama por HTTP ni conserva la puerta interna', () => {
+  /*
+   * La autollamada obligaba a existir un token que concedía permisos de
+   * administrador sin sesión. Al pasar a llamada de función directa, la puerta
+   * dejó de hacer falta, y una puerta que no hace falta no debe seguir abierta.
+   */
+  assert.doesNotMatch(serverSinComentarios, /INTERNAL_SYNC_TOKEN/);
+  assert.doesNotMatch(serverSinComentarios, /x-internal-sync-token/);
+  assert.doesNotMatch(serverSinComentarios, /membership\?\.internal/);
+  assert.doesNotMatch(serverSinComentarios, /axios\.post\(\s*`http:\/\/localhost/);
+
+  // La ruta manual y el planificador comparten la misma función de dominio.
+  assert.match(serverSinComentarios, /async function sincronizarJornadaDesdeApi/);
+  assert.match(serverSinComentarios, /await sincronizarJornadaDesdeApi\(item\.jornada\)/);
+});
+
+test('la caché de partidos y el cerrojo son globales, sin quinielaId', () => {
+  assert.match(server, /const FixtureSchema/);
+  assert.match(server, /const JobLockSchema/);
+
+  /*
+   * Si alguien los pasara por tenantPlugin dejarían de compartirse entre
+   * quinielas y volvería C-01 por la puerta de atrás: cada quiniela tendría su
+   * propia caché y consultaría el mismo partido por separado.
+   */
+  // Solo la lista de identificadores, no cualquier corchete que haya antes.
+  const listaConAislamiento = serverSinComentarios.match(
+    /\[\s*((?:[A-Za-z_$][\w$]*\s*,\s*)*[A-Za-z_$][\w$]*)\s*,?\s*\]\.forEach\(tenantPlugin\)/
+  );
+  assert.ok(listaConAislamiento, 'no se encontró la lista de esquemas con aislamiento');
+  assert.doesNotMatch(listaConAislamiento[1], /FixtureSchema|JobLockSchema/);
+});
+
+test('cada partido tiene ventana de consulta según su estado real', () => {
+  assert.match(serverSinComentarios, /function calcularProximaConsulta/);
+  // Terminado es terminado: no se vuelve a gastar una llamada en él.
+  assert.match(serverSinComentarios, /if \(estado === 'TC'\) return null;/);
+  assert.match(serverSinComentarios, /enVivo: 60 \* 1000/);
+  assert.match(serverSinComentarios, /inminente: 15 \* 60 \* 1000/);
+  assert.match(serverSinComentarios, /lejano: 6 \* 60 \* 60 \* 1000/);
+});
+
+test('el cerrojo de sincronización caduca solo', () => {
+  /*
+   * Sin caducidad, una instancia que muere a mitad de ciclo deja el cerrojo
+   * tomado para siempre y la sincronización no vuelve a correr nunca.
+   */
+  assert.match(serverSinComentarios, /const TTL_CERROJO_SYNC_MS/);
+  assert.match(serverSinComentarios, /expiraEn: \{ \$lte: ahora \}/);
+  assert.match(serverSinComentarios, /if \(error\?\.code === 11000\) return false;/);
 });
 
 test('la migración es simulación por defecto y separa origen de destino', () => {

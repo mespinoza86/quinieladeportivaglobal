@@ -29,7 +29,6 @@ const EJECUTADO_DIRECTAMENTE = require.main === module;
 const ENTORNO_DE_PRUEBAS = process.env.NODE_ENV === 'test';
 const SALT_ROUNDS = 10;
 const tenantContext = new AsyncLocalStorage();
-const INTERNAL_SYNC_TOKEN = crypto.randomBytes(32).toString('hex');
 
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
@@ -289,7 +288,6 @@ function requireDebug(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  if (req.membership?.internal) return next();
   if (!req.membership || !['propietario', 'admin'].includes(req.membership.rol)) {
     return res.status(403).json({ error: 'Se requieren permisos de administrador en esta quiniela.' });
   }
@@ -355,54 +353,17 @@ app.use(async (req, res, next) => {
 
 /* ================= Auto Sync Global ================= */
 
-let ultimaSyncGlobal = 0;
-let syncEnProceso = false;
-
 /*
- * La constante se llamaba CINCO_MINUTOS y valía 30 segundos. Ese desfase entre
- * el nombre y el valor es justo lo que hacía difícil ver el coste real del
- * auto-sync: son 10 disparos por cada cinco minutos, no uno.
+ * Aquí vivía el disparador del auto-sync: un middleware en CADA petición que,
+ * cada treinta segundos, lanzaba una sincronización de todo el sistema. Ataba
+ * el ritmo de consumo del API externo al tráfico de los usuarios y guardaba su
+ * estado en variables de módulo —`ultimaSyncGlobal`, `syncEnProceso`—, que no
+ * se comparten entre instancias: dos procesos web significaban dos syncs
+ * simultáneos (C-05).
  *
- * El rediseño de este mecanismo es la Fase 4 (hallazgo C-01); aquí solo se
- * corrige el nombre para que el código diga la verdad.
+ * Lo sustituye el planificador de la Fase 4, más abajo: intervalo propio,
+ * cerrojo distribuido y ventanas por partido. Ver `ejecutarCicloDeSincronizacion`.
  */
-const INTERVALO_MINIMO_ENTRE_SYNCS_MS = 30 * 1000;
-
-app.use((req, res, next) => {
-  // En pruebas jamás se dispara: golpearía el API externo de verdad y se
-  // autollamaría por HTTP a un puerto que no está escuchando.
-  if (ENTORNO_DE_PRUEBAS) return next();
-
-  const ahora = Date.now();
-
-  const esArchivoEstatico =
-    req.path.startsWith('/js/') ||
-    req.path.startsWith('/css/') ||
-    req.path.includes('.png') ||
-    req.path.includes('.jpg') ||
-    req.path.includes('.jpeg') ||
-    req.path.includes('.svg') ||
-    req.path.includes('.ico');
-
-  if (esArchivoEstatico) {
-    return next();
-  }
-
-  if (!syncEnProceso && ahora - ultimaSyncGlobal > INTERVALO_MINIMO_ENTRE_SYNCS_MS) {
-    syncEnProceso = true;
-    ultimaSyncGlobal = ahora;
-
-    sincronizarTodasLasJornadasDesdeApi()
-      .catch(err => {
-        console.error('Error auto-sync:', err.message);
-      })
-      .finally(() => {
-        syncEnProceso = false;
-      });
-  }
-
-  next();
-});
 
 /* ================= Auth ================= */
 
@@ -515,6 +476,64 @@ MembresiaSchema.index({ quinielaId: 1, usuarioId: 1 }, { unique: true });
 const Usuario = mongoose.model('Usuario', UsuarioSchema);
 const Quiniela = mongoose.model('Quiniela', QuinielaSchema);
 const Membresia = mongoose.model('Membresia', MembresiaSchema);
+
+/* ========== Modelos globales del sincronizador — Fase 4 ==========
+ *
+ * Ninguno lleva `quinielaId`, y no es un descuido: son justo la parte del
+ * sistema que DEBE compartirse entre quinielas.
+ *
+ * `Fixture` es la caché del estado real de un partido según APIFootball. Si
+ * cuarenta quinielas siguen el mismo partido del Mundial, el partido sigue
+ * siendo uno solo y al proveedor se le pregunta UNA vez, no cuarenta. Antes de
+ * la Fase 4 se preguntaba una vez por partido y por quiniela cada treinta
+ * segundos, que es el hallazgo C-01.
+ *
+ * `JobLock` es el cerrojo distribuido que impide que N instancias del proceso
+ * web ejecuten N sincronizaciones a la vez (hallazgo C-05). El estado del
+ * planificador vivía en variables de módulo —`ultimaSyncGlobal`,
+ * `syncEnProceso`—, que no se comparten entre procesos; ahora vive en la base,
+ * que sí.
+ */
+const FixtureSchema = new mongoose.Schema({
+  /*
+   * Identidad compartida del partido. Es el `apiFixtureId` cuando existe y, si
+   * no, una clave sintética de fecha y equipos, para que dos quinielas que
+   * importaron el mismo partido sin id tampoco lo consulten por separado.
+   */
+  clave: { type: String, required: true, unique: true, index: true },
+  apiFixtureId: { type: String, default: '' },
+  // Lo mínimo para volver a buscar el partido si el id no da resultado.
+  busqueda: {
+    fecha: String,
+    ligaId: String,
+    equipo1: String,
+    equipo2: String
+  },
+  evento: { type: mongoose.Schema.Types.Mixed, default: null },
+  estado: { type: String, default: 'DESCONOCIDO' },
+  apiDate: String,
+  consultadoEn: Date,
+  /*
+   * Cuándo vuelve a tocar preguntar. `null` significa "nunca más": el partido
+   * terminó y su resultado ya no puede cambiar.
+   */
+  proximaConsulta: { type: Date, default: null },
+  fallosConsecutivos: { type: Number, default: 0 },
+  ultimoError: { type: String, default: '' }
+}, { timestamps: true });
+
+// Sostiene la consulta del planificador: "dame lo que ya toca refrescar".
+FixtureSchema.index({ proximaConsulta: 1 });
+
+const JobLockSchema = new mongoose.Schema({
+  nombre: { type: String, required: true, unique: true },
+  instancia: String,
+  tomadoEn: Date,
+  expiraEn: { type: Date, required: true }
+});
+
+const Fixture = mongoose.model('Fixture', FixtureSchema);
+const JobLock = mongoose.model('JobLock', JobLockSchema);
 
 function tenantPlugin(schema) {
   schema.add({
@@ -936,16 +955,17 @@ app.post('/api/quinielas/:id/seleccionar', requireLogin, async (req, res) => {
 
 app.use(async (req, res, next) => {
   try {
-    if (
-      req.get('x-internal-sync-token') === INTERNAL_SYNC_TOKEN &&
-      mongoose.isValidObjectId(req.get('x-quiniela-id'))
-    ) {
-      const quiniela = await Quiniela.findOne({ _id: req.get('x-quiniela-id'), estado: 'activa' });
-      if (!quiniela) return res.status(404).json({ error: 'Quiniela interna no encontrada.' });
-      req.quiniela = quiniela;
-      req.membership = { rol: 'admin', estado: 'activo', internal: true };
-      return tenantContext.run({ quinielaId: quiniela._id }, next);
-    }
+    /*
+     * Aquí había una puerta trasera: un token interno que dejaba entrar a
+     * cualquiera que lo presentara como administrador de la quiniela indicada
+     * en una cabecera. Existía solo porque el sincronizador se llamaba a sí
+     * mismo por HTTP y necesitaba saltarse su propia autenticación.
+     *
+     * Desde la Fase 4 el sincronizador invoca la función directamente dentro
+     * de `tenantContext.run`, así que la puerta sobraba. Un camino que concede
+     * permisos de administrador sin sesión es superficie de ataque que ya no
+     * hace falta mantener.
+     */
     if (!req.session?.usuarioId || !req.session?.quinielaActivaId) return next();
     const [membership, quiniela] = await Promise.all([
       Membresia.findOne({
@@ -968,7 +988,6 @@ app.use(async (req, res, next) => {
 });
 
 app.use('/api', (req, res, next) => {
-  if (req.membership?.internal) return next();
   if (!req.session?.usuarioId) return res.status(401).json({ error: 'Debes iniciar sesión.' });
   if (!req.quiniela || !req.membership) return res.status(409).json({ error: 'Debes seleccionar una quiniela activa.' });
   if (req.quiniela.estado === 'archivada' && !['GET', 'HEAD'].includes(req.method)) {
@@ -1594,26 +1613,486 @@ async function buscarEventoPorFallback(partido) {
 }
 
 
-async function sincronizarTodasLasJornadasDesdeApi() {
-  const jornadas = await Jornada.find({
-    'partidos.apiFixtureId': { $exists: true, $ne: '' }
+/* ================= Sincronizador — Fase 4 (C-01, C-05) =================
+ *
+ * Lo que había antes, y por qué se cambió:
+ *
+ *   Un middleware colgado de CADA petición disparaba, cada treinta segundos,
+ *   una función que recorría las jornadas de TODO el sistema y se autollamaba
+ *   por HTTP a `localhost` una vez por jornada. Cada una de esas llamadas
+ *   preguntaba al proveedor una vez por partido. El coste crecía con el número
+ *   de quinielas aunque todas siguieran exactamente los mismos partidos: con
+ *   veinte quinielas se agota una cuota mensual típica en media hora.
+ *
+ * Lo que hay ahora:
+ *
+ *   1. Un planificador propio, no el tráfico de los usuarios, marca el ritmo.
+ *   2. Un cerrojo en la base impide que dos instancias sincronicen a la vez.
+ *   3. Los partidos se deduplican por clave compartida: un partido, una
+ *      consulta, sin importar cuántas quinielas lo sigan.
+ *   4. Cada partido tiene su ventana según su estado real: terminado no se
+ *      vuelve a consultar nunca, en vivo cada minuto, lejano cada seis horas.
+ *   5. La escritura de resultados es una llamada de función dentro del contexto
+ *      de inquilino, no una petición HTTP a uno mismo.
+ */
+
+const CERROJO_SYNC = 'sincronizacion-global';
+const ID_INSTANCIA = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+
+const INTERVALO_CICLO_SYNC_MS = Number(process.env.SYNC_INTERVALO_MS || 60 * 1000);
+const CONCURRENCIA_MAXIMA_API = Number(process.env.SYNC_CONCURRENCIA || 4);
+
+/*
+ * El cerrojo caduca solo. Si la instancia que lo tomó muere a mitad de ciclo,
+ * nadie lo suelta, y sin caducidad la sincronización quedaría parada para
+ * siempre. Cinco minutos es holgado para un ciclo normal y corto para no dejar
+ * el sistema mudo si algo se cae.
+ */
+const TTL_CERROJO_SYNC_MS = 5 * 60 * 1000;
+
+const VENTANAS_SYNC_MS = {
+  enVivo: 60 * 1000,
+  inminente: 15 * 60 * 1000,
+  lejano: 6 * 60 * 60 * 1000,
+  desconocido: 30 * 60 * 1000,
+  error: 10 * 60 * 1000
+};
+
+const UMBRAL_INMINENTE_MS = 2 * 60 * 60 * 1000;
+
+/*
+ * Un partido cuya hora de inicio pasó hace rato y que el proveedor sigue sin
+ * dar por empezado casi siempre está aplazado, cancelado o mal enlazado. Sin
+ * este umbral se quedaría consultándose cada minuto para siempre.
+ */
+const UMBRAL_ABANDONO_MS = 4 * 60 * 60 * 1000;
+
+const metricasSync = {
+  ciclos: 0,
+  ciclosOmitidosPorCerrojo: 0,
+  llamadasApi: 0,
+  erroresApi: 0,
+  partidosSeguidos: 0,
+  fixturesUnicos: 0,
+  consultasEvitadasPorVentana: 0,
+  jornadasReescritas: 0,
+  ultimoCiclo: null,
+  duracionUltimoCicloMs: null,
+  ultimoError: null
+};
+
+/**
+ * Identidad compartida de un partido, que es la pieza sobre la que descansa
+ * toda la deduplicación. Dos quinielas que siguen el mismo partido producen la
+ * misma clave, así que comparten la misma entrada de caché.
+ */
+function claveDeFixture(partido) {
+  if (partido?.apiFixtureId) return String(partido.apiFixtureId);
+
+  // Sin id del proveedor, la fecha y los dos equipos identifican el partido.
+  const fecha = extraerFechaApi(partido?.apiDate);
+  if (!fecha || !partido?.equipo1 || !partido?.equipo2) return null;
+
+  return `sin-id:${fecha}:${normalizarEquipo(partido.equipo1)}|${normalizarEquipo(partido.equipo2)}`;
+}
+
+function descriptorDeFixture(clave, partido) {
+  return {
+    clave,
+    apiFixtureId: partido.apiFixtureId ? String(partido.apiFixtureId) : '',
+    apiDate: partido.apiDate || '',
+    busqueda: {
+      fecha: extraerFechaApi(partido.apiDate),
+      ligaId: partido.apiLeagueId ? String(partido.apiLeagueId) : '',
+      equipo1: partido.equipo1 || '',
+      equipo2: partido.equipo2 || ''
+    }
+  };
+}
+
+/**
+ * Cuándo volver a preguntar por un partido.
+ *
+ * El detalle que no es obvio: la próxima consulta nunca se pospone más allá
+ * del pitido inicial. Un partido que empieza en tres horas cae en la ventana
+ * "lejano" de seis, y sin este tope se consultaría por primera vez tres horas
+ * después de haber empezado.
+ */
+function calcularProximaConsulta(estado, apiDate, ahora = new Date(), hayError = false) {
+  // Terminado: el resultado ya no puede cambiar y no se vuelve a consultar.
+  if (estado === 'TC') return null;
+
+  const base = ahora.getTime();
+  const inicio = parseFechaPartidoCostaRica(apiDate);
+  const faltan = inicio ? inicio.getTime() - base : null;
+
+  let ventana;
+
+  if (hayError) {
+    ventana = VENTANAS_SYNC_MS.error;
+  } else if (estado === 'LIVE' || estado === 'MT') {
+    ventana = VENTANAS_SYNC_MS.enVivo;
+  } else if (faltan === null) {
+    ventana = VENTANAS_SYNC_MS.desconocido;
+  } else if (faltan <= -UMBRAL_ABANDONO_MS) {
+    ventana = VENTANAS_SYNC_MS.lejano;
+  } else if (faltan <= 0) {
+    // Ya debería haber empezado: el proveedor está a punto de darlo por vivo.
+    ventana = VENTANAS_SYNC_MS.enVivo;
+  } else if (faltan <= UMBRAL_INMINENTE_MS) {
+    ventana = VENTANAS_SYNC_MS.inminente;
+  } else {
+    ventana = VENTANAS_SYNC_MS.lejano;
+  }
+
+  let proxima = base + ventana;
+
+  if (faltan !== null && faltan > 0) {
+    proxima = Math.min(proxima, inicio.getTime());
+  }
+
+  return new Date(proxima);
+}
+
+/**
+ * Recorre `items` con un tope de tareas simultáneas. Es un limitador mínimo
+ * para no añadir una dependencia por diez líneas: sin él, un ciclo con
+ * doscientos partidos abriría doscientas peticiones a la vez contra el
+ * proveedor, que responde con limitación de tasa.
+ */
+async function conLimiteDeConcurrencia(items, limite, tarea) {
+  const pendientes = [...items];
+  const trabajadores = [];
+
+  for (let i = 0; i < Math.max(1, limite); i += 1) {
+    trabajadores.push((async () => {
+      while (pendientes.length) {
+        const item = pendientes.shift();
+        await tarea(item);
+      }
+    })());
+  }
+
+  await Promise.all(trabajadores);
+}
+
+/*
+ * Único punto por el que el sincronizador habla con el proveedor, y a la vez
+ * la costura por la que las pruebas lo sustituyen por eventos sintéticos. Sin
+ * ella, ejercitar el ciclo completo exigiría red y cuota real, así que en la
+ * práctica no se probaría.
+ */
+const proveedorDeEventos = {
+  porId: (id) => buscarEventoPorId(id),
+  porFecha: (partido) => buscarEventoPorFallback(partido)
+};
+
+/** Pregunta al proveedor por un partido: primero por id, y si no, por fecha. */
+async function consultarProveedor(descriptor) {
+  if (descriptor.apiFixtureId) {
+    metricasSync.llamadasApi += 1;
+    const evento = await proveedorDeEventos.porId(descriptor.apiFixtureId);
+    if (evento) return evento;
+  }
+
+  const busqueda = descriptor.busqueda || {};
+  if (!busqueda.fecha) return null;
+
+  metricasSync.llamadasApi += 1;
+
+  return await proveedorDeEventos.porFecha({
+    apiDate: busqueda.fecha,
+    apiLeagueId: busqueda.ligaId,
+    equipo1: busqueda.equipo1,
+    equipo2: busqueda.equipo2
+  });
+}
+
+/**
+ * Consulta un partido y guarda lo que devuelva el proveedor en la caché
+ * compartida. Devuelve `true` solo si trajo datos nuevos, que es lo que decide
+ * si vale la pena reescribir los resultados oficiales de las quinielas.
+ */
+async function refrescarFixture(descriptor, ahora = new Date()) {
+  const previo = descriptor.previo || null;
+
+  let evento = null;
+  let error = null;
+
+  try {
+    evento = await consultarProveedor(descriptor);
+  } catch (err) {
+    error = err?.message || String(err);
+    metricasSync.erroresApi += 1;
+  }
+
+  const cambios = {
+    apiFixtureId: descriptor.apiFixtureId,
+    busqueda: descriptor.busqueda,
+    apiDate: descriptor.apiDate,
+    consultadoEn: ahora,
+    fallosConsecutivos: error ? (previo?.fallosConsecutivos || 0) + 1 : 0,
+    ultimoError: error || ''
+  };
+
+  /*
+   * Ante un fallo, o ante un proveedor que no conoce el partido, se conserva lo
+   * último que sí se supo. Sobrescribir con vacío borraría un marcador bueno
+   * por un error de red.
+   */
+  const estadoBase = previo?.estado || 'DESCONOCIDO';
+  const estado = evento ? obtenerEstadoPartido(evento, null).estado : estadoBase;
+
+  cambios.estado = estado;
+  if (evento) cambios.evento = evento;
+
+  cambios.proximaConsulta = calcularProximaConsulta(
+    estado,
+    descriptor.apiDate,
+    ahora,
+    Boolean(error)
+  );
+
+  await Fixture.findOneAndUpdate(
+    { clave: descriptor.clave },
+    { $set: cambios, $setOnInsert: { clave: descriptor.clave } },
+    { upsert: true }
+  );
+
+  return Boolean(evento);
+}
+
+/**
+ * Refresca solo los partidos a los que ya les toca, una vez cada uno.
+ *
+ * `catalogo` es un mapa de clave compartida a descriptor: ahí es donde han
+ * colapsado ya los partidos repetidos entre quinielas. Devuelve el conjunto de
+ * claves que trajeron datos nuevos.
+ */
+async function refrescarFixturesPendientes(catalogo, { ahora = new Date(), forzar = false } = {}) {
+  const claves = [...catalogo.keys()];
+  if (!claves.length) return new Set();
+
+  const existentes = await Fixture.find({ clave: { $in: claves } }).lean();
+  const porClave = new Map(existentes.map(doc => [doc.clave, doc]));
+
+  const pendientes = [];
+
+  for (const clave of claves) {
+    const previo = porClave.get(clave);
+    const descriptor = { ...catalogo.get(clave), previo: previo || null };
+
+    if (!previo) {
+      pendientes.push(descriptor);
+      continue;
+    }
+
+    if (!forzar && previo.estado === 'TC') {
+      // Terminado y bloqueado: no se vuelve a gastar una llamada en él jamás.
+      metricasSync.consultasEvitadasPorVentana += 1;
+      continue;
+    }
+
+    if (!forzar && previo.proximaConsulta && new Date(previo.proximaConsulta) > ahora) {
+      metricasSync.consultasEvitadasPorVentana += 1;
+      continue;
+    }
+
+    pendientes.push(descriptor);
+  }
+
+  const refrescadas = new Set();
+
+  await conLimiteDeConcurrencia(pendientes, CONCURRENCIA_MAXIMA_API, async descriptor => {
+    try {
+      const huboDatos = await refrescarFixture(descriptor, ahora);
+      if (huboDatos) refrescadas.add(descriptor.clave);
+    } catch (error) {
+      console.error(`Error refrescando el partido ${descriptor.clave}:`, error.message);
+    }
   });
 
-  for (const jornada of jornadas) {
-    try {
-      await axios.post(
-        `http://localhost:${PORT}/api/sync-resultados-oficiales/${encodeURIComponent(jornada.nombre)}`,
-        {},
-        {
-          headers: {
-            'x-internal-sync-token': INTERNAL_SYNC_TOKEN,
-            'x-quiniela-id': jornada.quinielaId.toString()
+  return refrescadas;
+}
+
+/** Construye el catálogo deduplicado de los partidos de una jornada. */
+function catalogoDeJornada(jornadaDoc) {
+  const catalogo = new Map();
+
+  for (const partido of jornadaDoc.partidos || []) {
+    const clave = claveDeFixture(partido);
+    if (!clave || catalogo.has(clave)) continue;
+    catalogo.set(clave, descriptorDeFixture(clave, partido));
+  }
+
+  return catalogo;
+}
+
+/* ---------- Cerrojo distribuido ---------- */
+
+/**
+ * Toma el cerrojo si está libre o caducado.
+ *
+ * El filtro por `expiraEn` vencido junto al `upsert` es lo que hace la
+ * operación atómica: si otra instancia tiene el cerrojo vivo, el filtro no
+ * encuentra nada, el upsert intenta insertar y choca contra el índice único
+ * por nombre. Ese choque —código 11000— es exactamente la respuesta "lo tiene
+ * otro", no un error que haya que propagar.
+ */
+async function tomarCerrojo(nombre, ttlMs, ahora = new Date()) {
+  try {
+    const resultado = await JobLock.findOneAndUpdate(
+      { nombre, expiraEn: { $lte: ahora } },
+      {
+        $set: {
+          instancia: ID_INSTANCIA,
+          tomadoEn: ahora,
+          expiraEn: new Date(ahora.getTime() + ttlMs)
+        },
+        $setOnInsert: { nombre }
+      },
+      { upsert: true, new: true }
+    );
+
+    return Boolean(resultado);
+  } catch (error) {
+    if (error?.code === 11000) return false;
+    throw error;
+  }
+}
+
+/** Suelta el cerrojo, pero solo si sigue siendo nuestro. */
+async function soltarCerrojo(nombre) {
+  await JobLock.updateOne(
+    { nombre, instancia: ID_INSTANCIA },
+    { $set: { expiraEn: new Date(0) } }
+  );
+}
+
+/* ---------- El ciclo ---------- */
+
+/**
+ * Un ciclo completo de sincronización.
+ *
+ * El censo de jornadas se hace quiniela por quiniela, cada una dentro de su
+ * propio contexto de inquilino. Podría leerse todo de una vez sin contexto
+ * —sería más corto— pero esa es justo la forma del hallazgo C-02: una consulta
+ * global sobre una colección con `quinielaId` que parece inocente hasta que dos
+ * quinielas coinciden en el nombre de una jornada.
+ */
+async function ejecutarCicloDeSincronizacion({ ahora = new Date() } = {}) {
+  const arranque = Date.now();
+
+  if (!(await tomarCerrojo(CERROJO_SYNC, TTL_CERROJO_SYNC_MS, ahora))) {
+    metricasSync.ciclosOmitidosPorCerrojo += 1;
+    return { omitido: true, motivo: 'cerrojo en poder de otra instancia' };
+  }
+
+  try {
+    const quinielas = await Quiniela.find({ estado: 'activa' }).select('_id nombre').lean();
+
+    const catalogo = new Map();
+    const trabajo = [];
+    let partidosSeguidos = 0;
+
+    for (const quiniela of quinielas) {
+      await tenantContext.run({ quinielaId: quiniela._id }, async () => {
+        const jornadas = await Jornada.find({
+          'partidos.apiFixtureId': { $exists: true, $ne: '' }
+        }).lean();
+
+        for (const jornada of jornadas) {
+          const claves = [];
+
+          for (const partido of jornada.partidos || []) {
+            const clave = claveDeFixture(partido);
+            if (!clave) continue;
+
+            partidosSeguidos += 1;
+            claves.push(clave);
+
+            if (!catalogo.has(clave)) {
+              catalogo.set(clave, descriptorDeFixture(clave, partido));
+            }
+          }
+
+          if (claves.length) {
+            trabajo.push({
+              quinielaId: quiniela._id,
+              nombreQuiniela: quiniela.nombre,
+              jornada: jornada.nombre,
+              claves
+            });
           }
         }
-      );
-    } catch (err) {
-      console.error(`Error sincronizando ${jornada.nombre}:`, err.message);
+      });
     }
+
+    const refrescadas = await refrescarFixturesPendientes(catalogo, { ahora });
+
+    let jornadasReescritas = 0;
+
+    for (const item of trabajo) {
+      // Sin datos nuevos no hay nada que reescribir: el resultado sería idéntico.
+      if (!item.claves.some(clave => refrescadas.has(clave))) continue;
+
+      try {
+        await tenantContext.run(
+          { quinielaId: item.quinielaId },
+          async () => await sincronizarJornadaDesdeApi(item.jornada)
+        );
+        jornadasReescritas += 1;
+      } catch (error) {
+        console.error(
+          `Error sincronizando "${item.jornada}" de "${item.nombreQuiniela}":`,
+          error.message
+        );
+      }
+    }
+
+    metricasSync.ciclos += 1;
+    metricasSync.partidosSeguidos = partidosSeguidos;
+    metricasSync.fixturesUnicos = catalogo.size;
+    metricasSync.jornadasReescritas += jornadasReescritas;
+    metricasSync.ultimoCiclo = new Date().toISOString();
+    metricasSync.duracionUltimoCicloMs = Date.now() - arranque;
+
+    return {
+      omitido: false,
+      quinielas: quinielas.length,
+      partidosSeguidos,
+      fixturesUnicos: catalogo.size,
+      fixturesRefrescados: refrescadas.size,
+      jornadasReescritas,
+      duracionMs: metricasSync.duracionUltimoCicloMs
+    };
+  } finally {
+    await soltarCerrojo(CERROJO_SYNC).catch(error => {
+      console.error('Error soltando el cerrojo de sincronización:', error.message);
+    });
+  }
+}
+
+let cicloEnCurso = false;
+
+/*
+ * Guarda local además del cerrojo distribuido. El cerrojo evita que dos
+ * procesos coincidan; esto evita que un ciclo lento se solape consigo mismo
+ * dentro del mismo proceso, que era el papel de `syncEnProceso`.
+ */
+async function tickDeSincronizacion() {
+  if (cicloEnCurso) return;
+  if (!mongoListo()) return;
+
+  cicloEnCurso = true;
+
+  try {
+    await ejecutarCicloDeSincronizacion();
+  } catch (error) {
+    metricasSync.ultimoError = error.message;
+    console.error('Error en el ciclo de sincronización:', error.message);
+  } finally {
+    cicloEnCurso = false;
   }
 }
 
@@ -1733,170 +2212,218 @@ function obtenerEstadoPartido(fixture, partido) {
 }
 
 
+/**
+ * Reescribe los resultados oficiales de una jornada a partir de la caché de
+ * partidos, y resuelve sus trivias pendientes.
+ *
+ * Exige contexto de inquilino por la misma razón que
+ * `resolverTriviasPendientes()`: busca la jornada por nombre, y los nombres se
+ * repiten entre quinielas. Sin filtro por quiniela escribiría los resultados de
+ * una en la otra.
+ *
+ * Antes esto era el cuerpo de la ruta HTTP, y el planificador se llamaba a sí
+ * mismo por la red para ejecutarlo —con un token interno inventado para poder
+ * saltarse su propia autenticación—. Ahora es una función, y la ruta es una
+ * envoltura fina sobre ella.
+ *
+ * `forzar` distingue las dos formas de llegar aquí: el planificador ya refrescó
+ * lo que tocaba y solo quiere volcar la caché, mientras que un administrador
+ * que pulsa "sincronizar" espera datos frescos aunque la ventana no haya
+ * vencido.
+ */
+async function sincronizarJornadaDesdeApi(jornadaNombre, { forzar = false } = {}) {
+  if (!tenantContext.getStore()?.quinielaId) {
+    throw new Error(
+      'sincronizarJornadaDesdeApi() requiere contexto de quiniela. ' +
+      'Para el barrido global usa ejecutarCicloDeSincronizacion().'
+    );
+  }
+
+  if (!process.env.APIFOOTBALL_COM_KEY) {
+    const error = new Error('Falta configurar APIFOOTBALL_COM_KEY en el .env');
+    error.status = 500;
+    throw error;
+  }
+
+  const jornadaDoc = await Jornada.findOne({ nombre: jornadaNombre });
+
+  if (!jornadaDoc) {
+    const error = new Error('Jornada no encontrada');
+    error.status = 404;
+    throw error;
+  }
+
+  const catalogo = catalogoDeJornada(jornadaDoc);
+
+  if (forzar) {
+    await refrescarFixturesPendientes(catalogo, { forzar: true });
+  }
+
+  /*
+   * Una sola lectura para toda la jornada. Antes era una llamada al proveedor
+   * por partido —y por quiniela—; ahora es una consulta a la caché compartida.
+   */
+  const cacheados = await Fixture.find({ clave: { $in: [...catalogo.keys()] } })
+    .select('clave evento')
+    .lean();
+
+  const eventosPorClave = new Map(cacheados.map(doc => [doc.clave, doc.evento]));
+
+  const oficialExistente = await ResultadoOficial.findOne({ jornada: jornadaNombre });
+  const resultadosExistentes = oficialExistente ? oficialExistente.resultados : [];
+
+  const resultadosActualizados = [];
+
+  for (const partido of jornadaDoc.partidos) {
+    const existente = buscarOficialCorrespondiente(resultadosExistentes, partido);
+
+    const clave = claveDeFixture(partido);
+    const fixture = clave ? eventosPorClave.get(clave) || null : null;
+
+    if (!fixture) {
+      if (existente) {
+        resultadosActualizados.push(existente);
+      } else {
+        resultadosActualizados.push({
+          equipo1: partido.equipo1,
+          logoEquipo1: partido.logoEquipo1 || '',
+          marcador1: null,
+          equipo2: partido.equipo2,
+          logoEquipo2: partido.logoEquipo2 || '',
+          marcador2: null,
+          comodin: partido.comodin,
+
+          estado: 'PROGRAMADO',
+          minuto: null,
+          fecha: partido.apiDate || '',
+
+          origen: 'api',
+          bloqueadoFinal: false,
+          actualizadoEn: new Date()
+        });
+      }
+
+      continue;
+    }
+
+    const home = normalizarEquipo(fixture.match_hometeam_name);
+    const away = normalizarEquipo(fixture.match_awayteam_name);
+    const eq1 = normalizarEquipo(partido.equipo1);
+    const eq2 = normalizarEquipo(partido.equipo2);
+
+    const vieneInvertido = home === eq2 && away === eq1;
+    const estadoPartido = obtenerEstadoPartido(fixture, partido);
+    const marcador90 = obtenerMarcador90Minutos(fixture, estadoPartido);
+
+    const resultadoApi = {
+      equipo1: partido.equipo1,
+      logoEquipo1: partido.logoEquipo1 || '',
+      marcador1: vieneInvertido ? marcador90.marcador2 : marcador90.marcador1,
+      equipo2: partido.equipo2,
+      logoEquipo2: partido.logoEquipo2 || '',
+      marcador2: vieneInvertido ? marcador90.marcador1 : marcador90.marcador2,
+      comodin: partido.comodin,
+
+      estado: estadoPartido.estado,
+      minuto: estadoPartido.minuto,
+      fecha: partido.apiDate || '',
+
+      origen: 'api',
+      bloqueadoFinal: estadoPartido.estado === 'TC',
+      actualizadoEn: new Date()
+    };
+
+    if (estadoPartido.estado === 'LIVE' || estadoPartido.estado === 'MT') {
+      console.log('===== SYNC LIVE =====');
+      console.log({
+        horaCR: new Date().toLocaleString('es-CR', {
+          timeZone: 'America/Costa_Rica'
+        }),
+
+        jornada: jornadaNombre,
+
+        partido: `${partido.equipo1} vs ${partido.equipo2}`,
+
+        apiFixtureId: partido.apiFixtureId,
+
+        apiRaw: {
+          match_status: fixture.match_status,
+          match_live: fixture.match_live,
+          score: `${fixture.match_hometeam_score}-${fixture.match_awayteam_score}`,
+          ftScore: `${fixture.match_hometeam_ft_score}-${fixture.match_awayteam_ft_score}`
+        },
+
+        calculadoSistema: {
+          estado: estadoPartido.estado,
+          minuto: estadoPartido.minuto
+        },
+
+        existente: existente ? {
+          marcador1: existente.marcador1,
+          marcador2: existente.marcador2,
+          estado: existente.estado,
+          minuto: existente.minuto,
+          origen: existente.origen
+        } : null,
+
+        decision: {
+          marcador: `${resultadoApi.marcador1}-${resultadoApi.marcador2}`,
+          accion: 'GUARDAR_API_LIVE'
+        }
+      });
+      console.log('=====================');
+    }
+
+    if (estadoPartido.estado === 'LIVE' || estadoPartido.estado === 'MT') {
+      resultadosActualizados.push(resultadoApi);
+      continue;
+    }
+
+    if (estadoPartido.estado === 'TC' && existente?.origen === 'manual') {
+      resultadosActualizados.push(existente);
+      continue;
+    }
+
+    if (estadoPartido.estado === 'PROGRAMADO' && existente) {
+      resultadosActualizados.push(existente);
+      continue;
+    }
+
+    resultadosActualizados.push(resultadoApi);
+  }
+
+  await ResultadoOficial.findOneAndUpdate(
+    { jornada: jornadaNombre },
+    {
+      jornada: jornadaNombre,
+      resultados: resultadosActualizados
+    },
+    { upsert: true, new: true }
+  );
+
+  await resolverTriviasPendientes(jornadaNombre);
+
+  return resultadosActualizados;
+}
+
 app.post('/api/sync-resultados-oficiales/:jornada', requireAdmin, async (req, res) => {
   try {
     const { jornada } = req.params;
 
-    if (!process.env.APIFOOTBALL_COM_KEY) {
-      return res.status(500).json({
-        error: 'Falta configurar APIFOOTBALL_COM_KEY en el .env'
-      });
-    }
-
-    const jornadaDoc = await Jornada.findOne({ nombre: jornada });
-
-    if (!jornadaDoc) {
-      return res.status(404).json({ error: 'Jornada no encontrada' });
-    }
-
-    const oficialExistente = await ResultadoOficial.findOne({ jornada });
-    const resultadosExistentes = oficialExistente ? oficialExistente.resultados : [];
-
-    const resultadosActualizados = [];
-
-    for (const partido of jornadaDoc.partidos) {
-      const existente = buscarOficialCorrespondiente(resultadosExistentes, partido);
-
-      let fixture = null;
-
-      if (partido.apiFixtureId) {
-        fixture = await buscarEventoPorId(partido.apiFixtureId);
-      }
-
-      if (!fixture) {
-        fixture = await buscarEventoPorFallback(partido);
-      }
-
-      if (!fixture) {
-        if (existente) {
-          resultadosActualizados.push(existente);
-        } else {
-          resultadosActualizados.push({
-            equipo1: partido.equipo1,
-            logoEquipo1: partido.logoEquipo1 || '',
-            marcador1: null,
-            equipo2: partido.equipo2,
-            logoEquipo2: partido.logoEquipo2 || '',
-            marcador2: null,
-            comodin: partido.comodin,
-
-            estado: 'PROGRAMADO',
-            minuto: null,
-            fecha: partido.apiDate || '',
-
-            origen: 'api',
-            bloqueadoFinal: false,
-            actualizadoEn: new Date()
-          });
-        }
-
-        continue;
-      }
-
-      const home = normalizarEquipo(fixture.match_hometeam_name);
-      const away = normalizarEquipo(fixture.match_awayteam_name);
-      const eq1 = normalizarEquipo(partido.equipo1);
-      const eq2 = normalizarEquipo(partido.equipo2);
-
-      const vieneInvertido = home === eq2 && away === eq1;
-      const estadoPartido = obtenerEstadoPartido(fixture, partido);
-      const marcador90 = obtenerMarcador90Minutos(fixture, estadoPartido);
-
-      const resultadoApi = {
-        equipo1: partido.equipo1,
-        logoEquipo1: partido.logoEquipo1 || '',
-        marcador1: vieneInvertido ? marcador90.marcador2 : marcador90.marcador1,
-        equipo2: partido.equipo2,
-        logoEquipo2: partido.logoEquipo2 || '',
-        marcador2: vieneInvertido ? marcador90.marcador1 : marcador90.marcador2,
-        comodin: partido.comodin,
-
-        estado: estadoPartido.estado,
-        minuto: estadoPartido.minuto,
-        fecha: partido.apiDate || '',
-
-        origen: 'api',
-        bloqueadoFinal: estadoPartido.estado === 'TC',
-        actualizadoEn: new Date()
-      };
-
-      if (estadoPartido.estado === 'LIVE' || estadoPartido.estado === 'MT') {
-        console.log('===== SYNC LIVE =====');
-        console.log({
-          horaCR: new Date().toLocaleString('es-CR', {
-            timeZone: 'America/Costa_Rica'
-          }),
-
-          jornada,
-
-          partido: `${partido.equipo1} vs ${partido.equipo2}`,
-
-          apiFixtureId: partido.apiFixtureId,
-
-          apiRaw: {
-            match_status: fixture.match_status,
-            match_live: fixture.match_live,
-            score: `${fixture.match_hometeam_score}-${fixture.match_awayteam_score}`,
-            ftScore: `${fixture.match_hometeam_ft_score}-${fixture.match_awayteam_ft_score}`
-          },
-
-          calculadoSistema: {
-            estado: estadoPartido.estado,
-            minuto: estadoPartido.minuto
-          },
-
-          existente: existente ? {
-            marcador1: existente.marcador1,
-            marcador2: existente.marcador2,
-            estado: existente.estado,
-            minuto: existente.minuto,
-            origen: existente.origen
-          } : null,
-
-          decision: {
-            marcador: `${resultadoApi.marcador1}-${resultadoApi.marcador2}`,
-            accion: 'GUARDAR_API_LIVE'
-          }
-        });
-        console.log('=====================');
-      }
-
-      if (estadoPartido.estado === 'LIVE' || estadoPartido.estado === 'MT') {
-        resultadosActualizados.push(resultadoApi);
-        continue;
-      }
-
-      if (estadoPartido.estado === 'TC' && existente?.origen === 'manual') {
-        resultadosActualizados.push(existente);
-        continue;
-      }
-
-      if (estadoPartido.estado === 'PROGRAMADO' && existente) {
-        resultadosActualizados.push(existente);
-        continue;
-      }
-
-      resultadosActualizados.push(resultadoApi);
-    }
-
-    await ResultadoOficial.findOneAndUpdate(
-      { jornada },
-      {
-        jornada,
-        resultados: resultadosActualizados
-      },
-      { upsert: true, new: true }
-    );
-
-    await resolverTriviasPendientes(jornada);
+    // Petición manual de un administrador: se salta las ventanas a propósito.
+    const resultados = await sincronizarJornadaDesdeApi(jornada, { forzar: true });
 
     res.json({
       success: true,
       jornada,
-      resultados: resultadosActualizados
+      resultados
     });
 
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+
     console.error('Error sincronizando resultados oficiales:', error.response?.data || error.message);
     res.status(500).json({ error: 'Error sincronizando resultados oficiales' });
   }
@@ -3127,13 +3654,56 @@ async function resolverTriviasDeTodasLasQuinielas() {
 
 const INTERVALO_RESOLUCION_TRIVIAS_MS = 5 * 60 * 1000;
 
-if (!ENTORNO_DE_PRUEBAS) {
+/*
+ * Interruptor de los trabajos periódicos.
+ *
+ * Hoy corren dentro del proceso web y el cerrojo distribuido evita que varias
+ * instancias los dupliquen. La bandera existe para el día en que convenga
+ * moverlos a un proceso aparte: se despliega el mismo código con
+ * `JOBS_HABILITADOS=false` en las instancias que solo atienden peticiones, y
+ * `true` en la que hace de trabajador. Sin ella habría que partir el código
+ * antes de poder partir el despliegue.
+ */
+const JOBS_HABILITADOS = process.env.JOBS_HABILITADOS !== 'false';
+
+if (!ENTORNO_DE_PRUEBAS && JOBS_HABILITADOS) {
   setInterval(() => {
     resolverTriviasDeTodasLasQuinielas().catch(error => {
       console.error('Error automático resolviendo trivias:', error.message);
     });
   }, INTERVALO_RESOLUCION_TRIVIAS_MS);
+
+  setInterval(() => {
+    tickDeSincronizacion();
+  }, INTERVALO_CICLO_SYNC_MS);
 }
+
+/*
+ * Consumo del proveedor y salud del planificador.
+ *
+ * `consultasAhorradasPorDeduplicacion` es la medida directa del hallazgo C-01:
+ * cuántas llamadas al API se habrían hecho de más por seguir el mismo partido
+ * desde varias quinielas. Los contadores son por instancia y se reinician con
+ * el proceso; para un consumo consolidado haría falta persistirlos, que es
+ * trabajo de la observabilidad (M-24).
+ */
+app.get('/api/admin/sync-metricas', requireAdmin, (req, res) => {
+  res.json({
+    ...metricasSync,
+    consultasAhorradasPorDeduplicacion: Math.max(
+      0,
+      metricasSync.partidosSeguidos - metricasSync.fixturesUnicos
+    ),
+    configuracion: {
+      intervaloCicloMs: INTERVALO_CICLO_SYNC_MS,
+      concurrenciaMaxima: CONCURRENCIA_MAXIMA_API,
+      ttlCerrojoMs: TTL_CERROJO_SYNC_MS,
+      ventanasMs: VENTANAS_SYNC_MS,
+      trabajosHabilitados: JOBS_HABILITADOS
+    },
+    instancia: ID_INSTANCIA
+  });
+});
 
 
 
@@ -3906,6 +4476,8 @@ module.exports = {
   diagnosticarErrorMongo,
   // Modelos de plataforma
   Usuario, Quiniela, Membresia,
+  // Modelos globales del sincronizador, deliberadamente sin quinielaId
+  Fixture, JobLock,
   // Modelos de dominio, todos con aislamiento por quiniela
   Jugador, Jornada, Resultado, ResultadoOficial,
   Trivia, RespuestaTrivia, Equipo, PronosticoCampeon, CampeonOficial,
@@ -3918,5 +4490,19 @@ module.exports = {
   obtenerMarcador90Minutos,
   minutoApiFootball,
   partidoYaInicio,
-  TIPOS_TRIVIA
+  TIPOS_TRIVIA,
+  // Sincronizador (Fase 4)
+  sincronizarJornadaDesdeApi,
+  ejecutarCicloDeSincronizacion,
+  refrescarFixturesPendientes,
+  calcularProximaConsulta,
+  claveDeFixture,
+  catalogoDeJornada,
+  conLimiteDeConcurrencia,
+  tomarCerrojo,
+  soltarCerrojo,
+  proveedorDeEventos,
+  metricasSync,
+  VENTANAS_SYNC_MS,
+  CERROJO_SYNC
 };
