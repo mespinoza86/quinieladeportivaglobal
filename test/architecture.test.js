@@ -453,3 +453,41 @@ test('una jornada sin fecha de cierre no publica los pronósticos', () => {
   const usos = serverSinComentarios.match(/jornadaEstaCerradaParaPronosticos\(/g) || [];
   assert.ok(usos.length >= 4, `Se esperaban la definición y sus tres usos, hubo ${usos.length}`);
 });
+
+test('toda pantalla con campo de contraseña carga el ojo para mostrarla', () => {
+  /*
+   * El botón lo monta un script compartido, no el marcado de cada página. Esta
+   * prueba es la que impide que una pantalla nueva con contraseña se quede sin
+   * él: es justo el tipo de detalle que se olvida al añadir la décima pantalla.
+   */
+  const conPassword = fs.readdirSync(path.join(root, 'public'))
+    .filter(archivo => archivo.endsWith('.html'))
+    .filter(archivo => /type=["']password["']/.test(
+      fs.readFileSync(path.join(root, 'public', archivo), 'utf8')
+    ));
+
+  assert.ok(conPassword.length >= 9, `Se esperaban al menos 9 pantallas, hubo ${conPassword.length}`);
+
+  for (const archivo of conPassword) {
+    const html = fs.readFileSync(path.join(root, 'public', archivo), 'utf8');
+    assert.match(html, /password-visible\.js/, `${archivo} no carga password-visible.js`);
+  }
+});
+
+test('el ojo no usa innerHTML ni manejadores en atributo', () => {
+  const script = fs.readFileSync(path.join(root, 'private', 'js', 'password-visible.js'), 'utf8');
+
+  /*
+   * El icono se dibuja con createElementNS: no se añade deuda de S-04.
+   *
+   * Se busca la ASIGNACIÓN, no la palabra: el propio script explica en un
+   * comentario por qué no usa innerHTML, y buscar la palabra suelta hacía
+   * fallar a la prueba contra su propia documentación.
+   */
+  assert.doesNotMatch(script, /innerHTML\s*(=|\+=)/);
+  assert.doesNotMatch(script, /insertAdjacentHTML/);
+  assert.match(script, /createElementNS/);
+
+  // Dentro de un <form>, un botón sin type explícito lo enviaría al pulsarlo.
+  assert.match(script, /boton\.type = 'button'/);
+});

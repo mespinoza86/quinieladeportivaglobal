@@ -1656,3 +1656,53 @@ button + button {
     cursor: not-allowed;
 }
 
+
+/* ---------- Ojo para mostrar la contraseña ---------- */
+
+/*
+ * El botón lo inserta password-visible.js envolviendo cada campo. `flow-root`
+ * evita que el margen vertical del input se escape del contenedor: si se
+ * escapara, el `top`/`bottom` del botón dejaría de alinearse con la caja del
+ * campo y el ojo quedaría descolgado.
+ */
+.password-field {
+  position: relative;
+  display: flow-root;
+}
+
+.password-field > input {
+  /* Hueco para que el texto nunca pase por debajo del ojo. */
+  padding-right: 48px;
+}
+
+/*
+ * La regla general de `button` da ancho completo y fondo degradado, que aquí
+ * taparía el campo entero. Se neutraliza a mano.
+ */
+.password-field > .password-toggle {
+  position: absolute;
+  right: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 40px;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.password-field > .password-toggle:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+.password-field > .password-toggle:focus-visible {
+  outline: 2px solid rgba(34, 197, 94, 0.55);
+  outline-offset: -2px;
+}

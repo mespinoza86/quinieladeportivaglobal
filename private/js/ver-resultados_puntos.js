@@ -193,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return {
             ok: resp.ok && data.success,
-            error: data.error || 'Contraseña incorrecta'
+            error: data.error || 'Contraseña incorrecta.'
         };
     }
 

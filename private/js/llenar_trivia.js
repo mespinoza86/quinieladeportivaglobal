@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await resp.json();
 
       if (!resp.ok || !data.success) {
-        alert(data.error || 'Contraseña incorrecta');
+        alert(data.error || 'Contraseña incorrecta.');
       } else {
         passwordCorrecta = true;
         jugadorValidado = jugador;

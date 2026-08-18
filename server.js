@@ -1504,7 +1504,7 @@ app.post('/api/jugadores/:nombre/verificar-password', async (req, res) => {
     return res.json({ success: true });
   }
 
-  res.status(401).json({ error: 'Contraseña incorrecta' });
+  res.status(401).json({ error: 'Contraseña incorrecta.' });
 });
 
 app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
@@ -1521,7 +1521,7 @@ app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
 
   if (jugador.password) {
     const match = await bcrypt.compare(currentPassword, jugador.password);
-    if (!match) return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+    if (!match) return res.status(400).json({ message: 'Contraseña actual incorrecta.' });
   }
 
   jugador.password = await bcrypt.hash(newPassword, SALT_ROUNDS);
@@ -4292,7 +4292,7 @@ app.post('/api/resultados-seguros/:jugador/:jornada', async (req, res) => {
         if (!match) {
           return res.status(401).json({
             success: false,
-            error: 'Contraseña incorrecta'
+            error: 'Contraseña incorrecta.'
           });
         }
       }
