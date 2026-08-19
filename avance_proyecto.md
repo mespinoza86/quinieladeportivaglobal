@@ -1792,8 +1792,8 @@ worker.js         → solo jobs
 
 ## 20. Plan de producto — las diez peticiones del 18 de agosto
 
-> **Estado: analizado y ordenado, sin empezar.** Nada de esta sección está
-> implementado. Se aborda una fase a la vez.
+> **Estado: analizado y ordenado. La Fase A está completada** (Entrada 026, 18
+> de agosto de 2026); el resto sigue sin empezar. Se aborda una fase a la vez.
 
 Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
 para agrupar no es el tema sino la **dependencia**: cosas que comparten una
@@ -1804,7 +1804,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 
 | Orden | Fase | Peticiones | Por qué aquí |
 |---|---|---|---|
-| **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada |
+| ✅ **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada. **Completada el 18-ago-2026** |
 | **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez |
 | **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual |
 | **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien |
@@ -1825,7 +1825,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 
 ---
 
-### 20.2 Fase A — Retoques de interfaz *(peticiones 4 y 6)*
+### ✅ 20.2 Fase A — Retoques de interfaz *(peticiones 4 y 6)* — COMPLETADA el 18 de agosto de 2026
 
 | # | Petición |
 |---|---|
@@ -1851,6 +1851,14 @@ Se añade una que fije que la tarjeta nueva existe y navega, y otra que el botó
 de llenar jornada no ocupa toda la anchura en escritorio.
 
 **Sin decisiones pendientes.** Se puede empezar tal cual.
+
+**Cómo quedó (Entrada 026).** El diagnóstico del plan era el equivocado: la
+tarjeta no ocupaba toda la anchura —eso ya estaba bien—, sino que medía
+**411×261 px** de alto contra los 88 de sus compañeras, porque compartía fila de
+rejilla con el panel del rotador y se estiraba hasta su altura. Se arregla
+haciendo que el rotador ocupe la fila entera a partir de 720 px. La tarjeta de
+`clasificacion-jornada.html` va junto a la Tabla General. Cuatro pruebas nuevas
+en `test/e2e/portada.spec.js`, verificadas reintroduciendo ambos fallos.
 
 ---
 
@@ -4607,6 +4615,118 @@ integración continua  → verde, confirmado en GitHub Actions
 **Pendiente / siguiente paso:** seguir troceando `server.js` —rutas, modelos y
 sincronizador—, y las decisiones que dependen del usuario: C-06 (el clúster M0
 que se auto-pausa), M-30 (la base llamada `test`) y la configuración de Render.
+
+---
+
+### 📌 Entrada 026 — 18 de agosto de 2026 — Fase A: los dos retoques de interfaz
+
+**Objetivo:** la primera fase del plan de producto (§20.2), la única sin
+decisiones pendientes: la petición 4 —el escritorio se ve mal, el botón de
+llenar jornada es desproporcionado— y la 6 —la tabla por jornada solo se alcanza
+desde la barra inferior—.
+
+---
+
+#### Lo primero fue medir, no mirar
+
+La petición decía «desproporcionado» sin más. Antes de tocar CSS se levantó la
+aplicación de pruebas y se midió la tarjeta en los dos tamaños:
+
+| | Ancho | Alto |
+|---|---|---|
+| Escritorio (1280) | 411 px | **261 px** |
+| Móvil (393) | 329 px | 88 px |
+
+**El problema no era el ancho: era el alto.** En escritorio la tarjeta ocupaba
+la mitad de la rejilla, que es lo correcto, pero medía **tres veces** lo que sus
+compañeras. De haberla enunciado como «ocupa toda la anchura» —que es como la
+recogía el plan— se habría arreglado algo que no estaba roto.
+
+**La causa:** el rotador de la portada (`.home-rotator`, ranking y partidos en
+vivo) vive **dentro** de la rejilla `.quick-actions`. A partir de 720 px la
+rejilla pasa a dos columnas, así que a ese panel alto le tocaba media fila y su
+vecina se estiraba hasta igualarlo. La vecina era «Llenar Quiniela», y encima es
+la tarjeta `primary`: un bloque verde de 411×261 al lado de tarjetas de 88.
+
+**El arreglo son dos líneas:** que el rotador ocupe la fila entera. Así nadie la
+comparte con él y las tarjetas vuelven a emparejarse entre iguales. La regla vive
+dentro del `@media (min-width: 720px)` que ya existía, de modo que en móvil
+—donde la rejilla es de una sola columna y el caso principal— no cambia nada.
+Medido después: **411×104** en escritorio, y el móvil intacto en 329×88.
+
+No se tocó `align-items`. Que dos tarjetas de la misma fila igualen su altura es
+el comportamiento deseado —«Admin mode» lo hace y se ve bien—; lo patológico era
+igualarse con un panel que no es una tarjeta.
+
+---
+
+#### La tarjeta que faltaba
+
+`clasificacion-jornada.html` solo se alcanzaba desde la barra inferior. Se añade
+su tarjeta **junto a «Tabla General»**, no al final: son la misma pregunta con
+distinto alcance, y quien busca una suele querer comparar con la otra.
+
+De paso se quitaron los espacios sobrantes al final de tres líneas `</a>` que ya
+venían así.
+
+---
+
+#### Las pruebas: una por petición, y ninguna con números fijos
+
+`test/e2e/portada.spec.js`, cuatro pruebas contando escritorio y móvil.
+
+La de la tarjeta la busca **dentro de `.quick-actions`**, y esto no es un detalle
+de estilo: la barra inferior ya enlazaba a esa pantalla, así que un selector por
+`href` a secas habría pasado en verde sin que la tarjeta existiera. La prueba
+habría certificado justo lo que se quería arreglar.
+
+La de la maquetación no compara contra un número fijo sino contra **la mediana de
+las demás tarjetas**, con un margen de 1,8×. Un umbral en píxeles se rompe en
+cuanto cambie el tipo de letra o el relleno, y lo que se quiere fijar no es una
+altura: es la proporción. Una tarjeta puede ser algo más alta por llevar dos
+líneas de texto; no tres veces más alta. El mensaje de fallo nombra la culpable y
+da los dos números.
+
+**Verificado reintroduciendo ambos fallos** —comentando el `grid-column` y
+devolviendo el `href` al valor anterior—: las dos pruebas caen, y la de altura
+falla diciendo *«la tarjeta llenar_jornada_user.html mide 261px de alto y la
+mediana es 88px»*.
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | `.home-rotator` ocupa la fila entera a partir de 720 px |
+| `public/index.html` | Tarjeta hacia `clasificacion-jornada.html` junto a la Tabla General |
+| `test/e2e/portada.spec.js` | Nuevo: las dos pruebas de la portada |
+| `avance_proyecto.md` | Fase A marcada como completada y esta entrada |
+
+**Verificación:**
+
+```
+npm run check     → sintaxis válida
+npm test          → 113/113
+npm run test:e2e  → 34/34 (17 × escritorio y móvil; eran 30)
+```
+
+**Hallazgos nuevos:**
+
+- **La captura de página completa miente sobre la barra inferior.** Sale flotando
+  a media página, encima de una tarjeta, porque es `position: fixed` y la captura
+  la fija en su posición del viewport. No es un fallo de maquetación: en el
+  navegador está donde debe. Se anota para que nadie lo «arregle» al ver la
+  imagen.
+- **El plan describía el síntoma equivocado**, y no por descuido: lo describió
+  quien no lo había medido. Medir antes de tocar costó dos minutos y cambió el
+  arreglo entero.
+
+**Pendiente / siguiente paso:** **Fase B — qué es «la jornada actual»**
+(peticiones 1, 2 y 5), que es la siguiente del plan pero **arranca bloqueada por
+una decisión de producto**: si la jornada actual se deriva de las fechas de los
+partidos o de `createdAt`. La recomendación de §20.3 es lo primero. Sin esa
+respuesta no se puede empezar.
 
 ---
 

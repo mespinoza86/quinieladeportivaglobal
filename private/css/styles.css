@@ -330,6 +330,20 @@ th,
   .quick-actions {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  /*
+   * El rotador —ranking y partidos en vivo— es un panel alto y vive dentro de
+   * la rejilla de tarjetas. Con dos columnas le tocaba media fila, y la tarjeta
+   * vecina se estiraba hasta su altura: «Llenar Quiniela» acababa midiendo
+   * 411×261 px, un bloque verde enorme al lado de tarjetas de 88 px.
+   *
+   * Ocupando la fila entera nadie la comparte con él y las tarjetas vuelven a
+   * emparejarse entre iguales. En móvil la rejilla es de una sola columna, así
+   * que esta regla no cambia nada allí.
+   */
+  .home-rotator {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 520px) {
