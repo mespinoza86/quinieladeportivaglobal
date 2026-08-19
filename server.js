@@ -124,15 +124,23 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdnjs.cloudflare.com'],
       /*
-       * IMPRESCINDIBLE. helmet trae por defecto script-src-attr 'none', que
-       * bloquea los manejadores en atributo (onclick, onchange…). El frontend
-       * tiene 63, así que con el valor por defecto la interfaz queda inerte:
-       * los botones cargan pero no responden. 'unsafe-inline' en script-src NO
-       * cubre este caso; son directivas independientes.
+       * Sin 'unsafe-inline' desde la Entrada 024: el marcado ya no contiene
+       * código. Los 22 manejadores de navegación pasaron a un atributo de datos
+       * y los cuatro bloques <script> del HTML, a archivos propios.
+       *
+       * Esto es lo que convierte el escapado de S-04 en defensa en profundidad:
+       * hasta ahora era la única línea, porque cualquier marcado que se colara
+       * en el DOM podía ejecutarse.
        */
-      scriptSrcAttr: ["'unsafe-inline'"],
+      scriptSrc: ["'self'", 'https://cdnjs.cloudflare.com'],
+
+      /*
+       * 'none' es el valor por defecto de helmet y ahora se puede sostener.
+       * OJO: 'unsafe-inline' en script-src NO cubre los manejadores en
+       * atributo; son directivas independientes, y por eso hay que declararla.
+       */
+      scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https://apiv3.apifootball.com'],
       connectSrc: ["'self'"],

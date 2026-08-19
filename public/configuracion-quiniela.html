@@ -1,3 +1,4 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script defer src="/js/navegacion.js"></script>
 <!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/configuracion-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
 <section class="hero-card"><div class="hero-top"><div><p class="eyebrow">Administración</p><h1>Configurar quiniela</h1></div><div class="app-logo">🎛️</div></div></section>
 <section class="app-panel"><form id="configForm"><h2>Puntuación</h2>
@@ -9,4 +10,4 @@
 <label><input type="checkbox" id="triviasHabilitadas" /> Habilitar trivias</label><label><input type="checkbox" id="incluirExpulsadosEnRanking" /> Conservar expulsados en el ranking</label>
 <button type="submit">Guardar configuración</button></form><p id="configMensaje" class="form-message"></p></section>
 <section class="app-panel" id="cicloPanel" hidden><h2>Ciclo de vida</h2><button id="archivarButton" class="secondary-button">Archivar quiniela</button><div id="eliminarPanel" hidden><p class="helper-text">Para eliminar, escribe exactamente el nombre de la quiniela.</p><input id="confirmarEliminacion" /><button id="eliminarButton" class="ghost-button">Eliminar quiniela</button></div></section>
-<button onclick="window.location.href='/adminmode.html'" class="ghost-button">Volver</button></main></body></html>
+<button data-ir-a="/adminmode.html" class="ghost-button">Volver</button></main></body></html>

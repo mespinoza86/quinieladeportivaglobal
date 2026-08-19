@@ -7,6 +7,7 @@
   <title>Agregar Jornada</title>
 
   <link rel="stylesheet" href="/css/styles.css" />
+<script defer src="/js/navegacion.js"></script>
 <script defer src="/js/html-seguro.js"></script>
   <script src="/js/jornadas.js" defer></script>
 </head>
@@ -46,7 +47,6 @@
               type="text"
               id="equipo1Input"
               placeholder="Equipo 1"
-              oninput="autocompleteEquipo(this, 'equipo1Suggestions')"
             />
             <div id="suggestions1" class="autocomplete-suggestions"></div>
           </div>
@@ -59,7 +59,6 @@
               type="text"
               id="equipo2Input"
               placeholder="Equipo 2"
-              oninput="autocompleteEquipo(this, 'equipo2Suggestions')"
             />
             <div id="suggestions2" class="autocomplete-suggestions"></div>
           </div>
@@ -218,7 +217,7 @@
         </button>
       </div>
 
-      <button onclick="window.location.href='adminmode.html'" class="ghost-button">Volver</button>
+      <button data-ir-a="adminmode.html" class="ghost-button">Volver</button>
 
     </section>
 

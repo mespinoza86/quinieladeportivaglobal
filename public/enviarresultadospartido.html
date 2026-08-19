@@ -7,6 +7,7 @@
   <title>Enviar Resultados por Partido</title>
 
   <link rel="stylesheet" href="/css/styles.css" />
+<script defer src="/js/navegacion.js"></script>
   <script src="/js/enviarresultadospartido.js" defer></script>
 </head>
 
@@ -42,7 +43,7 @@
       <div class="button-stack">
         <button id="copiarResultadosButton">Copiar Resultados</button>
         <button id="enviarWhatsappButton" class="secondary-button">Enviar por WhatsApp</button>
-        <button onclick="window.location.href='adminmode.html'" class="ghost-button">Volver</button>
+        <button data-ir-a="adminmode.html" class="ghost-button">Volver</button>
       </div>
 
       <textarea id="resultadoTexto" rows="12" placeholder="Aquí aparecerá el texto generado..."></textarea>

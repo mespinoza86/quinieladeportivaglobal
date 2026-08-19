@@ -7,6 +7,7 @@
   <title>Enviar Trivias por Partido</title>
 
   <link rel="stylesheet" href="/css/styles.css" />
+<script defer src="/js/navegacion.js"></script>
   <script src="/js/enviarresultadostriviaspartidos.js" defer></script>
 </head>
 
@@ -42,7 +43,7 @@
       <div class="button-stack">
         <button id="copiarResultadosButton" type="button">Copiar Trivias</button>
         <button id="enviarWhatsappButton" class="secondary-button" type="button">Enviar por WhatsApp</button>
-        <button onclick="window.location.href='adminmode.html'" class="ghost-button" type="button">Volver</button>
+        <button data-ir-a="adminmode.html" class="ghost-button" type="button">Volver</button>
       </div>
 
       <textarea id="resultadoTexto" rows="14" placeholder="Aquí aparecerá el texto generado..."></textarea>

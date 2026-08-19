@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Enviar Resultados</title>
   <link rel="stylesheet" href="/css/styles.css" />
+<script defer src="/js/navegacion.js"></script>
   <script src="/js/enviarresultados.js" defer></script>
 </head>
 
@@ -32,7 +33,7 @@
       <div class="button-stack">
         <button id="copiarResultadosButton">Copiar Resultados</button>
         <button id="enviarWhatsappButton" class="secondary-button">Enviar por WhatsApp</button>
-        <button onclick="window.location.href='adminmode.html'" class="ghost-button">Volver</button>
+        <button data-ir-a="adminmode.html" class="ghost-button">Volver</button>
       </div>
 
       <textarea id="resultadoTexto" rows="10" placeholder="Aquí aparecerá el texto generado..."></textarea>

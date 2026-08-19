@@ -67,12 +67,40 @@ test('las cabeceras de seguridad están activas y la CSP declara sus orígenes',
   // HSTS solo en producción: en local rompería el acceso por HTTP.
   assert.match(server, /hsts: esProduccion/);
   /*
-   * El valor por defecto de helmet para script-src-attr es 'none', que deja
-   * inertes los 63 manejadores onclick del frontend: la interfaz carga pero
-   * no responde a los clics. Esta invariante evita que alguien lo revierta
-   * creyendo que endurece la política.
+   * Hasta la Entrada 024 esto tenía que ser 'unsafe-inline': el frontend
+   * llevaba los manejadores en atributo y con 'none' la interfaz cargaba pero
+   * no respondía a los clics. Ya no: el marcado no contiene código.
+   *
+   * Cerrar la política es lo que convierte el escapado de S-04 en defensa en
+   * profundidad; antes era la única línea, porque cualquier marcado que se
+   * colara en el DOM podía ejecutarse.
    */
-  assert.match(server, /scriptSrcAttr: \["'unsafe-inline'"\]/);
+  assert.match(server, /scriptSrcAttr: \["'none'"\]/);
+  assert.doesNotMatch(
+    serverSinComentarios,
+    /scriptSrc: \[[^\]]*'unsafe-inline'/,
+    'script-src no puede volver a admitir código inline'
+  );
+});
+
+test('el marcado no contiene código: ni manejadores en atributo ni <script> inline', () => {
+  /*
+   * Es el requisito de la CSP cerrada. Si alguien añade un `onclick="…"` la
+   * política lo bloqueará en silencio —el botón cargará y no hará nada—, que es
+   * el tipo de fallo más difícil de diagnosticar. Mejor que falle aquí.
+   */
+  const conManejador = [];
+  const conScriptInline = [];
+
+  for (const pagina of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'))) {
+    const marcado = fs.readFileSync(path.join(root, 'public', pagina), 'utf8');
+
+    if (/\son[a-z]+\s*=\s*["']/i.test(marcado)) conManejador.push(pagina);
+    if (/<script(?![^>]*\ssrc=)[^>]*>[\s\S]*?<\/script>/.test(marcado)) conScriptInline.push(pagina);
+  }
+
+  assert.deepEqual(conManejador, [], 'Usa data-ir-a o addEventListener, no atributos on*');
+  assert.deepEqual(conScriptInline, [], 'Saca el script a private/js/ y cárgalo con src');
 });
 
 test('las rutas de autenticación tienen limitación de intentos', () => {

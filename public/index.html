@@ -196,35 +196,8 @@
 <script src="js/html-seguro.js"></script>
   <script src="js/index-live.js"></script>
   <script src="js/index-ranking.js"></script>
-  <script>
-  document.addEventListener('DOMContentLoaded', async () => {
-    const contexto = await fetch('/api/quiniela-actual');
-    if (contexto.status === 401) return window.location.href = '/login.html';
-    if (contexto.status === 409) return window.location.href = '/quinielas.html';
-    if (contexto.ok) {
-      const q = await contexto.json();
-      document.querySelector('h1').textContent = q.nombre;
-      document.getElementById('quinielaActualNombre').textContent = `${q.nombre} · ${q.rol}`;
-      if (['propietario', 'admin'].includes(q.rol)) {
-        document.getElementById('adminModeCard').style.display = 'flex';
-      }
-    }
-    const card = document.getElementById('llenarTriviaCard');
-    if (!card) return;
-
-    try {
-      const res = await fetch('/api/trivias/activas');
-      const trivias = await res.json();
-
-      if (Array.isArray(trivias) && trivias.length > 0) {
-        card.style.display = 'flex';
-      }
-    } catch (error) {
-      console.error('Error revisando trivias activas:', error);
-    }
-  });
-</script>
 
 
+  <script src="js/index-contexto.js" defer></script>
 </body>
 </html>

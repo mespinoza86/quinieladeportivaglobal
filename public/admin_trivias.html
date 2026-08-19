@@ -7,6 +7,7 @@
   <title>Admin Trivias</title>
 
   <link rel="stylesheet" href="/css/styles.css" />
+<script defer src="/js/navegacion.js"></script>
 <script defer src="/js/html-seguro.js"></script>
   <script src="/js/admin_trivias.js" defer></script>
 </head>
@@ -41,7 +42,7 @@
       <div class="button-stack">
         <button id="guardarCambiosBtn" type="button">Guardar Cambios de Trivias</button>
         <button id="resolverTriviasBtn" class="secondary-button" type="button">Resolver Trivias Ahora</button>
-        <button onclick="window.location.href='adminmode.html'" class="ghost-button" type="button">Volver</button>
+        <button data-ir-a="adminmode.html" class="ghost-button" type="button">Volver</button>
       </div>
 
       <p id="mensaje" class="form-message"></p>
