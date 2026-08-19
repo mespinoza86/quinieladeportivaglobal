@@ -56,6 +56,18 @@
 
       <div id="infoCierreContainer" class="info-card"></div>
 
+      <!--
+        Fase B: la pantalla se abre en la jornada que sugiere el servidor,
+        pero SIEMPRE lleva selector. Puede haber dos jornadas jugándose a la
+        vez, y antes solo se podía llenar la que el servidor decidiera.
+      -->
+      <div class="input-group">
+        <label for="jornadaSelect" class="field-label">Jornada</label>
+        <select id="jornadaSelect">
+          <option value="">Cargando jornadas...</option>
+        </select>
+      </div>
+
       <div class="input-group">
         <label for="comboJugadores" class="field-label">Nombre del jugador</label>
         <select id="comboJugadores">

@@ -794,6 +794,9 @@ const {
   MAX_LARGO_NOMBRE_JORNADA
 } = require('./src/validacion');
 
+const { extraerFechaApi, parseFechaPartidoCostaRica } = require('./src/fechas');
+const { jornadaSugerida } = require('./src/jornada-actual');
+
 /**
  * Qué partidos de una jornada tienen ya el pronóstico a la vista, uno por
  * partido y en el mismo orden.
@@ -1457,6 +1460,53 @@ app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
  * de siempre: hay pantallas que sí necesitan los partidos y no se pueden
  * romper.
  */
+/**
+ * Lee lo justo para decidir cuál es la jornada actual y se lo pasa a la regla.
+ *
+ * Se proyectan SOLO los campos que la regla mira: de los partidos, la fecha; de
+ * los oficiales, si el resultado es definitivo. Traerse las jornadas enteras
+ * sería volver a lo que la Fase 5 quitó de la tabla general —cuarenta jornadas
+ * de diez partidos son cuatrocientos subdocumentos por pantalla—, y aquí no
+ * hace falta ni un marcador.
+ *
+ * El orden de la lista es el desempate: la más nueva primero. `createdAt` deja
+ * de ser LA REGLA y pasa a ser lo que se mira solo cuando las fechas empatan,
+ * que es el único sitio donde nunca hizo daño.
+ */
+async function calcularJornadaActual(ahora = new Date()) {
+  const [jornadas, oficiales] = await Promise.all([
+    Jornada.find({}).select('nombre partidos.apiDate').sort({ createdAt: -1 }).lean(),
+    ResultadoOficial.find({}).select('jornada resultados.estado resultados.bloqueadoFinal').lean()
+  ]);
+
+  const oficialesPorJornada = new Map(oficiales.map(doc => [doc.jornada, doc.resultados || []]));
+
+  const sugerida = jornadaSugerida(
+    jornadas.map(j => ({
+      nombre: j.nombre,
+      partidos: j.partidos || [],
+      oficiales: oficialesPorJornada.get(j.nombre) || []
+    })),
+    ahora
+  );
+
+  return { sugerida, jornadas: jornadas.map(j => ({ nombre: j.nombre })) };
+}
+
+/*
+ * Fase B. Las tres pantallas que necesitan "la jornada actual" —llenar
+ * quiniela, resultados oficiales y la tabla por jornada— la piden aquí en vez
+ * de deducirla cada una por su cuenta. Antes había tres reglas distintas y
+ * discrepaban; es el mismo motivo por el que el cierre por partido acabó en un
+ * solo sitio en la Entrada 019.
+ *
+ * Devuelve también la lista de nombres para que una pantalla pueda llenar su
+ * desplegable y elegir el valor por defecto con UNA sola petición.
+ */
+app.get('/api/jornada-actual', async (req, res) => {
+  res.json(await calcularJornadaActual());
+});
+
 app.get('/api/jornadas', async (req, res) => {
   if (req.query.resumen === '1') {
     const jornadas = await Jornada.find({}).select('nombre').lean();
@@ -1756,10 +1806,7 @@ function normalizarEquipo(nombre) {
     .trim();
 }
 
-function extraerFechaApi(apiDate) {
-  if (!apiDate) return '';
-  return String(apiDate).split(' ')[0].split('T')[0];
-}
+/* extraerFechaApi vive en src/fechas.js desde la Fase B. */
 
 async function buscarEventoPorId(matchId) {
   if (!matchId) return null;
@@ -2834,26 +2881,7 @@ app.get('/api/resultados', async (req, res) => {
 
 
 
-function parseFechaPartidoCostaRica(apiDate) {
-  if (!apiDate) return null;
-
-  const raw = String(apiDate).trim();
-
-  // Formatos esperados:
-  // "2026-07-04 13:00"
-  // "2026-07-04T13:00"
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-
-  if (!match) {
-    const fallback = new Date(raw);
-    return Number.isNaN(fallback.getTime()) ? null : fallback;
-  }
-
-  const [, year, month, day, hour, minute] = match.map(Number);
-
-  // Costa Rica es UTC-6 todo el año
-  return new Date(Date.UTC(year, month - 1, day, hour + 6, minute, 0));
-}
+/* parseFechaPartidoCostaRica vive en src/fechas.js desde la Fase B. */
 
 function partidoYaInicio(partido, oficial = null) {
   if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) {
@@ -4622,10 +4650,15 @@ app.get('/api/clasificacion-jornada', async (req, res) => {
      * partidos eso son cuatrocientos subdocumentos en cada carga de pantalla,
      * que es justo la clase de lectura que la Fase 5 quitó de la tabla general.
      */
-    const jornadas = await Jornada.find({}).select('nombre').sort({ createdAt: -1 }).lean();
+    const { sugerida, jornadas } = await calcularJornadaActual();
     if (!jornadas.length) return res.json({ jornadas: [], jornada: null, estado: null, clasificacion: [] });
 
-    const jornadaNombre = String(req.query.jornada || jornadas[0].nombre);
+    /*
+     * Fase B: la que se abre por defecto ya no es la creada más recientemente
+     * sino la del partido más próximo sin resultado definitivo. Una jornada
+     * importada tarde ya no se cuela por delante de la que se está jugando.
+     */
+    const jornadaNombre = String(req.query.jornada || sugerida || jornadas[0].nombre);
     if (!jornadas.some(item => item.nombre === jornadaNombre)) {
       return res.status(404).json({ error: 'Jornada no encontrada.' });
     }
@@ -5118,6 +5151,11 @@ module.exports = {
   puntosDeJornada,
   estadisticasDeJornada,
   jornadaEstaFinalizada,
+  // Jornada actual (Fase B)
+  jornadaSugerida,
+  calcularJornadaActual,
+  parseFechaPartidoCostaRica,
+  extraerFechaApi,
   congelarPuntosDeJornada,
   actualizarPuntosDeJornada
 };

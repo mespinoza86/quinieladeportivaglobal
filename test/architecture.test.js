@@ -31,6 +31,22 @@ const modulos = fs.existsSync(path.join(root, 'src'))
 
 const fuente = [server, ...modulos].join('\n');
 
+function quitarComentarios(texto) {
+  return texto
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(/\r?\n/)
+    .filter(linea => !/^\s*(\/\/|\*)/.test(linea))
+    .join('\n');
+}
+
+/*
+ * Las comprobaciones de DEFINICION miran server.js y src/ juntos: desde la
+ * Fase 6 una funcion puede haberse mudado sin dejar de existir, y buscarla solo
+ * en server.js haria fallar el guardian por la mudanza en vez de por el
+ * problema que vigila.
+ */
+const fuenteSinComentarios = quitarComentarios(fuente);
+
 const serverSinComentarios = server
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split(/\r?\n/)
@@ -213,17 +229,41 @@ test('la resolución de trivias no cruza entre quinielas', () => {
 });
 
 test('no hay funciones ni rutas duplicadas que se pisen entre sí', () => {
+  /*
+   * Las definiciones se cuentan contra el conjunto: `parseFechaPartidoCostaRica`
+   * y `extraerFechaApi` viven en src/fechas.js desde la Fase B, y buscarlas solo
+   * en server.js daría cero. Lo que este guardián vigila no es dónde está cada
+   * función, sino que haya UNA: la vez que hubo dos, la de arriba nunca llegaba
+   * a ejecutarse por la elevación de declaraciones y engañaba al leer.
+   */
   for (const [nombre, esperado] of [
     ['function partidoYaInicio', 1],
     ['function parseFechaPartidoCostaRica', 1],
+    ['function extraerFechaApi', 1],
+    ['function jornadaSugerida', 1]
+  ]) {
+    const veces = fuenteSinComentarios.split(nombre).length - 1;
+    assert.equal(veces, esperado, `Se esperaban ${esperado} apariciones de "${nombre}", hay ${veces}`);
+  }
+
+  // Las rutas retiradas se buscan en server.js, que es donde viven las rutas.
+  for (const [nombre, esperado] of [
     ["app.get('/generar_reporte'", 0],
     ["app.get('/api/football/leagues-test'", 0]
   ]) {
     const veces = serverSinComentarios.split(nombre).length - 1;
     assert.equal(veces, esperado, `Se esperaban ${esperado} apariciones de "${nombre}", hay ${veces}`);
   }
+
+  /*
+   * Y ninguna de las dos puede reaparecer en server.js: reexportarlas está
+   * bien, redefinirlas es volver a tener dos verdades.
+   */
+  assert.doesNotMatch(serverSinComentarios, /function parseFechaPartidoCostaRica\(/);
+  assert.doesNotMatch(serverSinComentarios, /function extraerFechaApi\(/);
+
   // La versión ingenua, que ignoraba la zona horaria de Costa Rica, ya no existe.
-  assert.doesNotMatch(serverSinComentarios, /function parseFechaPartido\(/);
+  assert.doesNotMatch(fuenteSinComentarios, /function parseFechaPartido\(/);
 });
 
 test('los goles anulados por VAR se detectan por palabra completa', () => {
@@ -452,11 +492,27 @@ test('un ciclo de sincronización que no termina no bloquea al planificador', ()
 });
 
 test('la clasificación por jornada no lee la temporada entera para elegir una', () => {
-  // Los partidos de todas las jornadas no hacen falta para llenar un desplegable.
+  /*
+   * Fase B: la lectura se mudó a `calcularJornadaActual`, que ahora sí necesita
+   * mirar dentro de los partidos, porque la regla va por fechas. Lo que no
+   * puede es traerse los partidos ENTEROS: se proyectan la fecha del partido y
+   * el estado del oficial, y nada más. Sin la proyección volveríamos a los
+   * cuatrocientos subdocumentos por pantalla que quitó la Fase 5.
+   */
   assert.match(
     serverSinComentarios,
-    /const jornadas = await Jornada\.find\(\{\}\)\.select\('nombre'\)\.sort\(\{ createdAt: -1 \}\)/
+    /Jornada\.find\(\{\}\)\.select\('nombre partidos\.apiDate'\)/
   );
+  assert.match(
+    serverSinComentarios,
+    /ResultadoOficial\.find\(\{\}\)\.select\('jornada resultados\.estado resultados\.bloqueadoFinal'\)/
+  );
+
+  /*
+   * Y la regla vieja ya no decide: la creada más recientemente solo se usa como
+   * último recurso, detrás de la sugerida.
+   */
+  assert.match(serverSinComentarios, /req\.query\.jornada \|\| sugerida \|\| jornadas\[0\]\.nombre/);
 
   // Y congelar dentro de un GET es una red de seguridad: no puede tumbar la consulta.
   assert.match(

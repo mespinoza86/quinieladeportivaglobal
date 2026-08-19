@@ -48,7 +48,7 @@
     </div>
   </section>
 
-  <section id="liveMatchesCard" class="live-card rotator-panel">
+  <section id="liveMatchesCard" class="live-card rotator-panel" style="display:none">
     <div class="live-header">
       <div>
         <p class="eyebrow">En vivo</p>
@@ -58,6 +58,23 @@
     </div>
 
     <div id="liveMatchesContainer"></div>
+  </section>
+
+  <!--
+    Petición 5: junto al top 3 general y a los partidos en vivo, el top 3 de la
+    jornada. Responde a otra pregunta que la tabla general —quién ganó el fin de
+    semana, no quién va ganando la temporada— y estaba a dos pantallas.
+  -->
+  <section id="jornadaPodioCard" class="ranking-card rotator-panel" style="display:none">
+    <div class="ranking-header">
+      <div>
+        <p class="eyebrow" id="jornadaPodioNombre">Jornada actual</p>
+        <h2>Top 3 de la jornada</h2>
+      </div>
+      <div class="ranking-icon">🥇</div>
+    </div>
+
+    <div id="jornadaPodioContainer"></div>
   </section>
 </section>
 
@@ -210,6 +227,13 @@
 <script src="js/html-seguro.js"></script>
   <script src="js/index-live.js"></script>
   <script src="js/index-ranking.js"></script>
+  <script src="js/index-jornada.js"></script>
+
+  <!--
+    El rotador va DESPUÉS de los paneles: recorre los que tienen contenido, y
+    ponerlo antes solo adelantaría el primer giro a cuando aún no lo sabe.
+  -->
+  <script src="js/index-rotador.js"></script>
 
 
   <script src="js/index-contexto.js" defer></script>

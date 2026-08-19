@@ -39,21 +39,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     return '';
   }
 
-  function mostrarPanel(panel) {
-  if (panel === 'ranking') {
-    liveCard.classList.remove('active');
-
-    setTimeout(() => {
-      rankingCard.classList.add('active');
-    }, 80);
-  } else {
-    rankingCard.classList.remove('active');
-
-    setTimeout(() => {
-      liveCard.classList.add('active');
-    }, 80);
-  }
-}
+/*
+ * Aquí vivía `mostrarPanel`, un booleano entre dos tarjetas. La rotación se
+ * mudó a index-rotador.js cuando la Fase B añadió una tercera: este archivo ya
+ * solo se ocupa de SU panel, y dice si tiene algo que enseñar ocultándose o no.
+ */
 
   try {
     const res = await fetch('/api/resultados-oficiales');
@@ -74,7 +64,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (partidosLive.length === 0) {
       liveCard.style.display = 'none';
-      rankingCard.classList.add('active');
       return;
     }
 
@@ -98,18 +87,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     `).join('');
 
     liveCard.style.display = 'block';
-    rankingCard.classList.add('active');
-
-    let mostrandoRanking = true;
-
-    setInterval(() => {
-      mostrandoRanking = !mostrandoRanking;
-      mostrarPanel(mostrandoRanking ? 'ranking' : 'live');
-    }, 10000);
 
   } catch (error) {
     console.error('Error cargando partidos en vivo:', error);
     liveCard.style.display = 'none';
-    rankingCard.classList.add('active');
   }
 });

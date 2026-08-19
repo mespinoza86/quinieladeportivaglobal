@@ -96,34 +96,46 @@ function estadoPartidoHTML(partido) {
             resultadosOficialesContainer.innerHTML = '<p>Cargando resultados oficiales...</p>';
 
             /*
-             * Solo los nombres: de la respuesta de jornadas esta pantalla
-             * unicamente llena el desplegable. Los partidos que pinta salen de
+             * Fase B. Antes esta pantalla abría en `jornadas[jornadas.length - 1]`
+             * —el último elemento del arreglo, sin orden garantizado— y en la
+             * práctica dejaba al usuario buscando su jornada a mano. Ahora la
+             * sugiere el servidor con la misma regla que las otras dos
+             * pantallas: la del partido más próximo sin resultado definitivo.
+             *
+             * La respuesta trae también los nombres, que es lo único que esta
+             * pantalla necesita de las jornadas: los partidos que pinta salen de
              * /api/resultados-oficiales, que es otra cosa.
              */
-            const jornadasResponse = await fetch('/api/jornadas?resumen=1');
-            const jornadas = await jornadasResponse.json();
+            const [actualResponse, resultadosResponse] = await Promise.all([
+                fetch('/api/jornada-actual'),
+                fetch('/api/resultados-oficiales')
+            ]);
+
+            const actual = await actualResponse.json();
+            resultadosOficialesCache = await resultadosResponse.json();
+
+            const jornadas = actual.jornadas || [];
+
+            if (!jornadas.length) {
+                resultadosOficialesContainer.innerHTML = '<p>No hay jornadas registradas.</p>';
+                return;
+            }
+
+            /*
+             * `jornadaSelect.value` primero: esto se recarga solo cada 30
+             * segundos, y pisar la jornada que el usuario acaba de elegir con la
+             * sugerida sería sacarle de donde estaba mirando cada medio minuto.
+             * La sugerencia manda en la primera carga, no en las siguientes.
+             */
+            const elegida = jornadaSelect.value
+                || (jornadas.some(j => j.nombre === actual.sugerida) ? actual.sugerida : jornadas[0].nombre);
 
             jornadaSelect.innerHTML = jornadas
                 .map(j => html`<option value="${j.nombre}">${j.nombre}</option>`)
                 .join('');
 
-            const resultadosResponse = await fetch('/api/resultados-oficiales');
-            resultadosOficialesCache = await resultadosResponse.json();
-
-
-
-            if (jornadas.length > 0) {
-                const jornadaActual = jornadaSelect.value || jornadas[jornadas.length - 1].nombre;
-
-                jornadaSelect.innerHTML = jornadas
-                .map(j => html`<option value="${j.nombre}">${j.nombre}</option>`)
-                .join('');
-
-            jornadaSelect.value = jornadaActual;
-            renderizarResultados(jornadaActual);
-        }else {
-                resultadosOficialesContainer.innerHTML = '<p>No hay jornadas registradas.</p>';
-            }
+            jornadaSelect.value = elegida;
+            renderizarResultados(elegida);
 
         } catch (error) {
             console.error('Error cargando resultados oficiales:', error);

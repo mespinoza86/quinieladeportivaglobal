@@ -1792,8 +1792,9 @@ worker.js         → solo jobs
 
 ## 20. Plan de producto — las diez peticiones del 18 de agosto
 
-> **Estado: analizado y ordenado. La Fase A está completada** (Entrada 026, 18
-> de agosto de 2026); el resto sigue sin empezar. Se aborda una fase a la vez.
+> **Estado: analizado y ordenado. Las Fases A y B están completadas** (Entradas
+> 026 y 027, 18 de agosto de 2026); el resto sigue sin empezar. Se aborda una
+> fase a la vez.
 
 Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
 para agrupar no es el tema sino la **dependencia**: cosas que comparten una
@@ -1805,7 +1806,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | Orden | Fase | Peticiones | Por qué aquí |
 |---|---|---|---|
 | ✅ **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada. **Completada el 18-ago-2026** |
-| **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez |
+| ✅ **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez. **Completada el 18-ago-2026** |
 | **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual |
 | **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien |
 | **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
@@ -1862,7 +1863,7 @@ en `test/e2e/portada.spec.js`, verificadas reintroduciendo ambos fallos.
 
 ---
 
-### 20.3 Fase B — Qué es "la jornada actual" *(peticiones 1, 2 y 5)*
+### ✅ 20.3 Fase B — Qué es "la jornada actual" *(peticiones 1, 2 y 5)* — COMPLETADA el 18 de agosto de 2026
 
 | # | Petición |
 |---|---|
@@ -1917,8 +1918,22 @@ Entrada 019, y por la misma razón: tres copias de una regla acaban discrepando.
 una importada tarde —el caso que hoy rompe `createdAt`—, más pruebas de
 navegador de que cada pantalla abre en la correcta y el selector funciona.
 
-**Decisión pendiente (producto):** qué es exactamente "la jornada actual" cuando
-hay dos jugándose. Ver las tres opciones de arriba.
+**Decisión tomada el 18-ago-2026:** la recomendada. La jornada actual es la que
+contiene el partido más próximo —hacia adelante o hacia atrás— sin resultado
+definitivo, derivada de las fechas de los partidos. Las pantallas se abren en
+ella y **siempre** llevan selector.
+
+**Cómo quedó (Entrada 027).** La regla vive en `src/jornada-actual.js`, es pura y
+ordena en tres grupos —pendientes con fecha, pendientes sin fecha, todo
+definitivo— porque el grupo tiene que mandar sobre la distancia: si no, una
+jornada cerrada hace una hora le ganaría a la que se juega el mes que viene. El
+servidor la sirve en `GET /api/jornada-actual` junto con la lista de nombres, y
+las tres pantallas la consumen. `createdAt` deja de ser la regla y queda como
+desempate.
+
+**Queda una decisión abierta:** una jornada a la que **nunca** se le cargan
+resultados sigue contando como pendiente para siempre, y puede desplazar a una
+posterior ya cerrada. Ver el hallazgo de la Entrada 027.
 
 ---
 
@@ -4727,6 +4742,184 @@ npm run test:e2e  → 34/34 (17 × escritorio y móvil; eran 30)
 una decisión de producto**: si la jornada actual se deriva de las fechas de los
 partidos o de `createdAt`. La recomendación de §20.3 es lo primero. Sin esa
 respuesta no se puede empezar.
+
+---
+
+### 📌 Entrada 027 — 18 de agosto de 2026 — Fase B: qué es «la jornada actual»
+
+**Objetivo:** las peticiones 1, 2 y 5, que son la misma pregunta. Antes de tocar
+código había que decidirla, y la decisión tomada fue la recomendada en §20.3:
+**la jornada actual es la que contiene el partido más próximo —hacia adelante o
+hacia atrás— sin resultado definitivo**, derivada de las fechas de los partidos
+y no de `createdAt` ni de un número puesto a mano.
+
+---
+
+#### El problema no era que una pantalla se equivocara
+
+Era que había **tres reglas** y ninguna sabía de las otras:
+
+| Dónde | Cómo se elegía |
+|---|---|
+| Tabla por jornada | `sort({ createdAt: -1 })` — la creada más recientemente |
+| Llenar jornada | `data[data.length - 1]` — el último del arreglo, sin orden garantizado |
+| Resultados oficiales | `jornadas[jornadas.length - 1]` — lo mismo, por otro camino |
+
+`createdAt` es cuándo se creó el registro, no cuándo se juega: una jornada
+importada tarde se volvía «la última» con partidos de la semana pasada. Y la
+petición 1 lo agravaba, porque dice que **puede haber dos jornadas jugándose a la
+vez**, con lo que «la última» deja de tener una sola respuesta.
+
+Igual que con el cierre por partido en la Entrada 019, la regla acaba en **un
+solo sitio** y las tres pantallas la consumen. Tres copias de una regla acaban
+discrepando; estas ya lo habían hecho.
+
+---
+
+#### La regla, y por qué tiene tres grupos y no una fórmula
+
+`src/jornada-actual.js`, función pura: recibe las jornadas y el reloj, no
+consulta la base y no conoce Express.
+
+La distancia se mide en **valor absoluto**. Recién terminada una jornada, sus
+partidos quedan unas horas atrás y durante ese rato sigue siendo la que la gente
+quiere ver; deja de serlo sola, en cuanto los partidos de la siguiente se acercan
+más de lo que la anterior se aleja. No hace falta ninguna regla extra para eso.
+
+Pero una distancia sola no basta, y por eso hay **tres grupos**, donde el grupo
+manda siempre sobre la distancia:
+
+| Grupo | Qué es | Por qué va ahí |
+|---|---|---|
+| 1.º | Tiene partidos sin resultado definitivo, y con fecha | El caso normal: se ordenan por cercanía |
+| 2.º | Tiene partidos pendientes pero **ninguna fecha** | Los partidos cargados a mano no tienen `apiDate`; no se pueden ordenar, pero siguen siendo más actuales que una jornada cerrada |
+| 3.º | Todo definitivo | Una temporada cerrada nunca es «la actual», por muy cerca que quede su último partido |
+
+Sin los grupos, una jornada cerrada hace una hora le ganaría a la que se juega el
+mes que viene, que es exactamente al revés de lo que hay que enseñar.
+
+Los empates se rompen por **el orden en que llegan**, y el servidor manda la más
+nueva primero. Es decir: `createdAt` deja de ser la regla y pasa a ser el
+desempate, que es el único sitio donde nunca hizo daño.
+
+---
+
+#### Lo que se movió, y lo que se tuvo que mover antes
+
+`src/fechas.js`: `parseFechaPartidoCostaRica` y `extraerFechaApi` salen de
+`server.js`. No es un extra de la Fase 6 metido de contrabando: la regla nueva
+necesita interpretar `apiDate`, y si lo importara de `server.js` habría un ciclo,
+que es justo el invariante que la Entrada 024 dejó escrito para las tajadas
+siguientes.
+
+**Servidor.** `calcularJornadaActual()` lee lo justo y se lo da a la regla:
+
+```js
+Jornada.find({}).select('nombre partidos.apiDate')
+ResultadoOficial.find({}).select('jornada resultados.estado resultados.bloqueadoFinal')
+```
+
+La proyección importa. La regla necesita mirar dentro de los partidos —va por
+fechas—, y traérselos enteros sería volver a los cuatrocientos subdocumentos por
+pantalla que quitó la Fase 5. Se proyectan la fecha y el estado, y nada más.
+
+`GET /api/jornada-actual` devuelve la sugerida **y la lista de nombres**, para
+que una pantalla llene su desplegable y elija el valor por defecto con una sola
+petición.
+
+**Pantallas.** Llenar quiniela abre en la sugerida y **estrena selector**
+(petición 1); resultados oficiales abre en la sugerida en vez de en el último
+elemento del arreglo (petición 2); la tabla por jornada deja de ordenar por
+`createdAt`. Y la portada estrena un tercer panel con el top 3 de la jornada
+(petición 5).
+
+Para ese tercero hubo que **generalizar el carrusel**. La rotación vivía dentro
+de `index-live.js` y era un booleano —ranking o en vivo—, que no da para tres.
+Sale a `index-rotador.js` y pasa a recorrer una lista, con un único acuerdo entre
+las partes: **un panel oculto es un panel que no tiene nada que enseñar, y se
+salta**. Así el rotador no sabe de rankings ni de jornadas, y cada panel decide
+si merece turno. Los paneles arrancan ocultos y se destapan al tener contenido;
+al revés, la portada enseñaría tarjetas vacías durante un segundo en cada carga.
+
+---
+
+#### Tres fallos que destaparon las pruebas, y ninguno era del código
+
+1. **La prueba de integración con años 2099 y 2020.** Se escribió «2099» para
+   decir futuro y «2020» para decir pasado, y falló: a 2026, el 2099 queda
+   setenta años por delante y el 2020 seis por detrás, así que la vieja era la
+   más cercana y la regla la elegía **bien**. El dato de prueba estaba mal. Las
+   fechas pasaron a ser relativas al reloj.
+
+2. **El pronóstico rechazado con «Partidos bloqueados: 1».** La prueba del podio
+   ponía el partido ayer, para que pareciera jugado, y mandaba un pronóstico. El
+   servidor lo rechazó con razón: desde la Entrada 019 los pronósticos se cierran
+   partido a partido en cuanto empieza. La prueba pedía algo imposible.
+
+3. **`llenar_jornada.html` se quedó en blanco.** Esa pantalla huérfana comparte
+   script con `llenar_jornada_user.html` —son gemelas de antes de la Fase 6— y no
+   tiene el selector nuevo, así que el script moría en la primera línea. Lo cazó
+   la prueba de CSP que recorre las 32 pantallas, no una prueba de la Fase B: la
+   violación no da error visible, la pantalla simplemente no hace nada. El
+   selector pasa a ser opcional; sin él la pantalla abre en la sugerida y no se
+   puede cambiar, que es lo que hacía antes.
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/jornada-actual.js` | Nuevo: la regla, pura y con los tres grupos |
+| `src/fechas.js` | Nuevo: las dos funciones de fecha, sacadas de `server.js` |
+| `server.js` | `calcularJornadaActual()`, `GET /api/jornada-actual`, y la tabla por jornada deja de usar `createdAt` |
+| `private/js/llenar_jornada_user.js` | Abre en la sugerida, selector de jornadas, y pide solo la suya en vez de todas |
+| `private/js/ver-resultados-oficiales.js` | Abre en la sugerida sin pisar lo que el usuario elija |
+| `private/js/index-rotador.js` | Nuevo: la rotación, ahora sobre una lista |
+| `private/js/index-jornada.js` | Nuevo: el podio de la jornada |
+| `private/js/index-live.js` | Se queda solo con su panel; ya no rota |
+| `public/index.html`, `public/llenar_jornada_user.html` | El panel nuevo y el selector |
+| `test/integracion.test.js` | 9 pruebas de la Fase B |
+| `test/e2e/jornada-actual.spec.js` | Nuevo: 6 pruebas de navegador |
+| `test/architecture.test.js` | Los dos guardianes que la mudanza dejó obsoletos |
+| `avance_proyecto.md` | Fase B marcada como completada y esta entrada |
+
+**Verificación:**
+
+```
+npm run check         → sintaxis válida
+npm test              → 122/122 (eran 113)
+npm run test:e2e      → 46/46 (eran 34)
+npm audit --omit=dev  → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- ⚠️ **Una jornada abandonada se queda de «actual» para siempre.** Si a una
+  jornada nunca se le cargan resultados, sus partidos siguen contando como
+  pendientes y puede ganarle a una posterior ya cerrada por muy vieja que sea.
+  Salió por accidente montando una captura: una jornada de hace 30 días sin
+  resultados desplazaba a la del día siguiente. **La regla hace lo que se
+  acordó**, así que no se ha cambiado por cuenta propia; queda anotado como
+  decisión pendiente. El arreglo sería un plazo —una jornada cuyo último partido
+  quedó hace más de una semana y sigue sin un solo resultado está abandonada, no
+  en curso—. Mientras tanto no bloquea a nadie: las tres pantallas llevan
+  selector.
+- **Dos guardianes de arquitectura fallaron por la mudanza, no por un fallo.**
+  Buscaban `function parseFechaPartidoCostaRica` en `server.js`, y ahora vive en
+  `src/`. Se corrigieron mirando el conjunto —server.js más `src/`—, que es lo
+  que ya hacían las comprobaciones de validadores desde la Fase 6, y de paso se
+  añadió que ninguna de las dos pueda **reaparecer** en `server.js`: reexportarla
+  está bien, redefinirla es volver a tener dos verdades.
+- **El heredoc del shell se come las barras invertidas**, otra vez. Lo anotó la
+  Entrada 024 y volvió a morder tres veces seguidas al editar expresiones
+  regulares. La salida es no meter barras en el heredoc: anclar por posición y
+  traer el texto nuevo desde un archivo.
+
+**Pendiente / siguiente paso:** decidir si «una jornada abandonada» merece un
+plazo, que es la única cuestión abierta que deja esta fase. Después, la **Fase C
+— buscador de ligas dinámico** (petición 9), que solo necesita confirmar cuántos
+días hacia adelante se buscan y habilita la Fase D.
 
 ---
 

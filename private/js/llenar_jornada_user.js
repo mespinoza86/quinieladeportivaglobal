@@ -1,24 +1,69 @@
 document.addEventListener('DOMContentLoaded', () => {
-    let ultimaJornada = null;
-    let fechaCierreGlobal = null;
+    let jornadaSeleccionada = null;
     let jugadorValidado = null;
 
+    /*
+     * El selector puede no estar: este mismo script lo cargan dos pantallas
+     * —llenar_jornada_user.html y llenar_jornada.html, gemelas desde antes de
+     * la Fase 6— y solo una lo tiene. Sin esta comprobación el script moría en
+     * la primera línea y la otra pantalla se quedaba en blanco, que es
+     * exactamente lo que destapó la prueba de CSP.
+     *
+     * Sin selector la pantalla sigue funcionando: abre en la jornada sugerida y
+     * ya no se puede cambiar, que es lo que hacía antes de la Fase B.
+     */
+    const selectorJornada = document.getElementById('jornadaSelect');
 
-    // Cargar jornadas
-    fetch('/api/jornadas')
+    /*
+     * Fase B. Antes esto era `data[data.length - 1].nombre`: el último elemento
+     * del arreglo que devolviera Mongo, sin orden garantizado, y con dos jornadas
+     * jugándose a la vez no había manera de llegar a la otra. Ahora por cuál se
+     * abre lo decide el servidor con la regla de las fechas, la misma que usan la
+     * tabla por jornada y los resultados oficiales.
+     *
+     * La respuesta trae también la lista, así que llenar el desplegable no cuesta
+     * una segunda petición.
+     */
+    fetch('/api/jornada-actual')
         .then(response => response.json())
         .then(data => {
-            if (!data || data.length === 0) {
-                console.error("No hay jornadas disponibles");
+            const jornadas = data.jornadas || [];
+
+            if (!jornadas.length) {
+                console.error('No hay jornadas disponibles');
                 return;
             }
 
-            // Seleccionamos la última jornada
-            ultimaJornada = data[data.length - 1].nombre;
-            fechaCierreGlobal = data[data.length - 1].fechaCierre;
-            loadPartidos(ultimaJornada);
+            jornadaSeleccionada = data.sugerida || jornadas[0].nombre;
+
+            if (selectorJornada) {
+                selectorJornada.innerHTML = jornadas
+                    .map(j => html`<option value="${j.nombre}">${j.nombre}</option>`)
+                    .join('');
+                selectorJornada.value = jornadaSeleccionada;
+            }
+
+            loadPartidos(jornadaSeleccionada);
         })
         .catch(error => console.error('Error al cargar las jornadas:', error));
+
+    /*
+     * Cambiar de jornada obliga a revalidar lo que hay en pantalla: los
+     * marcadores son de la jornada anterior y guardarlos en otra escribiría
+     * pronósticos que nadie escribió. Se limpia y se vuelven a cargar los que
+     * el jugador ya tuviera guardados en la jornada nueva.
+     */
+    if (selectorJornada) {
+        selectorJornada.addEventListener('change', async () => {
+            jornadaSeleccionada = selectorJornada.value;
+            limpiarMarcadores();
+            loadPartidos(jornadaSeleccionada);
+
+            if (jugadorValidado) {
+                await cargarResultadosGuardados(jugadorValidado, jornadaSeleccionada);
+            }
+        });
+    }
 
     // Cargar jugadores en combo
     fetch('/api/auth/me')
@@ -39,10 +84,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Botones
     document.getElementById('copiarTextoButton').addEventListener('click', copiarResultados);
-    document.getElementById('enviarWhatsappButton').addEventListener('click', enviarPorWhatsapp);    
+    document.getElementById('enviarWhatsappButton').addEventListener('click', enviarPorWhatsapp);
 
     document.getElementById('guardarResultadosButton').addEventListener('click', () => {
-         guardarResultados(ultimaJornada, fechaCierreGlobal, jugadorValidado);
+         guardarResultados(jornadaSeleccionada, jugadorValidado);
     });
 
     document.getElementById('comboJugadores').addEventListener('change', async () => {
@@ -86,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 passwordCorrecta = true;
                 jugadorValidado = jugador;
-                await cargarResultadosGuardados(jugador, ultimaJornada);
+                await cargarResultadosGuardados(jugador, jornadaSeleccionada);
             }
         }
     });
@@ -97,16 +142,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadPartidos(nombreJornada) {
-    fetch('/api/jornadas')
-        .then(response => response.json())
-        .then(data => {
-            const jornada = data.find(j => j.nombre === nombreJornada);
-            if (!jornada) {
-                console.error("Jornada no encontrada:", nombreJornada);
-                return;
-            }            
-            mostrarPartidos(jornada.partidos, jornada.nombre);
+    /*
+     * Se pide la jornada concreta y no la lista entera: esta pantalla solo
+     * pinta una. Antes traía todas las jornadas con todos sus partidos y
+     * buscaba la suya dentro, dos veces por carga.
+     */
+    fetch(`/api/jornadas/${encodeURIComponent(nombreJornada)}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Jornada no encontrada: ' + nombreJornada);
+            return response.json();
         })
+        .then(jornada => mostrarPartidos(jornada.partidos, jornada.nombre))
         .catch(error => console.error('Error al cargar los partidos:', error));
 }
 
@@ -472,7 +518,7 @@ async function cargarResultadosGuardados(jugador, jornada) {
 
 
 
-async function guardarResultados(jornada, fechaCierre, jugadorValidado) {
+async function guardarResultados(jornada, jugadorValidado) {
     const combo = document.getElementById('comboJugadores');
     const jugador = combo.value;
     if (!jugador) {
@@ -480,8 +526,6 @@ async function guardarResultados(jornada, fechaCierre, jugadorValidado) {
         return;
     }
 
-    // 1. Verificar fecha cierre
-    
 
     if (jugador !== jugadorValidado) {
         alert("Debe seleccionar el jugador y validar la contraseña antes de guardar.");
