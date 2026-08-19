@@ -1839,6 +1839,19 @@ baratas, se ven de inmediato y no arrastran ninguna decisión.
 es el caso principal. Cualquier arreglo de escritorio no puede empeorar el móvil,
 y las pruebas de navegador corren en ambos, así que lo detectarían.
 
+**Qué se toca**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | Puntos de ruptura para escritorio; que las tarjetas grandes dejen de estirarse |
+| `public/index.html` | Tarjeta nueva hacia `clasificacion-jornada.html` |
+
+**Cómo se comprueba:** las pruebas de navegador ya corren en escritorio y móvil.
+Se añade una que fije que la tarjeta nueva existe y navega, y otra que el botón
+de llenar jornada no ocupa toda la anchura en escritorio.
+
+**Sin decisiones pendientes.** Se puede empezar tal cual.
+
 ---
 
 ### 20.3 Fase B — Qué es "la jornada actual" *(peticiones 1, 2 y 5)*
@@ -1881,6 +1894,24 @@ Una vez decidido, la regla vive en **un solo sitio** del servidor y las tres
 pantallas la consumen. Es lo mismo que se hizo con el cierre por partido en la
 Entrada 019, y por la misma razón: tres copias de una regla acaban discrepando.
 
+**Qué se toca**
+
+| Pieza | Cambio |
+|---|---|
+| `server.js` | Una función `jornadaActual()` —o `jornadasEnCurso()`, si se admite más de una— derivada de las fechas de los partidos |
+| `GET /api/jornadas` | Un campo que diga cuál es la sugerida, o un endpoint `/api/jornada-actual` |
+| `GET /api/clasificacion-jornada` | Deja de usar `createdAt` |
+| `llenar_jornada_user.js` | Abre en la sugerida y **añade selector** de jornadas anteriores |
+| `ver-resultados-oficiales.js` | Abre en la sugerida en vez de dejar el desplegable vacío |
+| `index.html` + script | Tarjeta con el top 3 de la jornada, consumiendo `/api/clasificacion-jornada` |
+
+**Cómo se comprueba:** pruebas de integración con dos jornadas solapadas y con
+una importada tarde —el caso que hoy rompe `createdAt`—, más pruebas de
+navegador de que cada pantalla abre en la correcta y el selector funciona.
+
+**Decisión pendiente (producto):** qué es exactamente "la jornada actual" cuando
+hay dos jugándose. Ver las tres opciones de arriba.
+
 ---
 
 ### 20.4 Fase C — Buscador de ligas dinámico *(petición 9)*
@@ -1905,6 +1936,21 @@ Puntos a resolver:
   (sub-20, reservas, femenil…) que seguirá haciendo falta.
 - **Agrupar por país**, que es como la gente busca.
 
+**Qué se toca**
+
+| Pieza | Cambio |
+|---|---|
+| `server.js` | Endpoint que devuelva las ligas con partidos en un rango de fechas, apoyado en la caché de `Fixture` |
+| `public/importar_partidos.html` | Fuera la lista fija de ~20 torneos |
+| `private/js/importar_partidos.js` | El desplegable se llena de la respuesta; el filtro de exclusiones se conserva |
+
+**Cómo se comprueba:** pruebas de integración con un proveedor simulado —el
+arnés `proveedorFalso` ya existe— comprobando que se agrupan por país, que las
+exclusiones siguen aplicándose y que un día sin partidos no rompe la pantalla.
+
+**Sin decisiones pendientes**, salvo confirmar cuántos días hacia adelante se
+consultan de una vez.
+
 ---
 
 ### 20.5 Fase D — Administración de jornadas unificada *(petición 3)*
@@ -1924,6 +1970,23 @@ con un partido que el API no tenga**. Si alguna vez hace falta un amistoso, un
 torneo local o un partido que el proveedor no cubre, deja de ser posible. Con el
 buscador de la fase C funcionando el riesgo baja mucho, pero conviene decirlo en
 voz alta antes y no descubrirlo un domingo.
+
+**Qué se toca**
+
+| Pieza | Cambio |
+|---|---|
+| `public/jornadas.html` | Pasa a ser la única pantalla: crear, modificar, eliminar y ver |
+| `public/importar_partidos.html` | Desaparece; su buscador se integra en la anterior |
+| `private/js/jornadas.js` | Absorbe lo de `importar_partidos.js`; se retira el alta manual y el autocompletado de equipos |
+| `server.js` | Las rutas ya sirven; `/api/jornadas/importar-api` puede fusionarse con `POST /api/jornadas` |
+| Barras de navegación | Fuera el enlace a importar |
+
+**Cómo se comprueba:** las pruebas de navegador de la fase B ya cubren crear y
+editar; se amplían al flujo completo en una sola pantalla. La prueba de
+arquitectura que exige que toda referencia a un archivo exista detectaría un
+enlace huérfano a la pantalla retirada.
+
+**Decisión pendiente (producto):** confirmar que se acepta perder el alta manual.
 
 ---
 
@@ -1950,6 +2013,22 @@ Va después de las fases A–D porque **no bloquea a ninguna** y porque su
 dependencia externa puede tardar. Si el proveedor se decide pronto, puede
 adelantarse sin tocar nada de lo demás.
 
+**Qué se toca**
+
+| Pieza | Cambio |
+|---|---|
+| `POST /api/auth/registro` | Genera token y caducidad; envía el correo |
+| `server.js` | Ruta de confirmación y de reenvío |
+| `public/` | Pantalla de "revisa tu correo" y de confirmación |
+| `.env.example` | Credenciales del proveedor y URL pública para los enlaces |
+| Middleware | El bloqueo que se decida para las cuentas sin verificar |
+
+**Cómo se comprueba:** pruebas de integración con el envío simulado —token
+válido, caducado, ya usado y reenvío—, más una de navegador del alta completa.
+
+**Decisiones pendientes:** proveedor de correo (tiene coste y configuración en
+Render) y **qué se bloquea sin verificar**.
+
 ---
 
 ### 20.7 Fase F — Sugerencias de partidos destacados *(petición 10)*
@@ -1969,6 +2048,21 @@ liga.
 
 Conviene empezar por lo barato —los clásicos con una lista— y ver si aporta antes
 de construir lo de la clasificación.
+
+**Qué se toca**
+
+| Pieza | Cambio |
+|---|---|
+| Datos | Lista de clásicos por liga, mantenida a mano |
+| `server.js` | Consulta y caché de la clasificación de la liga; heurísticas de "igualados", "liderato" y "descenso" |
+| Pantalla de jornadas | Marcar los partidos sugeridos, con el motivo visible |
+
+**Cómo se comprueba:** las heurísticas son funciones puras y se prueban sueltas,
+igual que el motor de puntuación.
+
+**Decisiones pendientes:** qué cuenta como "igualados" (¿misma puntuación?,
+¿menos de N de diferencia?) y cuántos puestos se consideran zona de descenso o de
+liderato. Depende de cada liga.
 
 ---
 
