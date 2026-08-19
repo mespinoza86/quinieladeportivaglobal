@@ -140,21 +140,17 @@ npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
 
 ### Lo siguiente
 
-Por orden de valor, y ninguna es ya una prioridad alta de la auditoría:
+**El trabajo pendiente ya no es deuda técnica sino producto.** Las diez peticiones
+recogidas el 18 de agosto están analizadas, agrupadas y ordenadas en
+**§20 — Plan de producto**. Se abordan de una en una y en el orden de ahí, que no
+es el orden en que se pidieron.
 
-1. **Ampliar las pruebas de navegador** a las pantallas de resultados y trivias,
-   que son las que más plantillas tienen y las que más se han tocado.
-2. **Endurecer la CSP.** El escapado de S-04 es hoy la **única** línea de
-   defensa: la política sigue permitiendo `unsafe-inline` en `script-src` y en
-   `script-src-attr` porque el frontend tiene 63 manejadores `onclick=` en
-   atributo. Convertirlos a `addEventListener` permitiría cerrarla, y entonces
-   el escapado pasaría a ser defensa en profundidad.
-3. **Integración continua.** Ahora ya hay algo que ejecutar: `npm test`,
-   `npm run test:e2e` y `npm audit`.
-4. **M-26**, la paginación de los listados restantes. `GET /api/resultados` es el
-   caso de manual: devuelve todos los pronósticos de todas las jornadas.
-5. **Fase 6 de modularización.** `server.js` pasa de 5.000 líneas. Ya hay red de
-   pruebas suficiente para dividirlo con seguridad.
+De la deuda técnica anterior solo quedan abiertas dos cosas:
+
+1. **Terminar la Fase 6 de modularización.** `server.js` sigue en 5.100 líneas:
+   faltan las rutas, los modelos y el sincronizador.
+2. **`style-src` conserva `unsafe-inline`.** Se cerró `script-src` y
+   `script-src-attr` (Entrada 024), no los estilos.
 
 Y los medios sin resolver de la Entrada 015: una jornada aplazada o cancelada
 queda provisional para siempre; la "última jornada" se elige por `createdAt` y no
@@ -216,6 +212,7 @@ mitad de temporada.
 17. [Anexo A — Acta de continuidad del 9 de julio de 2026 (HANDOFF)](#anexo-a--acta-de-continuidad-del-9-de-julio-de-2026-handoff)
 18. [Anexo B — Verificación de C-02 (fuga entre quinielas)](#anexo-b--verificación-de-c-02-fuga-de-aislamiento-entre-quinielas)
 19. [Bitácora de avance](#19-bitácora-de-avance)
+20. [Plan de producto — las diez peticiones del 18 de agosto](#20-plan-de-producto--las-diez-peticiones-del-18-de-agosto)
 
 ---
 
@@ -1790,6 +1787,217 @@ worker.js         → solo jobs
 | **Ahora** | 5 | El ranking es el siguiente cuello de botella, y arrastra una decisión de producto (M-03, M-04) |
 | **Al crecer** | 6 | Mantenibilidad: el monolito sigue siendo un solo archivo |
 | **Continuo** | 7 | Producto |
+
+---
+
+## 20. Plan de producto — las diez peticiones del 18 de agosto
+
+> **Estado: analizado y ordenado, sin empezar.** Nada de esta sección está
+> implementado. Se aborda una fase a la vez.
+
+Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
+para agrupar no es el tema sino la **dependencia**: cosas que comparten una
+decisión de fondo se hacen juntas, porque implementarlas por separado significa
+resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
+
+### 20.1 Resumen del orden propuesto
+
+| Orden | Fase | Peticiones | Por qué aquí |
+|---|---|---|---|
+| **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada |
+| **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez |
+| **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual |
+| **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien |
+| **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
+| **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C |
+| — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
+| — | **Aparte 2** | — | Terminar la Fase 6 y cerrar `style-src`, cuando convenga |
+
+**Por qué no en el orden en que se pidieron.** Tres razones concretas:
+
+1. **La petición 3 iba antes que la 9**, y es al revés. Si los partidos van a
+   venir **solo** del API, encontrarlos tiene que ser bueno *antes* de quitar la
+   alternativa manual. Al revés se entrega una pantalla peor que la de hoy.
+2. **Las peticiones 1, 2 y 5 estaban separadas** y en realidad son la misma:
+   las tres preguntan "¿cuál es la jornada actual?", y hoy nadie lo tiene
+   decidido.
+3. **La 7 no es una tarea.** Contestarla no cuesta nada y no bloquea a nadie.
+
+---
+
+### 20.2 Fase A — Retoques de interfaz *(peticiones 4 y 6)*
+
+| # | Petición |
+|---|---|
+| **4** | El escritorio se ve mal: el botón de *llenar jornada* es desproporcionado |
+| **6** | La tabla por jornada solo se alcanza desde la barra inferior; que tenga también su tarjeta |
+
+Ambas tocan solo maquetación y una tarjeta en Inicio. Van primero porque son
+baratas, se ven de inmediato y no arrastran ninguna decisión.
+
+**Ojo con una cosa:** la interfaz está construida sobre `mobile-shell` y el móvil
+es el caso principal. Cualquier arreglo de escritorio no puede empeorar el móvil,
+y las pruebas de navegador corren en ambos, así que lo detectarían.
+
+---
+
+### 20.3 Fase B — Qué es "la jornada actual" *(peticiones 1, 2 y 5)*
+
+| # | Petición |
+|---|---|
+| **1** | En *llenar jornada*, abrir siempre la última pero **poder elegir anteriores**: puede haber dos jornadas jugándose a la vez |
+| **2** | En *resultados oficiales*, abrir la última por defecto |
+| **5** | En Inicio, junto al top 3 general y los partidos en vivo, mostrar el **top 3 de la jornada** |
+
+**La decisión de fondo, que es lo que hay que resolver primero.** Hoy "la última
+jornada" se decide de tres maneras distintas y ninguna es buena:
+
+| Dónde | Cómo se elige hoy |
+|---|---|
+| Tabla por jornada | `sort({ createdAt: -1 })` — la creada más recientemente |
+| Llenar jornada | `data[data.length - 1]` — la última del arreglo, sin orden garantizado |
+| Resultados oficiales | No hay: el usuario elige a mano |
+
+`createdAt` es la **fecha en que se creó el registro**, no cuándo se juega. Una
+jornada importada tarde se convierte en "la última" aunque sus partidos sean de
+la semana pasada. Esto ya estaba anotado como pendiente en la Entrada 015, y la
+petición 1 lo vuelve urgente: **con dos jornadas jugándose a la vez, "la última"
+deja de ser una pregunta con una sola respuesta.**
+
+Lo que hay que decidir, y es decisión de producto:
+
+- ¿La jornada actual es **la que tiene partidos jugándose ahora**? ¿Y si hay dos?
+- ¿O la que tiene **el próximo partido por empezar**?
+- ¿Hace falta un **número de orden** explícito en la jornada, puesto por quien la
+  crea, en vez de deducirlo de las fechas?
+
+**Mi recomendación:** derivarla de las fechas de los partidos, no de `createdAt`
+ni de un número que haya que mantener a mano. "Jornada actual" = la que contiene
+el partido más próximo (hacia adelante o hacia atrás) sin resultado definitivo. Y
+como la petición 1 dice que puede haber dos a la vez, la pantalla **siempre**
+lleva selector: se abre en la sugerida y se puede cambiar.
+
+Una vez decidido, la regla vive en **un solo sitio** del servidor y las tres
+pantallas la consumen. Es lo mismo que se hizo con el cierre por partido en la
+Entrada 019, y por la misma razón: tres copias de una regla acaban discrepando.
+
+---
+
+### 20.4 Fase C — Buscador de ligas dinámico *(petición 9)*
+
+> Que sea fácil buscar ligas: mexicana, tica, torneos centroamericanos… que el
+> combobox se llene con **las ligas que de verdad tienen partidos ese día**.
+
+**Hoy el combobox es una lista fija escrita a mano** en
+`public/importar_partidos.html`: unas veinte opciones con el país y el nombre de
+la liga incrustados. Si el proveedor cambia el nombre de una competición, la
+opción deja de encontrar nada y nadie se entera.
+
+La petición ya trae la solución correcta dentro: **consultar los partidos del día
+y derivar de ahí las ligas disponibles**. Se acaba la lista fija, se acaban las
+opciones muertas, y aparecen automáticamente los torneos que hoy no están.
+
+Puntos a resolver:
+
+- **Cuota del proveedor.** Es una consulta por día consultado; conviene apoyarse
+  en la caché de `Fixture` que ya existe desde la Fase 4.
+- **El filtro de exclusiones se queda.** Hay una lista de palabras bloqueadas
+  (sub-20, reservas, femenil…) que seguirá haciendo falta.
+- **Agrupar por país**, que es como la gente busca.
+
+---
+
+### 20.5 Fase D — Administración de jornadas unificada *(petición 3)*
+
+> Que *agregar jornada* pase a ser **agregar / modificar / eliminar / ver**, y que
+> los partidos salgan **solo del API**: desaparece *importar desde API* como
+> pantalla aparte.
+
+Es el cambio estructural más grande de la lista. Hoy hay **dos pantallas** que
+hacen lo mismo por caminos distintos: `jornadas.html` (a mano, con autocompletado
+de equipos) e `importar_partidos.html` (desde el API). Unificarlas simplifica de
+verdad.
+
+**Lo que hay que confirmar antes de empezar**, porque es irreversible en la
+práctica: quitar la entrada manual significa que **no se podrá crear una jornada
+con un partido que el API no tenga**. Si alguna vez hace falta un amistoso, un
+torneo local o un partido que el proveedor no cubre, deja de ser posible. Con el
+buscador de la fase C funcionando el riesgo baja mucho, pero conviene decirlo en
+voz alta antes y no descubrirlo un domingo.
+
+---
+
+### 20.6 Fase E — Verificación de correo electrónico *(petición 8)*
+
+> Cambiar el registro para que se verifique el correo.
+
+**Media parte ya está hecha sin saberlo:** el modelo `Usuario` ya tiene
+`emailVerificado`, `tokenVerificacion` y `expiracionTokenVerificacion`. Los
+campos existen y no se usan.
+
+Lo que falta:
+
+1. Generar el token al registrarse y guardarlo con su caducidad.
+2. **Enviar el correo** — y aquí está la única dependencia externa de todo el
+   plan: hace falta un proveedor de envío (Resend, SendGrid, SMTP propio). Es una
+   decisión con coste y con configuración en Render.
+3. La ruta de confirmación y su pantalla.
+4. **Decidir qué se bloquea sin verificar.** ¿Se puede entrar y no unirse a
+   quinielas? ¿No se puede ni entrar? Esto es producto, no técnica.
+5. Reenvío del correo, porque siempre se pierde alguno.
+
+Va después de las fases A–D porque **no bloquea a ninguna** y porque su
+dependencia externa puede tardar. Si el proveedor se decide pronto, puede
+adelantarse sin tocar nada de lo demás.
+
+---
+
+### 20.7 Fase F — Sugerencias de partidos destacados *(petición 10)*
+
+> Al elegir una liga, sugerir partidos interesantes: clásicos, equipos igualados
+> en puntos, pelea por el liderato o por el descenso.
+
+Es la petición más ambiciosa y la más cara, y va última por eso. Necesita algo que
+hoy la aplicación **no tiene ni consulta**: la **tabla de posiciones** de cada
+liga.
+
+- Los clásicos no se pueden deducir de los datos: son cultura, no estadística.
+  Requieren una lista mantenida a mano (Saprissa–Alajuelense, América–Chivas…).
+- "Igualados en puntos", "pelea por el liderato" y "pelea por el descenso" **sí**
+  se pueden calcular, pero solo con la clasificación de la liga, que es otra
+  consulta al proveedor y otra caché.
+
+Conviene empezar por lo barato —los clásicos con una lista— y ver si aporta antes
+de construir lo de la clasificación.
+
+---
+
+### 20.8 Aparte — ¿Pasar de MongoDB a SQL? *(petición 7)*
+
+**Respuesta corta: es caro, y hoy no hay ningún problema que lo justifique.**
+
+Qué implicaría, concretamente:
+
+| Pieza | Qué habría que rehacer |
+|---|---|
+| **Modelos** | Todo lo que hoy va incrustado se convierte en tablas: los partidos dentro de la jornada, los resultados dentro de `ResultadoOficial`, los puntos dentro de `PuntosJornada`, los pronósticos dentro de `Resultado` |
+| **Aislamiento multi-quiniela** | El `tenantPlugin` mete el filtro por `quinielaId` automáticamente en toda consulta. En SQL habría que reimplementarlo, y **es la pieza donde ya hubo una fuga (C-02)** |
+| **~100 rutas** | Todas hablan Mongoose |
+| **Sincronizador** | Caché de partidos, cerrojo distribuido y métricas |
+| **113 pruebas + arnés** | `mongodb-memory-server` no sirve |
+
+Es, en la práctica, **reescribir la capa de datos entera**. Y lo importante: los
+problemas de escala que sí existían —el consumo del API, el recálculo del ranking
+en cada petición— **se resolvieron sin cambiar de base**, con deduplicación,
+materialización y caché.
+
+**Cuándo sí valdría la pena:** si aparecieran consultas relacionales complejas
+(informes cruzando varias temporadas), si hiciera falta integridad referencial
+estricta, o si el equipo fuera a ser mayoritariamente de perfil SQL.
+
+**Recomendación:** no hacerlo por ahora. Si hay un problema concreto detrás de la
+pregunta —lentitud, un informe que no sale, incomodidad al consultar— conviene
+nombrarlo: casi seguro tiene solución mucho más barata dentro de MongoDB.
 
 ---
 
