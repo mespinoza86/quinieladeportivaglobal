@@ -799,3 +799,27 @@ test('componer HTML dentro de una plantilla no pierde la marca de crudo', () => 
     'quítalo y deja que `html` una el arreglo, o el marcado saldrá como texto'
   );
 });
+
+test('la integración continua ejecuta lo que hay que ejecutar', () => {
+  /*
+   * Un pipeline que existe pero no corre las pruebas da una falsa sensación de
+   * red. Esta invariante fija QUÉ tiene que ejecutar, no cómo.
+   */
+  const ruta = path.join(root, '.github', 'workflows', 'pruebas.yml');
+  assert.ok(fs.existsSync(ruta), 'Falta el flujo de integración continua');
+
+  const flujo = fs.readFileSync(ruta, 'utf8');
+
+  for (const comando of ['npm ci', 'npm run check', 'npm test', 'npm audit --omit=dev', 'npm run test:e2e']) {
+    assert.ok(flujo.includes(comando), `La integración continua no ejecuta "${comando}"`);
+  }
+
+  /*
+   * `npm ci` y no `npm install`: instala exactamente lo del lockfile y falla si
+   * se desincronizó, que es parte de lo que se quiere detectar.
+   */
+  assert.doesNotMatch(flujo, /run: npm install/);
+
+  // Sin los navegadores, las pruebas de navegador no arrancan en un runner limpio.
+  assert.match(flujo, /playwright install --with-deps chromium/);
+});

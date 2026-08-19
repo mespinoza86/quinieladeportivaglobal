@@ -1,0 +1,86 @@
+# Integración continua.
+#
+# Hasta ahora las 107 pruebas y las 30 de navegador solo corrían cuando alguien
+# se acordaba de lanzarlas. Esto las ejecuta en cada empujón y en cada pull
+# request contra `main`.
+#
+# Son dos trabajos y no uno a propósito: la suite rápida tarda medio minuto y la
+# de navegador un par, así que ver fallar la primera no obliga a esperar a la
+# segunda.
+
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Un empujón nuevo cancela la corrida anterior de la misma rama: no tiene
+# sentido gastar minutos en comprobar código que ya quedó atrás.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rapidas:
+    name: Suite rápida y auditoría
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `npm ci` y no `npm install`: instala exactamente lo del lockfile y falla
+      # si se ha desincronizado, que es justo lo que se quiere detectar aquí.
+      - run: npm ci
+
+      - name: Sintaxis
+        run: npm run check
+
+      - name: Pruebas de arquitectura e integración
+        run: npm test
+
+      # Solo las de producción: las de desarrollo no se despliegan.
+      - name: Auditoría de dependencias
+        run: npm audit --omit=dev
+
+  navegador:
+    name: Pruebas de navegador
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # `--with-deps` trae las bibliotecas del sistema que Chromium necesita en
+      # un runner limpio; sin ellas el navegador no arranca.
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Pruebas de navegador
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+      # Solo si algo falla: capturas y rastros para poder diagnosticarlo sin
+      # tener que reproducirlo en local.
+      - name: Guardar evidencias del fallo
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-evidencias
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
