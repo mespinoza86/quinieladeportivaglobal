@@ -25,7 +25,8 @@
 **Las cinco prioridades altas de la auditoría (Entrada 015) están cerradas:**
 plazos del sincronizador, validación de dominio, privacidad de pronósticos,
 S-04 (inyección de HTML) y transacciones. La red de pruebas pasó de 75 a **112
-pruebas** más **30 de navegador** con Playwright, en escritorio y móvil.
+pruebas** más **30 de navegador** con Playwright, en escritorio y móvil, y todo
+ello se ejecuta solo en cada empujón: la integración continua está en verde.
 
 Dos cambios de producto que conviene tener presentes al retomar:
 
@@ -55,6 +56,7 @@ con la de la tabla general, que sí está resuelta.
 | **6.6** | Transacciones en las secuencias de varias escrituras | 022 |
 | **6.7** | Primeras pruebas de navegador (Playwright), escritorio y móvil | 023 |
 | **6.8** | E2E de resultados y trivias; **CSP cerrada**; CI; M-26; primera tajada de módulos | 024 |
+| **6.9** | El CI en verde: el comodín de `node --test` no funciona en Node 20 | 025 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -128,7 +130,7 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 112 pruebas (~30 s, sin red, sin tocar la base real)
+npm test                   # las 113 pruebas (~30 s, sin red, sin tocar la base real)
 npm run test:integracion   # solo las 67 de integración
 npm run test:e2e           # las 30 de navegador (~50 s, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
@@ -4232,6 +4234,77 @@ npm audit --omit=dev  → 0 vulnerabilidades
 **botones de navegación** —los 22 que cambiaron de `onclick` a `data-ir-a`— y a
 los **resultados de trivias**, que es donde estaba el marcado saliendo como
 texto. Después, seguir troceando `server.js`: rutas, modelos y sincronizador.
+
+---
+
+### 📌 Entrada 025 — 18 de agosto de 2026 — El CI en rojo a la primera, y por qué
+
+**Objetivo:** dejar la integración continua realmente en verde. La Entrada 024 la
+montó, pero **nunca se había visto correr**: se validó la estructura del archivo y
+`npm ci --dry-run` en la máquina de desarrollo, que no es lo mismo.
+
+**Lo que pasó.** El primer empujón la puso en rojo:
+
+```
+> node --test "test/**/*.test.js"
+Could not find '/home/runner/work/.../test/**/*.test.js'
+Error: Process completed with exit code 1.
+```
+
+**`node --test` solo expande comodines desde Node 22.** La máquina de desarrollo
+tiene Node 24 y el flujo pedía Node 20, así que el comodín funcionaba en local y
+en el servidor se tomaba como un nombre de archivo literal.
+
+Y falló de la peor manera posible: **en rojo sin haber ejecutado una sola
+prueba**. No había nada mal en el código; simplemente las pruebas no llegaron a
+arrancar. Un rojo así se confunde fácilmente con un fallo real y se pierde el
+tiempo buscando donde no hay nada.
+
+**Qué se hizo:**
+
+1. El script `test` pasa a **listar los archivos explícitamente**. Funciona en
+   cualquier versión que `engines` admite (`>=20`), que es lo que se prometía.
+2. El flujo pide **Node 22** en vez de 20, que además está al final de su vida.
+3. `actions/checkout` y `actions/setup-node` suben a **v5**, con lo que
+   desaparecen los dos avisos de deprecación que salían junto al error. Eran
+   solo avisos y no la causa, pero estorbaban al leer.
+
+**El riesgo que aparece al quitar el comodín**, y que es la parte interesante:
+con rutas explícitas, añadir un archivo de pruebas y olvidar listarlo haría que
+**el CI pasara en verde sin ejecutarlo**. Eso es peor que fallar, porque da
+confianza falsa. Hay una prueba nueva que lo impide, verificada creando un
+archivo de pruebas suelto: falla y dice cuál falta.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `package.json` | `test` lista los archivos en vez de usar comodín |
+| `.github/workflows/pruebas.yml` | Node 22; `checkout`/`setup-node` a v5 |
+| `test/architecture.test.js` | Que `npm test` ejecute TODOS los archivos de prueba, y sin comodines |
+
+**Verificación:**
+
+```
+npm test              → 113/113
+npm run test:e2e      → 30/30
+npm audit --omit=dev  → 0 vulnerabilidades
+integración continua  → verde, confirmado en GitHub Actions
+```
+
+**Hallazgos nuevos:**
+
+- **Una diferencia de versión entre desarrollo y CI puede ser invisible durante
+  meses.** Aquí la delató el primer día porque el CI se estrenó; sin él, el
+  comodín habría seguido funcionando en la máquina de siempre y roto en cualquier
+  otra.
+- Antes de sospechar del comodín se descartó lo primero que suele fallar al
+  pasar de Windows a Linux: **las diferencias de mayúsculas en los nombres de
+  archivo**, que Windows oculta y Linux no perdona. No había ninguna.
+
+**Pendiente / siguiente paso:** seguir troceando `server.js` —rutas, modelos y
+sincronizador—, y las decisiones que dependen del usuario: C-06 (el clúster M0
+que se auto-pausa), M-30 (la base llamada `test`) y la configuración de Render.
 
 ---
 
