@@ -1893,7 +1893,8 @@ Lo que hay que decidir, y es decisión de producto:
 - ¿Hace falta un **número de orden** explícito en la jornada, puesto por quien la
   crea, en vez de deducirlo de las fechas?
 
-**Mi recomendación:** derivarla de las fechas de los partidos, no de `createdAt`
+**Recomendación original (NO es lo que se hizo — ver la decisión más abajo):**
+derivarla de las fechas de los partidos, no de `createdAt`
 ni de un número que haya que mantener a mano. "Jornada actual" = la que contiene
 el partido más próximo (hacia adelante o hacia atrás) sin resultado definitivo. Y
 como la petición 1 dice que puede haber dos a la vez, la pantalla **siempre**
@@ -1918,22 +1919,32 @@ Entrada 019, y por la misma razón: tres copias de una regla acaban discrepando.
 una importada tarde —el caso que hoy rompe `createdAt`—, más pruebas de
 navegador de que cada pantalla abre en la correcta y el selector funciona.
 
-**Decisión tomada el 18-ago-2026:** la recomendada. La jornada actual es la que
-contiene el partido más próximo —hacia adelante o hacia atrás— sin resultado
-definitivo, derivada de las fechas de los partidos. Las pantallas se abren en
-ella y **siempre** llevan selector.
+**Decisión tomada el 18-ago-2026:** la jornada actual es **la última que se
+creó**. Se descartó la recomendación de derivarla de las fechas: quien administra
+la quiniela crea las jornadas en orden según avanza la temporada, así que el
+orden de creación es el orden real, y una regla que se explica en una frase vale
+más que una que acierte en algún caso raro más. Las pantallas se abren en ella y
+**siempre** llevan selector.
 
-**Cómo quedó (Entrada 027).** La regla vive en `src/jornada-actual.js`, es pura y
-ordena en tres grupos —pendientes con fecha, pendientes sin fecha, todo
-definitivo— porque el grupo tiene que mandar sobre la distancia: si no, una
-jornada cerrada hace una hora le ganaría a la que se juega el mes que viene. El
-servidor la sirve en `GET /api/jornada-actual` junto con la lista de nombres, y
-las tres pantallas la consumen. `createdAt` deja de ser la regla y queda como
-desempate.
+**Lo que se acepta a cambio:** una jornada importada tarde se presenta como la
+actual aunque sus partidos ya se hayan jugado. Se corrige en un clic con el
+selector.
 
-**Queda una decisión abierta:** una jornada a la que **nunca** se le cargan
-resultados sigue contando como pendiente para siempre, y puede desplazar a una
-posterior ya cerrada. Ver el hallazgo de la Entrada 027.
+**Cómo quedó (Entradas 027 y 028).** El servidor sirve la jornada actual en
+`GET /api/jornada-actual`, junto con la lista de nombres, y las **tres pantallas
+la consumen**: eso era lo que había que arreglar, y es lo que se queda pase lo
+que pase con el criterio.
+
+El criterio, tras la Entrada 028, es el orden de creación, y se ordena por
+**`_id`, no por `createdAt`**: el esquema de `Jornada` nunca declaró
+`timestamps`, así que ese campo **no existe** y el `sort({ createdAt: -1 })` que
+había ordenaba por un campo ausente —no ordenaba nada, y de ahí salía buena parte
+de la discrepancia entre pantallas—. El `_id` de Mongo lleva dentro la marca de
+creación, así que sirve también para las jornadas que ya existen, sin migración.
+
+La Entrada 027 había implementado la regla por fechas de los partidos, con tres
+grupos y distancia absoluta. Se retiró al cambiar la decisión; el módulo
+`src/jornada-actual.js` ya no existe.
 
 ---
 
@@ -4920,6 +4931,135 @@ npm audit --omit=dev  → 0 vulnerabilidades
 plazo, que es la única cuestión abierta que deja esta fase. Después, la **Fase C
 — buscador de ligas dinámico** (petición 9), que solo necesita confirmar cuántos
 días hacia adelante se buscan y habilita la Fase D.
+
+---
+
+### 📌 Entrada 028 — 18 de agosto de 2026 — La jornada actual pasa a ser la última creada
+
+**Objetivo:** cambiar la regla de la Fase B. El usuario descartó derivarla de las
+fechas de los partidos: **la jornada actual es la última que se creó**.
+
+Es una decisión de producto y está tomada. Lo que sigue es qué implica y qué se
+encontró al aplicarla.
+
+---
+
+#### El hallazgo que cambió el arreglo
+
+`sort({ createdAt: -1 })` era la regla original de la tabla por jornada. Al ir a
+restaurarla apareció esto:
+
+```js
+const JornadaSchema = new mongoose.Schema({
+  nombre: String,
+  partidos: [ ... ]
+});          // ← sin { timestamps: true }
+```
+
+**`createdAt` no existe en las jornadas.** Cinco de los siete esquemas del
+archivo llevan `timestamps: true`; `Jornada` no. Así que aquel `sort` ordenaba
+por un campo ausente: Mongo no falla, simplemente no ordena, y devuelve lo que le
+apetezca. Eso explica de dónde salía la discrepancia entre pantallas que motivó
+la Fase B —no era que hubiera dos criterios, es que uno de ellos no era ningún
+criterio—.
+
+**Se ordena por `_id`.** El ObjectId de Mongo lleva dentro la marca de tiempo de
+creación y ordena cronológicamente, así que sirve para las jornadas que **ya
+existen**: cero migración, cero campo nuevo que alguien tenga que acordarse de
+rellenar. Añadir `timestamps: true` habría funcionado solo para las jornadas
+futuras y habría dejado a las viejas sin fecha, que es la mitad peor del
+problema.
+
+Comprobado antes de escribirlo: dos ObjectIds creados con un segundo de
+diferencia ordenan correctamente entre sí.
+
+**Editar una jornada no la rejuvenece.** La ruta que las guarda hace `upsert` por
+nombre y conserva el `_id`, así que corregir una falta de ortografía en una
+jornada vieja no la asciende a jornada actual. Hay una prueba que lo fija, porque
+si esa ruta pasara algún día a borrar y recrear, el síntoma —«la jornada actual
+cambió sola»— no se relacionaría jamás con la causa.
+
+---
+
+#### Qué se conserva y qué se va
+
+Lo que la Fase B tenía de valioso **no era la regla**: era que hubiera **una
+sola**, en un solo sitio, y que las pantallas la consumieran. Eso se queda entero.
+
+| Se queda | Se va |
+|---|---|
+| `GET /api/jornada-actual` y `calcularJornadaActual()` | `src/jornada-actual.js` — los tres grupos y la distancia |
+| El selector de jornadas en llenar quiniela (petición 1) | Las 9 pruebas de la regla por fechas |
+| Resultados oficiales abriendo en la sugerida (petición 2) | |
+| El podio de la jornada en la portada (petición 5) | |
+| `src/fechas.js` — lo sigue usando `partidoYaInicio` | |
+
+La regla dejó de merecer un módulo propio: ahora es una consulta ordenada, y
+envolverla en una función pura de cien líneas para devolver el primer elemento
+sería fingir una complejidad que ya no existe.
+
+**A cambio se acepta un caso conocido:** una jornada importada tarde se presenta
+como la actual aunque sus partidos ya se hayan jugado. Es exactamente lo que la
+regla por fechas evitaba. Se acepta a sabiendas, y no duele porque las tres
+pantallas llevan selector: se corrige en un clic. A cambio, la regla se explica
+en una frase, que es lo que se pidió.
+
+Y se va con ella el problema que dejó abierto la Entrada 027: una jornada
+abandonada ya no puede quedarse de «actual» para siempre, porque las fechas de
+los partidos dejaron de decidir nada.
+
+---
+
+#### Las pruebas cruzan las fechas a propósito
+
+Tanto las de integración como las de navegador crean la jornada **más nueva** con
+los partidos **más viejos**. No es un descuido: es lo que distingue qué regla está
+aplicando el servidor. Con las fechas alineadas al orden de creación, las dos
+reglas dan el mismo resultado y la prueba pasaría con cualquiera de las dos.
+
+Se añadieron además dos que fijan el hallazgo de arriba: una comprueba que
+`createdAt` **sigue sin existir** —y avisa si algún día aparece, porque entonces
+la regla se puede simplificar— y otra que editar no asciende.
+
+El guardián de arquitectura ahora prohíbe explícitamente `sort({ createdAt: -1 })`
+en `server.js`. No es celo: es el error que estuvo ahí sin que nadie lo viera, y
+lo natural es volver a escribirlo.
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | `calcularJornadaActual()` ordena por `_id`; fuera el require y la exportación de la regla anterior |
+| `src/jornada-actual.js` | **Eliminado** |
+| `test/integracion.test.js` | Las 9 pruebas de la regla por fechas → 6 de la regla nueva |
+| `test/e2e/jornada-actual.spec.js` | Fixtures invertidas: la más nueva lleva los partidos más viejos |
+| `test/architecture.test.js` | Fuera `jornadaSugerida`; el guardián prohíbe ordenar por `createdAt` |
+| `avance_proyecto.md` | §20.3 con la decisión nueva y esta entrada |
+
+**Verificación:**
+
+```
+npm run check     → sintaxis válida
+npm test          → 119/119
+npm run test:e2e  → 46/46
+```
+
+**Hallazgos nuevos:**
+
+- **`Jornada` es el único esquema de dominio sin `timestamps`.** Cinco de siete
+  lo llevan. No se ha añadido —el `_id` resuelve lo que hacía falta y un campo
+  nuevo que nadie lee es peso muerto—, pero queda anotado por si alguna vez hace
+  falta saber cuándo se tocó una jornada, no cuándo se creó.
+- **Una regla que no ordena nada es peor que una regla equivocada.** Una regla
+  equivocada se nota; `sort` sobre un campo inexistente devuelve resultados
+  plausibles y distintos cada vez, y se atribuye a cualquier otra cosa. Esta
+  llevaba ahí desde que se escribió la pantalla.
+
+**Pendiente / siguiente paso:** **Fase C — buscador de ligas dinámico**
+(petición 9), que solo necesita confirmar cuántos días hacia adelante se buscan y
+habilita la Fase D.
 
 ---
 

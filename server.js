@@ -795,7 +795,6 @@ const {
 } = require('./src/validacion');
 
 const { extraerFechaApi, parseFechaPartidoCostaRica } = require('./src/fechas');
-const { jornadaSugerida } = require('./src/jornada-actual');
 
 /**
  * Qué partidos de una jornada tienen ya el pronóstico a la vista, uno por
@@ -1461,36 +1460,39 @@ app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
  * romper.
  */
 /**
- * Lee lo justo para decidir cuál es la jornada actual y se lo pasa a la regla.
+ * Cuál es "la jornada actual": **la última que se creó**.
  *
- * Se proyectan SOLO los campos que la regla mira: de los partidos, la fecha; de
- * los oficiales, si el resultado es definitivo. Traerse las jornadas enteras
- * sería volver a lo que la Fase 5 quitó de la tabla general —cuarenta jornadas
- * de diez partidos son cuatrocientos subdocumentos por pantalla—, y aquí no
- * hace falta ni un marcador.
+ * La Fase B empezó derivándola de las fechas de los partidos. Se descartó a
+ * petición del usuario: quien administra la quiniela crea las jornadas en orden
+ * según avanza la temporada, así que el orden de creación ES el orden real, y
+ * una regla que se pueda explicar en una frase vale más que una que acierte en
+ * algún caso raro más. A cambio se acepta un caso conocido: una jornada
+ * importada tarde se presenta como la actual aunque sus partidos ya se hayan
+ * jugado. Se corrige en un clic, porque las tres pantallas llevan selector.
  *
- * El orden de la lista es el desempate: la más nueva primero. `createdAt` deja
- * de ser LA REGLA y pasa a ser lo que se mira solo cuando las fechas empatan,
- * que es el único sitio donde nunca hizo daño.
+ * **Se ordena por `_id`, no por `createdAt`.** `createdAt` no existe: el esquema
+ * de Jornada nunca declaró `timestamps`, así que el `sort({ createdAt: -1 })`
+ * que había aquí ordenaba por un campo ausente y no hacía nada —de ahí que la
+ * tabla por jornada y llenar jornada acabaran discrepando—. El `_id` de Mongo
+ * lleva dentro la marca de tiempo de creación y ordena cronológicamente, así
+ * que funciona también con las jornadas que ya existen, sin migración ni campo
+ * nuevo que nadie tenga que acordarse de rellenar.
+ *
+ * Editar una jornada no la rejuvenece: la ruta que las guarda hace `upsert` por
+ * nombre y conserva el `_id`. "La última creada" sigue siendo la última creada,
+ * no la última tocada.
+ *
+ * Se leen solo los nombres. La regla no mira dentro de los partidos, así que
+ * traérselos sería volver a los cuatrocientos subdocumentos por pantalla que
+ * quitó la Fase 5.
  */
-async function calcularJornadaActual(ahora = new Date()) {
-  const [jornadas, oficiales] = await Promise.all([
-    Jornada.find({}).select('nombre partidos.apiDate').sort({ createdAt: -1 }).lean(),
-    ResultadoOficial.find({}).select('jornada resultados.estado resultados.bloqueadoFinal').lean()
-  ]);
+async function calcularJornadaActual() {
+  const jornadas = await Jornada.find({}).select('nombre').sort({ _id: -1 }).lean();
 
-  const oficialesPorJornada = new Map(oficiales.map(doc => [doc.jornada, doc.resultados || []]));
-
-  const sugerida = jornadaSugerida(
-    jornadas.map(j => ({
-      nombre: j.nombre,
-      partidos: j.partidos || [],
-      oficiales: oficialesPorJornada.get(j.nombre) || []
-    })),
-    ahora
-  );
-
-  return { sugerida, jornadas: jornadas.map(j => ({ nombre: j.nombre })) };
+  return {
+    sugerida: jornadas[0]?.nombre ?? null,
+    jornadas: jornadas.map(j => ({ nombre: j.nombre }))
+  };
 }
 
 /*
@@ -5152,7 +5154,6 @@ module.exports = {
   estadisticasDeJornada,
   jornadaEstaFinalizada,
   // Jornada actual (Fase B)
-  jornadaSugerida,
   calcularJornadaActual,
   parseFechaPartidoCostaRica,
   extraerFechaApi,

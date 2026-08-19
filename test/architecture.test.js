@@ -239,8 +239,7 @@ test('no hay funciones ni rutas duplicadas que se pisen entre sí', () => {
   for (const [nombre, esperado] of [
     ['function partidoYaInicio', 1],
     ['function parseFechaPartidoCostaRica', 1],
-    ['function extraerFechaApi', 1],
-    ['function jornadaSugerida', 1]
+    ['function extraerFechaApi', 1]
   ]) {
     const veces = fuenteSinComentarios.split(nombre).length - 1;
     assert.equal(veces, esperado, `Se esperaban ${esperado} apariciones de "${nombre}", hay ${veces}`);
@@ -493,25 +492,25 @@ test('un ciclo de sincronización que no termina no bloquea al planificador', ()
 
 test('la clasificación por jornada no lee la temporada entera para elegir una', () => {
   /*
-   * Fase B: la lectura se mudó a `calcularJornadaActual`, que ahora sí necesita
-   * mirar dentro de los partidos, porque la regla va por fechas. Lo que no
-   * puede es traerse los partidos ENTEROS: se proyectan la fecha del partido y
-   * el estado del oficial, y nada más. Sin la proyección volveríamos a los
-   * cuatrocientos subdocumentos por pantalla que quitó la Fase 5.
+   * Elegir jornada no necesita ni un partido: solo los nombres. Traérselos
+   * enteros sería volver a los cuatrocientos subdocumentos por pantalla que
+   * quitó la Fase 5.
    */
   assert.match(
     serverSinComentarios,
-    /Jornada\.find\(\{\}\)\.select\('nombre partidos\.apiDate'\)/
-  );
-  assert.match(
-    serverSinComentarios,
-    /ResultadoOficial\.find\(\{\}\)\.select\('jornada resultados\.estado resultados\.bloqueadoFinal'\)/
+    /Jornada\.find\(\{\}\)\.select\('nombre'\)\.sort\(\{ _id: -1 \}\)/
   );
 
   /*
-   * Y la regla vieja ya no decide: la creada más recientemente solo se usa como
-   * último recurso, detrás de la sugerida.
+   * Y se ordena por `_id`, NO por `createdAt`. El esquema de Jornada nunca
+   * declaró `timestamps`, así que sus documentos no tienen `createdAt` y el
+   * sort que había aquí ordenaba por un campo ausente: no ordenaba nada. El
+   * `_id` de Mongo lleva dentro la marca de creación y sirve para las jornadas
+   * que ya existen, sin migración.
    */
+  assert.doesNotMatch(serverSinComentarios, /sort\(\{ createdAt: -1 \}\)/);
+
+  // La regla vieja ya no decide: la sugerida va delante del primer elemento.
   assert.match(serverSinComentarios, /req\.query\.jornada \|\| sugerida \|\| jornadas\[0\]\.nombre/);
 
   // Y congelar dentro de un GET es una red de seguridad: no puede tumbar la consulta.

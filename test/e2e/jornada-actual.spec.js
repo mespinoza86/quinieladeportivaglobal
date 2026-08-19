@@ -1,9 +1,9 @@
 /*
  * Fase B: qué es "la jornada actual", vista desde las pantallas.
  *
- * La regla ya está probada suelta en la suite rápida —ahí se le fija el reloj y
- * se comprueban los casos raros—. Lo que estas pruebas cubren es lo otro: que
- * las tres pantallas la CONSUMAN, en vez de volver a deducirla cada una por su
+ * La regla —la última jornada que se creó— está probada en la suite rápida.
+ * Lo que estas pruebas cubren es lo otro, que era el problema de verdad: que
+ * las tres pantallas la CONSUMAN en vez de volver a deducirla cada una por su
  * cuenta, que es como llegaron a discrepar.
  */
 'use strict';
@@ -37,77 +37,78 @@ async function crearJornada(page, nombre, partidos) {
 }
 
 /**
- * Deja la quiniela con dos jornadas: una vieja creada DESPUÉS que la próxima.
+ * Deja la quiniela con dos jornadas, y la que se crea LA ÚLTIMA es la que tiene
+ * los partidos MÁS VIEJOS.
  *
- * Ese orden es el meollo. Con la regla anterior ganaba la creada más
- * recientemente, así que "Jornada vieja" se presentaba como la actual aunque
- * sus partidos fueran de hace un mes. Es el caso de la importación tardía.
+ * Ese cruce es a propósito: distingue qué regla está aplicando el servidor. Si
+ * alguien volviera a derivarla de las fechas de los partidos, estas pruebas
+ * elegirían la otra y lo dirían.
  */
-async function conJornadaViejaImportadaDespues(page, password) {
+async function conDosJornadas(page, password) {
   await activarAdminMode(page, password);
 
-  await crearJornada(page, 'Jornada proxima', [
+  await crearJornada(page, 'Jornada anterior', [
     { equipo1: 'Alfa', equipo2: 'Beta', apiDate: enDias(2) }
   ]);
 
-  await crearJornada(page, 'Jornada vieja', [
+  await crearJornada(page, 'Jornada nueva', [
     { equipo1: 'Gamma', equipo2: 'Delta', apiDate: enDias(-30) }
   ]);
 }
 
-test('llenar quiniela abre en la jornada sugerida y deja cambiar a otra', async ({ page }) => {
+test('llenar quiniela abre en la última jornada creada y deja cambiar a otra', async ({ page }) => {
   const datos = await registrarse(page, 'fbllenar');
   await crearQuiniela(page, 'Fase B Llenar');
-  await conJornadaViejaImportadaDespues(page, datos.password);
+  await conDosJornadas(page, datos.password);
 
   await page.goto('/llenar_jornada_user.html');
 
   const selector = page.locator('#jornadaSelect');
-  await expect(selector).toHaveValue('Jornada proxima');
+  await expect(selector).toHaveValue('Jornada nueva');
 
   // Los partidos que se pintan son los de esa jornada, no los de la otra.
-  await expect(page.locator('#partidosContainer')).toContainText('Alfa');
+  await expect(page.locator('#partidosContainer')).toContainText('Gamma');
 
   /*
    * Y se puede ir a una anterior: esto es la petición 1. Antes la pantalla se
    * abría donde se abría y no había manera de llegar a otra jornada.
    */
-  await selector.selectOption('Jornada vieja');
-  await expect(page.locator('#partidosContainer')).toContainText('Gamma');
-  await expect(page.locator('#partidosContainer')).not.toContainText('Alfa');
+  await selector.selectOption('Jornada anterior');
+  await expect(page.locator('#partidosContainer')).toContainText('Alfa');
+  await expect(page.locator('#partidosContainer')).not.toContainText('Gamma');
 });
 
-test('resultados oficiales abre en la jornada sugerida, no en la última creada', async ({ page }) => {
+test('resultados oficiales abre en la última jornada creada', async ({ page }) => {
   const datos = await registrarse(page, 'fboficial');
   await crearQuiniela(page, 'Fase B Oficiales');
-  await conJornadaViejaImportadaDespues(page, datos.password);
+  await conDosJornadas(page, datos.password);
 
   await page.goto('/ver-resultados-oficiales.html');
 
-  await expect(page.locator('#jornadaSelect')).toHaveValue('Jornada proxima');
+  await expect(page.locator('#jornadaSelect')).toHaveValue('Jornada nueva');
 });
 
 test('la tabla por jornada abre en la misma jornada que las demás pantallas', async ({ page }) => {
   const datos = await registrarse(page, 'fbtabla');
   await crearQuiniela(page, 'Fase B Tabla');
-  await conJornadaViejaImportadaDespues(page, datos.password);
+  await conDosJornadas(page, datos.password);
 
   await page.goto('/clasificacion-jornada.html');
 
-  await expect(page.locator('#jornadaSelect')).toHaveValue('Jornada proxima');
-  await expect(page.locator('#estadoJornada')).toContainText('Jornada proxima');
+  await expect(page.locator('#jornadaSelect')).toHaveValue('Jornada nueva');
+  await expect(page.locator('#estadoJornada')).toContainText('Jornada nueva');
 });
 
 test('las tres pantallas coinciden: una sola regla, no tres', async ({ page }) => {
   const datos = await registrarse(page, 'fbcoincide');
   await crearQuiniela(page, 'Fase B Coincide');
-  await conJornadaViejaImportadaDespues(page, datos.password);
+  await conDosJornadas(page, datos.password);
 
   /*
    * El fallo que motivó la fase no era que una pantalla se equivocara: era que
    * cada una respondía una cosa distinta. Esta prueba compara las tres entre sí
    * en vez de contra un nombre fijo, así que seguiría cazando el problema
-   * aunque la regla cambiara de criterio mañana.
+   * aunque la regla cambiara de criterio mañana —como acaba de cambiar—.
    */
   const jornadas = [];
 

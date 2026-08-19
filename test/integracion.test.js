@@ -2210,168 +2210,136 @@ test('acotar por jornada no debilita la privacidad de los pronósticos', async (
 /* ================= Fase B: cuál es "la jornada actual" ================= */
 
 /*
- * Estas primeras son puras: la regla no consulta la base ni conoce Express, así
- * que se le pasan las jornadas y el reloj y se comprueba qué elige. Un reloj
- * fijo, además, es lo único que las hace repetibles: con `new Date()` de
- * verdad, "la jornada de la semana que viene" deja de serlo con el tiempo y la
- * prueba empezaría a fallar sola meses después.
+ * La regla es "la última jornada que se creó", y lo que hay que probar de ella
+ * no es el orden —eso lo hace Mongo— sino las dos cosas que se han roto de
+ * verdad: que el orden exista (el `sort({ createdAt: -1 })` anterior ordenaba
+ * por un campo que el esquema nunca declaró, así que no ordenaba nada), y que
+ * las tres pantallas usen LA MISMA, que es lo que motivó la fase.
  */
 
-const AHORA = new Date('2026-08-18T18:00:00Z');
-
-/** Un partido con fecha y, opcionalmente, resultado ya definitivo. */
-function partidoEn(apiDate, definitivo = false) {
-  return {
-    partido: { equipo1: 'Uno', equipo2: 'Dos', apiDate },
-    oficial: definitivo ? { estado: 'TC', bloqueadoFinal: true } : { estado: 'NS' }
-  };
-}
-
-function jornadaCon(nombre, partidos) {
-  return {
-    nombre,
-    partidos: partidos.map(p => p.partido),
-    oficiales: partidos.map(p => p.oficial)
-  };
-}
-
-test('Fase B: la jornada actual es la del partido más próximo sin resultado definitivo', () => {
-  const pasada = jornadaCon('Pasada', [partidoEn('2026-08-10 15:00', true)]);
-  const enCurso = jornadaCon('En curso', [partidoEn('2026-08-18 11:00'), partidoEn('2026-08-18 14:00')]);
-  const futura = jornadaCon('Futura', [partidoEn('2026-08-25 15:00')]);
-
-  assert.equal(srv.jornadaSugerida([pasada, enCurso, futura], AHORA), 'En curso');
-
-  // Y el orden en que llegan no cambia la respuesta.
-  assert.equal(srv.jornadaSugerida([futura, pasada, enCurso], AHORA), 'En curso');
-});
-
-test('Fase B: una jornada importada tarde ya no se cuela por delante', () => {
-  /*
-   * El fallo que se venía arrastrando: la regla vieja ordenaba por `createdAt` y
-   * ganaba siempre la creada más recientemente. Aquí la vieja llega LA PRIMERA
-   * de la lista —que es como el servidor manda las más nuevas— y aun así pierde,
-   * porque sus partidos son de hace dos semanas.
-   */
-  const importadaTarde = jornadaCon('Vieja importada hoy', [partidoEn('2026-08-04 15:00')]);
-  const enCurso = jornadaCon('En curso', [partidoEn('2026-08-18 14:00')]);
-
-  assert.equal(srv.jornadaSugerida([importadaTarde, enCurso], AHORA), 'En curso');
-});
-
-test('Fase B: con dos jornadas solapadas gana la del partido más cercano', () => {
-  /*
-   * El caso que motivó la petición 1: dos jornadas vivas a la vez. La regla no
-   * inventa una respuesta única —no la hay—, solo dice por cuál abrir; para lo
-   * demás la pantalla lleva selector.
-   */
-  const copa = jornadaCon('Copa', [partidoEn('2026-08-18 19:00')]);
-  const liga = jornadaCon('Liga', [partidoEn('2026-08-18 23:00')]);
-
-  assert.equal(srv.jornadaSugerida([copa, liga], AHORA), 'Copa');
-  assert.equal(srv.jornadaSugerida([liga, copa], AHORA), 'Copa');
-});
-
-test('Fase B: una jornada recién terminada sigue siendo la actual un rato', () => {
-  /*
-   * Terminada hace dos horas, la siguiente es dentro de seis días. Durante ese
-   * rato la gente sigue queriendo ver la que acaba de jugarse, y la regla la
-   * mantiene sola: deja de ganar en cuanto la siguiente se acerque más de lo
-   * que esta se aleja. Sus partidos NO están marcados como definitivos, que es
-   * lo normal mientras el sincronizador termina de confirmarlos.
-   */
-  const recien = jornadaCon('Recién jugada', [partidoEn('2026-08-18 16:00')]);
-  const siguiente = jornadaCon('Siguiente', [partidoEn('2026-08-24 15:00')]);
-
-  assert.equal(srv.jornadaSugerida([recien, siguiente], AHORA), 'Recién jugada');
-});
-
-test('Fase B: una jornada con partidos por jugar gana a otra ya cerrada, esté donde esté', () => {
-  /*
-   * Los grupos mandan sobre las distancias. La cerrada terminó hace una hora y
-   * la abierta no se juega hasta dentro de un mes: aun así gana la abierta,
-   * porque una jornada ya cerrada no es "la actual" por muy cerca que quede.
-   */
-  const cerrada = jornadaCon('Cerrada', [partidoEn('2026-08-18 17:00', true)]);
-  const lejana = jornadaCon('Lejana', [partidoEn('2026-09-18 15:00')]);
-
-  assert.equal(srv.jornadaSugerida([cerrada, lejana], AHORA), 'Lejana');
-});
-
-test('Fase B: sin ninguna fecha utilizable la regla no se cae ni se queda muda', () => {
-  /*
-   * Los partidos cargados a mano no tienen `apiDate`. No se pueden ordenar por
-   * cercanía, así que se desempata por el orden en que llegan —el servidor manda
-   * primero la más nueva— y, sobre todo, se devuelve ALGO: la pantalla tiene que
-   * abrir por algún sitio.
-   */
-  const manualNueva = jornadaCon('Manual nueva', [partidoEn('')]);
-  const manualVieja = jornadaCon('Manual vieja', [partidoEn('')]);
-
-  assert.equal(srv.jornadaSugerida([manualNueva, manualVieja], AHORA), 'Manual nueva');
-  assert.equal(srv.jornadaSugerida([], AHORA), null);
-  assert.equal(srv.jornadaSugerida(null, AHORA), null);
-});
-
-test('Fase B: con todo cerrado se sugiere la última jugada, no la primera', () => {
-  const primera = jornadaCon('Primera', [partidoEn('2026-03-01 15:00', true)]);
-  const ultima = jornadaCon('Última', [partidoEn('2026-08-01 15:00', true)]);
-
-  assert.equal(srv.jornadaSugerida([primera, ultima], AHORA), 'Última');
-});
-
-/**
- * Un `apiDate` a tantos días de hoy, en el formato que manda el API.
- *
- * Las pruebas contra la base no pueden fijar el reloj —lo pone el servidor al
- * atender la petición—, así que las fechas van RELATIVAS. El primer intento usó
- * el año 2099 para decir "futuro" y 2020 para decir "pasado", y la prueba falló
- * con razón: a 2026, el 2099 queda setenta años por delante y el 2020 seis por
- * detrás, así que "la vieja" era la más cercana y la regla la elegía bien. El
- * dato de prueba estaba mal, no el código.
- */
-function apiDateRelativo(dias, hora = 15) {
-  const fecha = new Date(Date.now() + dias * 24 * 60 * 60 * 1000);
-  const dosDigitos = n => String(n).padStart(2, '0');
-
-  return `${fecha.getUTCFullYear()}-${dosDigitos(fecha.getUTCMonth() + 1)}-${dosDigitos(fecha.getUTCDate())} ${dosDigitos(hora)}:00`;
-}
-
-test('Fase B: el endpoint y la tabla por jornada usan la misma regla', async () => {
+test('Fase B: la jornada actual es la última que se creó', async () => {
   const dueno = await cuentaNueva('faseb');
   const quiniela = await quinielaNueva(dueno.agente, 'Jornada Actual');
   const id = new mongoose.Types.ObjectId(quiniela.id);
 
   /*
-   * Se crean en este orden a propósito: la vieja se crea LA ÚLTIMA, así que es
-   * la que ganaba con la regla de `createdAt`. Si algo vuelve a ordenar por
-   * fecha de creación, esta prueba lo caza.
+   * Las fechas de los partidos van al revés del orden de creación a propósito:
+   * la que se crea LA ÚLTIMA tiene los partidos MÁS VIEJOS. Así la prueba
+   * distingue de verdad qué regla está aplicando el servidor, y no pasaría por
+   * casualidad si alguien volviera a ordenar por fechas.
    */
   await enQuiniela(id, async () => {
     await srv.Jornada.create({
-      nombre: 'Jornada en curso',
-      partidos: [{ equipo1: 'Uno', equipo2: 'Dos', apiDate: apiDateRelativo(1) }]
+      nombre: 'Creada primero',
+      partidos: [{ equipo1: 'Uno', equipo2: 'Dos', apiDate: '2026-12-01 15:00' }]
     });
     await srv.Jornada.create({
-      nombre: 'Jornada vieja',
-      partidos: [{ equipo1: 'Tres', equipo2: 'Cuatro', apiDate: apiDateRelativo(-30) }]
+      nombre: 'Creada después',
+      partidos: [{ equipo1: 'Tres', equipo2: 'Cuatro', apiDate: '2020-01-01 15:00' }]
     });
   });
 
   const actual = await dueno.agente.get('/api/jornada-actual');
   assert.equal(actual.status, 200);
-  assert.equal(actual.body.sugerida, 'Jornada en curso');
-  assert.equal(actual.body.jornadas.length, 2, 'También devuelve la lista para el desplegable');
+  assert.equal(actual.body.sugerida, 'Creada después');
 
-  // Y la tabla por jornada abre en la misma, sin que se lo pidan.
+  // Y la lista viene con la más nueva primero, para llenar el desplegable.
+  assert.deepEqual(
+    actual.body.jornadas.map(j => j.nombre),
+    ['Creada después', 'Creada primero']
+  );
+});
+
+test('Fase B: el orden sale del _id, no de un createdAt que no existe', async () => {
+  /*
+   * El esquema de Jornada nunca declaró `timestamps`, así que sus documentos NO
+   * tienen `createdAt`: el `sort({ createdAt: -1 })` que había ordenaba por un
+   * campo ausente. Esta prueba fija las dos mitades del arreglo —que el campo
+   * sigue sin existir, y que aun así el orden es el de creación— para que nadie
+   * vuelva a ordenar por ahí creyendo que funciona.
+   */
+  const dueno = await cuentaNueva('fasebid');
+  const quiniela = await quinielaNueva(dueno.agente, 'Orden Real');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  const nombres = ['Primera', 'Segunda', 'Tercera'];
+
+  await enQuiniela(id, async () => {
+    for (const nombre of nombres) {
+      await srv.Jornada.create({
+        nombre,
+        partidos: [{ equipo1: 'Uno', equipo2: 'Dos', apiDate: '2026-09-01 15:00' }]
+      });
+    }
+  });
+
+  const guardada = await enQuiniela(id, () => srv.Jornada.findOne({ nombre: 'Primera' }).lean());
+  assert.equal(guardada.createdAt, undefined, 'Si esto falla, el esquema ganó timestamps y la regla puede simplificarse');
+
+  const actual = await dueno.agente.get('/api/jornada-actual');
+  assert.equal(actual.body.sugerida, 'Tercera');
+});
+
+test('Fase B: editar una jornada no la convierte en la más reciente', async () => {
+  /*
+   * La ruta que guarda jornadas hace `upsert` por nombre, así que editar una
+   * conserva su `_id` y con él su puesto. Si en algún momento pasara a borrar y
+   * recrear, corregir una falta de ortografía en una jornada vieja la
+   * ascendería a jornada actual, y nadie relacionaría una cosa con la otra.
+   */
+  const dueno = await cuentaNueva('fasebedit');
+  const quiniela = await quinielaNueva(dueno.agente, 'Editar No Asciende');
+  await dueno.agente.post('/api/admin-mode/activar').send({ password: dueno.datos.password });
+
+  const partido = [{ equipo1: 'Uno', equipo2: 'Dos', apiDate: '2026-09-01 15:00' }];
+
+  await dueno.agente.post('/api/jornadas').send({ nombre: 'Vieja', partidos: partido });
+  await dueno.agente.post('/api/jornadas').send({ nombre: 'Nueva', partidos: partido });
+
+  assert.equal((await dueno.agente.get('/api/jornada-actual')).body.sugerida, 'Nueva');
+
+  // Se reedita la vieja: cambia un partido, no su antigüedad.
+  const editada = await dueno.agente.post('/api/jornadas').send({
+    nombre: 'Vieja',
+    partidos: [{ equipo1: 'Uno', equipo2: 'Dos corregido', apiDate: '2026-09-01 15:00' }]
+  });
+  assert.equal(editada.status, 200);
+
+  assert.equal((await dueno.agente.get('/api/jornada-actual')).body.sugerida, 'Nueva');
+});
+
+test('Fase B: la tabla por jornada abre en la misma que el endpoint', async () => {
+  const dueno = await cuentaNueva('fasebtabla');
+  const quiniela = await quinielaNueva(dueno.agente, 'Tabla Coincide');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'Antigua', partidos: [{ equipo1: 'Uno', equipo2: 'Dos' }] });
+    await srv.Jornada.create({ nombre: 'Reciente', partidos: [{ equipo1: 'Tres', equipo2: 'Cuatro' }] });
+  });
+
   const tabla = await dueno.agente.get('/api/clasificacion-jornada');
   assert.equal(tabla.status, 200);
-  assert.equal(tabla.body.jornada, 'Jornada en curso');
+  assert.equal(tabla.body.jornada, 'Reciente');
 
   // Pedir otra explícitamente sigue funcionando: la regla sugiere, no impone.
-  const otra = await dueno.agente.get('/api/clasificacion-jornada').query({ jornada: 'Jornada vieja' });
+  const otra = await dueno.agente.get('/api/clasificacion-jornada').query({ jornada: 'Antigua' });
   assert.equal(otra.status, 200);
-  assert.equal(otra.body.jornada, 'Jornada vieja');
+  assert.equal(otra.body.jornada, 'Antigua');
+});
+
+test('Fase B: sin jornadas el endpoint responde vacío, no falla', async () => {
+  const dueno = await cuentaNueva('fasebvacio');
+  await quinielaNueva(dueno.agente, 'Sin Jornadas');
+
+  const actual = await dueno.agente.get('/api/jornada-actual');
+  assert.equal(actual.status, 200);
+  assert.equal(actual.body.sugerida, null);
+  assert.deepEqual(actual.body.jornadas, []);
+
+  const tabla = await dueno.agente.get('/api/clasificacion-jornada');
+  assert.equal(tabla.status, 200);
+  assert.equal(tabla.body.jornada, null);
 });
 
 test('Fase B: la jornada actual no cruza entre quinielas', async () => {
@@ -2382,21 +2350,15 @@ test('Fase B: la jornada actual no cruza entre quinielas', async () => {
   const quinielaDos = await quinielaNueva(dos.agente, 'Actual B');
 
   await enQuiniela(new mongoose.Types.ObjectId(quinielaUno.id), async () => {
-    await srv.Jornada.create({
-      nombre: 'Solo de A',
-      partidos: [{ equipo1: 'Uno', equipo2: 'Dos', apiDate: '2099-06-01 15:00' }]
-    });
+    await srv.Jornada.create({ nombre: 'Solo de A', partidos: [{ equipo1: 'Uno', equipo2: 'Dos' }] });
   });
 
   await enQuiniela(new mongoose.Types.ObjectId(quinielaDos.id), async () => {
-    await srv.Jornada.create({
-      nombre: 'Solo de B',
-      partidos: [{ equipo1: 'Tres', equipo2: 'Cuatro', apiDate: '2099-06-02 15:00' }]
-    });
+    await srv.Jornada.create({ nombre: 'Solo de B', partidos: [{ equipo1: 'Tres', equipo2: 'Cuatro' }] });
   });
 
   /*
-   * El endpoint nuevo lee TODAS las jornadas para decidir. Si se le olvidara el
+   * El endpoint lee TODAS las jornadas para decidir. Si se le olvidara el
    * contexto de inquilino —que es el fallo C-02 y ya pasó una vez— cada quiniela
    * vería las jornadas de la otra, y aquí saldría 2 en vez de 1.
    */
