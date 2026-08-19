@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test test/architecture.test.js test/integracion.test.js",
     "test:arquitectura": "node --test test/architecture.test.js",
     "test:integracion": "node --test test/integracion.test.js",
     "migrate:legacy:dry": "node scripts/migrate-legacy.js",

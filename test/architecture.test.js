@@ -896,3 +896,31 @@ test('no queda el código muerto ya identificado', () => {
 
   assert.deepEqual(huerfanos, [], 'Estos scripts no los carga ninguna pantalla');
 });
+
+test('npm test ejecuta todos los archivos de prueba, y sin comodines', () => {
+  const paquete = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const comando = paquete.scripts.test;
+
+  /*
+   * `node --test` solo expande comodines desde Node 22, y `engines` admite
+   * >=20. El comodín funcionaba en la máquina de desarrollo y fallaba en el CI
+   * con "Could not find test/**\/*.test.js": el peor sitio donde descubrirlo,
+   * porque el trabajo se marca en rojo sin haber ejecutado una sola prueba.
+   */
+  assert.doesNotMatch(comando, /\*/, 'Lista los archivos: el comodín no funciona en toda versión soportada');
+
+  /*
+   * Con rutas explícitas aparece el riesgo contrario: añadir un archivo de
+   * pruebas y olvidar listarlo. Entonces el CI pasa en verde sin ejecutarlo,
+   * que es peor que fallar. Esto lo impide.
+   */
+  const archivos = fs.readdirSync(path.join(root, 'test')).filter(f => f.endsWith('.test.js'));
+  assert.ok(archivos.length > 0, 'No se encontró ningún archivo de pruebas');
+
+  for (const archivo of archivos) {
+    assert.ok(
+      comando.includes(`test/${archivo}`),
+      `npm test no ejecuta test/${archivo}: añádelo al script`
+    );
+  }
+});

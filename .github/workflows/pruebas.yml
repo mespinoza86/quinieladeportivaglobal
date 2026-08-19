@@ -28,11 +28,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          # 22 y no 20: node --test solo expande comodines desde la 22, y
+          # ademas la 20 esta al final de su vida. El proyecto corre en 24.
+          node-version: '22'
           cache: npm
 
       # `npm ci` y no `npm install`: instala exactamente lo del lockfile y falla
@@ -54,11 +56,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          # 22 y no 20: node --test solo expande comodines desde la 22, y
+          # ademas la 20 esta al final de su vida. El proyecto corre en 24.
+          node-version: '22'
           cache: npm
 
       - run: npm ci
