@@ -2100,3 +2100,109 @@ test('enTransaccion revierte lo ya escrito cuando la operación falla', async ()
     1
   );
 });
+
+/* ================================================================
+ * M-26: acotar lo que devuelven los listados
+ * ================================================================ */
+
+test('los listados aceptan acotarse sin romper a quien no los acota', async () => {
+  const { agente, datos } = await cuentaNueva('m26');
+  const quiniela = await quinielaNueva(agente, 'Listados Acotados');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  const partido = { equipo1: 'Uno', equipo2: 'Dos' };
+
+  await enQuiniela(id, async () => {
+    for (const nombre of ['J1', 'J2']) {
+      await srv.Jornada.create({ nombre, partidos: [partido] });
+      await srv.ResultadoOficial.create({
+        jornada: nombre,
+        resultados: [{ ...partido, marcador1: 1, marcador2: 0, estado: 'TC', bloqueadoFinal: true }]
+      });
+      await srv.Resultado.create({
+        jugador: datos.username,
+        jornada: nombre,
+        pronosticos: [{ ...partido, marcador1: 1, marcador2: 0 }]
+      });
+    }
+  });
+
+  /* ---------- Jornadas: resumen ---------- */
+
+  const completas = await agente.get('/api/jornadas');
+  assert.equal(completas.status, 200);
+  assert.equal(completas.body.length, 2);
+  assert.ok(completas.body[0].partidos, 'Sin parámetros sigue trayendo los partidos');
+
+  const resumen = await agente.get('/api/jornadas?resumen=1');
+  assert.equal(resumen.status, 200);
+  assert.equal(resumen.body.length, 2);
+  assert.ok(
+    !('partidos' in resumen.body[0]),
+    'El resumen no debe traer los partidos: es justo lo que se quiere ahorrar'
+  );
+
+  /* ---------- Resultados oficiales: por jornada ---------- */
+
+  const todosOficiales = await agente.get('/api/resultados-oficiales');
+  assert.equal(todosOficiales.body.length, 2);
+
+  const unoOficial = await agente.get('/api/resultados-oficiales?jornada=J1');
+  assert.equal(unoOficial.body.length, 1);
+  assert.equal(unoOficial.body[0].nombre, 'J1');
+
+  /* ---------- Pronósticos: por jornada ---------- */
+
+  const todosPronosticos = await agente.get('/api/resultados');
+  assert.equal(todosPronosticos.body.length, 2, 'Sin filtro llegan las dos jornadas');
+
+  const unoPronostico = await agente.get('/api/resultados?jornada=J2');
+  assert.equal(unoPronostico.body.length, 1);
+  assert.equal(unoPronostico.body[0][0], `${datos.username}_J2`);
+
+  // Una jornada que no existe devuelve vacío, no un error.
+  const ninguna = await agente.get('/api/resultados?jornada=NoExiste');
+  assert.equal(ninguna.status, 200);
+  assert.deepEqual(ninguna.body, []);
+});
+
+test('acotar por jornada no debilita la privacidad de los pronósticos', async () => {
+  const dueno = await cuentaNueva('m26_d');
+  const miron = await cuentaNueva('m26_m');
+
+  const quiniela = await quinielaNueva(dueno.agente, 'Privacidad Acotada');
+  const id = new mongoose.Types.ObjectId(quiniela.id);
+
+  await dueno.agente.post('/api/admin-mode/activar').send({ password: dueno.datos.password });
+
+  const unirse = await miron.agente.post('/api/quinielas/unirse').send({ codigoIngreso: quiniela.codigo });
+  assert.equal(unirse.status, 202);
+
+  const usuarioMiron = await srv.Usuario.findOne({ usernameNormalizado: miron.datos.username.toLowerCase() });
+  const membresia = await srv.Membresia.findOne({ quinielaId: id, usuarioId: usuarioMiron._id });
+  await dueno.agente.patch(`/api/quiniela-actual/miembros/${membresia._id}/aprobar`).send({});
+  await miron.agente.post(`/api/quinielas/${quiniela.id}/seleccionar`).send({});
+
+  const porJugar = { equipo1: 'Uno', equipo2: 'Dos', apiDate: '2099-01-01 15:00' };
+
+  await enQuiniela(id, async () => {
+    await srv.Jornada.create({ nombre: 'Futura', partidos: [porJugar] });
+    await srv.Resultado.create({
+      jugador: dueno.datos.username,
+      jornada: 'Futura',
+      pronosticos: [{ equipo1: 'Uno', equipo2: 'Dos', marcador1: 4, marcador2: 2 }]
+    });
+  });
+
+  /*
+   * El filtro es una optimización de lectura, no una puerta: acotar a la
+   * jornada no puede saltarse el tapado partido a partido.
+   */
+  const acotado = await miron.agente.get('/api/resultados?jornada=Futura');
+  assert.equal(acotado.status, 200);
+  assert.equal(acotado.body.length, 1);
+
+  const [, pronosticos] = acotado.body[0];
+  assert.equal(pronosticos[0].marcador1, null, 'El partido sin empezar sigue tapado');
+  assert.equal(pronosticos[0].oculto, true);
+});

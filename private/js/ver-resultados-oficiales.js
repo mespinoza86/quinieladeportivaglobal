@@ -95,7 +95,12 @@ function estadoPartidoHTML(partido) {
         try {
             resultadosOficialesContainer.innerHTML = '<p>Cargando resultados oficiales...</p>';
 
-            const jornadasResponse = await fetch('/api/jornadas');
+            /*
+             * Solo los nombres: de la respuesta de jornadas esta pantalla
+             * unicamente llena el desplegable. Los partidos que pinta salen de
+             * /api/resultados-oficiales, que es otra cosa.
+             */
+            const jornadasResponse = await fetch('/api/jornadas?resumen=1');
             const jornadas = await jornadasResponse.json();
 
             jornadaSelect.innerHTML = jornadas

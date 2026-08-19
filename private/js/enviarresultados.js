@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function cargarJornadas() {
         try {
-            const res = await fetch('/api/jornadas');
+            const res = await fetch('/api/jornadas?resumen=1');
             const jornadas = await res.json();
 
             jornadaSelect.innerHTML = '<option value="">-- Selecciona --</option>';

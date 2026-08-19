@@ -1641,7 +1641,22 @@ app.post('/api/jugadores/:nombre/cambiar-password', async (req, res) => {
 
 /* ================= API: Jornadas ================= */
 
+/*
+ * M-26. La mayoría de pantallas que piden esto solo quieren los NOMBRES, para
+ * llenar un desplegable, y se llevaban la temporada entera con sus partidos:
+ * con cuarenta jornadas de diez partidos son cuatrocientos subdocumentos por
+ * carga de pantalla.
+ *
+ * `?resumen=1` devuelve solo los nombres. Sin el parámetro, la respuesta es la
+ * de siempre: hay pantallas que sí necesitan los partidos y no se pueden
+ * romper.
+ */
 app.get('/api/jornadas', async (req, res) => {
+  if (req.query.resumen === '1') {
+    const jornadas = await Jornada.find({}).select('nombre').lean();
+    return res.json(jornadas.map(j => ({ nombre: j.nombre })));
+  }
+
   const jornadas = await Jornada.find({});
   res.json(jornadas.map(j => ({
     nombre: j.nombre,
@@ -2959,13 +2974,29 @@ function buscarOficialCorrespondiente(resultadosOficiales, partido) {
 
 /* ================= API: Resultados ================= */
 
+/*
+ * El caso de manual de M-26: sin filtro devuelve TODOS los pronósticos de
+ * TODAS las jornadas de todos los jugadores. Con una temporada larga y veinte
+ * participantes son miles de subdocumentos en cada carga, y encima la
+ * privacidad obliga a leer también las jornadas y los resultados oficiales
+ * para saber qué se puede enseñar.
+ *
+ * `?jornada=…` acota las tres lecturas a una jornada. Sin el parámetro la
+ * respuesta es la de siempre, porque hay pantallas —el reporte, la vista de
+ * totales— que sí necesitan el conjunto completo.
+ */
 app.get('/api/resultados', async (req, res) => {
   const usuario = await Usuario.findById(req.session.usuarioId);
   const esAdmin = ['propietario', 'admin'].includes(req.membership.rol);
+
+  const soloJornada = req.query.jornada ? String(req.query.jornada) : null;
+  const filtroJornada = soloJornada ? { jornada: soloJornada } : {};
+  const filtroNombre = soloJornada ? { nombre: soloJornada } : {};
+
   const [jornadas, oficiales, todos] = await Promise.all([
-    Jornada.find({}).select('nombre partidos').lean(),
-    ResultadoOficial.find({}).select('jornada resultados').lean(),
-    Resultado.find({}).lean()
+    Jornada.find(filtroNombre).select('nombre partidos').lean(),
+    ResultadoOficial.find(filtroJornada).select('jornada resultados').lean(),
+    Resultado.find(filtroJornada).lean()
   ]);
 
   const oficialesPorJornada = new Map(oficiales.map(doc => [doc.jornada, doc.resultados || []]));
@@ -3211,8 +3242,15 @@ app.get('/api/resultados/:jugador/:jornada', async (req, res) => {
 
 /* ================= API: Resultados Oficiales ================= */
 
+/*
+ * M-26. `?jornada=…` acota a una. Quien pide esto casi siempre está mirando una
+ * jornada concreta y luego filtra en el navegador, después de haberse traído
+ * todas las demás por la red.
+ */
 app.get('/api/resultados-oficiales', async (req, res) => {
-  const all = await ResultadoOficial.find({});
+  const filtro = req.query.jornada ? { jornada: String(req.query.jornada) } : {};
+
+  const all = await ResultadoOficial.find(filtro);
   const resultados = all.map(r => ({
     nombre: r.jornada,
     partidos: r.resultados
