@@ -323,11 +323,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <option value="${opcion}" ${previa === opcion ? 'selected' : ''}>
                       ${opcion}
                     </option>
-                  `).join('')}
+                  `)}
                 </select>
               </div>
             `;
-          }).join('')}
+          })}
         </div>
       `;
     }).join('');

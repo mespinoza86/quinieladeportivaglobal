@@ -208,15 +208,15 @@ async function mostrarResultadosTrivia(jornadaNombre) {
                       <span>${r.respuesta || '-'}</span>
                       <span>${r.puntos || 0}</span>
                     </div>
-                  `).join('')
-                : `<div class="player-row">
+                  `)
+                : html`<div class="player-row">
                     <span>Sin respuestas</span>
                     <span>-</span>
                     <span>0</span>
                   </div>`
             }
           </div>
-        `).join('')}
+        `)}
       </div>
     `;
 

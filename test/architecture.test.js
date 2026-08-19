@@ -729,3 +729,45 @@ test('las pruebas de integración corren sobre un conjunto de réplicas', () => 
   assert.match(integracion, /MongoMemoryReplSet/);
   assert.doesNotMatch(integracion, /MongoMemoryServer\.create\(/);
 });
+
+test('componer HTML dentro de una plantilla no pierde la marca de crudo', () => {
+  /*
+   * El fallo que motiva esta prueba, encontrado por las pruebas de navegador:
+   *
+   *   html`<div>${lista.map(x => html`<p>${x}</p>`).join('')}</div>`
+   *
+   * `.join('')` convierte el arreglo de HtmlCrudo en una CADENA y con ello se
+   * pierde la marca de "esto ya es HTML". La plantilla de fuera lo trata como
+   * dato y lo escapa, así que el marcado sale COMO TEXTO en pantalla.
+   *
+   * No hace falta unir nada: `html` ya recorre los arreglos y los une sin
+   * separador respetando la marca de cada elemento. El `.join('')` solo es
+   * correcto cuando el resultado va directo a `innerHTML`, fuera de toda
+   * plantilla.
+   *
+   * La prueba de S-04 no lo detectaba: comprueba que las plantillas van
+   * etiquetadas, no que la composición conserve la marca.
+   */
+  const dir = path.join(root, 'private', 'js');
+  const culpables = [];
+
+  for (const archivo of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    if (archivo === 'html-seguro.js') continue;
+
+    const codigo = fs.readFileSync(path.join(dir, archivo), 'utf8');
+
+    for (const plantilla of plantillasDeRiesgo(codigo)) {
+      if (plantilla.etiqueta !== 'html') continue;
+      if (!/=>\s*html`[\s\S]*?`\s*\)\s*\.join\(''\)/.test(plantilla.texto)) continue;
+
+      culpables.push(`${archivo}:${codigo.slice(0, plantilla.inicio).split(/\r?\n/).length}`);
+    }
+  }
+
+  assert.deepEqual(
+    culpables,
+    [],
+    'Hay un .join(\'\') sobre plantillas etiquetadas DENTRO de otra plantilla: ' +
+    'quítalo y deja que `html` una el arreglo, o el marcado saldrá como texto'
+  );
+});
