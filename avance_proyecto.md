@@ -24,8 +24,8 @@
 
 **Las cinco prioridades altas de la auditoría (Entrada 015) están cerradas:**
 plazos del sincronizador, validación de dominio, privacidad de pronósticos,
-S-04 (inyección de HTML) y transacciones. La red de pruebas pasó de 75 a **105
-pruebas** más **18 de navegador** con Playwright, en escritorio y móvil.
+S-04 (inyección de HTML) y transacciones. La red de pruebas pasó de 75 a **112
+pruebas** más **30 de navegador** con Playwright, en escritorio y móvil.
 
 Dos cambios de producto que conviene tener presentes al retomar:
 
@@ -54,6 +54,7 @@ con la de la tabla general, que sí está resuelta.
 | **6.5** | **Cerrado S-04**: construcción de HTML sin agujeros de inyección | 021 |
 | **6.6** | Transacciones en las secuencias de varias escrituras | 022 |
 | **6.7** | Primeras pruebas de navegador (Playwright), escritorio y móvil | 023 |
+| **6.8** | E2E de resultados y trivias; **CSP cerrada**; CI; M-26; primera tajada de módulos | 024 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
 absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
@@ -127,9 +128,9 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 105 pruebas (~30 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 65 de integración
-npm run test:e2e           # las 18 de navegador (~25 s, escritorio y móvil)
+npm test                   # las 112 pruebas (~30 s, sin red, sin tocar la base real)
+npm run test:integracion   # solo las 67 de integración
+npm run test:e2e           # las 30 de navegador (~50 s, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
@@ -4081,6 +4082,156 @@ CSP**: convertir los 63 `onclick=` a `addEventListener` para poder quitar
 `unsafe-inline`, que es lo que convertiría el escapado de S-04 en defensa en
 profundidad y no en la única línea. Y montar CI, que ahora ya tiene algo que
 ejecutar.
+
+---
+
+### 📌 Entrada 024 — 18 de agosto de 2026 — Los cinco frentes pendientes
+
+**Objetivo:** cerrar de una tanda los cinco puntos que quedaban en la lista:
+ampliar E2E, endurecer la CSP, montar CI, M-26 y empezar la modularización.
+Cada uno va en su propio commit, para poder revertir uno sin arrastrar los demás.
+
+---
+
+#### 1 · Pruebas de navegador de resultados y trivias — y un bug real
+
+Cuatro pruebas nuevas sobre las pantallas con más plantillas. **Destaparon una
+regresión mía de la Entrada 021:**
+
+```js
+html`<div>${lista.map(x => html`<p>${x}</p>`).join('')}</div>`
+```
+
+`.join('')` convierte el arreglo de `HtmlCrudo` en una **cadena**, y con ello se
+pierde la marca de "esto ya es HTML": la plantilla de fuera lo trata como dato y
+lo escapa. El marcado salía **como texto en pantalla**, y el bloque interior
+además doblemente escapado. Se veía en los resultados de trivias al desplegar
+una pregunta.
+
+Afectaba a cuatro sitios en dos archivos. **La prueba de S-04 no lo veía**:
+comprueba que las plantillas van etiquetadas, no que la composición conserve la
+marca. Se añadió el guardián que faltaba, verificado reintroduciendo el fallo.
+
+Y tres cosas de dominio que el montaje sacó a la luz, ninguna un fallo: cargar
+resultados oficiales marca los partidos como terminados y eso **bloquea sus
+trivias**; las preguntas no se pintan hasta que el jugador se identifica; y
+validar la contraseña **repinta** las trivias, así que seleccionar antes de que
+asiente hace que el repintado borre la elección.
+
+---
+
+#### 2 · CSP cerrada
+
+Hasta ahora el escapado de S-04 era la **única** línea de defensa: la política
+permitía inline en `script-src` y en `script-src-attr`, así que cualquier marcado
+que se colara en el DOM podía ejecutarse. Ahora es defensa en profundidad.
+
+Para poder cerrarla había que sacar el código del marcado:
+
+- **22 `onclick="window.location.href='…'"`** pasan a `data-ir-a`, conectados por
+  `navegacion.js`. Eran bastantes menos de los 63 que decía el comentario del
+  propio código.
+- **2 `oninput` de autocompletado estaban muertos**: apuntaban a contenedores
+  `equipo1Suggestions`/`equipo2Suggestions` que no existen —los reales son
+  `suggestions1`/`2`— y `jornadas.js` ya hacía el trabajo con `addEventListener`.
+  Se retiran sin sustituto.
+- Los **4 bloques `<script>`** del HTML pasan a archivos propios.
+
+**Hallazgo:** al sacar el script inline de `resultados-totales.html` apareció
+código que el guardián de S-04 **nunca había mirado**, construyendo la vista
+móvil con nombres de jugador y de jornada **sin escapar**. Estaba fuera del
+alcance de la prueba por vivir dentro del HTML.
+
+Dos guardianes nuevos: uno de arquitectura (ninguna pantalla con manejadores en
+atributo ni `<script>` inline) y uno de navegador que **recorre las 32 pantallas
+registrando violaciones de CSP**. Este segundo es necesario porque una violación
+**no da error visible**: el botón carga, se pulsa y no hace nada. Verificado
+reintroduciendo un `onload` inline.
+
+---
+
+#### 3 · Integración continua
+
+`.github/workflows/pruebas.yml`, en cada empujón y cada pull request contra
+`main`. Dos trabajos separados a propósito: la suite rápida tarda medio minuto y
+la de navegador un par, así que ver fallar la primera no obliga a esperar a la
+segunda.
+
+`npm ci` y no `npm install`: instala exactamente lo del lockfile y falla si se
+desincronizó, que es parte de lo que se quiere detectar. Verificado con
+`npm ci --dry-run`. Las evidencias de Playwright solo se suben **si algo falla**.
+
+Con una prueba que fija **qué** tiene que ejecutar el pipeline: un flujo que
+existe pero no corre las pruebas da una falsa sensación de red.
+
+---
+
+#### 4 · M-26
+
+Tres endpoints devolvían colecciones enteras y el navegador filtraba después de
+habérselas traído por la red. Los tres aceptan ahora acotarse, y **sin parámetros
+responden igual que antes**:
+
+| Endpoint | Cómo se acota |
+|---|---|
+| `GET /api/jornadas?resumen=1` | Solo los nombres. La mayoría de pantallas solo llenan un desplegable |
+| `GET /api/resultados-oficiales?jornada=X` | Una jornada |
+| `GET /api/resultados?jornada=X` | Acota las **tres** lecturas. Era el caso de manual |
+
+Con una prueba de que el filtro **no debilita la privacidad**: acotar por jornada
+sigue tapando los partidos que no han empezado. Un filtro que además se saltara
+el tapado sería peor que no tenerlo.
+
+---
+
+#### 5 · Fase 6: primera tajada
+
+`server.js` pasaba de 5.300 líneas. Se extrae lo que **no toca Express ni los
+modelos** —funciones puras, ya cubiertas por pruebas, riesgo casi nulo— y con
+ello queda establecido el patrón: `src/`, `require`, y reexportación desde
+`server.js` para no cambiar la superficie pública.
+
+- `src/transacciones.js` (89 líneas)
+- `src/validacion.js` (143 líneas)
+
+Y se retira el código muerto ya identificado: el marcador
+`////////////borrar borrar`, el bloque comentado de `footballApi`, y **dos
+scripts huérfanos** —`llenar_jornada.js`, duplicado de `llenar_jornada_user.js`,
+y `main.js`, cuatro líneas sin lógica—. El segundo lo encontró la prueba nueva,
+no yo.
+
+Dos invariantes para las tajadas siguientes: lo extraído **se reexporta** desde
+`server.js`, y los módulos de `src/` **no pueden depender de `server.js`** —sería
+un ciclo y el troceado dejaría de servir—.
+
+**Esto NO termina la Fase 6.** Quedan las rutas, los modelos y el sincronizador,
+que sí tocan Express y merecen su propia sesión con su prueba de humo.
+
+---
+
+**Verificación:**
+
+```
+npm run check         → sintaxis válida
+npm test              → 112/112 (45 arquitectura + 67 integración)
+npm run test:e2e      → 30/30 (15 × escritorio y móvil)
+npm audit --omit=dev  → 0 vulnerabilidades
+```
+
+**Hallazgos nuevos:**
+
+- El análisis automático de qué pantallas necesitan los partidos **se equivocó**
+  con `ver-resultados-oficiales.js`: usa `.partidos`, pero de la respuesta de
+  oficiales, no de la de jornadas. Las heurísticas por texto orientan; no
+  deciden.
+- Un heredoc del shell se comió las barras de `\\b` en una prueba nueva, y `\b`
+  dentro de una plantilla es un **retroceso**, no un límite de palabra. La prueba
+  fallaba por su propia expresión regular, no por el código.
+
+**Pendiente / siguiente paso:** prueba de humo visual, con atención a los
+**botones de navegación** —los 22 que cambiaron de `onclick` a `data-ir-a`— y a
+los **resultados de trivias**, que es donde estaba el marcado saliendo como
+texto. Después, seguir troceando `server.js`: rutas, modelos y sincronizador.
 
 ---
 

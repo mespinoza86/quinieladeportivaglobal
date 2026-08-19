@@ -407,14 +407,6 @@ app.get('/css/:filename', (req, res) => {
 
 /* ================= API-Football ================= */
 
-/*
-const footballApi = axios.create({
-  baseURL: 'https://v3.football.api-sports.io',
-  headers: {
-    'x-apisports-key': process.env.API_FOOTBALL_KEY
-  }
-});
-*/
 
 /*
  * `timeout` no es decorativo. El valor por defecto de axios es 0 —esperar para
@@ -782,211 +774,25 @@ function responderRanking(res, req, resultados) {
 }
 
 
-/* ================= Transacciones ================= */
+/* ================= Transacciones y validación ================= */
 
 /*
- * Varias operaciones del sistema son secuencias de escrituras que solo tienen
- * sentido completas. Si falla la de en medio, lo que queda no es "menos datos":
- * es un estado que el resto del código no sabe interpretar.
- *
- *   - Crear quiniela son dos escrituras. Sin la segunda queda una quiniela
- *     cuyo propietario no es miembro de ella: nadie puede entrar, ni siquiera
- *     quien la creó, y la pantalla de quinielas ni la lista.
- *   - Transferir la propiedad son tres. A medias deja la quiniela con dos
- *     propietarios o con ninguno.
- *   - Borrar una jornada son cuatro. A medias deja pronósticos y puntos
- *     congelados de una jornada que ya no existe, que luego aparecen sumados
- *     en la tabla general sin columna a la que pertenecer.
- *   - Reconciliar las trivias de una jornada son muchas. A medias deja
- *     respuestas huérfanas de trivias borradas, que siguen contando puntos.
+ * Extraídos a src/ en la Fase 6. Se reexportan más abajo porque las pruebas
+ * los piden a través de este módulo, que es la superficie pública.
  */
+const { enTransaccion, esFaltaDeSoporteDeTransacciones } = require('./src/transacciones');
 
-let avisoSinTransaccionesDado = false;
-
-/**
- * ¿Este error es "el servidor no sabe hacer transacciones"?
- *
- * MongoDB solo las admite sobre un conjunto de réplicas. Atlas lo es —también
- * el plan gratuito—, así que en producción no se da; un `mongod` suelto de
- * desarrollo, sí.
- */
-function esFaltaDeSoporteDeTransacciones(error) {
-  const mensaje = String(error?.message || '');
-
-  return error?.code === 20 ||
-    error?.codeName === 'IllegalOperation' ||
-    /Transaction numbers are only allowed on a replica set/i.test(mensaje) ||
-    /transactions are not supported/i.test(mensaje);
-}
-
-/**
- * Ejecuta una secuencia de escrituras como una sola operación atómica.
- *
- * La función recibe la sesión y DEBE pasarla a cada escritura: una consulta que
- * se olvide de `{ session }` queda fuera de la transacción y no se revierte,
- * que es el fallo silencioso típico de esto.
- *
- * OJO con `Promise.all`: una sesión no admite operaciones en paralelo. Las
- * escrituras de dentro van en secuencia aunque sean independientes.
- *
- * Si el servidor no admite transacciones se ejecuta igualmente, sin
- * atomicidad, avisando una vez. Es preferible a dejar la aplicación inservible
- * contra un mongod suelto, pero conviene saber que ahí la garantía no está.
- */
-async function enTransaccion(operacion) {
-  const sesion = await mongoose.startSession();
-
-  try {
-    let resultado;
-
-    await sesion.withTransaction(async () => {
-      resultado = await operacion(sesion);
-    });
-
-    return resultado;
-  } catch (error) {
-    if (!esFaltaDeSoporteDeTransacciones(error)) throw error;
-
-    if (!avisoSinTransaccionesDado) {
-      avisoSinTransaccionesDado = true;
-      console.warn(
-        '⚠️  Esta base de datos no admite transacciones (no es un conjunto de réplicas). ' +
-        'Las operaciones de varias escrituras se ejecutarán SIN atomicidad: un fallo a ' +
-        'mitad puede dejar datos inconsistentes. En Atlas esto no ocurre.'
-      );
-    }
-
-    return await operacion(undefined);
-  } finally {
-    await sesion.endSession();
-  }
-}
-
-
-/* ================= Validación de dominio ================= */
-
-/**
- * Error de datos del cliente.
- *
- * El manejador global lo convierte en un 400 conservando el mensaje, en vez del
- * "La petición no es válida." genérico. Quien está cargando una jornada
- * necesita saber QUÉ campo se rechazó; un 400 mudo obliga a adivinar.
- */
-function errorDeValidacion(mensaje) {
-  const error = new Error(mensaje);
-  error.status = 400;
-  error.esValidacion = true;
-  return error;
-}
-
-const MAX_GOLES = 99;
-const MAX_PARTIDOS_POR_JORNADA = 50;
-const MAX_LARGO_NOMBRE_JORNADA = 80;
-
-/**
- * Un marcador es un entero de 0 a MAX_GOLES, o `null` si se dejó en blanco.
- *
- * `Number()` a secas no bastaba, y ahí estaba el agujero: acepta '-3', acepta
- * '2.5' y acepta '1e999', que no da NaN sino Infinity. Ninguno de los tres
- * rompe nada de forma visible; los tres corrompen el motor de puntuación en
- * silencio, porque `puntosDePartido` compara números sin volver a mirarlos.
- */
-function normalizarMarcador(valor, etiqueta) {
-  if (valor === null || valor === undefined) return null;
-
-  if (typeof valor !== 'number' && typeof valor !== 'string') {
-    throw errorDeValidacion(`${etiqueta} no es un marcador válido.`);
-  }
-
-  const bruto = typeof valor === 'string' ? valor.trim() : valor;
-  if (bruto === '') return null;
-
-  const numero = Number(bruto);
-  if (!Number.isInteger(numero) || numero < 0 || numero > MAX_GOLES) {
-    throw errorDeValidacion(`${etiqueta} debe ser un número entero entre 0 y ${MAX_GOLES}.`);
-  }
-
-  return numero;
-}
-
-/** Nombre de jornada: obligatorio, recortado y acotado. */
-function normalizarNombreDeJornada(valor) {
-  const nombre = typeof valor === 'string' ? valor.trim() : '';
-
-  /*
-   * Sin esta comprobación, un POST sin `nombre` no fallaba: Mongoose casteaba
-   * el filtro a `nombre: null`, el upsert insertaba una jornada sin nombre y
-   * esa jornada fantasma aparecía después como columna en la tabla general y
-   * como opción en el desplegable de la tabla por jornada.
-   */
-  if (!nombre) throw errorDeValidacion('El nombre de la jornada es obligatorio.');
-  if (nombre.length > MAX_LARGO_NOMBRE_JORNADA) {
-    throw errorDeValidacion(`El nombre de la jornada admite hasta ${MAX_LARGO_NOMBRE_JORNADA} caracteres.`);
-  }
-
-  return nombre;
-}
-
-/** Un partido necesita dos equipos; el resto de campos se normalizan a texto. */
-function normalizarPartido(valor, indice = 0) {
-  const posicion = `El partido ${indice + 1}`;
-
-  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) {
-    throw errorDeValidacion(`${posicion} no es válido.`);
-  }
-
-  const equipo1 = typeof valor.equipo1 === 'string' ? valor.equipo1.trim() : '';
-  const equipo2 = typeof valor.equipo2 === 'string' ? valor.equipo2.trim() : '';
-  if (!equipo1 || !equipo2) throw errorDeValidacion(`${posicion} necesita los dos equipos.`);
-
-  const texto = campo => (valor[campo] === null || valor[campo] === undefined ? '' : String(valor[campo]));
-
-  return {
-    equipo1,
-    equipo2,
-    logoEquipo1: texto('logoEquipo1'),
-    logoEquipo2: texto('logoEquipo2'),
-    comodin: Boolean(valor.comodin),
-    apiFixtureId: texto('apiFixtureId'),
-    apiLeagueId: texto('apiLeagueId'),
-    apiDate: texto('apiDate'),
-    apiStatus: texto('apiStatus')
-  };
-}
-
-/** Una jornada sin partidos no es una jornada. */
-function normalizarPartidos(valor) {
-  if (!Array.isArray(valor) || !valor.length) {
-    throw errorDeValidacion('La jornada debe tener al menos un partido.');
-  }
-  if (valor.length > MAX_PARTIDOS_POR_JORNADA) {
-    throw errorDeValidacion(`Una jornada admite como máximo ${MAX_PARTIDOS_POR_JORNADA} partidos.`);
-  }
-
-  return valor.map((partido, indice) => normalizarPartido(partido, indice));
-}
-
-/**
- * Índices de partido a borrar: enteros, dentro del rango y sin repetir.
- *
- * El duplicado importaba: la ruta hace `splice` por cada índice, así que un
- * mismo número repetido borraba dos partidos, el señalado y su vecino.
- */
-function normalizarIndicesDePartido(valor, total) {
-  if (!Array.isArray(valor) || !valor.length) {
-    throw errorDeValidacion('Debes indicar qué partidos eliminar.');
-  }
-
-  const indices = valor.map(item => {
-    const numero = typeof item === 'number' ? item : Number(String(item).trim());
-    if (!Number.isInteger(numero) || numero < 0 || numero >= total) {
-      throw errorDeValidacion('Alguno de los partidos indicados no existe en la jornada.');
-    }
-    return numero;
-  });
-
-  return [...new Set(indices)];
-}
+const {
+  errorDeValidacion,
+  normalizarMarcador,
+  normalizarNombreDeJornada,
+  normalizarPartido,
+  normalizarPartidos,
+  normalizarIndicesDePartido,
+  MAX_GOLES,
+  MAX_PARTIDOS_POR_JORNADA,
+  MAX_LARGO_NOMBRE_JORNADA
+} = require('./src/validacion');
 
 /**
  * Qué partidos de una jornada tienen ya el pronóstico a la vista, uno por
@@ -5059,7 +4865,7 @@ app.get('/api/resultados-totales', async (req, res) => {
   }
 });
 
-////////////borrar borrar
+/* ================= Depuración ================= */
 
 app.get('/api/debug/estado-partido/:status', requireDebug, requireAdmin, (req, res) => {
   const fixture = {

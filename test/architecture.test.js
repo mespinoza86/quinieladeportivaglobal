@@ -18,6 +18,19 @@ const migrator = fs.readFileSync(path.join(root, 'scripts', 'migrate-legacy.js')
  * Solo se eliminan bloques /* *\/ y líneas que son íntegramente comentario, de
  * modo que nunca se descarta código real y las comprobaciones no se ablandan.
  */
+/*
+ * Fase 6: parte del codigo vive ya en src/. Para las comprobaciones que buscan
+ * DEFINICIONES hay que mirar todo el conjunto; las que comprueban USO siguen
+ * mirando server.js, que es donde estan las rutas.
+ */
+const modulos = fs.existsSync(path.join(root, 'src'))
+  ? fs.readdirSync(path.join(root, 'src'))
+      .filter(f => f.endsWith('.js'))
+      .map(f => fs.readFileSync(path.join(root, 'src', f), 'utf8'))
+  : [];
+
+const fuente = [server, ...modulos].join('\n');
+
 const serverSinComentarios = server
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split(/\r?\n/)
@@ -464,7 +477,8 @@ test('las escrituras de dominio pasan por los validadores', () => {
     'function normalizarPartido',
     'function normalizarPartidos', 'function normalizarIndicesDePartido'
   ]) {
-    assert.match(serverSinComentarios, new RegExp(validador.replace(/ /g, '\\s+')));
+    // Definiciones: viven en src/validacion.js desde la Fase 6.
+    assert.match(fuente, new RegExp(validador.replace(/ /g, '\\s+')));
   }
 
   /*
@@ -719,13 +733,19 @@ test('toda pantalla que use la etiqueta html carga el ayudante antes', () => {
 });
 
 test('las secuencias de varias escrituras son atómicas', () => {
-  assert.match(serverSinComentarios, /async function enTransaccion/);
-  assert.match(serverSinComentarios, /sesion\.withTransaction\(/);
-  assert.match(serverSinComentarios, /function esFaltaDeSoporteDeTransacciones/);
+  // Definiciones: viven en src/transacciones.js desde la Fase 6.
+  assert.match(fuente, /async function enTransaccion/);
+  assert.match(fuente, /sesion\.withTransaction\(/);
+  assert.match(fuente, /function esFaltaDeSoporteDeTransacciones/);
 
-  // Las cuatro secuencias que lo necesitan pasan por el ayudante.
-  const usos = serverSinComentarios.match(/enTransaccion\(/g) || [];
-  assert.ok(usos.length >= 5, `Se esperaban la definición y sus cuatro usos, hubo ${usos.length}`);
+  /*
+   * Las cuatro secuencias que lo necesitan pasan por el ayudante. Se cuentan en
+   * server.js, donde están las rutas: desde la Fase 6 la definición ya no vive
+   * aquí, así que estos cuatro son usos de verdad y no la declaración colada en
+   * la cuenta.
+   */
+  const usos = serverSinComentarios.match(/await enTransaccion\(/g) || [];
+  assert.ok(usos.length >= 4, `Se esperaban las cuatro secuencias, hubo ${usos.length}`);
 
   /*
    * Una sesión no admite operaciones en paralelo, así que dentro de una
@@ -822,4 +842,57 @@ test('la integración continua ejecuta lo que hay que ejecutar', () => {
 
   // Sin los navegadores, las pruebas de navegador no arrancan en un runner limpio.
   assert.match(flujo, /playwright install --with-deps chromium/);
+});
+
+test('la Fase 6 avanza: el código sale de server.js sin perder su superficie', () => {
+  /*
+   * Primera tajada: las piezas que no tocan Express ni los modelos. La prueba
+   * no persigue un número de líneas —eso envejece— sino dos invariantes que sí
+   * importan al seguir troceando.
+   */
+  assert.ok(fs.existsSync(path.join(root, 'src', 'transacciones.js')));
+  assert.ok(fs.existsSync(path.join(root, 'src', 'validacion.js')));
+
+  /*
+   * 1. Lo extraído se reexporta desde server.js. Las pruebas y el resto del
+   *    código lo piden por ahí, así que mover algo no puede cambiar la
+   *    superficie pública.
+   */
+  const exportado = server.slice(server.indexOf('module.exports = {'));
+  for (const simbolo of ['enTransaccion', 'normalizarMarcador', 'normalizarPartidos']) {
+    assert.match(exportado, new RegExp(`\\b${simbolo}\\b`), `server.js debe reexportar ${simbolo}`);
+  }
+
+  /*
+   * 2. Los módulos extraídos no pueden depender de server.js. Si lo hicieran
+   *    tendríamos un ciclo, y el troceado dejaría de servir para nada.
+   */
+  for (const archivo of fs.readdirSync(path.join(root, 'src')).filter(f => f.endsWith('.js'))) {
+    const modulo = fs.readFileSync(path.join(root, 'src', archivo), 'utf8');
+    assert.doesNotMatch(
+      modulo,
+      /require\(['"][^'"]*server(\.js)?['"]\)/,
+      `${archivo} no puede depender de server.js: sería un ciclo`
+    );
+  }
+});
+
+test('no queda el código muerto ya identificado', () => {
+  // Marcadores y bloques comentados que se venían arrastrando.
+  assert.doesNotMatch(server, /borrar borrar/);
+  assert.doesNotMatch(server, /v3\.football\.api-sports\.io/);
+
+  /*
+   * Y ningún script del frontend puede quedar sin pantalla que lo cargue:
+   * llenar_jornada.js llevaba tiempo así, duplicando a llenar_jornada_user.js.
+   */
+  const paginas = fs.readdirSync(path.join(root, 'public'))
+    .filter(f => f.endsWith('.html'))
+    .map(f => fs.readFileSync(path.join(root, 'public', f), 'utf8'))
+    .join('\n');
+
+  const huerfanos = fs.readdirSync(path.join(root, 'private', 'js'))
+    .filter(archivo => !paginas.includes(archivo));
+
+  assert.deepEqual(huerfanos, [], 'Estos scripts no los carga ninguna pantalla');
 });
