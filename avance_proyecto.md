@@ -202,7 +202,7 @@ nadie ha vuelto a verlos con datos de verdad desde la Entrada 024.
 | ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
 | ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030). Se buscan **7 días hacia adelante** |
-| **3.º** | **D — Administración de jornadas unificada** | 3 | ⚠️ **Confirmar que se acepta perder el alta manual** de partidos. Es irreversible en la práctica. La Fase C ya está, así que es lo siguiente |
+| **3.º** | **D — Administración de jornadas unificada** | 3 | ✅ Desbloqueada: **se acepta perder el alta manual** (decidido el 19-ago). Los partidos salen solo del API. Es lo siguiente |
 | **4.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
 | **5.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro |
 | — | **Aparte 1** | 7 (SQL) | Respondida en §20.8: **no migrar** por ahora. No bloquea nada |
@@ -1947,7 +1947,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | ✅ **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada. **Completada el 18-ago-2026** |
 | ✅ **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez. **Completada el 18-ago-2026** |
 | ✅ **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual. **Completada el 19-ago-2026** |
-| **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien |
+| **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Desbloqueada el 19-ago-2026: los partidos salen solo del API** |
 | **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
 | **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C |
 | — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
@@ -2151,12 +2151,20 @@ hacen lo mismo por caminos distintos: `jornadas.html` (a mano, con autocompletad
 de equipos) e `importar_partidos.html` (desde el API). Unificarlas simplifica de
 verdad.
 
-**Lo que hay que confirmar antes de empezar**, porque es irreversible en la
+**Lo que había que confirmar antes de empezar**, porque es irreversible en la
 práctica: quitar la entrada manual significa que **no se podrá crear una jornada
 con un partido que el API no tenga**. Si alguna vez hace falta un amistoso, un
-torneo local o un partido que el proveedor no cubre, deja de ser posible. Con el
-buscador de la fase C funcionando el riesgo baja mucho, pero conviene decirlo en
-voz alta antes y no descubrirlo un domingo.
+torneo local o un partido que el proveedor no cubre, deja de ser posible.
+
+**Decisión tomada el 19-ago-2026: se acepta.** Los partidos salen **solo del
+API**. El usuario lo confirmó habiéndosele expuesto la pérdida: «no importa,
+dejemos que solo se puedan agregar partidos que estén en el API».
+
+**Lo que se acepta a cambio, escrito para que nadie se sorprenda luego:** si el
+proveedor no cubre un partido, ese partido no puede entrar en una quiniela. No
+hay puerta de atrás por interfaz. La salida, si algún día hace falta, sería
+reponer el alta manual detrás de Admin Mode —el código que se retira queda en el
+historial de git, no se pierde—.
 
 **Qué se toca**
 
@@ -2173,7 +2181,8 @@ editar; se amplían al flujo completo en una sola pantalla. La prueba de
 arquitectura que exige que toda referencia a un archivo exista detectaría un
 enlace huérfano a la pantalla retirada.
 
-**Decisión pendiente (producto):** confirmar que se acepta perder el alta manual.
+**Decisión pendiente:** ninguna. Se confirmó el 19-ago-2026 que se acepta perder
+el alta manual.
 
 ---
 
