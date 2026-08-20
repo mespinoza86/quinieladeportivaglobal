@@ -114,7 +114,8 @@ Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
 ### Estado de Git
 
 ```
-73ca4f7 La prueba de humo que faltaba, y la barra amarilla   ← main = origin/main
+79aa6a8 Fase C: el buscador de ligas deja de ser una lista fija  ← main = origin/main
+73ca4f7 La prueba de humo que faltaba, y la barra amarilla
 5cca387 Poner al dia el punto de partida y el inventario
 61f3dae La jornada actual pasa a ser la ultima creada
 623a6ee Fase B: una sola respuesta a "cual es la jornada actual"
