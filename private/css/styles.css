@@ -407,6 +407,17 @@ th,
   color: var(--text);
 }
 
+/*
+ * Una tarjeta de aviso sin aviso dentro no es una tarjeta: es una barra
+ * amarilla vacia. Pasaba en Llenar Jornada, donde el contenedor se quedo en el
+ * marcado despues de que el cierre pasara a ser por partido (Entrada 019), y
+ * pasa tambien en trivias cada vez que el script limpia el aviso. Con esto la
+ * clase no puede volver a pintarse vacia, venga de donde venga.
+ */
+.info-card:empty {
+  display: none;
+}
+
 .list-card {
   margin-top: 14px;
 }

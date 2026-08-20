@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 18 de agosto de 2026 (noche)
+## 🔖 PUNTO DE PARTIDA — última actualización: 19 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -23,19 +23,16 @@
 git log --oneline -3     # debe empezar por 61f3dae
 git status               # debe estar limpio
 npm test                 # 119/119
-npm run test:e2e         # 46/46
+npm run test:e2e         # 48/48
 ```
 
-**`main` está 6 commits POR DELANTE de `origin/main`: nada de lo del 18 de agosto
-por la tarde está subido.** Es lo primero que hay que decidir al retomar —subirlo
-o no—, porque el CI no ha visto ninguno de esos commits todavía:
+**`main` y `origin/main` están a la par.** Los siete commits que quedaron sin
+subir del 18 de agosto —el plan de producto, las fases A y B, el cambio de regla
+de la jornada actual y la puesta al día de este documento— se subieron el 19 de
+agosto, junto con el trabajo de la Entrada 029.
 
-```bash
-git push origin main
-```
-
-Los seis son: el plan de producto (2), la Fase A (1), la Fase B (2) y el cambio
-de regla de la jornada actual (1).
+> El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
+> hay que mirarlo en GitHub a mano. No hay forma de consultarlo desde aquí.
 
 ### Dónde estamos
 
@@ -47,7 +44,7 @@ que van hechas las fases A y B.
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **119** (46 de arquitectura + 73 de integración), ~10 s |
-| Pruebas de navegador | **46** (23 × escritorio y móvil), ~1–2 min |
+| Pruebas de navegador | **48** (24 × escritorio y móvil), ~2 min |
 | Integración continua | En verde, en cada empujón y cada PR contra `main` |
 | `npm audit --omit=dev` | 0 vulnerabilidades |
 | `server.js` | 5.162 líneas; `src/` tiene 291 en tres módulos |
@@ -117,14 +114,13 @@ Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
 ### Estado de Git
 
 ```
-61f3dae La jornada actual pasa a ser la ultima creada        ← main, sin subir
+NUEVO   La prueba de humo que faltaba, y la barra amarilla   ← main = origin/main
+5cca387 Poner al dia el punto de partida y el inventario
+61f3dae La jornada actual pasa a ser la ultima creada
 623a6ee Fase B: una sola respuesta a "cual es la jornada actual"
 b8ce1dd Fase A: la tarjeta que se estiraba y la que faltaba
 3cad275 Detallar cada fase del plan para poder arrancar sin volver a pensarlo
 6b5876b Plan de producto: las diez peticiones analizadas y ordenadas (S20)
-29b326f Documentar el arreglo del CI en la bitacora
-724c10c Arreglar el CI: el comodin de node --test no funciona en Node 20
-942bffa Fase 6, primera tajada: sacar de server.js lo que no toca Express
 ```
 
 > ⚠️ Esta lista es una foto y envejece. **Comprueba con `git log --oneline` y
@@ -168,7 +164,7 @@ npm start                  # arranca la aplicación
 npm test                   # las 119 pruebas rápidas (~10 s, sin red, sin tocar la base real)
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 73 de integración
-npm run test:e2e           # las 46 de navegador (~1-2 min, escritorio y móvil)
+npm run test:e2e           # las 48 de navegador (~2 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -187,14 +183,16 @@ Ordenado por lo que conviene hacer antes. Nada de esto está empezado.
 
 ### 1. Pendiente inmediato de las sesiones anteriores
 
-| Qué | Por qué sigue abierto |
-|---|---|
-| **Subir `main`** (6 commits) | El CI no ha visto nada del 18 por la tarde |
-| **Prueba de humo visual** | La dejó pendiente la Entrada 024 y nunca se hizo: los **22 botones** que pasaron de `onclick` a `data-ir-a`, y los **resultados de trivias**. Añádase ahora lo de las fases A y B: el **selector de jornada** en llenar quiniela y el **podio de la jornada** en la portada, que rota cada 10 s |
+**Cerrado el 19 de agosto (Entrada 029).** `main` está subido y la prueba de humo
+que arrastraba la Entrada 024 dejó de ser una revisión manual pendiente: se
+automatizó en `test/e2e/navegacion.spec.js`, que pulsa los **23 botones** en
+escritorio y móvil y comprueba además que ninguna pantalla pinta tarjetas de
+aviso vacías. Se miraron también, con capturas, el selector de jornada, el podio
+de la portada, los resultados oficiales y la tabla por jornada.
 
-La prueba de CSP que recorre las 32 pantallas cubre buena parte de lo de los
-botones, pero no sustituye a mirarlo: una violación de CSP no da error visible
-—el botón carga, se pulsa y no hace nada—.
+Lo único que sigue sin mirarse a fondo son los **resultados de trivias**: las
+pruebas de `resultados.spec.js` cubren que los datos llegan a la pantalla, pero
+nadie ha vuelto a verlos con datos de verdad desde la Entrada 024.
 
 ### 2. Plan de producto (§20) — lo que falta
 
@@ -202,7 +200,7 @@ botones, pero no sustituye a mirarlo: una violación de CSP no da error visible
 |---|---|---|---|
 | ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
-| **3.º** | **C — Buscador de ligas dinámico** | 9 | Solo **confirmar cuántos días hacia adelante** se buscan partidos. Es lo siguiente y está prácticamente desbloqueada |
+| **3.º** | **C — Buscador de ligas dinámico** | 9 | ✅ Desbloqueada: se buscan **7 días hacia adelante** (decidido el 19-ago). Es lo siguiente |
 | **4.º** | **D — Administración de jornadas unificada** | 3 | ⚠️ **Confirmar que se acepta perder el alta manual** de partidos. Es irreversible en la práctica, y necesita que la Fase C funcione bien primero |
 | **5.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
 | **6.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro. Depende de C |
@@ -404,7 +402,7 @@ troceado dejaría de servir.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior a la nueva. Simulación por defecto |
 
-### 2.4 `test/` — 119 pruebas rápidas y 46 de navegador
+### 2.4 `test/` — 119 pruebas rápidas y 48 de navegador
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
@@ -425,6 +423,7 @@ seguir siendo rápida.
 | `inyeccion.spec.js` | 95 | El marcado en nombres se muestra como texto y no se ejecuta (S-04) |
 | `jornadas.spec.js` | 161 | Administración de jornadas y privacidad partido a partido |
 | `jornada-actual.spec.js` | 202 | Fase B: las tres pantallas abren en la misma jornada |
+| `navegacion.spec.js` | 133 | Pulsa **los 23 botones** `data-ir-a` de todas las pantallas y comprueba que ninguna pinta tarjetas de aviso vacías (Entrada 029) |
 | `portada.spec.js` | 83 | Fase A: la tarjeta nueva y que ninguna se estire |
 | `resultados.spec.js` | 237 | Resultados oficiales, tabla general paginada y trivias |
 
@@ -2119,8 +2118,10 @@ Puntos a resolver:
 arnés `proveedorFalso` ya existe— comprobando que se agrupan por país, que las
 exclusiones siguen aplicándose y que un día sin partidos no rompe la pantalla.
 
-**Sin decisiones pendientes**, salvo confirmar cuántos días hacia adelante se
-consultan de una vez.
+**Decisión tomada el 19-ago-2026: se consultan 7 días hacia adelante.** Una
+semana cubre la jornada completa de casi cualquier liga sin disparar el consumo
+del proveedor, y es el rango con el que se arma una jornada normal. No quedan
+decisiones pendientes en esta fase.
 
 ---
 
@@ -5197,6 +5198,154 @@ npm run test:e2e  → 46/46
 **Pendiente / siguiente paso:** **Fase C — buscador de ligas dinámico**
 (petición 9), que solo necesita confirmar cuántos días hacia adelante se buscan y
 habilita la Fase D.
+
+---
+
+### 📌 Entrada 029 — 19 de agosto de 2026 — La prueba de humo que faltaba, y la barra amarilla
+
+**Objetivo:** cerrar los cabos sueltos que arrastraban dos sesiones —subir `main`
+y hacer la prueba de humo visual que dejó pendiente la Entrada 024— antes de
+empezar la Fase C.
+
+---
+
+#### Lo primero: la documentación no estaba subida
+
+`git status` tenía **249 líneas sin confirmar** en `avance_proyecto.md`: la
+reescritura del punto de partida, la sección de pendientes y el inventario del
+§2, hecha la tarde anterior y nunca commiteada. Es justo el texto que sirve para
+retomar el trabajo, y vivía solo en un disco. Se confirma y se sube: `main` pasa
+de 6 commits sin subir a 0.
+
+---
+
+#### La prueba de humo, automatizada en vez de mirada
+
+La Entrada 024 dejó pendiente «mirar los 22 botones que pasaron de `onclick` a
+`data-ir-a`». Mirarlos una vez no sirve de mucho: lo que hace falta es que nadie
+pueda romperlos sin enterarse. Así que en vez de una revisión manual se escribió
+`test/e2e/navegacion.spec.js`, que **pulsa los 23 botones, uno por uno, en
+escritorio y en móvil**, y comprueba que la pantalla cambia a la que el atributo
+declara.
+
+Las pantallas se descubren leyendo el marcado de `public/`, no de una lista
+escrita a mano: una pantalla nueva con un botón nuevo entra sola en el barrido.
+Es la única forma de que la prueba siga sirviendo dentro de seis meses.
+
+**Comprobado que detecta de verdad:** se retiró `navegacion.js` de
+`jugadores.html` y la prueba falló nombrando la pantalla exacta. Restaurado
+después.
+
+---
+
+#### El modal que colgaba el barrido, y por qué costó encontrarlo
+
+El primer intento se quedó colgado sin decir dónde. El síntoma era «timeout de la
+prueba» a secas, y el plazo se lo comía entero una sola pantalla.
+
+La causa: **tres pantallas abren un modal de «Validar jugador» nada más cargar**
+—las dos de llenar jornada y la de trivias—. El script preselecciona al usuario
+en el combo de jugadores y dispara un `change` sobre él, y ese manejador pide la
+contraseña. El modal es `position: fixed` a pantalla completa con `z-index: 999`,
+así que mientras esté arriba **ningún botón de debajo se puede pulsar**. Playwright
+lo decía en su registro —«`modal-card` intercepts pointer events»— pero solo al
+mirar el detalle del fallo.
+
+Dos cosas se aprendieron y quedaron en el código:
+
+- **El modal no está arriba cuando termina de cargar el documento**: lo abre una
+  petición, así que aparece un instante después. La primera versión miraba si
+  estorbaba justo al cargar, y unas veces lo cerraba y otras no: el fallo salía
+  en una pantalla distinta en cada corrida. Ahora se espera a que se decida.
+- **Todo clic lleva plazo propio y corto.** Sin él, un botón tapado se come el
+  plazo entero de la prueba y el informe dice «timeout» sin decir cuál de los
+  veintitrés fue.
+
+De paso se comprobó una sospecha y resultó infundada: `/api/jugador/:nombre`
+devuelve `password: true`, un booleano, no el hash. No hay fuga.
+
+---
+
+#### El hallazgo: una barra amarilla vacía en Llenar Jornada
+
+Al mirar las capturas apareció, en las dos pantallas de llenar jornada, **una
+barra amarilla vacía** entre el texto de los comodines y el selector de jornada.
+
+Era `<div id="infoCierreContainer" class="info-card"></div>`, y **ningún script
+del repositorio escribe nunca en él**. Es lo que quedó cuando el cierre pasó a
+ser por partido en vez de por jornada (Entrada 019): el aviso desapareció, el
+contenedor no. Y como `.info-card` tiene fondo amarillo y `padding: 14px`, un
+contenedor sin nada dentro se pinta igual que uno con aviso.
+
+Se arregla por los dos lados, a propósito:
+
+| Dónde | Qué |
+|---|---|
+| `public/llenar_jornada.html` y `llenar_jornada_user.html` | Fuera el contenedor muerto |
+| `private/css/styles.css` | `.info-card:empty { display: none; }` |
+
+La regla de CSS no sobra: `llenar_trivia.html` tiene un aviso hermano que **su
+script vacía** cuando no hay nada que decir, y sin la regla ese caso pintaría la
+misma barra. El marcado muerto se quita; la clase, además, deja de poder
+pintarse vacía venga de donde venga.
+
+El barrido recoge ahora también las tarjetas de aviso vacías de cada pantalla, y
+se comprobó inyectando una con solo un salto de línea dentro —que **no** es
+`:empty` para el CSS, así que la regla sola no la taparía— y la prueba la cazó.
+
+---
+
+#### Lo que se miró y estaba bien
+
+Con dos jornadas sembradas y sus resultados oficiales:
+
+| Qué | Estado |
+|---|---|
+| El carrusel de la portada rota al **Top 3 de la jornada** y nombra la jornada correcta | ✅ |
+| El **selector de jornada** de llenar quiniela abre en la última creada | ✅ |
+| **Resultados oficiales** abre en la sugerida y pinta los marcadores sin pulsar nada | ✅ |
+| La **tabla por jornada** abre en la misma y trae puntos, exactos y diferencia | ✅ |
+| La tarjeta del rotador ocupa la fila entera y ninguna se estira (Fase A) | ✅ |
+
+Un susto que no lo era: un partido con fecha de **2099** salía «Partido cerrado».
+No es la fecha: el servidor guarda `estado: r.estado || 'TC'` al cargar un
+resultado oficial, y `partidoBloqueado()` cierra cualquier partido con resultado
+oficial en `LIVE`, `MT` o `TC`. Es correcto —lo raro era el dato de prueba, que
+juntaba fecha futura con resultado ya cargado, cosa que no pasa en la realidad—.
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `test/e2e/navegacion.spec.js` | **Nuevo.** Barrido de los 23 botones y de las tarjetas de aviso vacías |
+| `public/llenar_jornada.html` | Fuera `#infoCierreContainer`, contenedor sin escritor |
+| `public/llenar_jornada_user.html` | Lo mismo |
+| `private/css/styles.css` | `.info-card:empty { display: none; }` |
+| `avance_proyecto.md` | Esta entrada y el punto de partida al día |
+
+**Verificación:**
+
+```
+npm test          → 119/119
+npm run test:e2e  → 48/48  (46 anteriores + 2 nuevas, escritorio y móvil)
+```
+
+**Hallazgos nuevos:**
+
+- **Un contenedor sin escritor es marcado muerto que se ve.** `#infoCierreContainer`
+  llevaba ahí desde la Entrada 019 y nadie lo notó porque las pruebas miran
+  contenido, no ausencia de él. Lo cazó una captura, no una aserción.
+- **Una prueba de navegador sin plazo por acción no dice dónde falló.** Playwright
+  hereda el plazo de la prueba entera para cada clic, así que la primera pantalla
+  que se cuelgue se lo lleva todo y el informe queda mudo.
+- **`jornadas.spec.js` falló una vez y no se reprodujo.** Fue en móvil, en la
+  prueba que acepta un `prompt` del navegador, y pasó sola en las dos corridas
+  siguientes y aislada. Queda anotado: si vuelve, el sospechoso es el `dialog`.
+
+**Pendiente / siguiente paso:** **Fase C — buscador de ligas dinámico**
+(petición 9). Decisión tomada: se buscan **7 días hacia adelante**.
 
 ---
 
