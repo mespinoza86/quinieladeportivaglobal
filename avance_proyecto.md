@@ -118,7 +118,9 @@ Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
 ### Estado de Git
 
 ```
-79aa6a8 Fase C: el buscador de ligas deja de ser una lista fija  ← main = origin/main
+e7482b7 Fase D: una sola pantalla de jornadas             ← main = origin/main
+fff7eb9 Decision: los partidos salen solo del API
+79aa6a8 Fase C: el buscador de ligas deja de ser una lista fija
 73ca4f7 La prueba de humo que faltaba, y la barra amarilla
 5cca387 Poner al dia el punto de partida y el inventario
 61f3dae La jornada actual pasa a ser la ultima creada
