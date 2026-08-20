@@ -20,16 +20,20 @@
 ### ⚠️ Lo primero, en un minuto
 
 ```bash
-git log --oneline -3     # debe empezar por 61f3dae
+git log --oneline -3     # debe empezar por 18d2670
 git status               # debe estar limpio
 npm test                 # 129/129
 npm run test:e2e         # 62/62
 ```
 
-**`main` y `origin/main` están a la par.** Los siete commits que quedaron sin
-subir del 18 de agosto —el plan de producto, las fases A y B, el cambio de regla
-de la jornada actual y la puesta al día de este documento— se subieron el 19 de
-agosto, junto con el trabajo de la Entrada 029.
+**`main` y `origin/main` están a la par**, y lo estuvieron al cerrar cada paso
+del 19 de agosto. Los siete commits que habían quedado sin subir del día 18 —el
+plan de producto, las fases A y B y el cambio de regla de la jornada actual— se
+subieron esa mañana, y encima van los seis del 19.
+
+> Lo que se aprendió al encontrarlos: **la documentación de continuidad estuvo
+> una tarde entera existiendo solo en un disco.** Confirmarla es parte de
+> terminar, no un trámite posterior.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano. No hay forma de consultarlo desde aquí.
@@ -39,7 +43,8 @@ agosto, junto con el trabajo de la Entrada 029.
 **Toda la deuda técnica planificada está cerrada** —fases 0 a 5, más el
 endurecimiento y las cinco prioridades altas de la auditoría (Entrada 015)— y el
 trabajo ha pasado a ser **producto**: el plan de las diez peticiones de §20, del
-que van hechas las fases A y B.
+que van hechas **las fases A, B, C y D**. Quedan la E —verificación de correo— y
+la F —sugerencias de partidos—, y las dos esperan una decisión del usuario.
 
 | Qué | Estado |
 |---|---|
@@ -115,11 +120,90 @@ Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
   partidos más viejos. Si se "arreglan" para que vayan alineadas, dejan de
   distinguir qué regla aplica el servidor y pasarían con cualquiera.
 
+### Lo que se hizo el 19 de agosto
+
+**Siete commits** —dos de ellos solo para anotar aquí el estado de Git—. Se
+cerraron los dos cabos que arrastraban dos sesiones y se completaron **dos fases
+enteras del plan de producto**.
+
+| Qué | Bitácora | Commit |
+|---|---|---|
+| Se confirmó y subió la documentación que llevaba una tarde sin commitear, y con ella los 7 commits pendientes | — | `5cca387` |
+| **La prueba de humo que faltaba**: barrido de los 23 botones `data-ir-a` en escritorio y móvil. Destapó una barra amarilla vacía en *Llenar Jornada* | 029 | `73ca4f7` |
+| **Fase C** — buscador de ligas dinámico (petición 9) | 030 | `79aa6a8` |
+| Decisión: los partidos salen solo del API | — | `fff7eb9` |
+| **Fase D** — una sola pantalla de jornadas (petición 3) | 031 | `e7482b7` |
+
+**De 119 a 129 pruebas rápidas y de 46 a 62 de navegador.**
+
+Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
+
+- **Una liga se identifica por su `league_id`, no por su nombre.** Era el fallo de
+  fondo del buscador viejo: si el proveedor renombraba una competición, la opción
+  dejaba de encontrar nada **en silencio** —cero partidos, y parecía que ese día
+  no se jugaba—. Ver la Entrada 030.
+- **La lista de competiciones bloqueadas vive ahora solo en `src/ligas.js`**, y se
+  aplica **siempre**. Antes estaba en el navegador y solo actuaba si había un
+  torneo elegido: con «Todos los torneos» se colaban las sub-20 y las femeniles.
+  Es un cambio de comportamiento deliberado.
+- **La duplicación estaba peor catalogada de lo que nadie creía.** Las dos
+  pantallas de jornadas compartían **tres copias enteras** de código, y la Fase C
+  arregló el desplegable de una dejando intacto el de la otra sin que nadie lo
+  notara. Lo cuenta la Entrada 031, y es el mejor argumento que hay en este
+  documento a favor de no tener dos de nada.
+- **Borrar código mueve los contadores centinela de `architecture.test.js`**, y eso
+  no es una regresión. Los dos que bajaron llevan ahora escrito en el código que
+  son un suelo y por qué.
+
+### 🌅 Lo siguiente: la sesión de mañana
+
+**Lo primero, siempre:** `git log --oneline -3`, `git status`, `npm test` y
+`npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19,
+porque desde esta máquina no se puede consultar.
+
+**Lo propuesto es la Fase E — verificación de correo electrónico** (petición 8).
+Es la siguiente por el plan, y **media parte ya está hecha sin saberlo**: el
+modelo `Usuario` ya tiene `emailVerificado`, `tokenVerificacion` y
+`expiracionTokenVerificacion`. Los campos existen y no los usa nadie.
+
+Tiene **dos decisiones abiertas**, y una cuesta dinero:
+
+| Decisión | Por qué no puede darse por supuesta |
+|---|---|
+| **Qué proveedor de envío** — Resend, SendGrid o SMTP propio | Tiene coste y configuración en Render. Es la única dependencia externa de todo el plan de producto |
+| **Qué se le bloquea a una cuenta sin verificar** | ¿Puede entrar pero no unirse a quinielas? ¿No puede ni entrar? Es producto, no técnica, y cambia el middleware |
+
+**Cómo desbloquearla sin esperar a la primera:** montar toda la mecánica —generar
+el token con su caducidad, la ruta de confirmación, la de reenvío y las
+pantallas— **contra un enviador simulado**, detrás de una interfaz con una sola
+función. Enchufar el proveedor real queda entonces en poner credenciales en
+Render y escribir el adaptador. Es el mismo patrón que `proveedorDeEventos`: una
+costura por la que las pruebas meten algo falso sin tocar la red.
+
+Lo que **no** se puede dejar para después es la segunda decisión: sin saber qué se
+bloquea, el middleware no se puede escribir. Si no está tomada al empezar, se
+implementa lo demás y el bloqueo se deja en una sola función con el
+comportamiento más suave —se puede entrar, no se puede uno unir a quinielas— y
+anotado como provisional.
+
+**La alternativa, si se prefiere:** saltar a la **Fase F** (sugerencias de
+partidos destacados, petición 10). También tiene decisiones abiertas —qué cuenta
+como «igualados», cuántos puestos son zona de descenso— y además necesita algo
+que la aplicación hoy no consulta: la tabla de posiciones de cada liga.
+Conviene empezar por lo barato, la lista de clásicos escrita a mano, y ver si
+aporta antes de construir lo de la clasificación.
+
+**Y hay una tercera opción que no es producto:** terminar la **Fase 6 de
+modularización**. `server.js` está en 5.270 líneas y hoy creció, no menguó.
+Ninguna fase de producto la necesita, pero cada una la hace más cara.
+
 ### Estado de Git
 
 ```
-e7482b7 Fase D: una sola pantalla de jornadas             ← main = origin/main
+18d2670 Anotar el commit de la Fase D en el estado de Git ← main = origin/main
+e7482b7 Fase D: una sola pantalla de jornadas
 fff7eb9 Decision: los partidos salen solo del API
+3470844 Anotar el commit de la Fase C en el estado de Git
 79aa6a8 Fase C: el buscador de ligas deja de ser una lista fija
 73ca4f7 La prueba de humo que faltaba, y la barra amarilla
 5cca387 Poner al dia el punto de partida y el inventario
@@ -186,9 +270,10 @@ nada a mano: Playwright arranca la aplicación con una base en memoria
 
 ## 🎯 LO QUE QUEDA PENDIENTE
 
-Ordenado por lo que conviene hacer antes. Nada de esto está empezado.
+Ordenado por lo que conviene hacer antes. **Puesto al día el 19 de agosto de
+2026**, al cerrar las fases C y D. Nada de lo que queda está empezado.
 
-### 1. Pendiente inmediato de las sesiones anteriores
+### 1. ✅ Lo que arrastraban las sesiones anteriores — cerrado
 
 **Cerrado el 19 de agosto (Entrada 029).** `main` está subido y la prueba de humo
 que arrastraba la Entrada 024 dejó de ser una revisión manual pendiente: se
@@ -218,9 +303,11 @@ No hay que volver a pensarlo.
 
 ### 3. Deuda técnica que sigue abierta
 
-1. **Terminar la Fase 6 de modularización.** `server.js` sigue en **5.162
-   líneas**. Hecho: `src/transacciones.js`, `src/validacion.js` y `src/fechas.js`
-   (291 líneas en total). Faltan **las rutas, los modelos y el sincronizador**,
+1. **Terminar la Fase 6 de modularización.** `server.js` está en **5.270
+   líneas**, y el 19 de agosto **creció**: las fases C y D le añadieron rutas.
+   Hecho: `src/transacciones.js`, `src/validacion.js`, `src/fechas.js` y
+   `src/ligas.js` (451 líneas en cuatro módulos). Faltan **las rutas, los modelos
+   y el sincronizador**,
    que sí tocan Express y merecen su propia sesión con prueba de humo.
    **Dos invariantes** que hay que respetar en cada tajada: lo extraído **se
    reexporta** desde `server.js`, y los módulos de `src/` **no pueden depender de
@@ -259,6 +346,12 @@ partidos, y las correcciones conservan las reglas originales.)*
 - **`syncsSinCambioDePuntos`** en el primer domingo con partidos en vivo: debe
   crecer mucho más deprisa que `jornadasReescritas`. Si no, la caché del ranking
   se está tirando sin motivo (Entrada 020).
+- **La cuota del proveedor, cuando se empiecen a armar jornadas de verdad.** El
+  buscador de la Fase C consulta siete días de una vez, y aunque la respuesta se
+  guarda diez minutos, esa caché vive **en memoria del proceso**: con dos
+  instancias en Render son dos consultas por cada diez minutos, no una. Si la
+  cuota aprieta, lo primero que hay que mirar es cuántas instancias hay
+  levantadas (Entrada 030).
 - **Anexo B, procedimiento C**: auditar si la fuga C-02 dañó datos. Hoy no hay
   nada que auditar (0 trivias, 0 respuestas, una sola quiniela). Repetir cuando
   haya varias quinielas y dos coincidan en el nombre de una jornada.
@@ -280,6 +373,29 @@ Cuestan tiempo cada vez que se olvidan:
 - **Los pronósticos se cierran partido a partido.** Cualquier prueba que mande un
   pronóstico a un partido cuya hora ya pasó recibirá «Partidos bloqueados» y
   parecerá un fallo del servidor. No lo es (Entrada 028).
+- **Los acentos graves dentro de comillas dobles del shell ejecutan lo que
+  envuelven.** Escribir `node -e "… /* una `.info-card` vacía */ …"` no deja un
+  comentario: deja el hueco, porque el shell sustituyó el texto por la salida del
+  comando `.info-card`, que no existe. El archivo se escribe igual y sin avisar.
+  Mordió en la Entrada 029. Es la misma familia que lo del heredoc: **el texto
+  largo va en un archivo, no en la línea de comandos.**
+- **`/tmp` no es el mismo sitio para el shell y para Node.** En Git Bash apunta al
+  temporal del usuario; Node en Windows lo lee como `C:\tmp`, que no existe. Un
+  archivo escrito con `cat > /tmp/x` no lo encuentra un `readFileSync("/tmp/x")`.
+  Usar rutas absolutas de Windows para todo lo que cruce entre los dos.
+- **Un `optgroup` nunca es «visible» para Playwright.** Está en el DOM, pero
+  dentro de un desplegable cerrado no se puede ver, así que `waitFor()` espera
+  hasta agotar el plazo. Se comprueba con `toHaveCount`, no con visibilidad
+  (Entrada 030).
+- **La caché de ligas disponibles es global, no por quiniela.** Va por rango de
+  fechas, y está bien que así sea: una liga tiene partidos o no los tiene, y eso
+  no depende de quién pregunte. Dos pruebas que compartan rango comparten
+  respuesta, y la segunda recibe lo que dejó la primera. Cada prueba, su fecha
+  (Entrada 030).
+- **Unirse a una quiniela no da acceso: deja la membresía pendiente** y devuelve
+  202. Hace falta que un administrador la apruebe antes de poder seleccionarla.
+  Una prueba que lo ignore recibe un 409 «Debes seleccionar una quiniela activa»
+  y parece un fallo de permisos (Entrada 030).
 
 ---
 
