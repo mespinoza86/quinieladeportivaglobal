@@ -796,6 +796,14 @@ const {
 
 const { extraerFechaApi, parseFechaPartidoCostaRica } = require('./src/fechas');
 
+/* Fase C: qué ligas se ofrecen y sobre qué rango de fechas. */
+const {
+  esLigaNoPermitida,
+  normalizarDias,
+  rangoDeBusqueda,
+  agruparLigasPorPais
+} = require('./src/ligas');
+
 /**
  * Qué partidos de una jornada tienen ya el pronóstico a la vista, uno por
  * partido y en el mismo orden.
@@ -1638,6 +1646,61 @@ app.post('/api/jornadas/comodin',requireAdmin, async (req, res) => {
 
 /* ================= API-Football ================= */
 
+/*
+ * Traduce un evento crudo del proveedor a la forma que usa la aplicación.
+ *
+ * Estaba incrustado dentro de la ruta de partidos. Se saca porque desde la Fase
+ * C hay DOS cosas que leen la misma respuesta —la lista de partidos y la de
+ * ligas disponibles— y dos traducciones del mismo JSON acabarían discrepando en
+ * algún campo sin que nadie lo note.
+ */
+function mapearEventoDelProveedor(item) {
+  return {
+    apiFixtureId: Number(item.match_id),
+    fecha: `${item.match_date} ${item.match_time}`,
+    estado: item.match_status || 'NS',
+    minuto: null,
+    liga: item.league_name || '',
+    pais: item.country_name || '',
+    temporada: '',
+    apiLeagueId: Number(item.league_id),
+    equipo1: item.match_hometeam_name,
+    equipo2: item.match_awayteam_name,
+    logoEquipo1: item.team_home_badge || '',
+    logoEquipo2: item.team_away_badge || '',
+    marcador1: item.match_hometeam_score !== '' ? Number(item.match_hometeam_score) : null,
+    marcador2: item.match_awayteam_score !== '' ? Number(item.match_awayteam_score) : null
+  };
+}
+
+/**
+ * Los partidos de un rango de fechas, ya traducidos.
+ *
+ * Es la única puerta hacia `get_events`. Va por `proveedorDeEventos` como las
+ * demás consultas al exterior, y por la misma razón: es la costura por la que
+ * las pruebas meten un proveedor falso sin tocar la red.
+ */
+async function buscarEventosPorRango({ desde, hasta, ligaId } = {}) {
+  const params = {
+    action: 'get_events',
+    from: desde,
+    to: hasta,
+    APIkey: process.env.APIFOOTBALL_COM_KEY,
+    timezone: 'America/Costa_Rica'
+  };
+
+  if (ligaId) params.league_id = ligaId;
+
+  const response = await apiFootballCom.get('', { params });
+
+  if (!Array.isArray(response.data)) {
+    console.log('Respuesta APIfootball.com:', response.data);
+    return [];
+  }
+
+  return response.data.map(mapearEventoDelProveedor);
+}
+
 app.get('/api/football/fixtures', async (req, res) => {
   try {
     const { date, from, to, league } = req.query;
@@ -1657,47 +1720,110 @@ app.get('/api/football/fixtures', async (req, res) => {
       });
     }
 
-    const params = {
-      action: 'get_events',
-      from: fechaInicio,
-      to: fechaFin,
-      APIkey: process.env.APIFOOTBALL_COM_KEY,
-      timezone: 'America/Costa_Rica'
-    };
+    const partidos = await proveedorDeEventos.porRango({
+      desde: fechaInicio,
+      hasta: fechaFin,
+      ligaId: league
+    });
 
-    if (league) {
-      params.league_id = league;
-    }
-
-    const response = await apiFootballCom.get('', { params });
-
-    if (!Array.isArray(response.data)) {
-      console.log('Respuesta APIfootball.com:', response.data);
-      return res.json([]);
-    }
-
-    const partidos = response.data.map(item => ({
-      apiFixtureId: Number(item.match_id),
-      fecha: `${item.match_date} ${item.match_time}`,
-      estado: item.match_status || 'NS',
-      minuto: null,
-      liga: item.league_name || '',
-      pais: item.country_name || '',
-      temporada: '',
-      apiLeagueId: Number(item.league_id),
-      equipo1: item.match_hometeam_name,
-      equipo2: item.match_awayteam_name,
-      logoEquipo1: item.team_home_badge || '',
-      logoEquipo2: item.team_away_badge || '',      
-      marcador1: item.match_hometeam_score !== '' ? Number(item.match_hometeam_score) : null,
-      marcador2: item.match_awayteam_score !== '' ? Number(item.match_awayteam_score) : null
-    }));
-
-    res.json(partidos);
+    /*
+     * Las competiciones bloqueadas —sub-20, reservas, femenil— se descartan
+     * aquí y no en el navegador, donde vivía la lista hasta la Fase C.
+     *
+     * Antes el filtro solo se aplicaba si había un torneo elegido: con «Todos
+     * los torneos» se colaban igual. Ahora es una sola regla en un solo sitio,
+     * y vale para las dos rutas que leen del proveedor.
+     */
+    res.json(partidos.filter(partido => !esLigaNoPermitida(partido.liga)));
 
   } catch (error) {
     console.error('Error consultando APIfootball.com:', error.response?.data || error.message);
     res.status(500).json({ error: 'Error al consultar partidos externos' });
+  }
+});
+
+/*
+ * Caché de la lista de ligas disponibles (Fase C).
+ *
+ * Quien arma una jornada abre esta pantalla varias veces seguidas, y cada
+ * apertura consultaría el rango entero otra vez. La respuesta cambia poco —una
+ * liga no aparece ni desaparece en cuestión de minutos— así que se guarda un
+ * rato.
+ *
+ * Vive en memoria del proceso a propósito, y NO en Mongo como la caché de
+ * partidos de la Fase 4: aquella se comparte entre quinielas porque el ahorro
+ * crecía con el número de quinielas, y esta la usan solo los administradores al
+ * crear una jornada. Si hay dos instancias, cada una tendrá la suya y el coste
+ * es una consulta más cada diez minutos.
+ */
+const CACHE_LIGAS_MS = 10 * 60 * 1000;
+const cacheLigasDisponibles = new Map();
+
+function leerCacheLigas(clave, ahora = Date.now()) {
+  const guardado = cacheLigasDisponibles.get(clave);
+  if (!guardado || guardado.expiraEn <= ahora) return null;
+  return guardado.valor;
+}
+
+function guardarCacheLigas(clave, valor, ahora = Date.now()) {
+  /*
+   * Se limpia lo caducado al escribir. Sin esto el mapa crece con cada rango
+   * distinto que alguien consulte y no lo vacía nadie: una fuga lenta pero
+   * segura en un proceso que vive semanas.
+   */
+  for (const [k, v] of cacheLigasDisponibles) {
+    if (v.expiraEn <= ahora) cacheLigasDisponibles.delete(k);
+  }
+  cacheLigasDisponibles.set(clave, { valor, expiraEn: ahora + CACHE_LIGAS_MS });
+}
+
+/**
+ * Las ligas que DE VERDAD tienen partidos en los próximos días (Fase C).
+ *
+ * Sustituye a la lista de veinte torneos escrita a mano en el HTML. Devuelve
+ * los países con sus ligas, el id de cada una y cuántos partidos trae, ya sin
+ * las competiciones bloqueadas.
+ *
+ * Es administrativa: crear jornadas lo hacen los administradores, y sin
+ * `requireAdmin` cualquier miembro podría gastar la cuota del proveedor
+ * recargando esta ruta.
+ */
+app.get('/api/football/ligas-disponibles', requireAdmin, async (req, res) => {
+  try {
+    if (!process.env.APIFOOTBALL_COM_KEY) {
+      return res.status(500).json({
+        error: 'Falta configurar APIFOOTBALL_COM_KEY en el .env'
+      });
+    }
+
+    const rango = rangoDeBusqueda({ desde: req.query.desde, dias: req.query.dias });
+    const clave = `${rango.desde}|${rango.hasta}`;
+
+    const enCache = leerCacheLigas(clave);
+    if (enCache) {
+      return res.json({ ...enCache, deCache: true });
+    }
+
+    const partidos = await proveedorDeEventos.porRango({
+      desde: rango.desde,
+      hasta: rango.hasta
+    });
+
+    const respuesta = {
+      desde: rango.desde,
+      hasta: rango.hasta,
+      dias: rango.dias,
+      partidos: partidos.length,
+      paises: agruparLigasPorPais(partidos)
+    };
+
+    guardarCacheLigas(clave, respuesta);
+
+    res.json({ ...respuesta, deCache: false });
+
+  } catch (error) {
+    console.error('Error consultando ligas disponibles:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Error al consultar las ligas disponibles' });
   }
 });
 
@@ -2099,7 +2225,9 @@ async function conLimiteDeConcurrencia(items, limite, tarea) {
  */
 const proveedorDeEventos = {
   porId: (id) => buscarEventoPorId(id),
-  porFecha: (partido) => buscarEventoPorFallback(partido)
+  porFecha: (partido) => buscarEventoPorFallback(partido),
+  /* Fase C: el rango entero de una vez, para el buscador de ligas. */
+  porRango: (argumentos) => buscarEventosPorRango(argumentos)
 };
 
 /** Pregunta al proveedor por un partido: primero por id, y si no, por fecha. */
@@ -5155,6 +5283,11 @@ module.exports = {
   jornadaEstaFinalizada,
   // Jornada actual (Fase B)
   calcularJornadaActual,
+  // Ligas disponibles (Fase C)
+  esLigaNoPermitida,
+  normalizarDias,
+  rangoDeBusqueda,
+  agruparLigasPorPais,
   parseFechaPartidoCostaRica,
   extraerFechaApi,
   congelarPuntosDeJornada,

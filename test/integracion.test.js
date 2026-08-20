@@ -2370,3 +2370,248 @@ test('Fase B: la jornada actual no cruza entre quinielas', async () => {
   assert.equal(desdeB.body.sugerida, 'Solo de B');
   assert.equal(desdeB.body.jornadas.length, 1);
 });
+
+/* ================================================================
+ * Fase C — Buscador de ligas dinámico (petición 9)
+ * ================================================================ */
+
+/**
+ * Sustituye la consulta por rango del proveedor por una lista fija.
+ *
+ * Es la misma costura que usa `proveedorFalso` para las consultas por id: lo
+ * que se prueba es qué hace el servidor con la respuesta, no que sepa hablar
+ * HTTP con nadie.
+ */
+function proveedorDeRangoFalso(partidos = []) {
+  const original = srv.proveedorDeEventos.porRango;
+  const llamadas = [];
+
+  srv.proveedorDeEventos.porRango = async (argumentos) => {
+    llamadas.push(argumentos);
+    return partidos;
+  };
+
+  return {
+    llamadas,
+    restaurar() { srv.proveedorDeEventos.porRango = original; }
+  };
+}
+
+/** Un evento ya traducido, como el que devuelve `porRango`. */
+function partidoDeLiga(liga, pais, ligaId, equipos = ['Uno', 'Dos']) {
+  return {
+    apiFixtureId: Math.floor(Math.random() * 1e9),
+    fecha: '2026-08-20 15:00',
+    estado: 'NS',
+    liga,
+    pais,
+    apiLeagueId: ligaId,
+    equipo1: equipos[0],
+    equipo2: equipos[1]
+  };
+}
+
+test('Fase C: rangoDeBusqueda cuenta siete días incluyendo el primero', () => {
+  const rango = srv.rangoDeBusqueda({ desde: '2026-08-19', dias: 7 });
+
+  assert.equal(rango.desde, '2026-08-19');
+  assert.equal(rango.hasta, '2026-08-25');
+  assert.equal(rango.dias, 7);
+});
+
+test('Fase C: el rango cruza el fin de año sin descuadrarse', () => {
+  /*
+   * Sumar días a mano sobre el texto de la fecha es el error clásico aquí, y
+   * solo se nota en diciembre. Se fija ahora y no cuando pase.
+   */
+  const rango = srv.rangoDeBusqueda({ desde: '2026-12-30', dias: 5 });
+
+  assert.equal(rango.hasta, '2027-01-03');
+});
+
+test('Fase C: los días se acotan y nunca revientan la consulta', () => {
+  // Un `dias` absurdo en la URL costaría un año de cuota del proveedor.
+  assert.equal(srv.normalizarDias('999'), 30);
+  assert.equal(srv.normalizarDias('abc'), 7);
+  assert.equal(srv.normalizarDias(''), 7);
+  assert.equal(srv.normalizarDias(0), 7);
+  assert.equal(srv.normalizarDias(-3), 7);
+  assert.equal(srv.normalizarDias('3'), 3);
+});
+
+test('Fase C: las ligas se agrupan por país y se cuentan sus partidos', () => {
+  const paises = srv.agruparLigasPorPais([
+    partidoDeLiga('Liga MX', 'Mexico', 1),
+    partidoDeLiga('Liga MX', 'Mexico', 1),
+    partidoDeLiga('Primera Division', 'Costa Rica', 3),
+    partidoDeLiga('UEFA Champions League', '', 9)
+  ]);
+
+  const mexico = paises.find(p => p.pais === 'Mexico');
+  assert.equal(mexico.ligas.length, 1);
+  assert.equal(mexico.ligas[0].partidos, 2);
+  assert.equal(mexico.ligas[0].id, '1');
+
+  // Los internacionales van al final y bajo su propio rótulo.
+  assert.equal(paises[paises.length - 1].pais, 'Internacional');
+});
+
+test('Fase C: las competiciones bloqueadas no llegan al desplegable', () => {
+  const paises = srv.agruparLigasPorPais([
+    partidoDeLiga('Liga MX', 'Mexico', 1),
+    partidoDeLiga('Liga MX Femenil', 'Mexico', 2),
+    partidoDeLiga('Primera Division U20', 'Costa Rica', 4),
+    partidoDeLiga('Bundesliga Reserves', 'Germany', 5)
+  ]);
+
+  const nombres = paises.flatMap(p => p.ligas.map(l => l.nombre));
+  assert.deepEqual(nombres, ['Liga MX']);
+});
+
+test('Fase C: el endpoint devuelve las ligas del rango, agrupadas', async () => {
+  const { agente } = await cuentaNueva('ligasA');
+  await quinielaNueva(agente, 'Quiniela Ligas');
+  await conModoAdmin(agente);
+
+  const proveedor = proveedorDeRangoFalso([
+    partidoDeLiga('Liga MX', 'Mexico', 1),
+    partidoDeLiga('Primera Division', 'Costa Rica', 3),
+    partidoDeLiga('Primera Division Femenina', 'Costa Rica', 7)
+  ]);
+
+  try {
+    const res = await agente.get('/api/football/ligas-disponibles?dias=7&desde=2026-08-19');
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.desde, '2026-08-19');
+    assert.equal(res.body.hasta, '2026-08-25');
+    assert.equal(res.body.dias, 7);
+
+    // Se pidió al proveedor exactamente el rango calculado, ni un día más.
+    assert.equal(proveedor.llamadas.length, 1);
+    assert.equal(proveedor.llamadas[0].desde, '2026-08-19');
+    assert.equal(proveedor.llamadas[0].hasta, '2026-08-25');
+
+    const nombres = res.body.paises.flatMap(p => p.ligas.map(l => l.nombre));
+    assert.deepEqual(nombres.sort(), ['Liga MX', 'Primera Division']);
+  } finally {
+    proveedor.restaurar();
+  }
+});
+
+test('Fase C: un rango sin partidos responde vacío, no falla', async () => {
+  const { agente } = await cuentaNueva('ligasB');
+  await quinielaNueva(agente, 'Quiniela Sin Partidos');
+  await conModoAdmin(agente);
+
+  const proveedor = proveedorDeRangoFalso([]);
+
+  try {
+    /*
+     * Fecha propia a propósito. La caché va por rango y NO por quiniela —una
+     * liga tiene partidos o no los tiene, y eso no depende de quién pregunte—,
+     * así que reutilizar el rango de otra prueba devolvería lo que aquélla dejó
+     * guardado. Pasó al escribir esto.
+     */
+    const res = await agente.get('/api/football/ligas-disponibles?desde=2026-10-05');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.paises, []);
+    assert.equal(res.body.partidos, 0);
+  } finally {
+    proveedor.restaurar();
+  }
+});
+
+test('Fase C: la segunda consulta del mismo rango sale de la caché', async () => {
+  const { agente } = await cuentaNueva('ligasC');
+  await quinielaNueva(agente, 'Quiniela Cache');
+  await conModoAdmin(agente);
+
+  const proveedor = proveedorDeRangoFalso([partidoDeLiga('Liga MX', 'Mexico', 1)]);
+
+  try {
+    /*
+     * Quien arma una jornada abre esta pantalla varias veces seguidas. Sin
+     * caché, cada apertura sería otra consulta al proveedor por el mismo rango.
+     * La fecha es distinta a la de las otras pruebas para no compartir entrada.
+     */
+    const primera = await agente.get('/api/football/ligas-disponibles?desde=2026-09-01');
+    const segunda = await agente.get('/api/football/ligas-disponibles?desde=2026-09-01');
+
+    assert.equal(primera.body.deCache, false);
+    assert.equal(segunda.body.deCache, true);
+    assert.equal(proveedor.llamadas.length, 1, 'El proveedor se consultó dos veces');
+    assert.deepEqual(segunda.body.paises, primera.body.paises);
+  } finally {
+    proveedor.restaurar();
+  }
+});
+
+test('Fase C: la lista de ligas exige ser administrador', async () => {
+  const duena = await cuentaNueva('ligasDuena');
+  const quiniela = await quinielaNueva(duena.agente, 'Quiniela Ajena');
+
+  const miembro = await cuentaNueva('ligasMiembro');
+  const unirse = await miembro.agente.post('/api/quinielas/unirse').send({ codigoIngreso: quiniela.codigo });
+  assert.equal(unirse.status, 202, JSON.stringify(unirse.body));
+
+  // Unirse deja la membresía pendiente: sin aprobar no hay quiniela activa.
+  await conModoAdmin(duena.agente);
+  const usuarioMiembro = await srv.Usuario.findOne({ usernameNormalizado: miembro.datos.username.toLowerCase() });
+  const membresia = await srv.Membresia.findOne({
+    quinielaId: new mongoose.Types.ObjectId(quiniela.id),
+    usuarioId: usuarioMiembro._id
+  });
+  await duena.agente.patch(`/api/quiniela-actual/miembros/${membresia._id}/aprobar`).send({});
+  await miembro.agente.post(`/api/quinielas/${quiniela.id}/seleccionar`).send({});
+
+  const proveedor = proveedorDeRangoFalso([partidoDeLiga('Liga MX', 'Mexico', 1)]);
+
+  try {
+    /*
+     * Sin esta puerta, cualquier miembro podría gastar la cuota del proveedor
+     * recargando la ruta. Y la dueña tampoco entra sin Admin Mode.
+     */
+    const comoMiembro = await miembro.agente.get('/api/football/ligas-disponibles');
+    assert.equal(comoMiembro.status, 403);
+
+    /*
+     * Y sin Admin Mode tampoco entra quien sí es propietaria. Se comprueba con
+     * una cuenta aparte porque la de arriba ya lo activó para aprobar.
+     */
+    const otra = await cuentaNueva('ligasSinModo');
+    await quinielaNueva(otra.agente, 'Quiniela Sin Modo');
+    const sinModoAdmin = await otra.agente.get('/api/football/ligas-disponibles');
+    assert.equal(sinModoAdmin.status, 401);
+
+    assert.equal(proveedor.llamadas.length, 0, 'Se consultó al proveedor sin permisos');
+  } finally {
+    proveedor.restaurar();
+  }
+});
+
+test('Fase C: la búsqueda de partidos también descarta lo bloqueado', async () => {
+  const { agente } = await cuentaNueva('fixturesA');
+  await quinielaNueva(agente, 'Quiniela Fixtures');
+  await conModoAdmin(agente);
+
+  const proveedor = proveedorDeRangoFalso([
+    partidoDeLiga('Liga MX', 'Mexico', 1),
+    partidoDeLiga('Liga MX Femenil', 'Mexico', 2)
+  ]);
+
+  try {
+    /*
+     * Antes esta ruta devolvía todo y el filtro vivía en el navegador, donde
+     * además solo se aplicaba si había un torneo elegido. Ahora la regla está
+     * en un solo sitio y vale para las dos rutas que leen del proveedor.
+     */
+    const res = await agente.get('/api/football/fixtures?date=2026-08-19');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.map(p => p.liga), ['Liga MX']);
+  } finally {
+    proveedor.restaurar();
+  }
+});

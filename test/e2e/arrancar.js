@@ -39,6 +39,29 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
   process.env.JOBS_HABILITADOS = 'false';
 
   const servidor = require('../../server.js');
+
+  /*
+   * Proveedor de partidos falso y fijo (Fase C).
+   *
+   * La clave del API de arriba es de mentira, así que la pantalla de importar
+   * partidos no podría cargar su desplegable de torneos y no habría nada que
+   * probar. Se sustituye la consulta por rango por una lista pequeña y
+   * determinista: dos ligas de dos países, más una femenil que el servidor
+   * debe descartar.
+   *
+   * Se hace aquí y no en cada prueba porque es propiedad del ENTORNO —esta
+   * aplicación de pruebas no habla con nadie de fuera—, no de un caso concreto.
+   */
+  servidor.proveedorDeEventos.porRango = async () => ([
+    { apiFixtureId: 1, fecha: '2099-01-01 15:00', estado: 'NS', liga: 'Liga MX',
+      pais: 'Mexico', apiLeagueId: 101, equipo1: 'America', equipo2: 'Chivas' },
+    { apiFixtureId: 2, fecha: '2099-01-02 17:00', estado: 'NS', liga: 'Liga MX',
+      pais: 'Mexico', apiLeagueId: 101, equipo1: 'Pumas', equipo2: 'Cruz Azul' },
+    { apiFixtureId: 3, fecha: '2099-01-02 19:00', estado: 'NS', liga: 'Primera Division',
+      pais: 'Costa Rica', apiLeagueId: 202, equipo1: 'Saprissa', equipo2: 'Alajuelense' },
+    { apiFixtureId: 4, fecha: '2099-01-03 11:00', estado: 'NS', liga: 'Liga MX Femenil',
+      pais: 'Mexico', apiLeagueId: 303, equipo1: 'Tigres', equipo2: 'Rayadas' }
+  ]);
   await servidor.conectarMongoConReintentos();
 
   const escuchando = servidor.app.listen(PUERTO, () => {

@@ -12,14 +12,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const estadoBusqueda = document.getElementById('estadoBusqueda');
 
     const nombreJornadaInput = document.getElementById('nombreJornadaInput');
+    const rangoTexto = document.getElementById('rangoTexto');
+
+    /*
+     * Siete días contando el de hoy. Es lo que se decidió el 19-ago-2026: una
+     * semana cubre la jornada completa de casi cualquier liga sin disparar el
+     * consumo del proveedor, y es el rango con el que se arma una jornada.
+     * El servidor tiene el mismo valor por defecto y su propio tope.
+     */
+    const DIAS_BUSQUEDA = 7;
+
+    /* Cuántos partidos se pintan como mucho. Ver el tope en la búsqueda. */
+    const MAXIMO_PARTIDOS = 300;
 
     let partidosDisponibles = [];
     let partidosPreliminares = [];
+    let rangoDeLaBusqueda = { desde: '', hasta: '' };
 
     torneoSelect.addEventListener('change', () => {
         customLeagueBox.style.display =
             torneoSelect.value === 'custom' ? 'block' : 'none';
     });
+
+    /*
+     * Cambiar la fecha cambia qué ligas juegan, así que la lista se rehace.
+     * Ofrecer torneos sin partidos es justo lo que la Fase C vino a quitar.
+     */
+    fechaInput.addEventListener('change', cargarTorneosDisponibles);
 
     function normalizarTexto(texto) {
         return (texto || '')
@@ -264,102 +283,134 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     
-    function parseFiltroTorneo(valor) {
-        const filtro = {};
+    /*
+     * Fase C. Aquí vivían tres funciones —parseFiltroTorneo, esLigaNoPermitida
+     * y partidoCoincideConFiltro— que localizaban la liga COMPARANDO NOMBRES:
+     * la opción del desplegable era el texto "country=Mexico;league_exact=Liga
+     * MX", y luego se miraba si el nombre del partido lo contenía.
+     *
+     * Bastaba que el proveedor renombrara la competición para que la opción
+     * dejara de encontrar nada, y sin ruido: la búsqueda devolvía cero partidos
+     * y parecía que ese día no se jugaba.
+     *
+     * Ahora el desplegable trae el ID de liga que usa el propio proveedor, y
+     * comparar identidades no se rompe cuando cambia el rótulo. La lista de
+     * competiciones bloqueadas se fue al servidor (src/ligas.js), que es quien
+     * arma tanto la lista de torneos como la de partidos: una sola regla.
+     */
+    function partidoCoincideConSeleccion(partido, seleccion) {
+        if (!seleccion) return true;
 
-        if (!valor || valor === 'custom') {
-            return filtro;
+        if (seleccion.ligaId) {
+            return String(partido.apiLeagueId) === String(seleccion.ligaId);
         }
 
-        valor.split(';').forEach(parte => {
-            const [key, value] = parte.split('=');
-
-            if (key && value) {
-                filtro[key.trim()] = value.trim();
-            }
-        });
-
-        return filtro;
-    }
-
-    function esLigaNoPermitida(liga) {
-        const texto = normalizarTexto(liga);
-    
-        const palabrasBloqueadas = [
-            'u20',
-            'u21',
-            'u23',
-            'sub 20',
-            'sub 21',
-            'sub 23',
-            'reserves',
-            'reserve',
-            'femenil',
-            'women',
-            'womens',
-            'femenina',
-            'feminine',
-            'juvenil',
-            'youth'
-        ];
-
-        return palabrasBloqueadas.some(palabra =>
-            texto.includes(normalizarTexto(palabra))
-        );
-    }
-
-    function partidoCoincideConFiltro(partido, filtro) {
-        const liga = normalizarTexto(partido.liga);
-        const pais = normalizarTexto(partido.pais);
-
-        if (esLigaNoPermitida(partido.liga)) {
-            return false;
-        }
-
-        if (filtro.country && pais !== normalizarTexto(filtro.country)) {
-            return false;
-        }
-
-        if (filtro.league_exact) {
-            const ligaEsperada = normalizarTexto(filtro.league_exact);
-        
-            if (
-                liga !== ligaEsperada &&
-                !liga.includes(ligaEsperada)
-            ) {
-                return false;
-            }
-        }
-
-
-        if (filtro.league_contains && !liga.includes(normalizarTexto(filtro.league_contains))) {
-            return false;
-        }
-
-        if (filtro.league_any) {
-            const opciones = filtro.league_any
-                .split('|')
-                .map(opcion => normalizarTexto(opcion));
-
-            const coincideAlguna = opciones.some(opcion =>
-                liga.includes(opcion)
-            );
-
-            if (!coincideAlguna) {
-                return false;
-            }
-        }
-
-
-        if (filtro.text) {
-            const texto = normalizarTexto(filtro.text);
-            return `${liga} ${pais}`.includes(texto);
+        if (seleccion.texto) {
+            const texto = normalizarTexto(seleccion.texto);
+            const donde = normalizarTexto(partido.liga) + ' ' + normalizarTexto(partido.pais);
+            return donde.includes(texto);
         }
 
         return true;
     }
 
+    /** El día de hoy en `YYYY-MM-DD`, que es lo que espera un `input[type=date]`. */
+    function hoyISO() {
+        const ahora = new Date();
+        const desfase = ahora.getTimezoneOffset() * 60000;
+        return new Date(ahora.getTime() - desfase).toISOString().slice(0, 10);
+    }
 
+    /**
+     * Llena el desplegable con las ligas que tienen partidos en el rango.
+     *
+     * Se vuelve a llamar cada vez que cambia la fecha de inicio: las ligas de
+     * la semana que viene no son las de esta, y ofrecer torneos sin partidos es
+     * exactamente el problema que la Fase C vino a quitar.
+     *
+     * Si falla, el desplegable NO se queda vacío: se deja la opción de buscar
+     * por texto y se dice qué pasó. Un desplegable vacío y mudo es lo peor que
+     * puede encontrarse quien viene a armar una jornada.
+     */
+    async function cargarTorneosDisponibles() {
+        const desde = fechaInput.value || hoyISO();
+
+        torneoSelect.disabled = true;
+        torneoSelect.innerHTML = '<option value="">Cargando torneos…</option>';
+
+        try {
+            const respuesta = await fetch(
+                '/api/football/ligas-disponibles?dias=' + DIAS_BUSQUEDA +
+                '&desde=' + encodeURIComponent(desde)
+            );
+            const datos = await respuesta.json();
+
+            if (!respuesta.ok) {
+                torneoSelect.innerHTML = '';
+                anadirOpcionesFijas();
+                rangoTexto.textContent = datos.error || 'No se pudieron cargar los torneos.';
+                return;
+            }
+
+            rangoDeLaBusqueda = { desde: datos.desde, hasta: datos.hasta };
+
+            torneoSelect.innerHTML = '';
+            const todos = document.createElement('option');
+            todos.value = '';
+            todos.textContent = 'Todos los torneos';
+            torneoSelect.appendChild(todos);
+
+            (datos.paises || []).forEach(grupo => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = grupo.pais;
+
+                (grupo.ligas || []).forEach(liga => {
+                    const opcion = document.createElement('option');
+                    opcion.value = liga.id ? 'liga:' + liga.id : '';
+                    /*
+                     * El número de partidos no es adorno: dice de un vistazo si
+                     * vale la pena entrar en esa liga esta semana.
+                     */
+                    opcion.textContent = liga.nombre + ' (' + liga.partidos + ')';
+                    optgroup.appendChild(opcion);
+                });
+
+                torneoSelect.appendChild(optgroup);
+            });
+
+            anadirOpcionesFijas();
+
+            const cuantasLigas = (datos.paises || [])
+                .reduce((suma, grupo) => suma + (grupo.ligas || []).length, 0);
+
+            rangoTexto.textContent = cuantasLigas
+                ? cuantasLigas + ' torneos con partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.'
+                : 'No hay partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.';
+
+        } catch (error) {
+            console.error('Error cargando torneos:', error);
+            torneoSelect.innerHTML = '';
+            anadirOpcionesFijas();
+            rangoTexto.textContent = 'No se pudieron cargar los torneos.';
+        } finally {
+            torneoSelect.disabled = false;
+        }
+    }
+
+    /** La opción de buscar por texto, que sobrevive a la lista dinámica. */
+    function anadirOpcionesFijas() {
+        if (!torneoSelect.querySelector('option[value=""]')) {
+            const todos = document.createElement('option');
+            todos.value = '';
+            todos.textContent = 'Todos los torneos';
+            torneoSelect.insertBefore(todos, torneoSelect.firstChild);
+        }
+
+        const custom = document.createElement('option');
+        custom.value = 'custom';
+        custom.textContent = 'Buscar por texto';
+        torneoSelect.appendChild(custom);
+    }
 
     function mostrarEstado(mensaje) {
         estadoBusqueda.style.display = 'block';
@@ -367,22 +418,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     buscarButton.addEventListener('click', async () => {
-        const fecha = fechaInput.value;
+        const desde = fechaInput.value || hoyISO();
 
-        if (!fecha) {
-            alert('Selecciona una fecha');
-            return;
-        }
-
-        let filtroLiga = torneoSelect.value;
+        let seleccion = null;
 
         if (torneoSelect.value === 'custom') {
-            filtroLiga = customLeagueNameInput.value.trim();
+            const texto = customLeagueNameInput.value.trim();
 
-            if (!filtroLiga) {
+            if (!texto) {
                 alert('Escribe el texto del torneo que quieres buscar');
                 return;
             }
+
+            seleccion = { texto };
+        } else if (torneoSelect.value.startsWith('liga:')) {
+            seleccion = { ligaId: torneoSelect.value.slice('liga:'.length) };
         }
 
         partidosDisponibles = [];
@@ -390,7 +440,27 @@ document.addEventListener('DOMContentLoaded', () => {
         mostrarEstado('Buscando partidos...');
 
         try {
-            const url = `/api/football/fixtures?date=${encodeURIComponent(fecha)}`;
+            /*
+             * Se pide el rango entero, no un día suelto. Es lo mismo que mira el
+             * desplegable de torneos, y tiene que serlo: si la lista dice que la
+             * liga tiene cuatro partidos esta semana y la búsqueda solo mirara
+             * el lunes, la pantalla se contradiría a sí misma.
+             */
+            const hasta = rangoDeLaBusqueda.hasta || desde;
+
+            let url = '/api/football/fixtures'
+                + '?from=' + encodeURIComponent(rangoDeLaBusqueda.desde || desde)
+                + '&to=' + encodeURIComponent(hasta);
+
+            /*
+             * Con la liga elegida se le pide filtrada al proveedor: viaja menos
+             * y se gasta menos cuota. El filtro de abajo se queda igualmente,
+             * porque el proveedor no siempre respeta el parámetro.
+             */
+            if (seleccion && seleccion.ligaId) {
+                url += '&league=' + encodeURIComponent(seleccion.ligaId);
+            }
+
             const response = await fetch(url);
             const data = await response.json();
 
@@ -399,34 +469,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            let partidos = Array.isArray(data) ? data : [];
+            const partidos = (Array.isArray(data) ? data : [])
+                .filter(partido => partidoCoincideConSeleccion(partido, seleccion));
 
-            if (filtroLiga) {
-                let filtroTorneo;
-
-                if (torneoSelect.value === 'custom') {
-                    filtroTorneo = {
-                        text: filtroLiga
-                    };
-                } else {
-                    filtroTorneo = parseFiltroTorneo(filtroLiga);
-                }
-
-                partidos = partidos.filter(partido =>
-                    partidoCoincideConFiltro(partido, filtroTorneo)
-                );
-            }
-
-
-            partidosDisponibles = partidos;
+            /*
+             * Tope de seguridad. Sin torneo elegido, una semana entera son miles
+             * de partidos, y pintarlos todos deja el navegador inservible. Se
+             * corta y se dice, que es mejor que colgarse en silencio.
+             */
+            const recortado = partidos.length > MAXIMO_PARTIDOS;
+            partidosDisponibles = recortado
+                ? partidos.slice(0, MAXIMO_PARTIDOS)
+                : partidos;
 
             if (!partidosDisponibles.length) {
-                mostrarEstado('No se encontraron partidos para ese torneo en esa fecha.');
+                mostrarEstado('No se encontraron partidos para ese torneo en esas fechas.');
                 renderizarPartidos();
                 return;
             }
 
-            mostrarEstado(`Se encontraron ${partidosDisponibles.length} partidos.`);
+            mostrarEstado(recortado
+                ? 'Se encontraron ' + partidos.length + ' partidos; se muestran los primeros '
+                  + MAXIMO_PARTIDOS + '. Elige un torneo para acotar la búsqueda.'
+                : 'Se encontraron ' + partidosDisponibles.length + ' partidos.');
+
             renderizarPartidos();
 
         } catch (error) {
@@ -739,4 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     renderizarPreliminares();
+
+    if (!fechaInput.value) fechaInput.value = hoyISO();
+    cargarTorneosDisponibles();
 });

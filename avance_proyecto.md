@@ -22,8 +22,8 @@
 ```bash
 git log --oneline -3     # debe empezar por 61f3dae
 git status               # debe estar limpio
-npm test                 # 119/119
-npm run test:e2e         # 48/48
+npm test                 # 129/129
+npm run test:e2e         # 58/58
 ```
 
 **`main` y `origin/main` están a la par.** Los siete commits que quedaron sin
@@ -43,8 +43,8 @@ que van hechas las fases A y B.
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **119** (46 de arquitectura + 73 de integración), ~10 s |
-| Pruebas de navegador | **48** (24 × escritorio y móvil), ~2 min |
+| Pruebas rápidas | **129** (46 de arquitectura + 83 de integración), ~12 s |
+| Pruebas de navegador | **58** (29 × escritorio y móvil), ~2 min |
 | Integración continua | En verde, en cada empujón y cada PR contra `main` |
 | `npm audit --omit=dev` | 0 vulnerabilidades |
 | `server.js` | 5.162 líneas; `src/` tiene 291 en tres módulos |
@@ -114,7 +114,7 @@ Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
 ### Estado de Git
 
 ```
-NUEVO   La prueba de humo que faltaba, y la barra amarilla   ← main = origin/main
+73ca4f7 La prueba de humo que faltaba, y la barra amarilla   ← main = origin/main
 5cca387 Poner al dia el punto de partida y el inventario
 61f3dae La jornada actual pasa a ser la ultima creada
 623a6ee Fase B: una sola respuesta a "cual es la jornada actual"
@@ -161,10 +161,10 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 119 pruebas rápidas (~10 s, sin red, sin tocar la base real)
+npm test                   # las 129 pruebas rápidas (~12 s, sin red, sin tocar la base real)
 npm run test:arquitectura  # solo las 46 de arquitectura
-npm run test:integracion   # solo las 73 de integración
-npm run test:e2e           # las 48 de navegador (~2 min, escritorio y móvil)
+npm run test:integracion   # solo las 83 de integración
+npm run test:e2e           # las 58 de navegador (~2 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -200,10 +200,10 @@ nadie ha vuelto a verlos con datos de verdad desde la Entrada 024.
 |---|---|---|---|
 | ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
-| **3.º** | **C — Buscador de ligas dinámico** | 9 | ✅ Desbloqueada: se buscan **7 días hacia adelante** (decidido el 19-ago). Es lo siguiente |
-| **4.º** | **D — Administración de jornadas unificada** | 3 | ⚠️ **Confirmar que se acepta perder el alta manual** de partidos. Es irreversible en la práctica, y necesita que la Fase C funcione bien primero |
-| **5.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
-| **6.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro. Depende de C |
+| ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030). Se buscan **7 días hacia adelante** |
+| **3.º** | **D — Administración de jornadas unificada** | 3 | ⚠️ **Confirmar que se acepta perder el alta manual** de partidos. Es irreversible en la práctica. La Fase C ya está, así que es lo siguiente |
+| **4.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
+| **5.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro |
 | — | **Aparte 1** | 7 (SQL) | Respondida en §20.8: **no migrar** por ahora. No bloquea nada |
 
 El detalle de cada fase —qué archivos se tocan y cómo se comprueba— está en §20.
@@ -390,6 +390,7 @@ otros dos son las Fases 6 y 5.
 | `validacion.js` | 143 | Validadores de dominio: marcadores, nombres de jornada, partidos, índices |
 | `transacciones.js` | 89 | `enTransaccion` y la detección de bases sin soporte de transacciones |
 | `fechas.js` | 59 | `parseFechaPartidoCostaRica` y `extraerFechaApi`. Costa Rica es UTC−6 todo el año |
+| `ligas.js` | 160 | Fase C: rango de búsqueda, tope de días, competiciones bloqueadas y agrupado por país |
 
 **Dos invariantes para las tajadas siguientes:** lo extraído **se reexporta**
 desde `server.js` —que es la superficie pública que piden las pruebas—, y los
@@ -402,7 +403,7 @@ troceado dejaría de servir.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior a la nueva. Simulación por defecto |
 
-### 2.4 `test/` — 119 pruebas rápidas y 48 de navegador
+### 2.4 `test/` — 129 pruebas rápidas y 58 de navegador
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
@@ -423,6 +424,7 @@ seguir siendo rápida.
 | `inyeccion.spec.js` | 95 | El marcado en nombres se muestra como texto y no se ejecuta (S-04) |
 | `jornadas.spec.js` | 161 | Administración de jornadas y privacidad partido a partido |
 | `jornada-actual.spec.js` | 202 | Fase B: las tres pantallas abren en la misma jornada |
+| `importar-partidos.spec.js` | 110 | Fase C: el desplegable dinámico, las exclusiones y el proveedor caído |
 | `navegacion.spec.js` | 133 | Pulsa **los 23 botones** `data-ir-a` de todas las pantallas y comprueba que ninguna pinta tarjetas de aviso vacías (Entrada 029) |
 | `portada.spec.js` | 83 | Fase A: la tarjeta nueva y que ninguna se estire |
 | `resultados.spec.js` | 237 | Resultados oficiales, tabla general paginada y trivias |
@@ -1943,7 +1945,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 |---|---|---|---|
 | ✅ **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada. **Completada el 18-ago-2026** |
 | ✅ **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez. **Completada el 18-ago-2026** |
-| **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual |
+| ✅ **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual. **Completada el 19-ago-2026** |
 | **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien |
 | **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
 | **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C |
@@ -2084,7 +2086,7 @@ grupos y distancia absoluta. Se retiró al cambiar la decisión; el módulo
 
 ---
 
-### 20.4 Fase C — Buscador de ligas dinámico *(petición 9)*
+### ✅ 20.4 Fase C — Buscador de ligas dinámico *(petición 9)* — COMPLETADA el 19 de agosto de 2026
 
 > Que sea fácil buscar ligas: mexicana, tica, torneos centroamericanos… que el
 > combobox se llene con **las ligas que de verdad tienen partidos ese día**.
@@ -2120,8 +2122,20 @@ exclusiones siguen aplicándose y que un día sin partidos no rompe la pantalla.
 
 **Decisión tomada el 19-ago-2026: se consultan 7 días hacia adelante.** Una
 semana cubre la jornada completa de casi cualquier liga sin disparar el consumo
-del proveedor, y es el rango con el que se arma una jornada normal. No quedan
-decisiones pendientes en esta fase.
+del proveedor, y es el rango con el que se arma una jornada normal.
+
+**Cómo quedó (Entrada 030).** El arreglo de fondo no fue la lista sino **con qué
+se identifica una liga**: el desplegable trae ahora el `league_id` del propio
+proveedor, así que renombrar una competición ya no deja la opción muerta.
+`src/ligas.js` guarda la parte pura —rango, tope de días, exclusiones, agrupado
+por país— y `GET /api/football/ligas-disponibles` la sirve, con caché de diez
+minutos y `requireAdmin`.
+
+Tres cosas que no estaban en el plan y conviene saber: **el filtro de
+exclusiones subió al servidor y ahora se aplica siempre** —antes solo si había
+torneo elegido—; **hay un tope de 300 partidos** en pantalla; y **si el
+proveedor falla el desplegable no se queda vacío**, quedan «Todos los torneos» y
+«Buscar por texto» y un mensaje que dice qué pasó.
 
 ---
 
@@ -5346,6 +5360,163 @@ npm run test:e2e  → 48/48  (46 anteriores + 2 nuevas, escritorio y móvil)
 
 **Pendiente / siguiente paso:** **Fase C — buscador de ligas dinámico**
 (petición 9). Decisión tomada: se buscan **7 días hacia adelante**.
+
+---
+
+### 📌 Entrada 030 — 19 de agosto de 2026 — Fase C: el buscador de ligas deja de ser una lista escrita a mano
+
+**Objetivo:** la petición 9 — que sea fácil buscar ligas, y que el desplegable se
+llene con **las que de verdad tienen partidos**, no con una lista fija.
+
+**Decisión de producto tomada antes de empezar: se buscan 7 días hacia
+adelante**, contando el de hoy. Una semana cubre la jornada completa de casi
+cualquier liga sin disparar el consumo del proveedor, y es el rango con el que
+se arma una jornada normal.
+
+---
+
+#### Lo que había, y por qué no se arreglaba escribiendo más opciones
+
+El desplegable eran unas veinte `<option>` en el HTML, con el país y el nombre
+del torneo incrustados como texto:
+
+```html
+<option value="country=Mexico;league_exact=Liga MX">México - Liga MX</option>
+```
+
+y en el navegador tres funciones que, con eso, buscaban el partido
+**comparando nombres**: `parseFiltroTorneo` troceaba la cadena,
+`partidoCoincideConFiltro` miraba si el nombre de la liga del partido contenía
+el esperado, y `esLigaNoPermitida` descartaba sub-20, reservas y femenil.
+
+Tenía dos defectos, y ninguno se arregla añadiendo opciones:
+
+1. **Si el proveedor renombra una competición, la opción deja de encontrar nada
+   y nadie se entera.** La búsqueda devuelve cero partidos y parece que ese día
+   no se juega. Es el peor tipo de fallo: silencioso y plausible.
+2. **Los torneos que no estaban en la lista no existían.** Los centroamericanos
+   que pedía la petición, entre otros.
+
+---
+
+#### El cambio de fondo: identidad en vez de nombres
+
+Lo que se arregla no es el contenido de la lista, es **con qué se identifica una
+liga**. Ahora el desplegable trae el `league_id` que usa el propio proveedor, y
+comparar identidades no se rompe cuando cambia el rótulo.
+
+| Pieza | Qué hace |
+|---|---|
+| `src/ligas.js` | **Nuevo.** La parte pura: el rango de fechas, el tope de días, la lista de competiciones bloqueadas y el agrupado por país |
+| `GET /api/football/ligas-disponibles` | **Nuevo.** Los países con sus ligas, el id de cada una y cuántos partidos trae |
+| `proveedorDeEventos.porRango` | **Nueva costura.** La única puerta hacia `get_events`, y por donde las pruebas meten un proveedor falso |
+| `mapearEventoDelProveedor` | Extraído de la ruta de partidos: ahora hay dos cosas que leen la misma respuesta y una sola traducción |
+
+El desplegable se rehace **cada vez que cambia la fecha**: las ligas de la semana
+que viene no son las de esta, y ofrecer torneos sin partidos es exactamente lo
+que esta fase vino a quitar.
+
+---
+
+#### Tres decisiones que conviene tener presentes
+
+**El filtro de exclusiones subió al servidor, y ahora se aplica siempre.** La
+lista de palabras bloqueadas —sub-20, reservas, femenil, juvenil— vivía en el
+navegador y solo se aplicaba **si había un torneo elegido**: con «Todos los
+torneos» se colaban igual. Ahora es una sola lista, en `src/ligas.js`, y la usan
+las dos rutas que leen del proveedor. **Es un cambio de comportamiento
+deliberado**, no un efecto secundario: la lista existe precisamente para que una
+quiniela de Primera División no acabe con el partido de la sub-20, que se llama
+casi igual.
+
+**La caché de ligas vive en memoria del proceso, no en Mongo.** La de partidos de
+la Fase 4 sí está en Mongo porque el ahorro **crece con el número de quinielas**:
+cien quinielas siguiendo el mismo partido lo consultan una vez. Ésta la usan solo
+los administradores mientras arman una jornada, así que el ahorro no escala igual
+y no compensa una colección más. Con dos instancias cada una tendrá la suya, y el
+coste es una consulta más cada diez minutos. Se limpia lo caducado al escribir,
+porque si no el mapa crece con cada rango distinto y no lo vacía nadie: una fuga
+lenta pero segura en un proceso que vive semanas.
+
+**Hay un tope de 300 partidos en pantalla.** Sin torneo elegido, una semana entera
+son miles, y pintarlos todos deja el navegador inservible. Se corta y se dice
+cuántos había, que es mejor que colgarse en silencio.
+
+Y una puerta que no estaba en el plan: la ruta nueva lleva **`requireAdmin`**.
+Crear jornadas es cosa de administradores, y sin eso cualquier miembro podría
+gastar la cuota del proveedor recargando la pantalla.
+
+---
+
+#### Qué pasa si el proveedor no responde
+
+El desplegable **no se queda vacío**. Quedan «Todos los torneos» y «Buscar por
+texto» —las dos opciones que no dependen de nadie— y el texto de abajo dice qué
+pasó. Un desplegable vacío y mudo es lo peor que puede encontrarse quien viene a
+armar una jornada: parece que la aplicación está rota y no hay nada que hacer.
+Hay una prueba que lo fija, con la ruta interceptada devolviendo un 500.
+
+---
+
+#### Las pruebas, y un proveedor falso en el arnés de navegador
+
+Diez de integración y cinco de navegador. Las de integración usan la costura
+`porRango`, igual que las de la Fase 4 usan `porId`.
+
+Para las de navegador hizo falta algo nuevo: la aplicación de pruebas arranca con
+una **clave de API de mentira**, así que esta pantalla no podía cargar nada y no
+había nada que probar. `test/e2e/arrancar.js` sustituye ahora `porRango` por una
+lista fija —dos ligas de dos países más una femenil que el servidor debe
+descartar—. Va en el arnés y no en cada prueba porque es propiedad **del
+entorno**: esta aplicación de pruebas no habla con nadie de fuera.
+
+**Comprobado que distinguen:** con `partidoCoincideConSeleccion` devolviendo
+siempre `true`, la prueba de «buscar por una liga trae solo sus partidos» falla.
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/ligas.js` | **Nuevo**, 160 líneas. Rango, tope de días, exclusiones y agrupado por país |
+| `server.js` | `mapearEventoDelProveedor`, `buscarEventosPorRango`, `porRango`, la ruta nueva y su caché; la ruta de partidos filtra lo bloqueado |
+| `public/importar_partidos.html` | Fuera los ~20 torneos escritos a mano; «Desde» y el texto del rango |
+| `private/js/importar_partidos.js` | Carga las ligas, filtra por id en vez de por nombre, busca el rango entero, tope de 300 |
+| `test/integracion.test.js` | 10 pruebas nuevas |
+| `test/e2e/importar-partidos.spec.js` | **Nuevo.** 5 pruebas de la pantalla |
+| `test/e2e/arrancar.js` | Proveedor de rango falso y determinista |
+| `avance_proyecto.md` | §20.4 y esta entrada |
+
+**Verificación:**
+
+```
+npm test          → 129/129
+npm run test:e2e  → 58/58
+```
+
+**Hallazgos nuevos:**
+
+- **La caché por rango es global a la aplicación, no por quiniela**, y está bien
+  que lo sea: una liga tiene partidos o no los tiene, y eso no depende de quién
+  pregunte. Mordió al escribir las pruebas —una reutilizó el rango de otra y
+  recibió lo que aquélla había dejado guardado—, así que cada prueba usa su
+  propia fecha. Vale la pena recordarlo antes de perseguir un fantasma.
+- **Un `optgroup` nunca es «visible» para Playwright.** Está en el DOM, pero
+  dentro de un desplegable cerrado no se puede ver, así que `waitFor()` espera
+  para siempre. Se comprueba con `toHaveCount`, no con visibilidad.
+- **Unirse a una quiniela deja la membresía pendiente** y devuelve 202, no 200:
+  hace falta que un administrador la apruebe antes de poder seleccionarla. Una
+  prueba que lo ignore recibe 409 «Debes seleccionar una quiniela activa» y
+  parece un fallo de permisos.
+
+**Pendiente / siguiente paso:** **Fase D — administración de jornadas unificada**
+(petición 3). ⚠️ Antes de empezar hay que **confirmar que se acepta perder el
+alta manual de partidos**: es irreversible en la práctica, porque significa que
+no se podrá crear una jornada con un partido que el API no tenga —un amistoso, un
+torneo local—. Con el buscador de esta fase el riesgo baja mucho, pero es
+decisión de producto y conviene decirlo en voz alta antes y no descubrirlo un
+domingo.
 
 ---
 
