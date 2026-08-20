@@ -401,7 +401,12 @@ test('toda edición de una jornada invalida o recalcula sus puntos materializado
     /\bJornada\.(findOneAndUpdate|findOneAndDelete)\(/g
   ) || [];
 
-  assert.equal(escrituras.length, 3,
+  /*
+   * Dos: POST /api/jornadas y el borrado. Eran tres hasta la Fase D, cuando se
+   * retiró /api/jornadas/importar-api -que era la primera con una traducción de
+   * nombres delante, y esa traducción bajó a `normalizarPartido`-.
+   */
+  assert.equal(escrituras.length, 2,
     'Cambió el número de escrituras directas de Jornada; comprueba su invalidación');
 
   const edicionesPorDocumento = serverSinComentarios.match(/await doc\.save\(\);/g) || [];
@@ -737,7 +742,14 @@ test('S-04: ninguna plantilla que produzca HTML con datos queda sin etiquetar', 
     }
   }
 
-  assert.ok(total >= 60, `Se esperaban al menos 60 plantillas de riesgo, se hallaron ${total}`);
+  /*
+   * El número es un SUELO, no un objetivo: está para que el rastreador no pase
+   * en verde por no encontrar nada -si alguien rompe `plantillasDeRiesgo`, el
+   * recuento cae a cero y esto lo caza-. Baja legítimamente cuando se retira una
+   * pantalla: en la Fase D desapareció importar_partidos.js y con él sus
+   * plantillas. Lo que de verdad se comprueba es la lista de abajo.
+   */
+  assert.ok(total >= 50, `Se esperaban al menos 50 plantillas de riesgo, se hallaron ${total}`);
   assert.deepEqual(
     sinEtiquetar,
     [],

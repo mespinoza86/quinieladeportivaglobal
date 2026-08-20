@@ -83,6 +83,24 @@ function normalizarPartido(valor, indice = 0) {
 
   const texto = campo => (valor[campo] === null || valor[campo] === undefined ? '' : String(valor[campo]));
 
+  /*
+   * El buscador del API llama `fecha` y `estado` a lo que la jornada guarda
+   * como `apiDate` y `apiStatus`. La traducción vivía en una ruta aparte
+   * -/api/jornadas/importar-api-, que existía SOLO para eso y era por lo demás
+   * idéntica a POST /api/jornadas. Al unificar las pantallas en la Fase D se
+   * retiró esa ruta y el alias bajó aquí, que es donde vive la forma canónica
+   * de un partido: quien normaliza es quien debe saber los nombres que acepta.
+   */
+  const primero = (...campos) => {
+    for (const campo of campos) {
+      const valorCampo = valor[campo];
+      if (valorCampo !== null && valorCampo !== undefined && valorCampo !== '') {
+        return String(valorCampo);
+      }
+    }
+    return '';
+  };
+
   return {
     equipo1,
     equipo2,
@@ -91,8 +109,8 @@ function normalizarPartido(valor, indice = 0) {
     comodin: Boolean(valor.comodin),
     apiFixtureId: texto('apiFixtureId'),
     apiLeagueId: texto('apiLeagueId'),
-    apiDate: texto('apiDate'),
-    apiStatus: texto('apiStatus')
+    apiDate: primero('apiDate', 'fecha'),
+    apiStatus: primero('apiStatus', 'estado')
   };
 }
 

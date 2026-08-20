@@ -23,7 +23,7 @@ async function crearJornada(page, nombre, partidos) {
   expect(resultado.ok, `No se creó la jornada: ${JSON.stringify(resultado.cuerpo)}`).toBe(true);
 }
 
-test('crear una jornada desde la pantalla ya no pide fecha de cierre', async ({ page }) => {
+test('crear una jornada: los partidos salen del API y no se piden a mano', async ({ page }) => {
   const datos = await registrarse(page, 'jorn');
   await crearQuiniela(page, 'Quiniela Jornadas');
   await activarAdminMode(page, datos.password);
@@ -38,18 +38,95 @@ test('crear una jornada desde la pantalla ya no pide fecha de cierre', async ({ 
   await expect(page.locator('#horaCierreInput')).toHaveCount(0);
   await expect(page.locator('#actualizarFechaCierreButton')).toHaveCount(0);
 
-  await page.locator('#equipo1Input').fill('Alfa');
-  await page.locator('#equipo2Input').fill('Beta');
-  await page.locator('#addPartidoButton').click();
+  /*
+   * Fase D: tampoco se escriben los equipos a mano. Se decidió el 19-ago-2026
+   * que los partidos salen SOLO del API, y con ello se fueron las dos cajas de
+   * texto y su autocompletado.
+   */
+  await expect(page.locator('#equipo1Input')).toHaveCount(0);
+  await expect(page.locator('#equipo2Input')).toHaveCount(0);
+  await expect(page.locator('#suggestions1')).toHaveCount(0);
 
-  // El nombre se pide con un prompt del navegador.
+  // Se busca en el API y se elige de la lista.
+  await expect(page.locator('#torneoSelect optgroup')).toHaveCount(2, { timeout: 10_000 });
+  await page.locator('#torneoSelect').selectOption({ label: 'Primera Division (1)' });
+  await page.locator('#buscarPartidosButton').click();
+
+  await expect(page.locator('#partidosApiContainer .match-card')).toHaveCount(1, { timeout: 10_000 });
+  await page.locator('#partidosApiContainer .partidoCheckbox').first().check();
+  await page.getByRole('button', { name: 'Agregar seleccionados a la jornada' }).click();
+
   const nombre = `Jornada E2E ${Date.now().toString(36)}`;
-  page.once('dialog', dialogo => dialogo.accept(nombre));
-  await page.locator('#finalizarJornadaButton').click();
+  await page.locator('#nombreJornadaInput').fill(nombre);
+  await page.locator('#guardarJornadaButton').click();
+
+  await expect(page.locator('#mensajeJornada')).toContainText('guardada', { timeout: 10_000 });
 
   await page.goto('/ver_jornadas.html');
   await expect(page.locator('#jornadaSelect')).toContainText(nombre);
-  await expect(page.locator('#partidosJornadaList')).toContainText('Alfa');
+  await expect(page.locator('#partidosJornadaList')).toContainText('Saprissa');
+});
+
+test('una jornada existente se abre, se le quita un partido y se elimina entera', async ({ page }) => {
+  const datos = await registrarse(page, 'jornmod');
+  await crearQuiniela(page, 'Quiniela Modificar');
+  await activarAdminMode(page, datos.password);
+
+  const nombre = `Jornada Mod ${Date.now().toString(36)}`;
+  await page.goto('/jornadas.html');
+  await crearJornada(page, nombre, [
+    { equipo1: 'Uno', equipo2: 'Dos', apiDate: '2099-01-01 15:00' },
+    { equipo1: 'Tres', equipo2: 'Cuatro', apiDate: '2099-01-02 15:00' }
+  ]);
+
+  /*
+   * La misma pantalla sirve para ver y modificar: elegir una jornada del
+   * desplegable carga sus partidos. Antes esto eran dos secciones distintas con
+   * dos desplegables, y una tercera pantalla para traer partidos del API.
+   */
+  await page.reload();
+  await page.locator('#jornadaSelect').selectOption(nombre);
+
+  await expect(page.locator('#partidosJornadaContainer .match-card')).toHaveCount(2, { timeout: 10_000 });
+  await expect(page.locator('#partidosJornadaContainer')).toContainText('Tres');
+
+  await page.locator('#partidosJornadaContainer [data-quitar]').last().click();
+  await expect(page.locator('#partidosJornadaContainer .match-card')).toHaveCount(1);
+
+  await page.locator('#guardarJornadaButton').click();
+  await expect(page.locator('#mensajeJornada')).toContainText('guardada', { timeout: 10_000 });
+
+  // Lo quitado se fue de verdad, no solo de la pantalla.
+  const tras = await page.evaluate(async jornada => {
+    const respuesta = await fetch(`/api/jornadas/${encodeURIComponent(jornada)}`);
+    return respuesta.json();
+  }, nombre);
+  expect(tras.partidos.length).toBe(1);
+  expect(tras.partidos[0].equipo1).toBe('Uno');
+
+  // Y la jornada entera se elimina desde la misma pantalla, con confirmación.
+  page.once('dialog', dialogo => dialogo.accept());
+  await page.locator('#eliminarJornadaButton').click();
+  await expect(page.locator('#mensajeJornada')).toContainText('eliminada', { timeout: 10_000 });
+
+  await expect(page.locator('#jornadaSelect')).not.toContainText(nombre);
+});
+
+test('la pantalla de importar desapareció y nadie enlaza a ella', async ({ page }) => {
+  const datos = await registrarse(page, 'jornimp');
+  await crearQuiniela(page, 'Quiniela Sin Importar');
+  await activarAdminMode(page, datos.password);
+
+  /*
+   * Fase D: importar_partidos.html se retiró y su buscador vive dentro de
+   * jornadas.html. Un enlace huérfano no daría error visible —lleva a una
+   * pantalla en blanco— así que se comprueba aquí.
+   */
+  const respuesta = await page.request.get('/importar_partidos.html');
+  expect(respuesta.status()).toBe(404);
+
+  await page.goto('/adminmode.html');
+  await expect(page.locator('a[href*="importar_partidos"]')).toHaveCount(0);
 });
 
 test('una jornada sin nombre o sin partidos se rechaza con su motivo', async ({ page }) => {

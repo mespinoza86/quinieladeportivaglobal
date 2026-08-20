@@ -1,384 +1,422 @@
-document.addEventListener('DOMContentLoaded', async () => {
-    const equipo1Input = document.getElementById('equipo1Input');
-    const equipo2Input = document.getElementById('equipo2Input');
-    const comodinCheckbox = document.getElementById('comodinCheckbox');
-    const addPartidoButton = document.getElementById('addPartidoButton');
-    const finalizarJornadaButton = document.getElementById('finalizarJornadaButton');
+/*
+ * Administración de jornadas — la única pantalla (Fase D, petición 3).
+ *
+ * Antes esto eran dos pantallas que hacían lo mismo por caminos distintos:
+ * jornadas.html daba de alta partidos a mano, con autocompletado de equipos, e
+ * importar_partidos.html los traía del API. Cada una llevaba su propia copia de
+ * la lista de torneos, de la tabla de traducciones de equipos y del filtro de
+ * competiciones bloqueadas — y las copias ya habían empezado a divergir en la
+ * Fase C, que solo arregló una de las dos.
+ *
+ * Decisión de producto del 19-ago-2026: **los partidos salen solo del API**. Se
+ * acepta a sabiendas que un partido que el proveedor no cubra no puede entrar en
+ * una quiniela. A cambio desaparece el alta manual, el autocompletado de equipos
+ * y la pantalla de importar.
+ *
+ * La pantalla tiene tres partes, en el orden en que se usan:
+ *
+ *   1. Qué jornada —una existente, o una nueva—.
+ *   2. Buscar partidos en el API y agregarlos.
+ *   3. Revisar lo que va a quedar guardado, y guardar o eliminar.
+ */
+document.addEventListener('DOMContentLoaded', () => {
+    'use strict';
 
     const jornadaSelect = document.getElementById('jornadaSelect');
-    const partidosJornadaList = document.getElementById('partidosJornadaList');
+    const nombreNuevaBox = document.getElementById('nombreNuevaBox');
+    const nombreJornadaInput = document.getElementById('nombreJornadaInput');
 
-    const modificarJornadaSelect = document.getElementById('modificarJornadaSelect');
-    const modificarJornadaControls = document.getElementById('modificarJornadaControls');
-    const partidosModificarList = document.getElementById('partidosModificarList');
+    const fechaInput = document.getElementById('fechaInput');
+    const torneoSelect = document.getElementById('torneoSelect');
+    const customLeagueBox = document.getElementById('customLeagueBox');
+    const customLeagueNameInput = document.getElementById('customLeagueNameInput');
+    const buscarPartidosButton = document.getElementById('buscarPartidosButton');
+    const rangoTexto = document.getElementById('rangoTexto');
+    const estadoBusqueda = document.getElementById('estadoBusqueda');
+    const partidosApiContainer = document.getElementById('partidosApiContainer');
 
-    const modificarEquipo1Input = document.getElementById('modificarEquipo1Input');
-    const modificarEquipo2Input = document.getElementById('modificarEquipo2Input');
-    const modificarComodinCheckbox = document.getElementById('modificarComodinSelect');
-    const agregarPartidoButton = document.getElementById('agregarPartidoButton');
-
-    const eliminarPartidosButton = document.getElementById('eliminarPartidosButton');
+    const partidosJornadaContainer = document.getElementById('partidosJornadaContainer');
+    const mensajeJornada = document.getElementById('mensajeJornada');
+    const guardarJornadaButton = document.getElementById('guardarJornadaButton');
     const eliminarJornadaButton = document.getElementById('eliminarJornadaButton');
 
-    const buscarApiFechaInput = document.getElementById('buscarApiFechaInput');
-const buscarApiTextoInput = document.getElementById('buscarApiTextoInput');
-const buscarPartidosApiButton = document.getElementById('buscarPartidosApiButton');
-const partidosApiModificarContainer = document.getElementById('partidosApiModificarContainer');
-const buscarApiTorneoSelect = document.getElementById('buscarApiTorneoSelect');
-const buscarApiCustomBox = document.getElementById('buscarApiCustomBox');
+    /*
+     * Siete días contando el de hoy, igual que en la Fase C. El servidor tiene
+     * el mismo valor por defecto y su propio tope.
+     */
+    const DIAS_BUSQUEDA = 7;
 
-let partidosApiDisponibles = [];
+    /* Cuántos partidos se pintan como mucho. Ver el tope en la búsqueda. */
+    const MAXIMO_PARTIDOS = 300;
 
+    const NUEVA = '__nueva__';
 
-    let currentPartidos = [];
-    let jornadas = new Map();
-    let jornadaActualParaModificar = '';
-    let equipos = [];
+    let partidosEncontrados = [];
+    let partidosDeLaJornada = [];
+    let rangoDeLaBusqueda = { desde: '', hasta: '' };
 
-    function normalizarListadoJornadas(data) {
-        const map = new Map();
+    /* ================= Utilidades ================= */
 
-        if (!Array.isArray(data)) return map;
+    function normalizarTexto(texto) {
+        return String(texto || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+    }
 
-        if (data.length > 0 && Array.isArray(data[0])) {
-            data.forEach(([nombre, partidos]) => {
-                map.set(nombre, { partidos: partidos || [] });
+    /** El día de hoy en `YYYY-MM-DD`, que es lo que espera un `input[type=date]`. */
+    function hoyISO() {
+        const ahora = new Date();
+        const desfase = ahora.getTimezoneOffset() * 60000;
+        return new Date(ahora.getTime() - desfase).toISOString().slice(0, 10);
+    }
+
+    function fechaLegible(valor) {
+        if (!valor) return 'Sin fecha';
+        const fecha = new Date(String(valor).replace(' ', 'T'));
+        if (Number.isNaN(fecha.getTime())) return String(valor);
+        return fecha.toLocaleString('es-CR', {
+            timeZone: 'America/Costa_Rica',
+            dateStyle: 'short',
+            timeStyle: 'short'
+        });
+    }
+
+    function avisar(texto, esError = false) {
+        mensajeJornada.textContent = texto;
+        mensajeJornada.classList.toggle('error', Boolean(esError));
+    }
+
+    function mostrarEstado(mensaje) {
+        estadoBusqueda.style.display = mensaje ? 'block' : 'none';
+        estadoBusqueda.textContent = mensaje || '';
+    }
+
+    /**
+     * La identidad de un partido dentro de la jornada.
+     *
+     * El `apiFixtureId` cuando lo hay; si no, los dos equipos. Es lo que evita
+     * agregar dos veces el mismo partido, y lo que hace que una jornada ya
+     * guardada —cuyos partidos vienen de la base, no del buscador— se compare
+     * bien con lo que se acaba de encontrar.
+     */
+    function claveDePartido(partido) {
+        if (partido.apiFixtureId) return 'api:' + partido.apiFixtureId;
+        return 'eq:' + normalizarTexto(partido.equipo1) + '|' + normalizarTexto(partido.equipo2);
+    }
+
+    function yaEstaEnLaJornada(partido) {
+        const clave = claveDePartido(partido);
+        return partidosDeLaJornada.some(p => claveDePartido(p) === clave);
+    }
+
+    /* ================= Qué jornada ================= */
+
+    function esJornadaNueva() {
+        return jornadaSelect.value === NUEVA;
+    }
+
+    function nombreElegido() {
+        return esJornadaNueva()
+            ? nombreJornadaInput.value.trim()
+            : jornadaSelect.value;
+    }
+
+    async function cargarJornadas(seleccionar) {
+        try {
+            const respuesta = await fetch('/api/jornadas');
+            const datos = await respuesta.json();
+
+            /*
+             * La ruta devuelve pares [nombre, partidos]. Se acepta también la
+             * forma de objeto por si algún día cambia: la pantalla no debería
+             * quedarse en blanco por eso.
+             */
+            const nombres = (Array.isArray(datos) ? datos : [])
+                .map(item => (Array.isArray(item) ? item[0] : item?.nombre))
+                .filter(Boolean);
+
+            jornadaSelect.innerHTML = '';
+
+            const nueva = document.createElement('option');
+            nueva.value = NUEVA;
+            nueva.textContent = '➕ Nueva jornada';
+            jornadaSelect.appendChild(nueva);
+
+            nombres.forEach(nombre => {
+                const opcion = document.createElement('option');
+                opcion.value = nombre;
+                opcion.textContent = nombre;
+                jornadaSelect.appendChild(opcion);
             });
-        } else {
-            data.forEach(j => {
-                if (!j?.nombre) return;
-                map.set(j.nombre, { partidos: j.partidos || [] });
-            });
+
+            jornadaSelect.value = seleccionar && nombres.includes(seleccionar)
+                ? seleccionar
+                : NUEVA;
+
+            await alCambiarDeJornada();
+        } catch (error) {
+            console.error('Error cargando jornadas:', error);
+            avisar('No se pudieron cargar las jornadas.', true);
         }
-
-        return map;
     }
 
+    async function alCambiarDeJornada() {
+        const nueva = esJornadaNueva();
 
-function normalizarTexto(texto) {
-    return (texto || '')
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
-}
+        nombreNuevaBox.style.display = nueva ? 'block' : 'none';
+        eliminarJornadaButton.style.display = nueva ? 'none' : 'block';
 
-    function traducirEquipo(nombre) {
-        const traducciones = {
-    // CONCACAF
-    "Costa Rica": "Costa Rica",
-    "Mexico": "México",
-    "Canada": "Canadá",
-    "United States": "Estados Unidos",
-    "USA": "Estados Unidos",
-    "Panama": "Panamá",
-    "Jamaica": "Jamaica",
-    "Honduras": "Honduras",
-    "El Salvador": "El Salvador",
-    "Guatemala": "Guatemala",
-    "Nicaragua": "Nicaragua",
-    "Belize": "Belice",
-    "Cuba": "Cuba",
-    "Haiti": "Haití",
-    "Trinidad & Tobago": "Trinidad y Tobago",
-    "Dominican Republic": "República Dominicana",
-    "Puerto Rico": "Puerto Rico",
-    "Curacao": "Curazao",
-    "Aruba": "Aruba",
-    "Suriname": "Surinam",
-    "Guyana": "Guyana",
+        /*
+         * OJO: aquí NO se limpia el aviso. Esta función también se llama al
+         * recargar la lista después de guardar o eliminar, y borrar el mensaje
+         * ahí se llevaba por delante el «jornada guardada» un instante después
+         * de escribirlo. Limpiar es respuesta a que el usuario cambie de
+         * jornada, así que se hace en el manejador del `change`.
+         */
 
-    // CONMEBOL
-    "Argentina": "Argentina",
-    "Brazil": "Brasil",
-    "Uruguay": "Uruguay",
-    "Paraguay": "Paraguay",
-    "Chile": "Chile",
-    "Bolivia": "Bolivia",
-    "Peru": "Perú",
-    "Colombia": "Colombia",
-    "Ecuador": "Ecuador",
-    "Venezuela": "Venezuela",
-
-    // UEFA
-    "Spain": "España",
-    "Portugal": "Portugal",
-    "France": "Francia",
-    "Germany": "Alemania",
-    "Italy": "Italia",
-    "England": "Inglaterra",
-    "Scotland": "Escocia",
-    "Wales": "Gales",
-    "Northern Ireland": "Irlanda del Norte",
-    "Ireland": "Irlanda",
-    "Netherlands": "Países Bajos",
-    "Belgium": "Bélgica",
-    "Switzerland": "Suiza",
-    "Austria": "Austria",
-    "Poland": "Polonia",
-    "Ukraine": "Ucrania",
-    "Czech Republic": "República Checa",
-    "Slovakia": "Eslovaquia",
-    "Slovenia": "Eslovenia",
-    "Croatia": "Croacia",
-    "Bosnia and Herzegovina": "Bosnia y Herzegovina",
-    "Serbia": "Serbia",
-    "Montenegro": "Montenegro",
-    "North Macedonia": "Macedonia del Norte",
-    "Albania": "Albania",
-    "Kosovo": "Kosovo",
-    "Romania": "Rumanía",
-    "Bulgaria": "Bulgaria",
-    "Hungary": "Hungría",
-    "Turkey": "Turquía",
-    "Iceland": "Islandia",
-    "Norway": "Noruega",
-    "Sweden": "Suecia",
-    "Finland": "Finlandia",
-    "Denmark": "Dinamarca",
-    "Estonia": "Estonia",
-    "Latvia": "Letonia",
-    "Lithuania": "Lituania",
-    "Luxembourg": "Luxemburgo",
-    "Georgia": "Georgia",
-    "Armenia": "Armenia",
-    "Azerbaijan": "Azerbaiyán",
-    "Belarus": "Bielorrusia",
-    "Moldova": "Moldavia",
-
-            // AFC
-            "Japan": "Japón",
-            "South Korea": "Corea del Sur",
-            "North Korea": "Corea del Norte",
-            "China": "China",
-            "Chinese Taipei": "Taipéi Chino",
-            "Hong Kong": "Hong Kong",
-            "Mongolia": "Mongolia",
-            "Australia": "Australia",
-            "New Zealand": "Nueva Zelanda",
-            "Saudi Arabia": "Arabia Saudita",
-            "Qatar": "Catar",
-            "United Arab Emirates": "Emiratos Árabes Unidos",
-            "Bahrain": "Baréin",
-            "Kuwait": "Kuwait",
-            "Oman": "Omán",
-            "Yemen": "Yemen",
-            "Jordan": "Jordania",
-            "Iraq": "Irak",
-            "Iran": "Irán",
-            "Syria": "Siria",
-            "Lebanon": "Líbano",
-            "Palestine": "Palestina",
-            "India": "India",
-            "Pakistan": "Pakistán",
-            "Bangladesh": "Bangladés",
-            "Thailand": "Tailandia",
-            "Vietnam": "Vietnam",
-            "Indonesia": "Indonesia",
-            "Malaysia": "Malasia",
-            "Singapore": "Singapur",
-            "Philippines": "Filipinas",        
-            "Uzbekistan": "Uzbekistán",
-            "Kazakhstan": "Kazajistán",
-            "Kyrgyzstan": "Kirguistán",
-            "Tajikistan": "Tayikistán",
-            "Turkmenistan": "Turkmenistán",
-            "Afghanistan": "Afganistán",
-
-            // CAF
-            "Morocco": "Marruecos",
-            "Algeria": "Argelia",
-            "Tunisia": "Túnez",
-            "Egypt": "Egipto",
-            "Libya": "Libia",
-            "Sudan": "Sudán",
-            "Nigeria": "Nigeria",
-            "Ghana": "Ghana",
-            "Cameroon": "Camerún",
-            "Senegal": "Senegal",
-            "Ivory Coast": "Costa de Marfil",
-            "Mali": "Malí",
-            "Burkina Faso": "Burkina Faso",
-            "Guinea": "Guinea",
-            "Benin": "Benín",
-            "Togo": "Togo",
-            "Uganda": "Uganda",
-            "Kenya": "Kenia",
-            "Tanzania": "Tanzania",
-            "South Africa": "Sudáfrica",
-            "Zimbabwe": "Zimbabue",
-            "Zambia": "Zambia",
-            "Mozambique": "Mozambique",
-            "Angola": "Angola",
-            "Cape Verde": "Cabo Verde",
-            "Mauritania": "Mauritania",
-
-    // OFC
-            "Fiji": "Fiyi",
-            "Samoa": "Samoa",
-            "Tahiti": "Tahití",
-            "Vanuatu": "Vanuatu",
-            "Solomon Islands": "Islas Salomón",
-            "Papua New Guinea": "Papúa Nueva Guinea",
-            "New Caledonia": "Nueva Caledonia",
-
-                    
-            "South Korea": "Corea del Sur",
-            "North Korea": "Corea del Norte",
-            "Saudi Arabia": "Arabia Saudita",
-            "Japan": "Japón",
-            "Iceland": "Islandia",
-            "Norway": "Noruega",
-            "Sweden": "Suecia",
-            "Germany": "Alemania",
-            "Finland": "Finlandia",
-            "Canada": "Canadá",
-            "Uzbekistan": "Uzbekistán",
-            "United States": "Estados Unidos",
-            "USA": "Estados Unidos",
-            "Mexico": "México",
-            "Brazil": "Brasil",
-            "Panama": "Panamá",
-            "Cape Verde": "Cabo Verde",
-            "Czech Republic": "República Checa",
-            "Switzerland": "Suiza",
-            "Ivory Coast": "Costa de Marfil",
-            "North Macedonia": "Macedonia del Norte",
-            "Bosnia and Herzegovina": "Bosnia y Herzegovina",
-            "Trinidad & Tobago": "Trinidad y Tobago",
-            "Dominican Republic": "República Dominicana",
-            "Netherlands": "Países Bajos",
-            "England": "Inglaterra",
-            "Wales": "Gales",
-            "Scotland": "Escocia",
-            "Northern Ireland": "Irlanda del Norte",
-            "Ireland": "Irlanda",
-            "Turkey": "Turquía",
-            "Morocco": "Marruecos",
-            "Egypt": "Egipto",
-            "Poland": "Polonia",
-            "Ukraine": "Ucrania",
-            "Jordan": "Jordania",
-            "Australia": "Australia",
-            "Slovakia": "Eslovaquia",
-            "Bulgaria": "Bulgaria",
-            "Montenegro": "Montenegro",
-            "Serbia": "Serbia",
-            "Kosovo": "Kosovo",
-            "Senegal": "Senegal",
-            "Nigeria": "Nigeria",
-            "Jamaica": "Jamaica",
-            "Colombia": "Colombia",
-            "Costa Rica": "Costa Rica",
-            "Ecuador": "Ecuador",
-            "Brazil": "Brasil",
-            "Saudi Arabia": "Arabia Saudita",
-            "South Korea": "Corea del Sur",
-            "Trinidad & Tobago": "Trinidad y Tobago",
-            "Switzerland": "Suiza",
-            "Cape Verde": "Cabo Verde",
-            "North Macedonia": "Macedonia del Norte",
-            "Hungary": "Hungría",
-            "Bangladesh": "Bangladés",
-            "Moldova": "Moldavia",
-            "Georgia": "Georgia",
-            "Angola": "Angola",
-            "Botswana": "Botsuana",
-            "Belarus": "Bielorrusia",
-            "Syria": "Siria",
-            "Indonesia": "Indonesia",
-            "Oman": "Omán",
-            "Bahrain": "Baréin",
-            "San Marino": "San Marino"
-        };
-
-        return traducciones[nombre] || nombre;
-    }
-
-
-
-function partidoCoincideBusqueda(partido, texto) {
-    if (!texto) return true;
-
-    const q = normalizarTexto(texto);
-
-    const base = normalizarTexto(`
-        ${partido.equipo1}
-        ${partido.equipo2}
-        ${partido.liga}
-        ${partido.pais}
-    `);
-
-    return base.includes(q);
-}
-
-async function buscarPartidosApiParaModificar() {
-    const fecha = buscarApiFechaInput.value;
-
-    let filtroTexto = '';
-let filtroTorneo = {};
-
-if (buscarApiTorneoSelect.value === 'custom') {
-    filtroTexto = buscarApiTextoInput.value.trim();
-} else {
-    filtroTorneo = parseFiltroTorneo(buscarApiTorneoSelect.value);
-}
-
-
-    if (!jornadaActualParaModificar) {
-        alert('Seleccione una jornada para modificar.');
-        return;
-    }
-
-    if (!fecha) {
-        alert('Seleccione una fecha.');
-        return;
-    }
-
-    partidosApiModificarContainer.innerHTML = '<div class="resultados-mensaje">Buscando partidos...</div>';
-
-    try {
-        const response = await fetch(`/api/football/fixtures?date=${encodeURIComponent(fecha)}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-            partidosApiModificarContainer.innerHTML = html`<div class="resultados-mensaje">${data.error || 'Error buscando partidos.'}</div>`;
+        if (nueva) {
+            partidosDeLaJornada = [];
+            nombreJornadaInput.value = '';
+            renderizarJornada();
+            renderizarEncontrados();
             return;
         }
 
-        partidosApiDisponibles = Array.isArray(data)
-    ? data
-        .filter(p => partidoCoincideConFiltro(p, filtroTorneo))
-        .filter(p => partidoCoincideBusqueda(p, filtroTexto))
-    : [];
+        try {
+            const respuesta = await fetch('/api/jornadas/' + encodeURIComponent(jornadaSelect.value));
+            const datos = await respuesta.json();
+            partidosDeLaJornada = Array.isArray(datos?.partidos) ? datos.partidos : [];
+        } catch (error) {
+            console.error('Error cargando la jornada:', error);
+            partidosDeLaJornada = [];
+            avisar('No se pudieron cargar los partidos de la jornada.', true);
+        }
 
-
-        renderizarPartidosApiModificar();
-
-    } catch (error) {
-        console.error('Error buscando partidos API:', error);
-        partidosApiModificarContainer.innerHTML = '<div class="resultados-mensaje">Error buscando partidos.</div>';
-    }
-}
-
-function renderizarPartidosApiModificar() {
-    if (!partidosApiDisponibles.length) {
-        partidosApiModificarContainer.innerHTML = '<div class="resultados-mensaje">No se encontraron partidos.</div>';
-        return;
+        renderizarJornada();
+        renderizarEncontrados();
     }
 
-    partidosApiModificarContainer.innerHTML = partidosApiDisponibles.map((partido, index) => {
-        const fechaLocal = partido.fecha
-            ? new Date(partido.fecha).toLocaleString('es-CR', {
-                timeZone: 'America/Costa_Rica',
-                dateStyle: 'short',
-                timeStyle: 'short'
-            })
-            : 'Sin fecha';
+    /* ================= Buscar partidos ================= */
 
-        return html`
-            <div class="match-card">
+    /** La opción de buscar por texto, que sobrevive a la lista dinámica. */
+    function anadirOpcionesFijas() {
+        if (!torneoSelect.querySelector('option[value=""]')) {
+            const todos = document.createElement('option');
+            todos.value = '';
+            todos.textContent = 'Todos los torneos';
+            torneoSelect.insertBefore(todos, torneoSelect.firstChild);
+        }
+
+        const custom = document.createElement('option');
+        custom.value = 'custom';
+        custom.textContent = 'Buscar por texto';
+        torneoSelect.appendChild(custom);
+    }
+
+    /**
+     * Llena el desplegable con las ligas que tienen partidos en el rango.
+     *
+     * Si falla, el desplegable NO se queda vacío: se deja la opción de buscar
+     * por texto y se dice qué pasó. Un desplegable vacío y mudo es lo peor que
+     * puede encontrarse quien viene a armar una jornada.
+     */
+    async function cargarTorneosDisponibles() {
+        const desde = fechaInput.value || hoyISO();
+
+        torneoSelect.disabled = true;
+        torneoSelect.innerHTML = '<option value="">Cargando torneos…</option>';
+
+        try {
+            const respuesta = await fetch(
+                '/api/football/ligas-disponibles?dias=' + DIAS_BUSQUEDA +
+                '&desde=' + encodeURIComponent(desde)
+            );
+            const datos = await respuesta.json();
+
+            if (!respuesta.ok) {
+                torneoSelect.innerHTML = '';
+                anadirOpcionesFijas();
+                rangoTexto.textContent = datos.error || 'No se pudieron cargar los torneos.';
+                return;
+            }
+
+            rangoDeLaBusqueda = { desde: datos.desde, hasta: datos.hasta };
+
+            torneoSelect.innerHTML = '';
+            const todos = document.createElement('option');
+            todos.value = '';
+            todos.textContent = 'Todos los torneos';
+            torneoSelect.appendChild(todos);
+
+            (datos.paises || []).forEach(grupo => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = grupo.pais;
+
+                (grupo.ligas || []).forEach(liga => {
+                    const opcion = document.createElement('option');
+                    opcion.value = liga.id ? 'liga:' + liga.id : '';
+                    /*
+                     * El número de partidos no es adorno: dice de un vistazo si
+                     * vale la pena entrar en esa liga esta semana.
+                     */
+                    opcion.textContent = liga.nombre + ' (' + liga.partidos + ')';
+                    optgroup.appendChild(opcion);
+                });
+
+                torneoSelect.appendChild(optgroup);
+            });
+
+            anadirOpcionesFijas();
+
+            const cuantasLigas = (datos.paises || [])
+                .reduce((suma, grupo) => suma + (grupo.ligas || []).length, 0);
+
+            rangoTexto.textContent = cuantasLigas
+                ? cuantasLigas + ' torneos con partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.'
+                : 'No hay partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.';
+
+        } catch (error) {
+            console.error('Error cargando torneos:', error);
+            torneoSelect.innerHTML = '';
+            anadirOpcionesFijas();
+            rangoTexto.textContent = 'No se pudieron cargar los torneos.';
+        } finally {
+            torneoSelect.disabled = false;
+        }
+    }
+
+    /*
+     * Se compara por ID de liga, no por nombre. El nombre lo puede cambiar el
+     * proveedor cuando quiera, y entonces la opción deja de encontrar nada sin
+     * decir por qué. Ver la Fase C.
+     */
+    function partidoCoincideConSeleccion(partido, seleccion) {
+        if (!seleccion) return true;
+
+        if (seleccion.ligaId) {
+            return String(partido.apiLeagueId) === String(seleccion.ligaId);
+        }
+
+        if (seleccion.texto) {
+            const texto = normalizarTexto(seleccion.texto);
+            const donde = normalizarTexto(partido.liga) + ' ' + normalizarTexto(partido.pais);
+            return donde.includes(texto);
+        }
+
+        return true;
+    }
+
+    async function buscarPartidos() {
+        const desde = fechaInput.value || hoyISO();
+
+        let seleccion = null;
+
+        if (torneoSelect.value === 'custom') {
+            const texto = customLeagueNameInput.value.trim();
+
+            if (!texto) {
+                mostrarEstado('Escribe el texto del torneo que quieres buscar.');
+                return;
+            }
+
+            seleccion = { texto };
+        } else if (torneoSelect.value.startsWith('liga:')) {
+            seleccion = { ligaId: torneoSelect.value.slice('liga:'.length) };
+        }
+
+        partidosEncontrados = [];
+        partidosApiContainer.innerHTML = '';
+        mostrarEstado('Buscando partidos...');
+
+        try {
+            let url = '/api/football/fixtures'
+                + '?from=' + encodeURIComponent(rangoDeLaBusqueda.desde || desde)
+                + '&to=' + encodeURIComponent(rangoDeLaBusqueda.hasta || desde);
+
+            /*
+             * Con la liga elegida se le pide filtrada al proveedor: viaja menos
+             * y se gasta menos cuota. El filtro de abajo se queda igualmente,
+             * porque el proveedor no siempre respeta el parámetro.
+             */
+            if (seleccion && seleccion.ligaId) {
+                url += '&league=' + encodeURIComponent(seleccion.ligaId);
+            }
+
+            const respuesta = await fetch(url);
+            const datos = await respuesta.json();
+
+            if (!respuesta.ok) {
+                mostrarEstado(datos.error || 'Error buscando partidos');
+                return;
+            }
+
+            const partidos = (Array.isArray(datos) ? datos : [])
+                .filter(partido => partidoCoincideConSeleccion(partido, seleccion));
+
+            /*
+             * Tope de seguridad. Sin torneo elegido, una semana entera son miles
+             * de partidos, y pintarlos todos deja el navegador inservible. Se
+             * corta y se dice, que es mejor que colgarse en silencio.
+             */
+            const recortado = partidos.length > MAXIMO_PARTIDOS;
+            partidosEncontrados = recortado ? partidos.slice(0, MAXIMO_PARTIDOS) : partidos;
+
+            if (!partidosEncontrados.length) {
+                mostrarEstado('No se encontraron partidos para ese torneo en esas fechas.');
+                renderizarEncontrados();
+                return;
+            }
+
+            mostrarEstado(recortado
+                ? 'Se encontraron ' + partidos.length + ' partidos; se muestran los primeros '
+                  + MAXIMO_PARTIDOS + '. Elige un torneo para acotar la búsqueda.'
+                : 'Se encontraron ' + partidosEncontrados.length + ' partidos.');
+
+            renderizarEncontrados();
+
+        } catch (error) {
+            console.error('Error buscando partidos:', error);
+            mostrarEstado('Error obteniendo partidos.');
+        }
+    }
+
+    function renderizarEncontrados() {
+        partidosApiContainer.innerHTML = '';
+
+        if (!partidosEncontrados.length) return;
+
+        const acciones = document.createElement('div');
+        acciones.className = 'button-stack';
+
+        const agregar = document.createElement('button');
+        agregar.type = 'button';
+        agregar.id = 'agregarSeleccionadosButton';
+        agregar.textContent = 'Agregar seleccionados a la jornada';
+        agregar.addEventListener('click', agregarSeleccionados);
+
+        acciones.appendChild(agregar);
+        partidosApiContainer.appendChild(acciones);
+
+        partidosEncontrados.forEach((partido, indice) => {
+            const yaEsta = yaEstaEnLaJornada(partido);
+
+            const tarjeta = document.createElement('div');
+            tarjeta.className = 'match-card';
+            tarjeta.innerHTML = html`
+                <div class="match-header">
+                    <label class="checkbox-card">
+                        <input
+                            type="checkbox"
+                            class="partidoCheckbox"
+                            data-indice="${indice}"
+                            ${yaEsta ? 'disabled' : ''}
+                        />
+                        <span>${yaEsta ? 'Ya está en la jornada' : 'Seleccionar'}</span>
+                    </label>
+                </div>
+
                 <div class="match-teams">
                     <div class="team-side">
                         ${partido.logoEquipo1 ? html`<img src="${partido.logoEquipo1}" class="team-logo" alt="${traducirEquipo(partido.equipo1)}">` : ''}
@@ -396,703 +434,226 @@ function renderizarPartidosApiModificar() {
                 <div class="match-meta">
                     <span>${partido.liga || 'Liga'}</span>
                     <span>${partido.pais || ''}</span>
-                    <span>${fechaLocal}</span>
+                    <span>${fechaLegible(partido.fecha)}</span>
                 </div>
 
                 <label class="checkbox-card">
-                    <input type="checkbox" class="apiModificarComodin" data-index="${index}">
+                    <input
+                        type="checkbox"
+                        class="comodinCheckbox"
+                        data-indice="${indice}"
+                        ${yaEsta ? 'disabled' : ''}
+                    />
+                    <span>Comodín</span>
+                </label>
+            `;
+
+            partidosApiContainer.appendChild(tarjeta);
+        });
+    }
+
+    function agregarSeleccionados() {
+        let agregados = 0;
+
+        partidosApiContainer.querySelectorAll('.partidoCheckbox').forEach(casilla => {
+            if (!casilla.checked) return;
+
+            const indice = Number(casilla.dataset.indice);
+            const partido = partidosEncontrados[indice];
+            if (!partido || yaEstaEnLaJornada(partido)) return;
+
+            const comodin = partidosApiContainer.querySelector(
+                '.comodinCheckbox[data-indice="' + indice + '"]'
+            );
+
+            /*
+             * Se guarda ya con la forma de partido de jornada —`apiDate` y
+             * `apiStatus`, no `fecha` y `estado`—. El servidor acepta las dos,
+             * pero mandarle la buena evita que la pantalla y la base hablen
+             * idiomas distintos.
+             */
+            partidosDeLaJornada.push({
+                equipo1: traducirEquipo(partido.equipo1),
+                equipo2: traducirEquipo(partido.equipo2),
+                logoEquipo1: partido.logoEquipo1 || '',
+                logoEquipo2: partido.logoEquipo2 || '',
+                comodin: Boolean(comodin && comodin.checked),
+                apiFixtureId: partido.apiFixtureId || '',
+                apiLeagueId: partido.apiLeagueId || '',
+                apiDate: partido.fecha || '',
+                apiStatus: partido.estado || ''
+            });
+
+            agregados += 1;
+        });
+
+        if (!agregados) {
+            avisar('No seleccionaste partidos nuevos.', true);
+            return;
+        }
+
+        avisar(agregados + ' partido(s) agregado(s). Recuerda guardar la jornada.');
+        renderizarJornada();
+        renderizarEncontrados();
+    }
+
+    /* ================= Partidos de la jornada ================= */
+
+    function renderizarJornada() {
+        partidosJornadaContainer.innerHTML = '';
+
+        if (!partidosDeLaJornada.length) {
+            const vacio = document.createElement('div');
+            vacio.className = 'info-card';
+            vacio.textContent = 'No hay partidos en esta jornada todavía. Búscalos arriba.';
+            partidosJornadaContainer.appendChild(vacio);
+            return;
+        }
+
+        const titulo = document.createElement('h3');
+        titulo.textContent = partidosDeLaJornada.length + ' partido(s)';
+        partidosJornadaContainer.appendChild(titulo);
+
+        partidosDeLaJornada.forEach((partido, indice) => {
+            const tarjeta = document.createElement('div');
+            tarjeta.className = 'match-card';
+            tarjeta.innerHTML = html`
+                <div class="match-teams">
+                    <div class="team-side"><strong>${partido.equipo1}</strong></div>
+                    <span class="vs">vs</span>
+                    <div class="team-side"><strong>${partido.equipo2}</strong></div>
+                </div>
+
+                <div class="match-meta">
+                    <span>${fechaLegible(partido.apiDate)}</span>
+                </div>
+
+                <label class="checkbox-card">
+                    <input
+                        type="checkbox"
+                        class="comodinJornadaCheckbox"
+                        data-indice="${indice}"
+                        ${partido.comodin ? 'checked' : ''}
+                    />
                     <span>Comodín</span>
                 </label>
 
-                <button type="button" class="secondary-button agregarApiAJornadaBtn" data-index="${index}">
-                    Agregar a esta jornada
+                <button type="button" class="danger-button" data-quitar="${indice}">
+                    Quitar
                 </button>
-            </div>
-        `;
-    }).join('');
+            `;
 
-    document.querySelectorAll('.agregarApiAJornadaBtn').forEach(btn => {
-        btn.addEventListener('click', agregarPartidoApiAJornadaExistente);
-    });
-}
+            partidosJornadaContainer.appendChild(tarjeta);
+        });
 
-
-    function extraerPartidosDeDetalle(data) {
-        if (Array.isArray(data)) return data;
-        if (data && Array.isArray(data.partidos)) return data.partidos;
-        return [];
-    }
-
-
-    async function cargarEquipos() {
-        try {
-            const response = await fetch('/api/equipos');
-            equipos = await response.json();
-        } catch (error) {
-            console.error('Error al cargar equipos:', error);
-        }
-    }
-
-    function autocompleteEquipo(inputElement, suggestionsId) {
-        const suggestionsContainer = document.getElementById(suggestionsId);
-        if (!suggestionsContainer) return;
-
-        const query = inputElement.value.toLowerCase();
-
-        const filteredEquipos = equipos.filter(equipo =>
-            equipo.toLowerCase().includes(query)
-        );
-
-        suggestionsContainer.innerHTML = '';
-
-        if (query && filteredEquipos.length > 0) {
-            suggestionsContainer.style.display = 'block';
-
-            filteredEquipos.forEach(equipo => {
-                const suggestion = document.createElement('div');
-                suggestion.classList.add('autocomplete-suggestion');
-                suggestion.textContent = equipo;
-
-                suggestion.onclick = () => {
-                    inputElement.value = equipo;
-                    suggestionsContainer.style.display = 'none';
-                };
-
-                suggestionsContainer.appendChild(suggestion);
+        partidosJornadaContainer.querySelectorAll('.comodinJornadaCheckbox').forEach(casilla => {
+            casilla.addEventListener('change', () => {
+                partidosDeLaJornada[Number(casilla.dataset.indice)].comodin = casilla.checked;
             });
-        } else {
-            suggestionsContainer.style.display = 'none';
-        }
-    }
+        });
 
-    async function agregarNuevoEquipo(nuevoEquipo) {
-        if (nuevoEquipo && !equipos.includes(nuevoEquipo)) {
-            equipos.push(nuevoEquipo);
-
-            try {
-                await fetch('/actualizar-equipos', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ equipos })
-                });
-            } catch (error) {
-                console.error('Error guardando equipo:', error);
-            }
-        }
-    }
-
-    function loadJornadas() {
-        fetch('/api/jornadas')
-            .then(response => response.json())
-            .then(data => {
-                jornadas = normalizarListadoJornadas(data);
-                updateJornadaSelect();
-            })
-            .catch(error => {
-                console.error('Error cargando jornadas:', error);
-                jornadas = new Map();
-                updateJornadaSelect();
+        partidosJornadaContainer.querySelectorAll('[data-quitar]').forEach(boton => {
+            boton.addEventListener('click', () => {
+                partidosDeLaJornada.splice(Number(boton.dataset.quitar), 1);
+                renderizarJornada();
+                renderizarEncontrados();
             });
-    }
-
-    function parseFiltroTorneo(valor) {
-    const filtro = {};
-
-    if (!valor || valor === 'custom') return filtro;
-
-    valor.split(';').forEach(parte => {
-        const [key, value] = parte.split('=');
-        if (key && value) {
-            filtro[key.trim()] = value.trim();
-        }
-    });
-
-    return filtro;
-}
-
-function esLigaNoPermitida(liga) {
-    const texto = normalizarTexto(liga);
-
-    const palabrasBloqueadas = [
-        'u20',
-        'u21',
-        'u23',
-        'sub 20',
-        'sub 21',
-        'sub 23',
-        'reserves',
-        'reserve',
-        'femenil',
-        'women',
-        'womens',
-        'femenina',
-        'feminine',
-        'juvenil',
-        'youth'
-    ];
-
-    return palabrasBloqueadas.some(palabra =>
-        texto.includes(normalizarTexto(palabra))
-    );
-}
-
-function partidoCoincideConFiltro(partido, filtro) {
-    const liga = normalizarTexto(partido.liga);
-    const pais = normalizarTexto(partido.pais);
-
-    if (esLigaNoPermitida(partido.liga)) {
-        return false;
-    }
-
-    if (filtro.country && pais !== normalizarTexto(filtro.country)) {
-        return false;
-    }
-
-    if (filtro.league_exact) {
-        const ligaEsperada = normalizarTexto(filtro.league_exact);
-
-        if (
-            liga !== ligaEsperada &&
-            !liga.includes(ligaEsperada)
-        ) {
-            return false;
-        }
-    }
-
-    if (filtro.league_contains && !liga.includes(normalizarTexto(filtro.league_contains))) {
-        return false;
-    }
-
-    if (filtro.league_any) {
-        const opciones = filtro.league_any
-            .split('|')
-            .map(opcion => normalizarTexto(opcion));
-
-        const coincideAlguna = opciones.some(opcion =>
-            liga.includes(opcion)
-        );
-
-        if (!coincideAlguna) {
-            return false;
-        }
-    }
-
-    if (filtro.text) {
-        const texto = normalizarTexto(filtro.text);
-        return `${liga} ${pais}`.includes(texto);
-    }
-
-    return true;
-}
-
-
-    function updateJornadaSelect() {
-        jornadaSelect.innerHTML = '<option value="">Selecciona una jornada</option>';
-        modificarJornadaSelect.innerHTML = '<option value="">Selecciona una jornada</option>';
-
-        jornadas.forEach((info, nombre) => {
-            const option = document.createElement('option');
-            option.value = nombre;
-            option.textContent = nombre;
-            jornadaSelect.appendChild(option);
-
-            modificarJornadaSelect.appendChild(option.cloneNode(true));
         });
     }
 
-    function updatePartidosList() {
-        const ul = document.getElementById('partidosList');
-        ul.innerHTML = '';
+    /* ================= Guardar y eliminar ================= */
 
-        currentPartidos.forEach((partido, index) => {
-            const li = document.createElement('li');
+    async function guardarJornada() {
+        const nombre = nombreElegido();
 
-            const eq1 = document.createElement('input');
-            eq1.type = 'text';
-            eq1.value = partido.equipo1;
-            eq1.addEventListener('input', () => {
-                currentPartidos[index].equipo1 = eq1.value;
-            });
-
-            const eq2 = document.createElement('input');
-            eq2.type = 'text';
-            eq2.value = partido.equipo2;
-            eq2.addEventListener('input', () => {
-                currentPartidos[index].equipo2 = eq2.value;
-            });
-
-            const comodinCB = document.createElement('input');
-            comodinCB.type = 'checkbox';
-            comodinCB.checked = partido.comodin;
-            comodinCB.addEventListener('change', () => {
-                currentPartidos[index].comodin = comodinCB.checked;
-            });
-
-            li.appendChild(eq1);
-            li.appendChild(document.createTextNode(' vs '));
-            li.appendChild(eq2);
-            li.appendChild(document.createTextNode(' Comodín '));
-            li.appendChild(comodinCB);
-
-            ul.appendChild(li);
-        });
-    }
-
-    async function agregarPartidoApiAJornadaExistente(event) {
-    const index = Number(event.target.dataset.index);
-    const partidoApi = partidosApiDisponibles[index];
-
-    if (!partidoApi || !jornadaActualParaModificar) return;
-
-    const comodinCheckbox = document.querySelector(`.apiModificarComodin[data-index="${index}"]`);
-    const comodin = comodinCheckbox ? comodinCheckbox.checked : false;
-
-    const confirmar = confirm(
-  `¿Agregar ${traducirEquipo(partidoApi.equipo1)} vs ${traducirEquipo(partidoApi.equipo2)} a ${jornadaActualParaModificar}?\n\n` +
-  `Este partido se agregará AL FINAL de la jornada.\n\n` +
-  `No se deben insertar partidos en medio ni eliminar partidos anteriores si ya hay pronósticos guardados.`
-);
-
-
-    if (!confirmar) return;
-
-    try {
-        const response = await fetch(`/api/jornadas/${encodeURIComponent(jornadaActualParaModificar)}`);
-        const data = await response.json();
-        const partidos = extraerPartidosDeDetalle(data);
-
-        partidos.push({
-            equipo1: traducirEquipo(partidoApi.equipo1),
-            equipo2: traducirEquipo(partidoApi.equipo2),
-
-            logoEquipo1: partidoApi.logoEquipo1 || '',
-            logoEquipo2: partidoApi.logoEquipo2 || '',
-
-            comodin,
-
-            apiFixtureId: partidoApi.apiFixtureId,
-            apiLeagueId: partidoApi.apiLeagueId,
-
-            apiDate: partidoApi.fecha,
-            fecha: partidoApi.fecha,
-            estado: partidoApi.estado,
-            liga: partidoApi.liga,
-            pais: partidoApi.pais
-        });
-
-        const guardarResponse = await fetch('/api/jornadas', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                nombre: jornadaActualParaModificar,
-                partidos,
-            })
-        });
-
-        if (!guardarResponse.ok) {
-            alert('Error agregando partido a la jornada.');
+        if (!nombre) {
+            avisar('Escribe el nombre de la jornada.', true);
             return;
         }
 
-        alert('Partido agregado correctamente.');
-
-        loadJornadas();
-        updateJornadaPartidos();
-        updateModificarJornadaPartidos();
-
-    } catch (error) {
-        console.error('Error agregando partido API:', error);
-        alert('Error agregando partido API.');
-    }
-}
-
-
-    function updateJornadaPartidos() {
-        const selectedJornada = jornadaSelect.value;
-
-        if (!selectedJornada) {
-            partidosJornadaList.innerHTML = '';
+        if (!partidosDeLaJornada.length) {
+            avisar('La jornada necesita al menos un partido.', true);
             return;
         }
 
-        fetch(`/api/jornadas/${encodeURIComponent(selectedJornada)}`)
-            .then(response => response.json())
-            .then(data => {
-                const partidos = extraerPartidosDeDetalle(data);
-                partidosJornadaList.innerHTML = '';
-
-                partidos.forEach(partido => {
-                    const li = document.createElement('li');
-                    li.textContent = `${partido.equipo1} vs ${partido.equipo2}`;
-                    if (partido.comodin) li.textContent += ' (Comodín)';
-                    partidosJornadaList.appendChild(li);
-                });
-            })
-            .catch(error => {
-                console.error('Error mostrando jornada:', error);
-                partidosJornadaList.innerHTML = '';
-            });
-    }
-
-    function updateModificarJornadaPartidos() {
-        const selectedJornada = modificarJornadaSelect.value;
-
-        if (!selectedJornada) {
-            partidosModificarList.innerHTML = '';
-            return;
-        }
-
-        fetch(`/api/jornadas/${encodeURIComponent(selectedJornada)}`)
-            .then(response => response.json())
-            .then(data => {
-                const partidos = extraerPartidosDeDetalle(data);
-                partidosModificarList.innerHTML = '';
-
-                partidos.forEach((partido, index) => {
-                    const li = document.createElement('li');
-
-                    const comodinCB = document.createElement('input');
-                    comodinCB.type = 'checkbox';
-                    comodinCB.classList.add('comodin-checkbox');                    
-                    comodinCB.dataset.index = index;
-                    comodinCB.checked = !!partido.comodin;
-                    comodinCB.addEventListener('change', handleComodinChange);                    
-                    
-
-                    const comodinLabel = document.createElement('label');
-                    comodinLabel.textContent = partido.comodin ? 'Quitar de comodín' : 'Agregar como comodín';
-
-                    const comodinLine = document.createElement('div');
-                    comodinLine.appendChild(comodinCB);
-                    comodinLine.appendChild(comodinLabel);
-                    li.appendChild(comodinLine);
-
-                    const equipo1Input = document.createElement('input');
-                    equipo1Input.type = 'text';
-                    equipo1Input.value = partido.equipo1;
-
-                    const equipo2Input = document.createElement('input');
-                    equipo2Input.type = 'text';
-                    equipo2Input.value = partido.equipo2;
-
-                    const actualizarBtn = document.createElement('button');
-                    actualizarBtn.type = 'button';
-                    actualizarBtn.textContent = 'Actualizar equipos';
-
-                    actualizarBtn.addEventListener('click', async () => {
-                        const nuevoEq1 = equipo1Input.value.trim();
-                        const nuevoEq2 = equipo2Input.value.trim();
-
-                        if (!nuevoEq1 || !nuevoEq2) {
-                            alert('Los nombres de equipos no pueden estar vacíos.');
-                            return;
-                        }
-
-                        const confirmar = confirm(
-                            `¿Está seguro que quiere cambiar de "${partido.equipo1} vs ${partido.equipo2}" a "${nuevoEq1} vs ${nuevoEq2}"?`
-                        );
-
-                        if (!confirmar) return;
-
-                        try {
-                            const response = await fetch(`/api/jornadas/${encodeURIComponent(selectedJornada)}`);
-                            const data = await response.json();
-                            const partidos = extraerPartidosDeDetalle(data);
-
-                            partidos[index].equipo1 = nuevoEq1;
-                            partidos[index].equipo2 = nuevoEq2;
-
-                            await fetch('/api/jornadas', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    nombre: selectedJornada,
-                                    partidos,
-                                })
-                            });
-
-                            loadJornadas();
-                            updateJornadaPartidos();
-                            updateModificarJornadaPartidos();
-                        } catch (error) {
-                            console.error('Error actualizando equipos:', error);
-                        }
-                    });
-
-                    const partidoLine = document.createElement('div');
-                    partidoLine.appendChild(equipo1Input);
-                    partidoLine.appendChild(document.createTextNode(' vs '));
-                    partidoLine.appendChild(equipo2Input);
-                    partidoLine.appendChild(actualizarBtn);
-                    li.appendChild(partidoLine);
-
-                    const eliminarCB = document.createElement('input');
-                    eliminarCB.type = 'checkbox';
-                    eliminarCB.classList.add('eliminar-checkbox');                    
-                    eliminarCB.dataset.index = index;
-
-                    const eliminarLabel = document.createElement('label');
-                    eliminarLabel.textContent = 'Selecciona para eliminar';
-
-                    const eliminarLine = document.createElement('div');
-                    eliminarLine.appendChild(eliminarCB);
-                    eliminarLine.appendChild(eliminarLabel);
-                    li.appendChild(eliminarLine);
-
-                    partidosModificarList.appendChild(li);
-                });
-            })
-            .catch(error => {
-                console.error('Error mostrando partidos para modificar:', error);
-                partidosModificarList.innerHTML = '';
-            });
-    }
-
-    async function handleComodinChange(event) {
-        const checkbox = event.target;
-        const index = Number(checkbox.dataset.index);
-        const isChecked = checkbox.checked;
-        const selectedJornada = modificarJornadaSelect.value;
-
-        const message = isChecked
-            ? '¿Está seguro que quiere mover este partido a comodín?'
-            : '¿Está seguro que quiere cambiar este partido a que no sea comodín?';
-
-        if (!confirm(message)) {
-            checkbox.checked = !isChecked;
-            return;
-        }
-
-        checkbox.disabled = true;
+        guardarJornadaButton.disabled = true;
 
         try {
-            const response = await fetch(`/api/jornadas/${encodeURIComponent(selectedJornada)}`);
-            const data = await response.json();
-            const partidos = extraerPartidosDeDetalle(data);
-
-            if (!partidos[index]) {
-                alert('No se encontró el partido seleccionado.');
-                return;
-            }
-
-            partidos[index].comodin = isChecked;
-
-            const guardarResponse = await fetch('/api/jornadas', {
+            const respuesta = await fetch('/api/jornadas', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    nombre: selectedJornada,
-                    partidos,
-                })
+                body: JSON.stringify({ nombre, partidos: partidosDeLaJornada })
             });
 
-            if (!guardarResponse.ok) {
-                alert('Error actualizando comodín.');
-                checkbox.checked = !isChecked;
+            if (!respuesta.ok) {
+                const datos = await respuesta.json().catch(() => ({}));
+                avisar(datos.error || 'No se pudo guardar la jornada.', true);
                 return;
             }
 
-            jornadas.set(selectedJornada, {
-                partidos,
-            });
-
-            updateJornadaPartidos();
-            updateModificarJornadaPartidos();
-
+            avisar('Jornada «' + nombre + '» guardada.');
+            await cargarJornadas(nombre);
         } catch (error) {
-            console.error('Error actualizando comodín:', error);
-            checkbox.checked = !isChecked;
-            alert('Error actualizando comodín.');
+            console.error('Error guardando la jornada:', error);
+            avisar('No se pudo guardar la jornada.', true);
         } finally {
-            checkbox.disabled = false;
+            guardarJornadaButton.disabled = false;
         }
     }
 
+    async function eliminarJornada() {
+        if (esJornadaNueva()) return;
 
+        const nombre = jornadaSelect.value;
 
-
-
-    addPartidoButton.addEventListener('click', async () => {
-        const equipo1 = equipo1Input.value.trim();
-        const equipo2 = equipo2Input.value.trim();
-        const comodin = comodinCheckbox.checked;
-
-        if (!equipo1 || !equipo2) return;
-
-        await agregarNuevoEquipo(equipo1);
-        await agregarNuevoEquipo(equipo2);
-
-        currentPartidos.push({ equipo1, equipo2, comodin });
-        updatePartidosList();
-
-        equipo1Input.value = '';
-        equipo2Input.value = '';
-        comodinCheckbox.checked = false;
-    });
-
-    finalizarJornadaButton.addEventListener('click', () => {
-        if (currentPartidos.length === 0) {
-            alert('No hay partidos para agregar a la jornada.');
-            return;
-        }
-
-        const nombreJornada = prompt('Ingrese el nombre de la jornada:');
-
-        if (!nombreJornada) return alert('Debe ingresar un nombre de jornada');
-
-        if (jornadas.has(nombreJornada)) {
-            alert('Ya existe una jornada con ese nombre.');
-            return;
-        }
-
-        fetch('/api/jornadas', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                nombre: nombreJornada,
-                partidos: currentPartidos
-            })
-        })
-        .then(() => {
-            currentPartidos = [];
-            updatePartidosList();
-            loadJornadas();
-        })
-        .catch(error => console.error('Error guardando jornada:', error));
-    });
-
-    jornadaSelect.addEventListener('change', updateJornadaPartidos);
-
-    modificarJornadaSelect.addEventListener('change', () => {
-        jornadaActualParaModificar = modificarJornadaSelect.value;
-        modificarJornadaControls.style.display = jornadaActualParaModificar ? 'block' : 'none';
-
-        updateModificarJornadaPartidos();
-    });
-
-    agregarPartidoButton.addEventListener('click', () => {
-        const equipo1 = modificarEquipo1Input.value.trim();
-        const equipo2 = modificarEquipo2Input.value.trim();
-        const comodin = modificarComodinCheckbox.checked;
-
-        if (!equipo1 || !equipo2 || !jornadaActualParaModificar) return;
-
-        fetch(`/api/jornadas/${encodeURIComponent(jornadaActualParaModificar)}`)
-            .then(response => response.json())
-            .then(data => {
-                const partidos = extraerPartidosDeDetalle(data);
-
-                partidos.push({
-                    equipo1,
-                    equipo2,
-                    comodin
-                });
-
-                return fetch('/api/jornadas', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        nombre: jornadaActualParaModificar,
-                        partidos,
-                    })
-                });
-            })
-            .then(() => {
-                loadJornadas();
-                updateJornadaPartidos();
-                updateModificarJornadaPartidos();
-
-                modificarEquipo1Input.value = '';
-                modificarEquipo2Input.value = '';
-                modificarComodinCheckbox.checked = false;
-            })
-            .catch(error => console.error('Error agregando partido:', error));
-    });
-
-    eliminarPartidosButton.addEventListener('click', () => {
-
-        const selectedIndices = Array.from(            
-            document.querySelectorAll('#partidosModificarList .eliminar-checkbox:checked')
-        ).map(cb => cb.dataset.index);
-    
-        if (selectedIndices.length === 0 || !jornadaActualParaModificar) return;
-
-        fetch(`/api/jornadas/${encodeURIComponent(jornadaActualParaModificar)}`)
-            .then(response => response.json())
-            .then(data => {
-                const partidos = extraerPartidosDeDetalle(data);
-
-                const updatedPartidos = partidos.filter((_, index) =>
-                    !selectedIndices.includes(index.toString())
-                );
-
-                return fetch('/api/jornadas', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        nombre: jornadaActualParaModificar,
-                        partidos: updatedPartidos,
-                    })
-                });
-            })
-            .then(() => {
-                loadJornadas();
-                updateJornadaPartidos();
-                updateModificarJornadaPartidos();
-            })
-            .catch(error => console.error('Error eliminando partidos:', error));
-    });
-
-    eliminarJornadaButton.addEventListener('click', async () => {
-        const jornada = modificarJornadaSelect.value;
-
-        if (!jornada) {
-            alert('Selecciona una jornada para eliminar.');
-            return;
-        }
-
-        const confirmar = confirm(
-            `¿Seguro que deseas eliminar la jornada "${jornada}"?\n\nEsto también borrará los pronósticos de todos los jugadores y los resultados oficiales.`
-        );
-
-        if (!confirmar) return;
+        /*
+         * Borrar una jornada se lleva por delante los pronósticos y los puntos
+         * de todo el mundo. Se pregunta, y con el nombre dentro para que no se
+         * confirme a ciegas.
+         */
+        if (!confirm('¿Eliminar la jornada «' + nombre + '» y todos sus pronósticos?')) return;
 
         try {
-            const response = await fetch(`/api/jornadas/${encodeURIComponent(jornada)}`, {
+            const respuesta = await fetch('/api/jornadas/' + encodeURIComponent(nombre), {
                 method: 'DELETE'
             });
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(data.error || 'Error eliminando jornada');
+            if (!respuesta.ok) {
+                const datos = await respuesta.json().catch(() => ({}));
+                avisar(datos.error || 'No se pudo eliminar la jornada.', true);
                 return;
             }
 
-            alert('Jornada eliminada correctamente.');
-
-            jornadaActualParaModificar = '';
-            modificarJornadaControls.style.display = 'none';
-            partidosModificarList.innerHTML = '';
-            partidosJornadaList.innerHTML = '';
-
-            loadJornadas();
+            avisar('Jornada «' + nombre + '» eliminada.');
+            await cargarJornadas(null);
         } catch (error) {
-            console.error('Error eliminando jornada:', error);
-            alert('Error eliminando jornada');
+            console.error('Error eliminando la jornada:', error);
+            avisar('No se pudo eliminar la jornada.', true);
         }
+    }
+
+    /* ================= Arranque ================= */
+
+    jornadaSelect.addEventListener('change', () => {
+        avisar('');
+        alCambiarDeJornada();
+    });
+    buscarPartidosButton.addEventListener('click', buscarPartidos);
+    guardarJornadaButton.addEventListener('click', guardarJornada);
+    eliminarJornadaButton.addEventListener('click', eliminarJornada);
+
+    torneoSelect.addEventListener('change', () => {
+        customLeagueBox.style.display = torneoSelect.value === 'custom' ? 'block' : 'none';
     });
 
-    buscarApiTorneoSelect.addEventListener('change', () => {
-    buscarApiCustomBox.style.display =
-        buscarApiTorneoSelect.value === 'custom' ? 'block' : 'none';
-});
+    /*
+     * Cambiar la fecha cambia qué ligas juegan, así que la lista se rehace.
+     * Ofrecer torneos sin partidos es justo lo que la Fase C vino a quitar.
+     */
+    fechaInput.addEventListener('change', cargarTorneosDisponibles);
 
-buscarPartidosApiButton.addEventListener('click', buscarPartidosApiParaModificar);
+    if (!fechaInput.value) fechaInput.value = hoyISO();
 
-    await cargarEquipos();
-    loadJornadas();
-
-    equipo1Input.addEventListener('input', () => autocompleteEquipo(equipo1Input, 'suggestions1'));
-    equipo2Input.addEventListener('input', () => autocompleteEquipo(equipo2Input, 'suggestions2'));
+    cargarJornadas(null);
+    cargarTorneosDisponibles();
 });

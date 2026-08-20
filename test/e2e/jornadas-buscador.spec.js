@@ -23,7 +23,7 @@ async function comoAdministradora(page, prefijo, nombre) {
 test('el desplegable se llena con las ligas que tienen partidos, agrupadas por país', async ({ page }) => {
   await comoAdministradora(page, 'impA', 'Quiniela Importar');
 
-  await page.goto('/importar_partidos.html');
+  await page.goto('/jornadas.html');
 
   const torneo = page.locator('#torneoSelect');
 
@@ -46,7 +46,7 @@ test('el desplegable se llena con las ligas que tienen partidos, agrupadas por p
 test('las competiciones bloqueadas no se ofrecen', async ({ page }) => {
   await comoAdministradora(page, 'impB', 'Quiniela Bloqueadas');
 
-  await page.goto('/importar_partidos.html');
+  await page.goto('/jornadas.html');
   await expect(page.locator('#torneoSelect optgroup')).toHaveCount(2, { timeout: 10_000 });
 
   /*
@@ -67,7 +67,7 @@ test('ya no queda ninguna opción de torneo escrita a mano en el HTML', async ({
    * servido: si alguien reintrodujera la lista de veinte torneos, aquí se vería.
    * Se pide la página como texto, no como pantalla, justo por eso.
    */
-  const respuesta = await page.request.get('/importar_partidos.html');
+  const respuesta = await page.request.get('/jornadas.html');
   const html = await respuesta.text();
 
   expect(html).not.toContain('league_exact');
@@ -77,15 +77,15 @@ test('ya no queda ninguna opción de torneo escrita a mano en el HTML', async ({
 test('buscar por una liga trae solo sus partidos', async ({ page }) => {
   await comoAdministradora(page, 'impD', 'Quiniela Buscar');
 
-  await page.goto('/importar_partidos.html');
+  await page.goto('/jornadas.html');
   await expect(page.locator('#torneoSelect optgroup')).toHaveCount(2, { timeout: 10_000 });
 
   await page.locator('#torneoSelect').selectOption({ label: 'Primera Division (1)' });
   await page.locator('#buscarPartidosButton').click();
 
   await expect(page.locator('#estadoBusqueda')).toContainText('1 partidos', { timeout: 10_000 });
-  await expect(page.locator('#partidosContainer')).toContainText('Saprissa');
-  await expect(page.locator('#partidosContainer')).not.toContainText('Chivas');
+  await expect(page.locator('#partidosApiContainer')).toContainText('Saprissa');
+  await expect(page.locator('#partidosApiContainer')).not.toContainText('Chivas');
 });
 
 test('si el proveedor falla, el desplegable no se queda vacío ni mudo', async ({ page }) => {
@@ -101,7 +101,7 @@ test('si el proveedor falla, el desplegable no se queda vacío ni mudo', async (
     ruta.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Proveedor caído' }) })
   );
 
-  await page.goto('/importar_partidos.html');
+  await page.goto('/jornadas.html');
 
   await expect(page.locator('#rangoTexto')).toContainText('Proveedor caído', { timeout: 10_000 });
   await expect(page.locator('#torneoSelect option')).toHaveCount(2);

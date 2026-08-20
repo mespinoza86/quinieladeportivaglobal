@@ -23,7 +23,7 @@
 git log --oneline -3     # debe empezar por 61f3dae
 git status               # debe estar limpio
 npm test                 # 129/129
-npm run test:e2e         # 58/58
+npm run test:e2e         # 62/62
 ```
 
 **`main` y `origin/main` están a la par.** Los siete commits que quedaron sin
@@ -44,10 +44,10 @@ que van hechas las fases A y B.
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **129** (46 de arquitectura + 83 de integración), ~12 s |
-| Pruebas de navegador | **58** (29 × escritorio y móvil), ~2 min |
+| Pruebas de navegador | **62** (31 × escritorio y móvil), ~2 min |
 | Integración continua | En verde, en cada empujón y cada PR contra `main` |
 | `npm audit --omit=dev` | 0 vulnerabilidades |
-| `server.js` | 5.162 líneas; `src/` tiene 291 en tres módulos |
+| `server.js` | 5.270 líneas; `src/` tiene 451 en cuatro módulos |
 
 Tres cambios de producto que conviene tener presentes antes de tocar nada:
 
@@ -58,6 +58,10 @@ Tres cambios de producto que conviene tener presentes antes de tocar nada:
 - **La jornada actual es LA ÚLTIMA QUE SE CREÓ**, y se ordena por `_id`, no por
   `createdAt` —ese campo no existe en `Jornada`—. La decide el servidor en
   `GET /api/jornada-actual` y las tres pantallas la consumen (Entradas 027 y 028).
+- **Los partidos de una jornada salen SOLO del API** (Entrada 031). Se retiró el
+  alta manual y la pantalla de importar: `jornadas.html` es la única, y hace
+  agregar, modificar, eliminar y ver. Si el proveedor no cubre un partido, ese
+  partido no puede entrar en una quiniela. Se aceptó a sabiendas.
 - **El módulo de Campeón del Mundo se retiró** (Entrada 013). Sus dos colecciones
   siguen en Mongo, inertes.
 
@@ -165,7 +169,7 @@ npm start                  # arranca la aplicación
 npm test                   # las 129 pruebas rápidas (~12 s, sin red, sin tocar la base real)
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración
-npm run test:e2e           # las 58 de navegador (~2 min, escritorio y móvil)
+npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -202,9 +206,9 @@ nadie ha vuelto a verlos con datos de verdad desde la Entrada 024.
 | ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
 | ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030). Se buscan **7 días hacia adelante** |
-| **3.º** | **D — Administración de jornadas unificada** | 3 | ✅ Desbloqueada: **se acepta perder el alta manual** (decidido el 19-ago). Los partidos salen solo del API. Es lo siguiente |
-| **4.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
-| **5.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro |
+| ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031). Los partidos salen **solo del API** |
+| **3.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
+| **4.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro |
 | — | **Aparte 1** | 7 (SQL) | Respondida en §20.8: **no migrar** por ahora. No bloquea nada |
 
 El detalle de cada fase —qué archivos se tocan y cómo se comprueba— está en §20.
@@ -404,7 +408,7 @@ troceado dejaría de servir.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior a la nueva. Simulación por defecto |
 
-### 2.4 `test/` — 129 pruebas rápidas y 58 de navegador
+### 2.4 `test/` — 129 pruebas rápidas y 62 de navegador
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
@@ -425,12 +429,12 @@ seguir siendo rápida.
 | `inyeccion.spec.js` | 95 | El marcado en nombres se muestra como texto y no se ejecuta (S-04) |
 | `jornadas.spec.js` | 161 | Administración de jornadas y privacidad partido a partido |
 | `jornada-actual.spec.js` | 202 | Fase B: las tres pantallas abren en la misma jornada |
-| `importar-partidos.spec.js` | 110 | Fase C: el desplegable dinámico, las exclusiones y el proveedor caído |
+| `jornadas-buscador.spec.js` | 110 | Fase C: el desplegable dinámico, las exclusiones y el proveedor caído |
 | `navegacion.spec.js` | 133 | Pulsa **los 23 botones** `data-ir-a` de todas las pantallas y comprueba que ninguna pinta tarjetas de aviso vacías (Entrada 029) |
 | `portada.spec.js` | 83 | Fase A: la tarjeta nueva y que ninguna se estire |
 | `resultados.spec.js` | 237 | Resultados oficiales, tabla general paginada y trivias |
 
-### 2.5 `public/` — 32 páginas HTML
+### 2.5 `public/` — 31 páginas HTML
 
 Servidas estáticamente desde `express.static`.
 
@@ -1947,7 +1951,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | ✅ **1.º** | **A — Retoques de interfaz** | 4, 6 | Pequeñas, visibles y sin riesgo. Valor inmediato con la red de pruebas ya montada. **Completada el 18-ago-2026** |
 | ✅ **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez. **Completada el 18-ago-2026** |
 | ✅ **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual. **Completada el 19-ago-2026** |
-| **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Desbloqueada el 19-ago-2026: los partidos salen solo del API** |
+| ✅ **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Completada el 19-ago-2026: los partidos salen solo del API** |
 | **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
 | **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C |
 | — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
@@ -2140,7 +2144,7 @@ proveedor falla el desplegable no se queda vacío**, quedan «Todos los torneos�
 
 ---
 
-### 20.5 Fase D — Administración de jornadas unificada *(petición 3)*
+### ✅ 20.5 Fase D — Administración de jornadas unificada *(petición 3)* — COMPLETADA el 19 de agosto de 2026
 
 > Que *agregar jornada* pase a ser **agregar / modificar / eliminar / ver**, y que
 > los partidos salgan **solo del API**: desaparece *importar desde API* como
@@ -2183,6 +2187,19 @@ enlace huérfano a la pantalla retirada.
 
 **Decisión pendiente:** ninguna. Se confirmó el 19-ago-2026 que se acepta perder
 el alta manual.
+
+**Cómo quedó (Entrada 031).** La duplicación era peor de lo que decía este plan:
+las dos pantallas no compartían un camino, compartían **tres copias enteras** —la
+lista de torneos, la tabla de traducción de equipos y el filtro de exclusiones—,
+y ya habían divergido: **la Fase C arregló el desplegable de una y dejó intacto
+el de la otra** sin que nadie lo notara. Las dos tablas de traducción resultaron
+idénticas —147 entradas, cero discrepancias— y viven ahora en
+`private/js/equipos-es.js`.
+
+Se fueron también `POST /api/jornadas/importar-api` —que era `POST /api/jornadas`
+con una traducción de nombres delante, y esa traducción bajó a
+`normalizarPartido`— y las dos referencias a la pantalla retirada. Balance: **902
+líneas añadidas contra 2.126 borradas**, y una pantalla menos.
 
 ---
 
@@ -5527,6 +5544,163 @@ no se podrá crear una jornada con un partido que el API no tenga —un amistoso
 torneo local—. Con el buscador de esta fase el riesgo baja mucho, pero es
 decisión de producto y conviene decirlo en voz alta antes y no descubrirlo un
 domingo.
+
+---
+
+### 📌 Entrada 031 — 19 de agosto de 2026 — Fase D: una sola pantalla de jornadas, y los partidos solo del API
+
+**Objetivo:** la petición 3 — que *agregar jornada* pase a ser **agregar,
+modificar, eliminar y ver**, y que los partidos salgan **solo del API**, con lo
+que desaparece *importar desde API* como pantalla aparte.
+
+**Decisión de producto, tomada tras exponer la pérdida:** se acepta. Si el
+proveedor no cubre un partido —un amistoso, un torneo local—, ese partido no
+puede entrar en una quiniela, y no hay puerta de atrás por interfaz. El usuario
+lo confirmó: «no importa, dejemos que solo se puedan agregar partidos que estén
+en el API».
+
+---
+
+#### Lo que se encontró al abrir: la duplicación era peor de lo que decía el plan
+
+El plan hablaba de dos pantallas que hacían lo mismo por caminos distintos. Al
+abrirlas resultó que compartían **tres copias enteras** de código, no una:
+
+| Qué estaba duplicado | Dónde |
+|---|---|
+| La lista de ~20 torneos escrita a mano | `importar_partidos.html` **y** `jornadas.html` |
+| La tabla de traducción de equipos | `importar_partidos.js` **y** `jornadas.js`, ~230 líneas cada una |
+| `esLigaNoPermitida` y el filtro por nombres | Las dos, otra vez |
+
+**Y las copias ya habían divergido.** La Fase C, el día anterior, arregló el
+desplegable de `importar_partidos.html` y **no tocó el de `jornadas.html`**,
+porque nadie sabía que había un segundo. Es exactamente el fallo que esta fase
+venía a hacer imposible, ocurriendo mientras tanto.
+
+Las dos tablas de traducción se compararon antes de unirlas: **147 entradas
+útiles cada una, cero discrepancias**, y con claves repetidas dentro de cada
+literal. Pura duplicación, sin una sola diferencia que rescatar. Están ahora en
+`private/js/equipos-es.js`, una vez y ordenadas.
+
+---
+
+#### La pantalla nueva
+
+Tres partes, en el orden en que se usan:
+
+1. **Jornada** — una existente (se cargan sus partidos) o «➕ Nueva jornada».
+2. **Buscar partidos** — el buscador de la Fase C, ahora aquí dentro.
+3. **Partidos de la jornada** — lo que va a quedar guardado: comodín editable,
+   quitar, guardar, y eliminar la jornada entera.
+
+Un partido ya agregado aparece en los resultados de la búsqueda como **«Ya está
+en la jornada»** y con la casilla apagada. La identidad es el `apiFixtureId`
+cuando lo hay y los dos equipos si no, de modo que una jornada traída de la base
+—cuyos partidos no vienen del buscador— también se compara bien.
+
+---
+
+#### Dos rutas de escritura se convirtieron en una
+
+`POST /api/jornadas/importar-api` era `POST /api/jornadas` **con una traducción
+de nombres delante**: el buscador manda `fecha` y `estado`, y la jornada guarda
+`apiDate` y `apiStatus`. Nada más. Dos rutas para una escritura, y la copia se
+había quedado sin validaciones que la otra sí ganó.
+
+El alias bajó a `normalizarPartido`, en `src/validacion.js`: **quien normaliza es
+quien debe saber los nombres que acepta**. `apiDate` gana sobre `fecha` si vienen
+los dos. Con eso la ruta sobró y se retiró.
+
+---
+
+#### El fallo que destapó la prueba, y que era mío
+
+Al guardar, el mensaje «Jornada guardada» aparecía y **se borraba solo un
+instante después**. La causa: al guardar se recarga la lista de jornadas, y esa
+recarga llamaba a la función que limpia el aviso.
+
+Limpiar el aviso es respuesta a que **el usuario** cambie de jornada, no a que la
+pantalla recargue datos. Se movió al manejador del `change`, y en la función que
+carga quedó anotado por qué no debe volver ahí.
+
+Lo cazó la prueba de extremo a extremo, no la revisión del código: leyendo, la
+secuencia «avisar, recargar» parece inofensiva.
+
+---
+
+#### Dos guardianes de arquitectura bajaron de número, a propósito
+
+Los dos son **contadores centinela**, y bajaron porque se borró una pantalla:
+
+| Guardián | Antes | Ahora | Por qué |
+|---|---|---|---|
+| Escrituras directas de `Jornada` | 3 | 2 | Se retiró `importar-api` |
+| Plantillas de riesgo halladas | ≥ 60 | ≥ 50 | Se borró `importar_partidos.js` con las suyas |
+
+El segundo es un **suelo, no un objetivo**: está para que el rastreador no pase
+en verde por no encontrar nada. Lo que de verdad comprueba —que ninguna plantilla
+meta datos en HTML sin escaparlos— siguió pasando en todo momento.
+
+---
+
+#### El balance
+
+```
+11 archivos, 902 líneas añadidas, 2.126 borradas
+```
+
+| Pieza | Antes | Ahora |
+|---|---:|---:|
+| `private/js/jornadas.js` | 1.097 | 659 |
+| `private/js/importar_partidos.js` | 811 | **borrado** |
+| `private/js/equipos-es.js` | — | 172 |
+| `public/jornadas.html` | 233 | 135 |
+| `public/importar_partidos.html` | 121 | **borrado** |
+| Pantallas HTML | 32 | 31 |
+
+---
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/jornadas.html` | Reescrita: la única pantalla de jornadas |
+| `private/js/jornadas.js` | Reescrito: absorbe el buscador; fuera el alta manual y el autocompletado |
+| `private/js/equipos-es.js` | **Nuevo.** La tabla de traducción, una sola vez |
+| `public/importar_partidos.html` | **Borrado** |
+| `private/js/importar_partidos.js` | **Borrado** |
+| `public/adminmode.html` | Fuera la tarjeta de importar; la de jornadas dice lo que hace ahora |
+| `server.js` | Retirada `/api/jornadas/importar-api` y las dos referencias a la pantalla |
+| `src/validacion.js` | `normalizarPartido` acepta `fecha`/`estado` como alias |
+| `test/architecture.test.js` | Los dos contadores centinela, con su porqué |
+| `test/e2e/jornadas.spec.js` | Crear desde el API, modificar, eliminar, y que la pantalla retirada dé 404 |
+| `test/e2e/jornadas-buscador.spec.js` | Renombrada desde `importar-partidos.spec.js`; apunta a la pantalla nueva |
+
+**Verificación:**
+
+```
+npm test          → 129/129
+npm run test:e2e  → 62/62  (58 anteriores + 4 nuevas, escritorio y móvil)
+```
+
+**Hallazgos nuevos:**
+
+- **Una duplicación que nadie ha catalogado se arregla a medias.** La Fase C
+  corrigió el desplegable de una pantalla y dejó intacto el de la otra, sin que
+  nadie lo notara, porque la copia no estaba en ningún sitio anotada. El
+  antídoto no es tener más cuidado: es que no haya dos.
+- **Borrar código mueve los contadores centinela**, y eso no es una regresión.
+  Conviene que digan en el propio código que son un suelo y por qué, o el
+  siguiente que los vea en rojo pensará que rompió algo.
+- **Un aviso de éxito puede borrarlo su propia recarga.** «Avisar y recargar» se
+  lee inofensivo; lo que lo delata es la prueba que mira la pantalla.
+
+**Pendiente / siguiente paso:** **Fase E — verificación de correo electrónico**
+(petición 8). ⚠️ Tiene dos decisiones abiertas y una de ellas cuesta dinero:
+**qué proveedor de envío** (Resend, SendGrid, SMTP propio — con configuración en
+Render) y **qué se bloquea a una cuenta sin verificar**. Media parte ya está
+hecha sin saberlo: el modelo `Usuario` ya tiene `emailVerificado`,
+`tokenVerificacion` y `expiracionTokenVerificacion`.
 
 ---
 

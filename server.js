@@ -313,7 +313,6 @@ function requireAdmin(req, res, next) {
 const paginasAdmin = [
   '/jugadores.html',
   '/jornadas.html',
-  '/importar_partidos.html',
   '/resultados.html',
   '/agregar-resultados-oficiales.html',
   '/generar_reporte.html',
@@ -1376,7 +1375,6 @@ app.delete('/api/quiniela-actual', requireAdmin, async (req, res) => {
   '/ver-resultados-oficiales',
   '/verResultados',
   '/verResultados_puntos',
-  '/importar_partidos',
   '/ver_resultados_trivias'
 ].forEach(route => {
   app.get(route, (req, res) => {
@@ -1555,39 +1553,16 @@ app.post('/api/jornadas', requireAdmin, async (req, res) => {
   res.json(jornadas.map(j => [j.nombre, j.partidos]));
 });
 
-app.post('/api/jornadas/importar-api', requireAdmin, async (req, res) => {
-  try {
-    const nombre = normalizarNombreDeJornada(req.body?.nombre);
-
-    /*
-     * El importador llama `fecha` y `estado` a lo que la jornada guarda como
-     * `apiDate` y `apiStatus`. Se traduce antes de validar para que el
-     * normalizador vea siempre la misma forma de partido que el resto de rutas.
-     */
-    const partidosFormateados = normalizarPartidos(
-      (Array.isArray(req.body?.partidos) ? req.body.partidos : []).map(p => ({
-        ...p,
-        apiDate: p?.apiDate ?? p?.fecha ?? '',
-        apiStatus: p?.apiStatus ?? p?.estado ?? ''
-      }))
-    );
-
-    await Jornada.findOneAndUpdate(
-      { nombre },
-      { nombre, partidos: partidosFormateados },
-      { upsert: true, new: true }
-    );
-    await actualizarPuntosDeJornada(nombre, req.quiniela.configuracion.puntuacion);
-
-    res.json({
-      success: true,
-      message: 'Jornada importada correctamente'
-    });
-  } catch (error) {
-    console.error('Error importando jornada:', error);
-    res.status(500).json({ error: 'Error al importar jornada' });
-  }
-});
+/*
+ * Aquí estaba POST /api/jornadas/importar-api, que era POST /api/jornadas con
+ * una traducción de nombres delante: el buscador manda `fecha` y `estado`, y la
+ * jornada guarda `apiDate` y `apiStatus`. Dos rutas para una escritura, y la
+ * copia se quedó sin la validación que sí ganó la otra más de una vez.
+ *
+ * En la Fase D el alias bajó a `normalizarPartido` -quien normaliza es quien
+ * debe saber los nombres que acepta- y la ruta sobró. La pantalla única guarda
+ * por POST /api/jornadas, igual que todo lo demás.
+ */
 
 app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {
   const jornada = normalizarNombreDeJornada(req.body?.jornada);
