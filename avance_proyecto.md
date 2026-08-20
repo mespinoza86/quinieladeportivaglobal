@@ -12,33 +12,59 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 18 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 18 de agosto de 2026 (noche)
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
 
+### ⚠️ Lo primero, en un minuto
+
+```bash
+git log --oneline -3     # debe empezar por 61f3dae
+git status               # debe estar limpio
+npm test                 # 119/119
+npm run test:e2e         # 46/46
+```
+
+**`main` está 6 commits POR DELANTE de `origin/main`: nada de lo del 18 de agosto
+por la tarde está subido.** Es lo primero que hay que decidir al retomar —subirlo
+o no—, porque el CI no ha visto ninguno de esos commits todavía:
+
+```bash
+git push origin main
+```
+
+Los seis son: el plan de producto (2), la Fase A (1), la Fase B (2) y el cambio
+de regla de la jornada actual (1).
+
 ### Dónde estamos
 
-**Fases 0 a 5 completadas**, y con ellas la Fase 6 de endurecimiento
-(entradas 016–023 del 18 de agosto de 2026).
+**Toda la deuda técnica planificada está cerrada** —fases 0 a 5, más el
+endurecimiento y las cinco prioridades altas de la auditoría (Entrada 015)— y el
+trabajo ha pasado a ser **producto**: el plan de las diez peticiones de §20, del
+que van hechas las fases A y B.
 
-**Las cinco prioridades altas de la auditoría (Entrada 015) están cerradas:**
-plazos del sincronizador, validación de dominio, privacidad de pronósticos,
-S-04 (inyección de HTML) y transacciones. La red de pruebas pasó de 75 a **112
-pruebas** más **30 de navegador** con Playwright, en escritorio y móvil, y todo
-ello se ejecuta solo en cada empujón: la integración continua está en verde.
+| Qué | Estado |
+|---|---|
+| Pruebas rápidas | **119** (46 de arquitectura + 73 de integración), ~10 s |
+| Pruebas de navegador | **46** (23 × escritorio y móvil), ~1–2 min |
+| Integración continua | En verde, en cada empujón y cada PR contra `main` |
+| `npm audit --omit=dev` | 0 vulnerabilidades |
+| `server.js` | 5.162 líneas; `src/` tiene 291 en tres módulos |
 
-Dos cambios de producto que conviene tener presentes al retomar:
+Tres cambios de producto que conviene tener presentes antes de tocar nada:
 
-- **El cierre es POR PARTIDO, no por jornada.** La jornada ya no tiene
+- **El cierre es POR PARTIDO, no por jornada.** La jornada no tiene
   `fechaCierre`: un partido se cierra a su hora de inicio, y ahí mismo su
-  pronóstico deja de poder editarse y pasa a ser visible para los demás. Una
-  sola regla para las dos cosas (Entrada 019).
-- **El módulo de Campeón del Mundo se retiró** (Entrada 013). Sus dos
-  colecciones siguen en Mongo, inertes.
+  pronóstico deja de poder editarse y pasa a ser visible para los demás. Una sola
+  regla para las dos cosas (Entrada 019).
+- **La jornada actual es LA ÚLTIMA QUE SE CREÓ**, y se ordena por `_id`, no por
+  `createdAt` —ese campo no existe en `Jornada`—. La decide el servidor en
+  `GET /api/jornada-actual` y las tres pantallas la consumen (Entradas 027 y 028).
+- **El módulo de Campeón del Mundo se retiró** (Entrada 013). Sus dos colecciones
+  siguen en Mongo, inertes.
 
-Sigue pendiente la paginación de los demás listados (M-26): no se debe confundir
-con la de la tabla general, que sí está resuelta.
+### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
 | Fase | Qué se hizo | Bitácora |
 |---|---|---|
@@ -58,51 +84,60 @@ con la de la tabla general, que sí está resuelta.
 | **6.8** | E2E de resultados y trivias; **CSP cerrada**; CI; M-26; primera tajada de módulos | 024 |
 | **6.9** | El CI en verde: el comodín de `node --test` no funciona en Node 20 | 025 |
 
-También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y se
-absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
+También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y
+se absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
 
 **El consumo de APIFootball dejó de crecer con el número de quinielas.** Antes,
 cien quinielas siguiendo los mismos partidos costaban cien veces más cuota que
-una. Ahora cuestan lo mismo: el partido se consulta una vez y todas leen de la
-misma caché. Ver §9.4 y la bitácora 010.
+una; ahora cuestan lo mismo, porque el partido se consulta una vez y todas leen
+de la misma caché. Ver §9.4 y la bitácora 010.
+
+### Lo que se hizo el 18 de agosto por la tarde
+
+| Fase | Qué se hizo | Bitácora | Commit |
+|---|---|---|---|
+| **A** | La tarjeta *Llenar Quiniela* dejó de estirarse a 411×261 px en escritorio, y la tabla por jornada tiene tarjeta propia en la portada | 026 | `b8ce1dd` |
+| **B** | Una sola regla para "la jornada actual", servida por `GET /api/jornada-actual` y consumida por las tres pantallas. Selector de jornadas en llenar quiniela; resultados oficiales abre en la sugerida; podio de la jornada en la portada | 027 | `623a6ee` |
+| **B (corrección)** | La regla pasa de derivarse de las fechas de los partidos a ser el orden de creación, por decisión del usuario | 028 | `61f3dae` |
+
+Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
+
+- **Lo valioso no era la regla, era que hubiera UNA.** El criterio cambió a mitad
+  de camino y no importó: el endpoint, el selector y el podio siguieron en pie. Si
+  mañana cambia otra vez, se toca `calcularJornadaActual()` en `server.js` y nada
+  más.
+- **El carrusel de la portada ahora recorre una lista**, no un booleano
+  (`private/js/index-rotador.js`). El acuerdo con los paneles es uno solo: **un
+  panel oculto es un panel sin nada que enseñar, y se salta**. Los paneles
+  arrancan ocultos y se destapan al tener contenido.
+- **Las pruebas cruzan las fechas a propósito**: la jornada más nueva lleva los
+  partidos más viejos. Si se "arreglan" para que vayan alineadas, dejan de
+  distinguir qué regla aplica el servidor y pasarían con cualquiera.
 
 ### Estado de Git
 
 ```
-71f076f Primeras pruebas de navegador con Playwright
-1185c08 Transacciones en las secuencias de varias escrituras
-01dcfe5 S-04: construccion de HTML sin agujeros de inyeccion
-a1b37da La cache del ranking sobrevive al minuto en vivo
-d0724be El cierre es por partido, no por jornada
-4f6b46b Ojo para ver la contrasena y mensaje unificado al fallar
-2e2730f Endurecimiento 017: validacion de dominio y privacidad de pronosticos
-6c4013e Endurecimiento 016: plazos del sincronizador y lectura de la tabla por jornada
-19f31b5 fixing md file
-64ec3ce Applying changes for tabla por jornada
-73b6ca0 Anotar el hash de la Fase 4 en el documento de avance
-f15dad3 Fase 4: rediseno del sincronizador (C-01 y C-05)
-e2f8d3f Dejar el punto de partida para retomar el trabajo
-d55dabb Cerrar la Fase 3: trivias, marcador a 90 y transferencia
-```
-
-Los ocho commits del 18 de agosto (entradas 016–023) se hicieron en ramas cortas.
-**Al escribir esto, `main` y `origin/main` están en `d0724be`**: los cuatro
-últimos —caché del ranking, S-04, transacciones y Playwright— viven todavía en
-la rama `e2e-playwright` y falta llevarlos a `main`:
-
-```bash
-git checkout main
-git merge --ff-only e2e-playwright
-git push origin main
+61f3dae La jornada actual pasa a ser la ultima creada        ← main, sin subir
+623a6ee Fase B: una sola respuesta a "cual es la jornada actual"
+b8ce1dd Fase A: la tarjeta que se estiraba y la que faltaba
+3cad275 Detallar cada fase del plan para poder arrancar sin volver a pensarlo
+6b5876b Plan de producto: las diez peticiones analizadas y ordenadas (S20)
+29b326f Documentar el arreglo del CI en la bitacora
+724c10c Arreglar el CI: el comodin de node --test no funciona en Node 20
+942bffa Fase 6, primera tajada: sacar de server.js lo que no toca Express
 ```
 
 > ⚠️ Esta lista es una foto y envejece. **Comprueba con `git log --oneline` y
-> `git branch -vv` dónde está `main` de verdad** antes de fiarte de ella; el
-> bloque anterior a este llevaba desactualizado desde la Entrada 015.
+> `git status -sb` dónde está `main` de verdad** antes de fiarte de ella.
 
-Hecha la fusión, las ramas `fase-4-sincronizador`, `fase-6-endurecimiento`,
-`cache-ranking`, `s04-xss`, `transacciones` y `e2e-playwright` quedan contenidas
-en `main` y se pueden borrar con `git branch -d`.
+**Las ocho ramas de trabajo están ya contenidas en `main`** —verificado con
+`git branch --merged main`, ninguna queda fuera— y se pueden borrar cuando se
+quiera:
+
+```bash
+git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright \
+              fase-4-sincronizador fase-6-endurecimiento s04-xss transacciones
+```
 
 > ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
 > `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
@@ -130,64 +165,116 @@ documentadas en detalle en las bitácoras 004 y 005.
 
 ```bash
 npm start                  # arranca la aplicación
-npm test                   # las 113 pruebas (~30 s, sin red, sin tocar la base real)
-npm run test:integracion   # solo las 67 de integración
-npm run test:e2e           # las 30 de navegador (~50 s, escritorio y móvil)
+npm test                   # las 119 pruebas rápidas (~10 s, sin red, sin tocar la base real)
+npm run test:arquitectura  # solo las 46 de arquitectura
+npm run test:integracion   # solo las 73 de integración
+npm run test:e2e           # las 46 de navegador (~1-2 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
-npm audit --omit=dev       # 0 vulnerabilidades, verificado el 17-ago
+npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
 ```
 
-### Lo siguiente
+**Las pruebas de navegador necesitan `npx playwright install chromium`** una vez
+por máquina; los navegadores no van en el repositorio. No hace falta levantar
+nada a mano: Playwright arranca la aplicación con una base en memoria
+(`test/e2e/arrancar.js`).
 
-**El trabajo pendiente ya no es deuda técnica sino producto.** Las diez peticiones
-recogidas el 18 de agosto están analizadas, agrupadas y ordenadas en
-**§20 — Plan de producto**. Se abordan de una en una y en el orden de ahí, que no
-es el orden en que se pidieron.
+---
 
-De la deuda técnica anterior solo quedan abiertas dos cosas:
+## 🎯 LO QUE QUEDA PENDIENTE
 
-1. **Terminar la Fase 6 de modularización.** `server.js` sigue en 5.100 líneas:
-   faltan las rutas, los modelos y el sincronizador.
-2. **`style-src` conserva `unsafe-inline`.** Se cerró `script-src` y
-   `script-src-attr` (Entrada 024), no los estilos.
+Ordenado por lo que conviene hacer antes. Nada de esto está empezado.
 
-Y los medios sin resolver de la Entrada 015: una jornada aplazada o cancelada
-queda provisional para siempre; la "última jornada" se elige por `createdAt` y no
-por orden competitivo; y no hay política escrita sobre los miembros que entran a
-mitad de temporada.
+### 1. Pendiente inmediato de las sesiones anteriores
 
-### Decisiones abiertas que dependen del usuario
+| Qué | Por qué sigue abierto |
+|---|---|
+| **Subir `main`** (6 commits) | El CI no ha visto nada del 18 por la tarde |
+| **Prueba de humo visual** | La dejó pendiente la Entrada 024 y nunca se hizo: los **22 botones** que pasaron de `onclick` a `data-ir-a`, y los **resultados de trivias**. Añádase ahora lo de las fases A y B: el **selector de jornada** en llenar quiniela y el **podio de la jornada** en la portada, que rota cada 10 s |
+
+La prueba de CSP que recorre las 32 pantallas cubre buena parte de lo de los
+botones, pero no sustituye a mirarlo: una violación de CSP no da error visible
+—el botón carga, se pulsa y no hace nada—.
+
+### 2. Plan de producto (§20) — lo que falta
+
+| Orden | Fase | Peticiones | Qué hace falta antes de empezar |
+|---|---|---|---|
+| ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
+| ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
+| **3.º** | **C — Buscador de ligas dinámico** | 9 | Solo **confirmar cuántos días hacia adelante** se buscan partidos. Es lo siguiente y está prácticamente desbloqueada |
+| **4.º** | **D — Administración de jornadas unificada** | 3 | ⚠️ **Confirmar que se acepta perder el alta manual** de partidos. Es irreversible en la práctica, y necesita que la Fase C funcione bien primero |
+| **5.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
+| **6.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro. Depende de C |
+| — | **Aparte 1** | 7 (SQL) | Respondida en §20.8: **no migrar** por ahora. No bloquea nada |
+
+El detalle de cada fase —qué archivos se tocan y cómo se comprueba— está en §20.
+No hay que volver a pensarlo.
+
+### 3. Deuda técnica que sigue abierta
+
+1. **Terminar la Fase 6 de modularización.** `server.js` sigue en **5.162
+   líneas**. Hecho: `src/transacciones.js`, `src/validacion.js` y `src/fechas.js`
+   (291 líneas en total). Faltan **las rutas, los modelos y el sincronizador**,
+   que sí tocan Express y merecen su propia sesión con prueba de humo.
+   **Dos invariantes** que hay que respetar en cada tajada: lo extraído **se
+   reexporta** desde `server.js`, y los módulos de `src/` **no pueden depender de
+   `server.js`** —sería un ciclo y el troceado dejaría de servir—.
+2. **`style-src` conserva `unsafe-inline`.** Se cerraron `script-src` y
+   `script-src-attr` (Entrada 024); los estilos no.
+3. **Paginación del resto de listados (M-26).** La tabla general sí está
+   paginada, y tres endpoints aceptan acotarse; el resto es deuda transversal.
+4. **`Jornada` es el único esquema de dominio sin `timestamps`** (cinco de siete
+   lo llevan). No se añadió porque el `_id` resuelve lo que hacía falta, pero si
+   alguna vez hay que saber cuándo se **tocó** una jornada —no cuándo se creó—,
+   ahí está el hueco (Entrada 028).
+5. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
+   queda provisional para siempre, y no hay política escrita sobre los miembros
+   que entran a mitad de temporada.
+
+### 4. Decisiones abiertas que dependen del usuario
 
 | # | Decisión | Por qué importa |
 |---|---|---|
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| **M-03/M-04** | Política de congelamiento implementada localmente | Se congela al quedar definitivos todos los partidos y las correcciones conservan las reglas originales |
 | **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
+| **Render** | Definir `NODE_ENV=production`, `ALLOWED_ORIGINS` y `DEBUG_ENDPOINTS=false`, y poner `/readyz` como health check | Sin esto el despliegue no está bien configurado |
 
-### Pendientes menores, cuando toque
+*(M-03/M-04 ya no está abierta: se congela al quedar definitivos todos los
+partidos, y las correcciones conservan las reglas originales.)*
 
-- **Anexo B, procedimiento C**: auditar si la fuga C-02 dañó datos. Hoy no hay nada
-  que auditar (0 trivias, 0 respuestas, una sola quiniela). Repetir cuando haya
-  varias quinielas y dos coincidan en el nombre de una jornada.
-- En Render, definir `NODE_ENV=production`, `ALLOWED_ORIGINS` y
-  `DEBUG_ENDPOINTS=false`, y configurar `/readyz` como health check del servicio.
-- **Vigilar `/api/admin/sync-metricas` tras el primer despliegue de la Fase 4.**
-  Es la forma de comprobar en producción que la deduplicación hace lo que dice:
+### 5. Cosas que vigilar cuando haya tráfico real
+
+- **`/api/admin/sync-metricas` tras el primer despliegue de la Fase 4.** Es la
+  forma de comprobar en producción que la deduplicación hace lo que dice:
   `consultasAhorradasPorDeduplicacion` debe crecer en cuanto haya dos quinielas
-  siguiendo los mismos partidos. Desde la Entrada 016 también conviene mirar
-  `ciclosAbandonadosPorTiempo`: si crece, el proveedor está tardando más que el
-  plazo del ciclo y hay que revisar `APIFOOTBALL_TIMEOUT_MS`.
-- **Vigilar `syncsSinCambioDePuntos`** en el primer domingo con partidos en
-  vivo: debe crecer mucho más deprisa que `jornadasReescritas`. Si no, la caché
-  del ranking se está tirando sin motivo (Entrada 020).
-- **Las pruebas de navegador necesitan `npx playwright install chromium`** una
-  vez por máquina. Los navegadores no van en el repositorio.
-- **Código muerto localizado y no retirado:** `private/js/llenar_jornada.js` no
-  lo carga ninguna pantalla —las dos de llenar jornada usan
-  `llenar_jornada_user.js`—, y `server.js` conserva el marcador
-  `////////////borrar borrar` y el bloque comentado de `footballApi`. Todo ello
-  es material para la fase de modularización.
+  siguiendo los mismos partidos. Desde la Entrada 016 conviene mirar también
+  `ciclosAbandonadosPorTiempo`: si crece, el proveedor tarda más que el plazo del
+  ciclo y hay que revisar `APIFOOTBALL_TIMEOUT_MS`.
+- **`syncsSinCambioDePuntos`** en el primer domingo con partidos en vivo: debe
+  crecer mucho más deprisa que `jornadasReescritas`. Si no, la caché del ranking
+  se está tirando sin motivo (Entrada 020).
+- **Anexo B, procedimiento C**: auditar si la fuga C-02 dañó datos. Hoy no hay
+  nada que auditar (0 trivias, 0 respuestas, una sola quiniela). Repetir cuando
+  haya varias quinielas y dos coincidan en el nombre de una jornada.
+
+### 6. Trampas conocidas del entorno de trabajo
+
+Cuestan tiempo cada vez que se olvidan:
+
+- **El heredoc del shell se come las barras invertidas.** Editar expresiones
+  regulares por `bash <<'EOF'` las corrompe en silencio. Mordió en la Entrada 024
+  y tres veces más en la 027. La salida: anclar por posición y traer el texto
+  nuevo desde un archivo.
+- **Los archivos del repositorio mezclan finales de línea.** `server.js` y
+  `avance_proyecto.md` son CRLF; `private/css/styles.css` va mezclado. Una
+  búsqueda con `\n` no encuentra nada en ellos.
+- **Las capturas de página completa mienten sobre la barra inferior.** Sale
+  flotando a media página porque es `position: fixed`. No es un fallo de
+  maquetación; no hay que "arreglarlo" (Entrada 026).
+- **Los pronósticos se cierran partido a partido.** Cualquier prueba que mande un
+  pronóstico a un partido cuya hora ya pasó recibirá «Partidos bloqueados» y
+  parecerá un fallo del servidor. No lo es (Entrada 028).
 
 ---
 
@@ -269,38 +356,79 @@ otros dos son las Fases 6 y 5.
 
 ## 2. Inventario del repositorio
 
+> **Puesto al día el 18 de agosto de 2026 (noche).** El resto de este documento a
+> partir de §3 es el análisis original del 14 de agosto y describe el sistema tal
+> como estaba entonces; los cambios posteriores viven en la bitácora (§19). Este
+> inventario sí se mantiene al día, porque es lo primero que se consulta al
+> retomar.
+
 ### 2.1 Raíz
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `server.js` | 3.584 | Servidor completo: middleware, esquemas, 96 rutas, integraciones, jobs |
-| `package.json` | 30 | Dependencias y scripts |
+| `server.js` | 5.162 | El monolito: middleware, esquemas, rutas, integraciones y jobs. La Fase 6 lo está troceando hacia `src/` |
+| `avance_proyecto.md` | — | Este documento |
+| `package.json` | 41 | Dependencias y scripts |
+| `package-lock.json` | — | Necesario para `npm ci`, que es lo que usa el CI |
+| `playwright.config.js` | 62 | Pruebas de navegador: dos proyectos —escritorio y móvil—, en serie y con un solo trabajador |
 | `README.md` | 55 | Instrucciones de instalación, modelo de acceso y migración |
-| `HANDOFF.md` | 65 | Acta de decisiones del 9 de julio de 2026. **Superado**: su contenido íntegro vive ahora en el Anexo A de este documento. Se conserva como histórico congelado |
-| `.env` | — | Secretos locales (ignorado por Git) |
-| `.gitignore` | 3 | Ignora `.env`, `node_modules/`, `npm-debug.log*` |
-| `equipos.json` | 12 KB | Volcado heredado de equipos |
-| `jornadas.json` | 11 KB | Volcado heredado de jornadas |
-| `jugadores.json` | 270 B | Volcado heredado de jugadores |
-| `resultados.json` | 165 KB | Volcado heredado de pronósticos |
-| `resultados-oficiales.json` | 16 KB | Volcado heredado de resultados oficiales |
+| `HANDOFF.md` | 65 | Acta del 9 de julio de 2026. **Superado**: su contenido íntegro vive en el Anexo A. Se conserva como histórico congelado |
+| `.env` | — | Secretos locales (ignorado por Git). Usa la URI **sin SRV**; ver el punto de partida |
+| `.env.example` | — | Plantilla de configuración con todas las variables |
+| `.gitignore` | 6 | Ignora `.env`, `node_modules/`, `test-results/`, informes de Playwright |
 
-> Los cinco `.json` de la raíz son restos de la versión previa a MongoDB. Ninguno
-> se lee desde el código actual. Son datos históricos, no configuración.
+**Directorios:** `src/` (módulos extraídos), `public/` (32 pantallas HTML),
+`private/` (CSS y JS servidos), `test/`, `scripts/`, `legacy-data/`,
+`.github/workflows/`.
 
-### 2.2 `scripts/`
+> Los cinco volcados `.json` de la versión anterior a MongoDB **se movieron a
+> `legacy-data/` en la Fase 0**. Ninguno se lee desde el código actual: son datos
+> históricos, no configuración.
+
+### 2.2 `src/` — lo extraído del monolito (Fase 6)
+
+| Archivo | Líneas | Rol |
+|---|---:|---|
+| `validacion.js` | 143 | Validadores de dominio: marcadores, nombres de jornada, partidos, índices |
+| `transacciones.js` | 89 | `enTransaccion` y la detección de bases sin soporte de transacciones |
+| `fechas.js` | 59 | `parseFechaPartidoCostaRica` y `extraerFechaApi`. Costa Rica es UTC−6 todo el año |
+
+**Dos invariantes para las tajadas siguientes:** lo extraído **se reexporta**
+desde `server.js` —que es la superficie pública que piden las pruebas—, y los
+módulos de `src/` **no pueden depender de `server.js`**: sería un ciclo y el
+troceado dejaría de servir.
+
+### 2.3 `scripts/`
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior a la nueva. Simulación por defecto |
 
-### 2.3 `test/`
+### 2.4 `test/` — 119 pruebas rápidas y 46 de navegador
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `architecture.test.js` | 366 | 25 pruebas de invariantes arquitectónicas |
+| `architecture.test.js` | 981 | **46 pruebas** que inspeccionan el TEXTO del código: invariantes que una prueba de comportamiento no ve —que no haya funciones duplicadas, que las rutas retiradas no vuelvan, que las pantallas no lleven manejadores en atributo— |
+| `integracion.test.js` | 2.372 | **73 pruebas** que ejecutan el servidor de verdad contra MongoDB en memoria |
+| `plantillas.js` | 87 | Utilidades compartidas de plantillas para las pruebas |
 
-### 2.4 `public/` — 32 páginas HTML
+**`test/e2e/` — navegador, con Playwright.** Se lanzan aparte con
+`npm run test:e2e` porque necesitan navegador y tardan más; la suite rápida debe
+seguir siendo rápida.
+
+| Archivo | Líneas | Qué cubre |
+|---|---:|---|
+| `arrancar.js` | 59 | Levanta la aplicación con base en memoria. Lo llama Playwright, no al revés |
+| `ayudas.js` | 83 | Registro, creación de quiniela y Admin Mode. Cada prueba crea su propia cuenta |
+| `csp.spec.js` | 76 | Recorre **las 32 pantallas** registrando violaciones de CSP. Necesario porque una violación **no da error visible**: el botón carga, se pulsa y no hace nada |
+| `cuenta.spec.js` | 94 | Registro, sesión, creación de quiniela, ojo de la contraseña |
+| `inyeccion.spec.js` | 95 | El marcado en nombres se muestra como texto y no se ejecuta (S-04) |
+| `jornadas.spec.js` | 161 | Administración de jornadas y privacidad partido a partido |
+| `jornada-actual.spec.js` | 202 | Fase B: las tres pantallas abren en la misma jornada |
+| `portada.spec.js` | 83 | Fase A: la tarjeta nueva y que ninguna se estire |
+| `resultados.spec.js` | 237 | Resultados oficiales, tabla general paginada y trivias |
+
+### 2.5 `public/` — 32 páginas HTML
 
 Servidas estáticamente desde `express.static`.
 
@@ -321,7 +449,7 @@ Servidas estáticamente desde `express.static`.
 `enviarresultadospartido.html`, `enviarresultadostriviaspartido.html`,
 `miembros.html`, `configuracion-quiniela.html`
 
-### 2.5 `private/js/` — 33 scripts
+### 2.6 `private/js/` — 39 scripts
 
 Servidos por la ruta `GET /js/:filename`, que lee de `private/js/`. Es un pseudo-ocultamiento:
 el navegador los descarga igual. **No hay ningún secreto ahí, pero tampoco hay ninguna
@@ -340,12 +468,12 @@ Los más grandes:
 | `ver-resultados.js` | 374 | Vista de pronósticos |
 | `admin_trivias.js` | 301 | Configuración de trivias por jornada |
 
-### 2.6 `private/css/`
+### 2.7 `private/css/`
 
 Un único `styles.css` con el sistema visual "mobile shell" (tarjetas, navegación
 inferior, paneles de aplicación).
 
-### 2.7 Dependencias
+### 2.8 Dependencias
 
 Estado **después de la Fase 1** (16 de agosto de 2026):
 
@@ -378,17 +506,26 @@ desde Express 4.16).
 > pollution, DoS, fuga de `Proxy-Authorization` en redirecciones). Se resolvieron
 > con `npm audit fix` en la Fase 1.
 
-### 2.8 Scripts de npm
+### 2.9 Scripts de npm
 
 ```json
 "start":              "node server.js"
 "check":              "node --check server.js"
-"test":               "node test/architecture.test.js"
+"test":               "node --test test/architecture.test.js test/integracion.test.js"
+"test:arquitectura":  "node --test test/architecture.test.js"
+"test:integracion":   "node --test test/integracion.test.js"
+"test:e2e":           "playwright test"
+"test:e2e:ui":        "playwright test --ui"
 "migrate:legacy:dry": "node scripts/migrate-legacy.js"
 "migrate:legacy":     "node scripts/migrate-legacy.js --execute"
 ```
 
-### 2.9 Variables de entorno
+> Los dos archivos de `test` van **nombrados uno a uno** y no con un comodín.
+> `node --test test/*.test.js` funciona en la máquina de siempre y falla en el
+> CI: el comodín lo expande el shell, y el de Windows no lo expande igual que
+> el de Linux. Se descubrió al estrenar la integración continua (Entrada 025).
+
+### 2.10 Variables de entorno
 
 Presentes en `.env`:
 
