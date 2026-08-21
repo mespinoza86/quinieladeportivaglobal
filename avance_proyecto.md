@@ -2590,7 +2590,7 @@ anterior cerrada.
 | # | Tajada | Qué entra | Estado |
 |---|---|---|---|
 | **1** | **Cimientos** | `src/db.js`, `db/esquema.sql`, arnés PGlite, 13 pruebas | ✅ Entrada 040 |
-| **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias`; registro, login, sesiones, roles, Admin Mode | |
+| **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias` y sus reglas | ✅ Entrada 041 |
 | **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | |
 | **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | |
 | **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | |
@@ -7181,6 +7181,96 @@ Eso es deliberado: la tajada 1 no migra ninguna ruta, sólo pone el suelo.
 **Tajada 2 — plataforma**: `usuarios`, `quinielas`, `membresias`; registro,
 login, sesiones, roles y Admin Mode. Es la primera que toca `server.js` de
 verdad, y la que se lleva por delante `connect-mongo`.
+
+---
+
+### 📌 Entrada 041 — 20 de agosto de 2026 — Migración, tajada 2: la plataforma
+
+**Objetivo:** portar a PostgreSQL las tres piezas de plataforma —cuentas,
+quinielas y membresías— con sus reglas de negocio intactas.
+
+**Cómo se hizo, y por qué así:**
+
+La tajada es **aditiva**: los módulos nuevos viven al lado de lo de Mongo, y
+`server.js` **no se ha tocado**. Por eso las 129 pruebas viejas siguen en verde y
+`main` sigue desplegable.
+
+⚠️ **Esto no se puede mantener hasta el final, y conviene decirlo ahora.** El
+límite entre Mongo y PostgreSQL no se puede partir por la mitad: en cuanto
+`quinielas` viva en PostgreSQL con identificadores UUID, las colecciones de
+dominio que siguen en Mongo —con su `quinielaId` de tipo ObjectId— dejan de poder
+apuntar a ellas. **Hay un momento en el que la aplicación se apaga y no vuelve
+hasta que todas las tajadas estén hechas.** Ese momento es cuando `server.js`
+cambie de base, y **no es esta tajada**: se retrasa todo lo posible construyendo
+primero, a un lado, todo lo que se pueda probar sin Express.
+
+**Qué se hizo:**
+
+1. **`src/usuarios.js`** — validación del registro, normalización de identidad,
+   alta, autenticación y la forma pública de un usuario.
+2. **`src/quinielas.js`** — alta con su membresía de propietario en la misma
+   transacción, búsqueda por código, listado por usuario y configuración.
+3. **`src/membresias.js`** — solicitar ingreso, aprobar, rechazar, cambiar rol,
+   solicitar retiro, aprobar retiro, expulsar y transferir la propiedad.
+4. **`test/plataforma.test.js`** — 24 pruebas de esas reglas.
+5. Un índice único parcial en `jugadores` que el alta al aprobar necesitaba.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/usuarios.js` | **Nuevo.** Cuentas |
+| `src/quinielas.js` | **Nuevo.** Quinielas y su configuración |
+| `src/membresias.js` | **Nuevo.** Pertenencia, roles y estados |
+| `test/plataforma.test.js` | **Nuevo.** 24 pruebas |
+| `db/esquema.sql` | Índice único parcial `jugadores (quiniela_id, usuario_id)` |
+| `src/db.js` | `enQuiniela` limpia el contexto al salir de una transacción prestada |
+| `package.json` | `npm run test:postgres` |
+
+**Verificación:**
+
+```
+node --test test/plataforma.test.js → 24/24 a la primera
+npm run test:postgres              → 37 pruebas en 6,5 s
+npm test                           → 166/166 (129 de Mongo + 37 nuevas)
+```
+
+**Hallazgos nuevos:**
+
+1. **Cuatro reglas del código viejo eran comprobaciones sin red debajo, y ahora
+   la tienen.** El original miraba si el nombre estaba cogido y luego insertaba;
+   entre las dos cosas cabe otro registro. Ahora quien decide es el índice único,
+   y el error `23505` se traduce en un mensaje en vez de subir como un 500. Lo
+   mismo con el código de ingreso: en vez de mirar si existe, se inserta y **se
+   reintenta si choca**, que es más simple y más correcto.
+2. ⚠️ **Degradar a dos administradores a la vez podía dejar la quiniela sin
+   ninguno.** El código viejo contaba administradores y luego guardaba, en dos
+   pasos: dos degradaciones simultáneas veían cada una «quedan dos» y pasaban.
+   Ahora la cuenta y el cambio van en la misma transacción y con `FOR UPDATE`.
+   No estaba en la lista de hallazgos: apareció al portar la regla.
+3. **La configuración de la quiniela se funde en vez de sustituirse**
+   (`configuracion || $2::jsonb`). Escribir el bloque entero desde el navegador
+   borraría cualquier ajuste que el cliente no conociera. En Mongo esto lo hacía
+   `$set` por campos; en `jsonb` hay que pedirlo explícitamente, y es fácil no
+   darse cuenta.
+4. ⚠️ **Una transacción prestada hay que devolverla como estaba.** Aprobar un
+   miembro escribe en `membresias` (plataforma) y en `jugadores` (con RLS), así
+   que `enQuiniela` entra prestado en la transacción de `enTransaccion`. Si al
+   salir no limpiara `app.quiniela_id`, todo lo que viniera después en esa misma
+   transacción seguiría filtrado por esa quiniela **sin haberlo pedido**.
+5. **Las funciones devuelven un motivo, no un código HTTP.** `{ ok: false,
+   motivo: 'sin_admin', mensaje: … }`. Así la regla se prueba sin Express y la
+   ruta se limita a traducir. Es lo que permitió escribir 24 pruebas sin levantar
+   un servidor.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 3 — dominio básico**: `jugadores`, `jornadas`, `partidos` y `equipos`.
+Sigue siendo aditiva y sigue sin tocar `server.js`.
+
+El cambio de base de `server.js` —con las sesiones a `connect-pg-simple`— se hará
+cuando las tajadas 3 a 6 hayan dejado listos los módulos de dominio, para que el
+tiempo con la aplicación apagada sea el más corto posible.
 
 ---
 

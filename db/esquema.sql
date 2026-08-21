@@ -104,6 +104,14 @@ CREATE TABLE jugadores (
   UNIQUE (quiniela_id, nombre)
 );
 
+-- Un usuario es UN jugador dentro de una quiniela, y solo uno. Va como indice
+-- parcial porque `usuario_id` puede ser nulo: los jugadores historicos que
+-- migro el script de la base anterior quedaron como nombres sin cuenta, y de
+-- esos puede haber varios. Sostiene el ON CONFLICT del alta al aprobar un
+-- miembro.
+CREATE UNIQUE INDEX jugadores_quiniela_usuario
+  ON jugadores (quiniela_id, usuario_id) WHERE usuario_id IS NOT NULL;
+
 CREATE TABLE jornadas (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   quiniela_id uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,

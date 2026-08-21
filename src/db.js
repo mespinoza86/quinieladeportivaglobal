@@ -222,6 +222,17 @@ async function enQuiniela(quinielaId, fn) {
     throw e;
   } finally {
     if (propia) cliente.release();
+    else {
+      /*
+       * Entramos prestados en una transacción que NO tenía contexto de
+       * quiniela —es el caso de `enTransaccion` haciendo un apaño de dominio en
+       * medio, como el alta del jugador al aprobar un miembro—. Al salir hay
+       * que dejarla como estaba: si no, lo que venga después en esa misma
+       * transacción seguiría filtrado por esta quiniela sin haberlo pedido.
+       */
+      try { await cliente.query(`SELECT set_config('app.quiniela_id', '', true)`); }
+      catch { /* la transacción ya está abortada: da igual */ }
+    }
   }
 }
 
