@@ -196,9 +196,16 @@ el 20, porque desde esta máquina no se puede consultar.
 
 **Lo siguiente es el Anexo C**, que el usuario ejecuta a mano en el panel de
 Neon: crear la base, aplicar el esquema, crear el rol de la aplicación y correr
-la prueba de aceptación. Tiene que dar **8 de 8**.
+la prueba de aceptación. **Dio 8 de 8 el 20 de agosto** (Entrada 038): el
+aislamiento aguanta y el paso 5 está cerrado.
 
-⚠️ **Cuando dé 8 de 8, la puerta TODAVÍA no está pasada.** Falta lo único que el
+Queda **el paso 9, la puerta de verdad**: correr `npm run pool` desde
+`sondeo-sql/` con `DATABASE_URL` apuntando al rol **`app_quiniela`** —no al
+dueño— y a la cadena **con `-pooler`**. Comprueba con conexiones reutilizadas lo
+único que PGlite no puede: que el contexto de una quiniela no se cuele en la
+petición siguiente.
+
+⚠️ **Con el 8 de 8 la puerta TODAVÍA no está pasada.** Falta lo único que el
 sondeo no pudo comprobar, porque PGlite atiende una sola conexión: correr esas
 mismas comprobaciones **desde Node, con un `Pool` de `pg` y varias peticiones a
 la vez**, para confirmar que el contexto de una quiniela no se cuela en la
@@ -497,6 +504,20 @@ Cuestan tiempo cada vez que se olvidan:
   y llega **despues** de que el `CREATE ROLE` haya ido bien, que es lo que
   despista: parece que el rol quedo mal creado, y esta perfectamente creado
   (Entrada 037).
+- ⚠️ **`rolsuper` y `rolbypassrls` no bastan para saber si un rol es seguro.** El
+  dueño de las tablas no es ninguna de las dos cosas y aun así puede **apagar
+  RLS** con un `ALTER TABLE`. La pregunta correcta es si es dueño de alguna
+  tabla: `SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND
+  tableowner = current_user`, que debe dar **0** para el rol con el que se
+  conecta la aplicación (Entrada 038).
+- ⚠️ **Un aviso en mitad de una salida en verde no lo lee nadie.** Cuando una
+  condición invalida el resultado —el rol equivocado, la cadena equivocada— hay
+  que **abortar, no advertir**: ocho `OK` seguidos tapan cualquier aviso que haya
+  quedado arriba (Entrada 038).
+- ⚠️ **`sslmode=require` ya no significa lo que parece en `pg`.** Hoy se comporta
+  como `verify-full`; en la próxima versión mayor pasará a la semántica de libpq,
+  que es **más débil**. Las cadenas de conexión deben decir **`verify-full`**
+  explícito para no cambiar de garantías con una actualización (Entrada 038).
 
 ---
 
@@ -6765,6 +6786,112 @@ del *pooler* y el rol `app_quiniela`, y correr `npm run pool` desde `sondeo-sql/
 Comprueba con conexiones reutilizadas lo único que PGlite no puede: que el
 contexto de una quiniela **no se cuele en la petición siguiente**. Hasta que eso
 pase en verde, **no se toca ninguna ruta**.
+
+---
+
+### 📌 Entrada 038 — 20 de agosto de 2026 — Ocho de ocho en Neon, y el guardián que faltaba en la puerta
+
+**Objetivo:** cerrar el paso 5 del Anexo C —conseguido— y arreglar un fallo de la
+prueba del *pool* que habría dado un verde sin valor.
+
+**Lo bueno primero: la prueba de aceptación pasa entera en Neon.**
+
+```
+1  El rol app_quiniela existe y no puede saltarse RLS       PASA  superusuario=f bypassrls=f
+2  Las 12 tablas de dominio tienen RLS activo y forzado     PASA  12 de 12
+3  El dueño puede asumir el rol app_quiniela                PASA
+4  Sin contexto de quiniela no se ve nada                   PASA  vio 0 filas
+5  Un SELECT sin filtro solo ve la quiniela del contexto    PASA  vio 1: ana_v
+6  Pedir a proposito la quiniela ajena devuelve vacio       PASA  devolvio 0 filas
+7  Un JOIN no cruza quinielas con jornadas del mismo nombre PASA  devolvio 1 filas
+8  Escribir en una quiniela ajena lo rechaza la base        PASA  new row violates row-level
+                                                                  security policy
+```
+
+La octava es la que más dice: **la inserción en una quiniela ajena la rechaza la
+base, no el código**. Con el `tenantPlugin` de Mongo eso depende de que el plugin
+esté puesto en el esquema y de que la consulta pase por sus enganches — y
+**M-33** documenta tres por los que no pasa.
+
+**El fallo que se encontró:**
+
+Al correr `probar-pool.js`, el usuario conectaba como **`neondb_owner`**. El guion
+lo avisaba… y seguía. ⚠️ **Eso era un fallo grave de diseño, y de la misma familia
+que lleva mordiendo toda la sesión:**
+
+> Con el rol dueño, **las ocho comprobaciones del *pool* habrían salido en
+> verde igual**, porque `FORCE ROW LEVEL SECURITY` también alcanza al dueño. Verde
+> y sin ningún valor: el dueño puede **apagar RLS** con un `ALTER TABLE`, y la
+> aplicación no debe poder.
+
+Y peor: **mirar `rolsuper` y `rolbypassrls` no distingue el caso**, porque el rol
+dueño de Neon no es ninguna de las dos cosas. Mi comprobación del rol daba
+`PASA` para `neondb_owner`. Lo que sí lo distingue es **si es dueño de las
+tablas**.
+
+**Qué se hizo:**
+
+1. **`probar-pool.js` ahora se planta en vez de avisar**, y con tres motivos:
+   si el rol es superusuario, si tiene `BYPASSRLS`, o —el que faltaba— **si es
+   dueño de alguna tabla de `public`**. El mensaje explica por qué se para y trae
+   escrito cómo armar la cadena correcta.
+2. **También se planta si la cadena no lleva `-pooler`**, porque lo que hay que
+   verificar es justo el modo transacción del *pooler*.
+3. **Se cambió la recomendación a `sslmode=verify-full`.** Las versiones nuevas de
+   `pg` tratan `require` como `verify-full` pero avisan de que en la próxima mayor
+   pasarán a la semántica de libpq, que es **más débil**. Escribirlo explícito
+   quita el aviso y fija el comportamiento seguro. Los certificados de Neon son de
+   una autoridad pública y verifican sin configuración extra.
+4. **Se añadieron avisos de progreso** a cada fase, para que un cuelgue se vea.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/probar-pool.js` | Aborta si el rol puede desactivar RLS o si falta el *pooler*; `verify-full`; progreso por fases |
+| `avance_proyecto.md` | Esta entrada y el estado del Anexo C |
+
+**Verificación:**
+
+```
+node sondeo-sql/probar-neon-sql.js         → 8/8 pasan
+node --check sondeo-sql/probar-pool.js     → sintaxis correcta
+DATABASE_URL=<sin pooler> node probar-pool.js → se planta, como debe
+npm test                                   → 129/129
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **`rolsuper` y `rolbypassrls` no bastan para saber si un rol es seguro para
+   la aplicación.** El dueño de las tablas no es ninguna de las dos cosas y aun
+   así puede **apagar RLS**. La pregunta correcta es *¿es dueño de alguna tabla?*:
+
+   ```sql
+   SELECT count(*) FROM pg_tables
+    WHERE schemaname = 'public' AND tableowner = current_user;
+   ```
+
+   Tiene que dar **0** para el rol con el que se conecta la aplicación.
+
+2. ⚠️ **Un aviso en mitad de una salida en verde no lo lee nadie.** El guion
+   avisaba de que el rol estaba mal y seguía corriendo; si hubiera terminado,
+   ocho `OK` habrían tapado el aviso. **Cuando una condición invalida el
+   resultado, hay que abortar, no advertir.** Es la misma decisión que la
+   comprobación 3 del `neon-verificar.sql`, y ahí ya había demostrado servir.
+
+3. **`sslmode=require` ya no significa lo que parece en `pg`.** Hoy se comporta
+   como `verify-full`; en la próxima versión mayor pasará a la semántica de libpq,
+   más débil. Cualquier cadena de conexión del proyecto debería decir
+   **`verify-full`** explícito para no cambiar de garantías con una actualización.
+
+**Pendiente / siguiente paso:**
+
+El usuario arma `DATABASE_URL` con el rol **`app_quiniela`** —no el dueño— y
+corre `npm run pool` desde `sondeo-sql/`. Si no recuerda la contraseña de ese
+rol, se le pone una nueva con `ALTER ROLE app_quiniela PASSWORD '...';`.
+
+Es **el último paso de la puerta**. Si sale en verde, la decisión de migrar las
+81 rutas se toma con datos. Hasta entonces, **no se toca ninguna ruta**.
 
 ---
 
