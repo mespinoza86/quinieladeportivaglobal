@@ -2548,6 +2548,71 @@ nombrarlo: casi seguro tiene solución mucho más barata dentro de MongoDB.
 
 ---
 
+## 21. Plan de migración a PostgreSQL
+
+> **Decidido el 20 de agosto de 2026**, después de que el sondeo (Entradas 032 a
+> 039) pasara la puerta: 8 de 8 en la prueba de aceptación y 4 de 4 en la del
+> *pool*, con 240 peticiones concurrentes y ni un cruce.
+
+### 21.1 Las cuatro decisiones de alcance
+
+Se tomaron antes de escribir una línea, porque cada una cambia el tamaño de la
+obra. Están aquí para no volver a discutirlas a mitad de camino.
+
+| Decisión | Qué se eligió | Qué se acepta a cambio |
+|---|---|---|
+| **Identidad** | **Claves ajenas dentro, nombres en el API.** La base usa `jornada_id` y `partido_id` de verdad; las rutas siguen recibiendo y devolviendo nombres, y los resuelven una vez al entrar | Cierra **M-01** y **M-02** en el modelo de datos, y **el frontend no se toca**. A cambio, los nombres siguen siendo la identidad de cara afuera: dos jornadas no pueden llamarse igual dentro de una quiniela, que ya era el caso |
+| **Capa de datos** | **`pg` a secas**, con ayudantes en `src/db.js` | SQL a la vista y control total de la transacción y del contexto RLS, que es la pieza delicada. Sin generación de código ni paso de compilación. A cambio, no hay tipos: el proyecto es JavaScript llano |
+| **Rama** | **`postgres`**, se funde cuando las 142 rápidas y las 62 de navegador pasen | `main` sigue desplegable y con el CI en verde. A cambio, una fusión grande al final y `main` sin novedades varias sesiones |
+| **`_id` → `id`** | Se cambia | Sale gratis: `_id` aparece **4 veces en 3 archivos** del frontend |
+
+### 21.2 Las tres reglas que sostienen el aislamiento
+
+Están escritas en la cabecera de `src/db.js` y **no son estilo, son la
+seguridad**. Equivocar cualquiera de las tres rompe el aislamiento en silencio.
+
+1. ⚠️ **La transacción es por PETICIÓN, no por consulta.** Todas las consultas de
+   una petición caben en la misma transacción con el mismo contexto, así que el
+   sobrecoste se paga una vez. Por eso `enQuiniela` es **reentrante**. Si alguien
+   escribe una transacción por consulta, el coste se multiplica por cuatro y
+   **parecerá culpa de PostgreSQL** (Entrada 039).
+2. ⚠️ **El contexto se fija con `SET LOCAL`, dentro de la transacción.** Es toda
+   la defensa: el *pooler* de Neon trabaja en modo transacción, y un `SET` de
+   sesión se colaría en la petición siguiente que reutilice la conexión.
+3. ⚠️ **La aplicación no se conecta con el rol dueño.** El dueño puede **apagar
+   RLS**. `comprobarRol()` se planta al arrancar si detecta que puede.
+
+### 21.3 Las tajadas
+
+Cada una termina con su suite en verde y su commit. Ninguna se empieza sin la
+anterior cerrada.
+
+| # | Tajada | Qué entra | Estado |
+|---|---|---|---|
+| **1** | **Cimientos** | `src/db.js`, `db/esquema.sql`, arnés PGlite, 13 pruebas | ✅ Entrada 040 |
+| **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias`; registro, login, sesiones, roles, Admin Mode | |
+| **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | |
+| **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | |
+| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | |
+| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | |
+| **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | |
+
+### 21.4 Lo que hay que acordarse de mirar
+
+- ⚠️ **Las sesiones viven en Mongo** (`connect-mongo`). Pasan a `connect-pg-simple`,
+  que necesita su propia tabla. No estaba en el plan original y apareció al
+  revisar `package.json` (Entrada 040).
+- **`src/transacciones.js` se queda sin trabajo.** Todo su baile de «MongoDB sólo
+  hace transacciones sobre un conjunto de réplicas» desaparece: en PostgreSQL son
+  de serie y sin condiciones. Se retira en la tajada 7.
+- **Los contadores centinela de `architecture.test.js` se van a mover mucho.** No
+  es una regresión: `server.js` va a menguar de verdad por primera vez.
+- **En desarrollo local, PGlite; Neon para el CI y producción.** Cada viaje a
+  Neon desde esta máquina son ~116 ms, así que desarrollar contra Neon sería
+  lento sin motivo (Entrada 039).
+
+---
+
 ## Anexo A — Acta de continuidad del 9 de julio de 2026 (HANDOFF)
 
 > Este anexo **absorbe íntegramente el contenido de `HANDOFF.md`** (fecha original:
@@ -7032,6 +7097,90 @@ agujero real del código de hoy y no depende de nada de esto— y la siguiente e
 
 ⚠️ Y sigue sin contestar, en cualquiera de los dos escenarios: **cuál va a ser el
 dominio definitivo**, que la Fase E necesita.
+
+---
+
+### 📌 Entrada 040 — 20 de agosto de 2026 — Migración, tajada 1: los cimientos
+
+**Objetivo:** el usuario decidió migrar y dio el dominio definitivo
+(`quinieladeportivaglobal.onrender.com`). Empezar por los cimientos de la capa de
+datos, que es lo que todo lo demás va a usar.
+
+**Las cuatro decisiones de alcance** se tomaron antes de escribir código y están
+en **§21.1**. En corto: claves ajenas dentro y nombres en el API —así el frontend
+no se toca—, `pg` a secas sin ORM, rama `postgres`, y `_id` pasa a `id` porque
+sale gratis (aparece **4 veces en 3 archivos**).
+
+Lo que decidió el alcance fue una medición: `jornadaNombre` aparece **80 veces**
+en `server.js`, `jornada:` 42, `partidoIndex` 23 y `triviaId` 19. Unos **164
+sitios** atados a la identidad por nombre. Llevar los ids hasta el API habría
+tocado además los 39 scripts del frontend y las 62 pruebas de navegador;
+resolverlos al entrar en la ruta consigue el grueso del beneficio por bastante
+menos.
+
+**Qué se hizo:**
+
+1. **Rama `postgres`** a partir de `main`.
+2. **`db/esquema.sql`**: el esquema del sondeo pasa a ser parte del proyecto.
+3. **`src/db.js`**: el único sitio que sabe abrir una transacción y fijar el
+   contexto de quiniela. Trae `iniciar`, `cerrar`, `consulta`, `enTransaccion`,
+   `enQuiniela`, `quinielaActual`, `aplicarEsquema` y `comprobarRol`.
+4. **`test/postgres-en-memoria.js`**: el arnés con PGlite, que releva a
+   `MongoMemoryReplSet`.
+5. **`test/db.test.js`**: 13 pruebas de las reglas, no de las rutas.
+6. Dependencias: `pg` y `connect-pg-simple`; `@electric-sql/pglite` de desarrollo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/db.js` | **Nuevo.** La capa de datos y las tres reglas del aislamiento |
+| `db/esquema.sql` | **Nuevo.** Las 16 tablas con RLS, venidas del sondeo |
+| `test/postgres-en-memoria.js` | **Nuevo.** Arnés PGlite con turnos y rol sin privilegios |
+| `test/db.test.js` | **Nuevo.** 13 pruebas de los cimientos |
+| `package.json` | `pg`, `connect-pg-simple`, `@electric-sql/pglite`; `npm run test:db` |
+
+**Verificación:**
+
+```
+npm run test:db → 13/13 en 2,6 s
+npm test        → 142/142 (129 de Mongo + 13 nuevas), 12,5 s
+```
+
+Las 129 de Mongo siguen en verde porque **`server.js` no se ha tocado todavía**.
+Eso es deliberado: la tajada 1 no migra ninguna ruta, sólo pone el suelo.
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **El arnés de pruebas se saltaba RLS, y las pruebas lo cazaron a la
+   primera.** PGlite conecta como `postgres`, que es superusuario. Las cuatro
+   primeras pruebas de aislamiento fallaron enseñando `2 !== 1` y `2 !== 0`: se
+   veían las dos quinielas. Es **el mismo error que costó cuatro vueltas montando
+   el Anexo C** (Entradas 034 a 037) — pero esta vez costó dos minutos, porque
+   había una prueba mirando. El arnés crea ahora el rol `app_quiniela` igual que
+   en Neon, se pone en su piel, y **se niega a arrancar** si detecta que corre con
+   privilegios de más.
+2. ⚠️ **Las sesiones viven en Mongo** (`connect-mongo`), y eso no estaba en el
+   plan. Apareció al mirar `package.json`. Pasan a `connect-pg-simple`, que
+   necesita su propia tabla. Anotado en §21.4.
+3. **`TRUNCATE` exige ser dueño de las tablas**, y `app_quiniela` no lo es a
+   propósito. El vaciado entre pruebas vuelve al rol dueño el rato justo y
+   regresa, **todo en una sola llamada**: si se pudiera salir a mitad, la sesión
+   se quedaría con permisos de dueño y las pruebas siguientes serían falsos
+   verdes.
+4. **`enQuiniela` es reentrante, y hay una prueba que lo exige.** Es la regla 1
+   convertida en código: anidar la misma quiniela reutiliza la transacción.
+   Anidar **otra** quiniela lanza un error con nombre y apellidos, en vez de
+   cruzar datos en silencio.
+5. **La suite de cimientos tarda 2,6 s en total** — menos de lo que
+   `MongoMemoryReplSet` tardaba sólo en levantarse (13,4 s). La promesa de la
+   Entrada 032 se cumple ya en la primera tajada.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 2 — plataforma**: `usuarios`, `quinielas`, `membresias`; registro,
+login, sesiones, roles y Admin Mode. Es la primera que toca `server.js` de
+verdad, y la que se lleva por delante `connect-mongo`.
 
 ---
 
