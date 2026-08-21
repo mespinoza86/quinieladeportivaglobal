@@ -58,13 +58,29 @@ function cadenaDeConexion() {
   return null;
 }
 
-/* ---------- El equivalente exacto del tenantContext de la aplicación ---------- */
+const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/* ---------- El equivalente exacto del tenantContext de la aplicación ----------
+ *
+ * ⚠️ CADA `await` AQUI ES UN VIAJE DE IDA Y VUELTA A LA BASE (Entrada 039).
+ *
+ * Con la base a 100 ms, la version ingenua -BEGIN, set_config, consulta, COMMIT
+ * como cuatro llamadas- cuesta cuatro viajes. Eso no se ve en desarrollo local
+ * contra Mongo, donde la base esta al lado, y se nota muchisimo contra una base
+ * en otra region.
+ *
+ * Aqui BEGIN y el contexto van en UNA sola llamada, usando el protocolo simple
+ * -varias sentencias en una cadena-. Como ese protocolo no admite parametros,
+ * el identificador se valida como UUID antes de interpolarlo: sin esa
+ * validacion esto seria una inyeccion de SQL de manual.
+ */
 async function enQuiniela(pool, quinielaId, fn) {
+  if (!ES_UUID.test(quinielaId)) throw new Error(`quinielaId no es un UUID: ${quinielaId}`);
+
   const c = await pool.connect();
   try {
-    await c.query('BEGIN');
     // is_local = true: se deshace al cerrar la transacción. Es TODA la defensa.
-    await c.query('SELECT set_config($1, $2, true)', ['app.quiniela_id', quinielaId]);
+    await c.query(`BEGIN; SELECT set_config('app.quiniela_id', '${quinielaId}', true);`);
     const r = await fn(c);
     await c.query('COMMIT');
     return r;
@@ -241,20 +257,56 @@ async function main() {
     ok('Alternando quinielas sobre el mismo pool, el contexto siempre es el suyo',
        malos === 0, malos ? `${malos} de 120 leyeron un contexto ajeno` : '120 de 120');
 
-    /* ---------- 4. Cuánto cuesta la transacción por petición ---------- */
-    console.log(`midiendo el coste     : 200 consultas...`);
-    const N = 100;
+    /* ---------- 4. Cuánto cuesta, y de qué está hecho el coste ----------
+     *
+     * ⚠️ Lo que se mide aquí es SOBRE TODO la distancia a la base, no el
+     * trabajo de la base. Por eso lo primero es el viaje de ida y vuelta
+     * pelado: sin ese número, los demás no se pueden interpretar.
+     */
+    console.log(`midiendo el coste     : viaje de ida y vuelta y patrones de uso...`);
+    const N = 30;
+
     let t = Date.now();
-    for (let i = 0; i < N; i++) await enQuiniela(pool, ids[0].quiniela, c => c.query('SELECT 1'));
-    const conTx = (Date.now() - t) / N;
-
-    t = Date.now();
     for (let i = 0; i < N; i++) await pool.query('SELECT 1');
-    const sinTx = (Date.now() - t) / N;
+    const viaje = (Date.now() - t) / N;
 
-    console.log(`\ncoste por consulta    : ${conTx.toFixed(2)} ms con transacción y contexto`);
-    console.log(`                        ${sinTx.toFixed(2)} ms suelta`);
-    console.log(`                        (+${(conTx - sinTx).toFixed(2)} ms es el precio del aislamiento)`);
+    // El peor caso: una transacción entera para una sola consulta.
+    t = Date.now();
+    for (let i = 0; i < N; i++) await enQuiniela(pool, ids[0].quiniela, c => c.query('SELECT 1'));
+    const unaPorTx = (Date.now() - t) / N;
+
+    /*
+     * El caso REAL: una petición de la aplicación hace varias consultas, y
+     * todas caben en la MISMA transacción con el MISMO contexto. El sobrecoste
+     * del aislamiento se paga una vez por petición, no una vez por consulta.
+     * Seis consultas es lo que hace hoy `/api/resultados-totales`.
+     */
+    const CONSULTAS = 6;
+    t = Date.now();
+    for (let i = 0; i < N; i++) {
+      await enQuiniela(pool, ids[0].quiniela, async c => {
+        for (let k = 0; k < CONSULTAS; k++) await c.query('SELECT 1');
+      });
+    }
+    const peticionReal = (Date.now() - t) / N;
+
+    const viajes = v => (v / viaje).toFixed(1);
+
+    console.log(`\nviaje de ida y vuelta : ${viaje.toFixed(1)} ms  <- es la DISTANCIA a la base, no la base`);
+    console.log(`una consulta suelta   : ${viaje.toFixed(1)} ms  (${viajes(viaje)} viajes)`);
+    console.log(`una consulta en tx    : ${unaPorTx.toFixed(1)} ms  (${viajes(unaPorTx)} viajes)  <- el peor caso`);
+    console.log(`petición de ${CONSULTAS} consultas: ${peticionReal.toFixed(1)} ms  (${viajes(peticionReal)} viajes)  <- el caso real`);
+    console.log(`\nsobrecoste del aislamiento por PETICIÓN: ${(peticionReal - viaje * CONSULTAS).toFixed(1)} ms`);
+    console.log(`   = ${((peticionReal / (viaje * CONSULTAS) - 1) * 100).toFixed(0)}% sobre las mismas ${CONSULTAS} consultas sin transacción`);
+
+    if (viaje > 20) {
+      console.log(`\n⚠️  ${viaje.toFixed(0)} ms de viaje es MUCHO, y no dice nada malo de PostgreSQL:`);
+      console.log('    es la distancia entre esta máquina y la región de Neon. En producción');
+      console.log('    lo que cuenta es la distancia entre RENDER y Neon, que si están en la');
+      console.log('    misma región son entre 1 y 5 ms. Esta medida NO sirve para decidir');
+      console.log('    si PostgreSQL es lo bastante rápido; sirve para saber que desarrollar');
+      console.log('    en local contra Neon va a ser lento.');
+    }
 
   } finally {
     /* ---------- Limpieza, pase lo que pase ---------- */

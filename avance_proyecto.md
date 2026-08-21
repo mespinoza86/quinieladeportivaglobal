@@ -194,40 +194,39 @@ Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
 `npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19 y
 el 20, porque desde esta máquina no se puede consultar.
 
-**Lo siguiente es el Anexo C**, que el usuario ejecuta a mano en el panel de
-Neon: crear la base, aplicar el esquema, crear el rol de la aplicación y correr
-la prueba de aceptación. **Dio 8 de 8 el 20 de agosto** (Entrada 038): el
-aislamiento aguanta y el paso 5 está cerrado.
+**El sondeo SQL terminó, y la puerta está pasada.** El Anexo C se ejecutó entero
+contra Neon: la prueba de aceptación dio **8 de 8** (Entrada 038) y la del *pool*
+—240 peticiones concurrentes sobre seis quinielas— dio **4 de 4** sin un solo
+cruce (Entrada 039). El aislamiento por RLS aguanta el modo real en que la
+aplicación usaría la base.
 
-Queda **el paso 9, la puerta de verdad**: correr `npm run pool` desde
-`sondeo-sql/` con `DATABASE_URL` apuntando al rol **`app_quiniela`** —no al
-dueño— y a la cadena **con `-pooler`**. Comprueba con conexiones reutilizadas lo
-único que PGlite no puede: que el contexto de una quiniela no se cuele en la
-petición siguiente.
+**Queda una sola cosa, y es una decisión, no una comprobación:**
 
-⚠️ **Con el 8 de 8 la puerta TODAVÍA no está pasada.** Falta lo único que el
-sondeo no pudo comprobar, porque PGlite atiende una sola conexión: correr esas
-mismas comprobaciones **desde Node, con un `Pool` de `pg` y varias peticiones a
-la vez**, para confirmar que el contexto de una quiniela no se cuela en la
-petición de otra. Con el *pooler* de Neon, que trabaja en modo transacción, esa
-fuga sería **intermitente y dependería de la carga** — mucho peor de encontrar
-que C-02. **Hasta que eso pase, no se toca ninguna ruta.**
+| A favor de migrar | En contra |
+|---|---|
+| El aislamiento lo aplica la base, y **aguanta la concurrencia** (probado) | **81 rutas y ~220 llamadas** que reescribir |
+| Cierra **C-06** gratis: Neon se suspende pero **se despierta solo** | Varias sesiones sin nada visible para el usuario |
+| Cierra **M-01**, **M-02**, **M-30** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
+| Las pruebas arrancan en 2,9 s en vez de 13,4 s | Ni la Fase E ni la Fase F avanzan mientras tanto |
 
-Sólo después viene la decisión de verdad: **migrar las 81 rutas y las ~220
-llamadas, o quedarse en Mongo**. El resumen de lo que está en juego:
+⚠️ **Dos cosas que hay que tener presentes al escribir la capa de datos**, si se
+decide migrar. No se deducen del esquema y equivocarlas sale caro:
 
-| | A favor de migrar | En contra |
-|---|---|---|
-| | Cierra **C-06** gratis: Neon se suspende pero **se despierta solo** | **81 rutas y ~220 llamadas** que reescribir |
-| | El aislamiento lo aplica la base, no el ORM | Varias sesiones sin nada visible para el usuario |
-| | Cierra **M-01**, **M-02**, **M-30** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
-| | Las pruebas arrancan en 2,9 s en vez de 13,4 s | Ni la Fase E ni la Fase F avanzan mientras tanto |
+- **La transacción se abre por PETICIÓN, no por consulta.** Todas las consultas
+  de una petición caben en la misma transacción con el mismo contexto, así que el
+  sobrecoste del aislamiento se paga una vez. Si se implementa una transacción
+  por consulta, el coste se multiplica por cuatro y **parecerá culpa de
+  PostgreSQL** (Entrada 039).
+- **Desarrollar en local contra Neon será lento**, porque cada viaje a la base
+  desde esta máquina son ~116 ms. Lo sensato es **PGlite en local** —arranca en
+  2,9 s y no toca la red— y dejar Neon para el CI y producción. Es lo que
+  conserva el ritmo de trabajo.
 
-**Si al final se decide no migrar**, se borra `sondeo-sql/`, se arregla **M-33**
-—que es un agujero real del código de hoy y no depende de nada de esto— y la
-siguiente es la **Fase E — verificación de correo** (petición 8), con sus dos
-decisiones abiertas: proveedor de envío y qué se bloquea sin verificar. Media
-parte ya está hecha: el modelo `Usuario` ya tiene los campos.
+**Si se decide no migrar**, se borra `sondeo-sql/`, se arregla **M-33** —que es un
+agujero real del código de hoy y no depende de nada de esto— y la siguiente es la
+**Fase E — verificación de correo** (petición 8), con sus dos decisiones
+abiertas: proveedor de envío y qué se bloquea sin verificar. Media parte ya está
+hecha: el modelo `Usuario` ya tiene los campos.
 
 ⚠️ **Y sigue sin contestar una pregunta que la Fase E necesita en cualquiera de
 los dos escenarios:** cuál va a ser **el dominio definitivo**. Los enlaces del
@@ -378,7 +377,7 @@ pudo aceptar C-06 sin drama.
 
 | # | Decisión | Estado |
 |---|---|---|
-| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🟡 **Se abrió la puerta el 20-ago, la decisión final sigue abierta.** Se acordó montar la base en Neon (**Anexo C**) y comprobar el aislamiento con un *pool* real antes de comprometerse. **Migrar las 81 rutas NO está decidido.** Todo lo de abajo sigue dependiendo de la respuesta |
+| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🔴 **La puerta se pasó el 20-ago; la decisión es lo único que queda.** El Anexo C se ejecutó entero contra Neon: **8 de 8** en la aceptación (Entrada 038) y **4 de 4** en el *pool*, con 240 peticiones concurrentes y ni un cruce (Entrada 039). Ya no faltan comprobaciones: falta decidir. Todo lo de abajo depende de la respuesta |
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | ✅ **Decidido el 20-ago: se deja como está**, a sabiendas de que la aplicación puede morir sola y sin aviso. Se aceptó porque hoy no la usa nadie. ⚠️ Hay que reabrirlo antes de que entre gente de verdad — o resolverlo de paso, si se migra a Neon, que se despierta solo |
 | **M-30** | ¿Se deja la base llamándose `test`? | ⏸️ **En suspenso**, absorbida por la decisión de SQL: si se migra, la base nueva nace con nombre propio y M-30 desaparece. Si no se migra, vuelve a estar abierta ⚠️ y la ventana barata se cierra en cuanto entren datos de verdad |
 | **Render** | `NODE_ENV=production`, `ALLOWED_ORIGINS`, `DEBUG_ENDPOINTS=false` y `/readyz` como health check | 🟡 **Decidido el cómo, pendiente el cuándo.** Se acordó **escribir un `render.yaml`** en el repositorio, porque hoy no existe ninguno y la configuración vive sólo en el panel web, donde nadie puede auditarla. Está a la espera de la decisión de SQL: la variable de la base va dentro del archivo |
@@ -2870,6 +2869,10 @@ nombre de una jornada.
 > (Entrada 033). **Los tres archivos que se pegan están probados**: se ensayaron
 > contra un PostgreSQL de verdad con `sondeo-sql/probar-neon-sql.js` antes de
 > escribir este anexo, y las ocho comprobaciones pasan.
+>
+> **Se ejecutó entero contra Neon el 20 de agosto**: el paso 5 dio **8 de 8**
+> (Entrada 038) y el paso 9 dio **4 de 4** (Entrada 039). Este anexo ya no es un
+> plan: es el registro de algo que se hizo y funcionó.
 
 **Qué deja montado:** una base PostgreSQL en Neon, con las 16 tablas, el
 aislamiento por quiniela aplicado por la base y un rol de aplicación que **no
@@ -6892,6 +6895,143 @@ rol, se le pone una nueva con `ALTER ROLE app_quiniela PASSWORD '...';`.
 
 Es **el último paso de la puerta**. Si sale en verde, la decisión de migrar las
 81 rutas se toma con datos. Hasta entonces, **no se toca ninguna ruta**.
+
+---
+
+### 📌 Entrada 039 — 20 de agosto de 2026 — La puerta está pasada, y un número que hay que saber leer
+
+**Objetivo:** cerrar el sondeo SQL. La prueba del *pool* —lo único que PGlite no
+podía comprobar— corrió por fin contra Neon.
+
+**El resultado: 4 de 4.**
+
+```
+OK  El rol conectado no puede saltarse ni desactivar RLS
+      usuario=app_quiniela, dueño de 0 tablas de public
+OK  240 peticiones concurrentes, ninguna vio otra quiniela
+      6 quinielas × 40 rondas
+OK  Sin contexto no se ve nada, ni reutilizando conexiones usadas
+      20 de 20 vieron 0 filas
+OK  Alternando quinielas sobre el mismo pool, el contexto siempre es el suyo
+      120 de 120
+```
+
+**Qué significa exactamente**, porque es la pregunta que abrió todo esto: con un
+*pool* de diez conexiones, 240 peticiones concurrentes repartidas en seis
+quinielas y el *pooler* de Neon en modo transacción, **el contexto de una quiniela
+no se coló ni una vez en la petición de otra**. La disciplina de `SET LOCAL`
+dentro de la transacción aguanta el modo real en que la aplicación usaría la
+base.
+
+**Con esto la puerta está pasada.** La decisión de migrar las 81 rutas ya se puede
+tomar con datos y no con impresiones.
+
+---
+
+**Y ahora el número que hay que saber leer.**
+
+La primera medición del coste salió así:
+
+```
+coste por consulta : 429.80 ms con transacción y contexto
+                     116.57 ms suelta
+```
+
+⚠️ **Leído a la ligera, ese 429 mata la migración.** Leído bien, no dice nada de
+PostgreSQL.
+
+**116 ms para un `SELECT 1` no es la base: es la distancia.** Es el viaje de ida
+y vuelta entre esta máquina y la región de Neon. Y el 429 es, casi exactamente,
+**cuatro veces** ese viaje — porque la versión ingenua del ayudante de contexto
+hacía cuatro llamadas separadas: `BEGIN`, `set_config`, la consulta y `COMMIT`.
+No había 313 ms de «precio del aislamiento»: había tres viajes más.
+
+Dos consecuencias, y ninguna es «PostgreSQL es lento»:
+
+1. **En producción lo que cuenta es la distancia entre Render y Neon**, no entre
+   esta máquina y Neon. En la misma región son entre 1 y 5 ms, no 116. Esta
+   medida **no sirve** para decidir si PostgreSQL aguanta; sirve para saber que
+   **desarrollar en local contra Neon va a ser lento**, y eso hay que tenerlo
+   presente antes de que alguien crea que la aplicación se ha estropeado.
+
+2. ⚠️ **La transacción va por PETICIÓN, no por consulta.** Es la consecuencia de
+   diseño importante y no es obvia: todas las consultas de una petición caben en
+   la misma transacción con el mismo contexto, así que el sobrecoste del
+   aislamiento **se paga una vez por petición**. Con seis consultas —lo que hace
+   hoy `/api/resultados-totales`— el sobrecoste se reparte entre seis en vez de
+   multiplicarse por seis. Si se implementa «una transacción por consulta», el
+   coste se multiplica por cuatro y **parecerá culpa de PostgreSQL**.
+
+**Qué se hizo:**
+
+1. **`enQuiniela` manda `BEGIN` y el contexto en UNA sola llamada**, con el
+   protocolo simple. De cuatro viajes a tres. ⚠️ Ese protocolo no admite
+   parámetros, así que el identificador **se valida como UUID antes de
+   interpolarlo**: sin esa validación esto sería una inyección de SQL de manual.
+   Queda comprobado que la validación rechaza `x'; DROP TABLE jugadores; --`.
+2. **La medición se rehízo para separar la distancia del sobrecoste.** Ahora lo
+   primero que imprime es el viaje pelado, y expresa lo demás en «viajes», que es
+   la unidad que de verdad importa. Añade el caso real —seis consultas en una
+   transacción— junto al peor caso.
+3. **Avisa cuando el viaje pasa de 20 ms**, explicando que eso mide la distancia
+   de la máquina y no la velocidad de la base.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/probar-pool.js` | `BEGIN` y contexto en una llamada, con validación de UUID; medición separada en viajes; aviso de latencia |
+| `avance_proyecto.md` | Esta entrada, el estado del Anexo C y la cabecera |
+
+**Verificación:**
+
+```
+npm run pool (contra Neon)         → 4/4 pasan, 240 peticiones sin un cruce
+node --check probar-pool.js        → sintaxis correcta
+BEGIN+contexto en una llamada      → funciona (comprobado contra PGlite)
+la validación rechaza la inyección → sí
+npm test                           → 129/129
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Cada `await` contra la base es un viaje.** Con la base al lado no se nota;
+   con la base en otra región, un ayudante de cuatro llamadas cuesta cuatro
+   viajes. **Antes de culpar a la base, hay que contar los viajes.** Aquí el
+   «precio del aislamiento» de 313 ms eran tres viajes mal contados.
+2. ⚠️ **La transacción se abre por petición, no por consulta.** Es la decisión de
+   diseño que hay que respetar cuando se escriba la capa de datos, y la que hace
+   que el aislamiento sea barato en vez de caro.
+3. **Una medición sin su unidad de referencia engaña.** «429 ms» no significa
+   nada sin saber que un viaje son 116. La versión nueva imprime el viaje
+   **primero** y lo demás en múltiplos suyos, para que el número no se pueda leer
+   mal.
+4. **Desarrollar en local contra Neon será lento**, y conviene decidir qué hacer:
+   o se asume, o se usa PGlite en local —que arranca en 2,9 s y no tiene red— y
+   se deja Neon para el CI y producción. La segunda opción es la que conserva el
+   ritmo de trabajo de estas dos semanas.
+
+**Pendiente / siguiente paso:**
+
+**El sondeo terminó.** Lo que queda es la decisión, que es del usuario:
+
+- **A favor:** el aislamiento lo aplica la base y aguanta la concurrencia (esta
+  entrada); cierra **C-06** gratis porque Neon se despierta solo; cierra
+  **M-01**, **M-02**, **M-30** y **M-33** por obligación del modelo; las pruebas
+  arrancan en 2,9 s en vez de 13,4 s.
+- **En contra:** **81 rutas y ~220 llamadas** que reescribir, varias sesiones sin
+  nada visible, y la Fase E parada mientras tanto.
+
+Si se decide seguir, el primer paso ya **no** es una comprobación más: es diseñar
+la capa de datos con la transacción por petición y empezar a portar rutas, con
+`sondeo-sql/` como referencia del esquema.
+
+Si se decide no seguir, se borra `sondeo-sql/`, se arregla **M-33** —que es un
+agujero real del código de hoy y no depende de nada de esto— y la siguiente es la
+**Fase E**.
+
+⚠️ Y sigue sin contestar, en cualquiera de los dos escenarios: **cuál va a ser el
+dominio definitivo**, que la Fase E necesita.
 
 ---
 
