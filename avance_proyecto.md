@@ -194,36 +194,46 @@ Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
 `npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19 y
 el 20, porque desde esta máquina no se puede consultar.
 
-**Hay una decisión encima de la mesa y todo lo demás depende de ella:
-¿se migra a PostgreSQL o se sigue en MongoDB?** El sondeo de la Entrada 032 la
-dejó informada pero no la toma. En corto:
+**Lo siguiente es el Anexo C**, que el usuario ejecuta a mano en el panel de
+Neon: crear la base, aplicar el esquema, crear el rol de la aplicación y correr
+la prueba de aceptación. Tiene que dar **7 de 7**.
+
+⚠️ **Cuando dé 7 de 7, la puerta TODAVÍA no está pasada.** Falta lo único que el
+sondeo no pudo comprobar, porque PGlite atiende una sola conexión: correr esas
+mismas comprobaciones **desde Node, con un `Pool` de `pg` y varias peticiones a
+la vez**, para confirmar que el contexto de una quiniela no se cuela en la
+petición de otra. Con el *pooler* de Neon, que trabaja en modo transacción, esa
+fuga sería **intermitente y dependería de la carga** — mucho peor de encontrar
+que C-02. **Hasta que eso pase, no se toca ninguna ruta.**
+
+Sólo después viene la decisión de verdad: **migrar las 81 rutas y las ~220
+llamadas, o quedarse en Mongo**. El resumen de lo que está en juego:
 
 | | A favor de migrar | En contra |
 |---|---|---|
 | | Cierra **C-06** gratis: Neon se suspende pero **se despierta solo** | **81 rutas y ~220 llamadas** que reescribir |
 | | El aislamiento lo aplica la base, no el ORM | Varias sesiones sin nada visible para el usuario |
-| | Cierra **M-01**, **M-02** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
+| | Cierra **M-01**, **M-02**, **M-30** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
 | | Las pruebas arrancan en 2,9 s en vez de 13,4 s | Ni la Fase E ni la Fase F avanzan mientras tanto |
 
-**Si se decide migrar**, el primer paso **no** es empezar por las rutas: es
-levantar un PostgreSQL de verdad —en CI o en una rama de Neon— y repetir las diez
-comprobaciones del sondeo **con un *pool* de conexiones**, porque PGlite es de una
-sola conexión y eso quedó sin probar.
+**Si al final se decide no migrar**, se borra `sondeo-sql/`, se arregla **M-33**
+—que es un agujero real del código de hoy y no depende de nada de esto— y la
+siguiente es la **Fase E — verificación de correo** (petición 8), con sus dos
+decisiones abiertas: proveedor de envío y qué se bloquea sin verificar. Media
+parte ya está hecha: el modelo `Usuario` ya tiene los campos.
 
-**Si se decide no migrar**, se borra `sondeo-sql/`, se anota M-33 para arreglarlo
-cuando toque, y la siguiente es la **Fase E — verificación de correo** (petición
-8), con sus dos decisiones abiertas: proveedor de envío y qué se bloquea sin
-verificar. Media parte ya está hecha: el modelo `Usuario` ya tiene los campos.
-
-⚠️ **Y queda una pregunta sin contestar que la Fase E necesita sí o sí:** cuál va
-a ser **el dominio definitivo**. Los enlaces del correo de verificación llevan la
-URL pública dentro; si el dominio cambia después, los correos ya enviados no
-llevan a ninguna parte.
+⚠️ **Y sigue sin contestar una pregunta que la Fase E necesita en cualquiera de
+los dos escenarios:** cuál va a ser **el dominio definitivo**. Los enlaces del
+correo de verificación llevan la URL pública dentro; si el dominio cambia
+después, los correos ya enviados no llevan a ninguna parte.
 
 ### Estado de Git
 
 ```
-18d2670 Anotar el commit de la Fase D en el estado de Git ← main = origin/main
+(pendiente) El procedimiento de Neon, probado antes de entregarlo ← main
+b23f4f1 Sondeo SQL: medir en vez de opinar, y un agujero de rebote (M-33)
+e583e37 Dejar por escrito el dia de hoy, lo que queda y lo de manana
+18d2670 Anotar el commit de la Fase D en el estado de Git
 e7482b7 Fase D: una sola pantalla de jornadas
 fff7eb9 Decision: los partidos salen solo del API
 3470844 Anotar el commit de la Fase C en el estado de Git
@@ -361,7 +371,7 @@ pudo aceptar C-06 sin drama.
 
 | # | Decisión | Estado |
 |---|---|---|
-| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🔴 **Abierta, y bloquea a las demás.** El sondeo de la Entrada 032 la dejó informada. Todo lo de abajo depende de la respuesta |
+| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🟡 **Se abrió la puerta el 20-ago, la decisión final sigue abierta.** Se acordó montar la base en Neon (**Anexo C**) y comprobar el aislamiento con un *pool* real antes de comprometerse. **Migrar las 81 rutas NO está decidido.** Todo lo de abajo sigue dependiendo de la respuesta |
 | **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | ✅ **Decidido el 20-ago: se deja como está**, a sabiendas de que la aplicación puede morir sola y sin aviso. Se aceptó porque hoy no la usa nadie. ⚠️ Hay que reabrirlo antes de que entre gente de verdad — o resolverlo de paso, si se migra a Neon, que se despierta solo |
 | **M-30** | ¿Se deja la base llamándose `test`? | ⏸️ **En suspenso**, absorbida por la decisión de SQL: si se migra, la base nueva nace con nombre propio y M-30 desaparece. Si no se migra, vuelve a estar abierta ⚠️ y la ventana barata se cierra en cuanto entren datos de verdad |
 | **Render** | `NODE_ENV=production`, `ALLOWED_ORIGINS`, `DEBUG_ENDPOINTS=false` y `/readyz` como health check | 🟡 **Decidido el cómo, pendiente el cuándo.** Se acordó **escribir un `render.yaml`** en el repositorio, porque hoy no existe ninguno y la configuración vive sólo en el panel web, donde nadie puede auditarla. Está a la espera de la decisión de SQL: la variable de la base va dentro del archivo |
@@ -2794,6 +2804,174 @@ quiniela.
 corromper nada**. Esta auditoría cobra sentido cuando haya varias quinielas en
 marcha, y conviene repetirla la primera vez que dos quinielas coincidan en el
 nombre de una jornada.
+
+---
+
+## Anexo C — Procedimiento: crear la base en Neon
+
+> Escrito el 20 de agosto de 2026, al decidirse abrir la puerta del sondeo SQL
+> (Entrada 033). **Los tres archivos que se pegan están probados**: se ensayaron
+> contra un PostgreSQL de verdad con `sondeo-sql/probar-neon-sql.js` antes de
+> escribir este anexo, y las siete comprobaciones pasan.
+
+**Qué deja montado:** una base PostgreSQL en Neon, con las 16 tablas, el
+aislamiento por quiniela aplicado por la base y un rol de aplicación que **no
+puede apagarlo**. Al terminar, la prueba de aceptación tiene que dar **7 de 7**.
+
+⚠️ **Esto no migra nada ni toca la aplicación.** Al final de este anexo la
+aplicación sigue hablando con MongoDB exactamente igual que antes. Es la puerta
+que se acordó abrir antes de comprometerse: si las siete comprobaciones no pasan
+con un *pool* de conexiones de verdad, no se sigue.
+
+---
+
+### Antes de empezar
+
+Ten a mano **la región de tu servicio de Render** (Oregon, Ohio, Frankfurt,
+Singapur…). No es un detalle: si la base queda en otro continente que la
+aplicación, cada consulta paga el viaje de ida y vuelta, y la aplicación hace
+muchas por petición.
+
+---
+
+### Paso 1 — Crear la cuenta y el proyecto
+
+1. Entra en **[console.neon.tech](https://console.neon.tech)** y crea la cuenta
+   (se puede con GitHub o Google).
+2. **Create project**, y rellena:
+   - **Name:** `quinieladeportivaglobal`
+   - **Postgres version:** la más alta que ofrezca (17 o 18). El esquema no usa
+     nada exótico; `gen_random_uuid()` es de serie desde la 13.
+   - **Region:** ⚠️ **la misma que tu servicio de Render**.
+3. Al crearlo, Neon te enseña una cadena de conexión. **Todavía no la uses.**
+
+### Paso 2 — Crear la base con nombre propio
+
+Neon crea por defecto una base llamada `neondb` y un rol dueño llamado
+`neondb_owner` (los nombres exactos los ves en el panel). **No la uses así**: es
+exactamente la trampa de **M-30**, la misma por la que hoy la base de Mongo se
+llama `test`.
+
+En la pestaña **Databases** → **New Database**, crea una llamada **`quiniela`**,
+con el rol dueño que Neon ya te dio.
+
+> Si prefieres otro nombre, cámbialo también en la línea `GRANT CONNECT ON
+> DATABASE quiniela` de `sondeo-sql/neon-preparar.sql`, o el paso 4 fallará.
+
+### Paso 3 — Aplicar el esquema
+
+En la pestaña **SQL Editor**, arriba a la derecha, **elige la base `quiniela`**
+(si te deja en `neondb` crearás las tablas en el sitio equivocado).
+
+Pega el contenido entero de **`sondeo-sql/esquema.sql`** y ejecútalo. Crea 16
+tablas y activa RLS en las 12 de dominio.
+
+### Paso 4 — Crear el rol de la aplicación
+
+Abre **`sondeo-sql/neon-preparar.sql`** y ⚠️ **cambia la contraseña** de la
+primera línea por una larga y aleatoria. **No la guardes en el repositorio**: va
+a las variables de entorno de Render y a tu gestor de contraseñas.
+
+Pega el archivo entero en el SQL Editor y ejecútalo.
+
+> **Por qué este paso existe y no es opcional.** RLS no protege contra un
+> superusuario ni contra un rol con `BYPASSRLS`, y el rol dueño puede **apagar
+> RLS** con un `ALTER TABLE`. Si la aplicación se conecta con el rol que Neon da
+> por defecto, el aislamiento deja de ser una garantía y pasa a ser una
+> costumbre. Con `app_quiniela` la aplicación puede leer y escribir filas, y nada
+> más: ni `CREATE`, ni `ALTER`, ni `DROP`.
+
+### Paso 5 — La prueba de aceptación
+
+Pega **`sondeo-sql/neon-verificar.sql`** entero y ejecútalo. Corre dentro de una
+transacción que termina en `ROLLBACK`: **no deja ni una fila detrás**.
+
+Tiene que devolver **siete líneas, todas diciendo `PASA`**:
+
+```
+PASA  El rol app_quiniela no es superusuario ni tiene BYPASSRLS
+PASA  Las 12 tablas de dominio tienen RLS activo y forzado
+PASA  Sin contexto de quiniela no se ve nada
+PASA  Un SELECT sin filtro solo ve la quiniela del contexto
+PASA  Pedir a proposito la quiniela ajena devuelve vacio
+PASA  Un JOIN no cruza quinielas con jornadas del mismo nombre
+PASA  Escribir en una quiniela ajena lo rechaza la base
+```
+
+⚠️ **Si alguna dice `FALLA`, para aquí.** Significa que el aislamiento no está
+puesto, y una aplicación sobre esa base filtraría datos entre quinielas sin
+avisar de nada. Es C-02 otra vez.
+
+### Paso 6 — Armar la cadena de conexión de la aplicación
+
+En **Connection Details**, Neon te da la cadena del **rol dueño**. La de
+`app_quiniela` **no aparece en el panel**, porque ese rol lo creaste tú por SQL y
+Neon no lo gestiona: hay que armarla a mano, cambiando usuario y contraseña.
+
+Neon ofrece **dos** cadenas y la diferencia importa:
+
+| | Cuál es | Para qué |
+|---|---|---|
+| **Con *pooler*** | el host lleva `-pooler` | **La aplicación.** Muchas conexiones cortas |
+| **Directa** | el host no lo lleva | Migraciones y cambios de esquema |
+
+Quedan así (cambiando `app_quiniela` y su contraseña):
+
+```
+# Para la aplicación
+postgresql://app_quiniela:TU-CLAVE@ep-loquesea-pooler.REGION.aws.neon.tech/quiniela?sslmode=require
+
+# Para migraciones y DDL, con el rol dueño
+postgresql://neondb_owner:CLAVE-DEL-DUENO@ep-loquesea.REGION.aws.neon.tech/quiniela?sslmode=require
+```
+
+⚠️ **`sslmode=require` no es adorno**: Neon rechaza las conexiones sin TLS.
+
+⚠️ **Y lo que hay que saber del *pooler*, que es la razón de que el diseño sea
+como es:** trabaja en modo transacción, así que **un `SET` de sesión no
+sobrevive** de una petición a la siguiente. Por eso el contexto de quiniela se
+pone con **`SET LOCAL` dentro de un `BEGIN`**, y por eso cada operación de la
+aplicación tiene que ir dentro de una transacción. No es una preferencia de
+estilo: hecho de otro modo, el contexto de una quiniela se filtraría a la
+petición siguiente que reutilice la conexión.
+
+### Paso 7 — Una rama para las pruebas
+
+En **Branches** → **New Branch**, crea una llamada `pruebas` a partir de `main`.
+Neon las hace por copia sobre escritura: son instantáneas y no duplican los
+datos. Es lo que usará el CI para tener una base limpia sin tocar la de verdad.
+
+### Paso 8 — Dónde van las variables
+
+Todavía **no** en Render: la aplicación aún habla con Mongo. De momento van a tu
+`.env` local, con nombres nuevos que no chocan con los de Mongo:
+
+```
+DATABASE_URL=postgresql://app_quiniela:...-pooler...?sslmode=require
+DATABASE_URL_DIRECT=postgresql://neondb_owner:...?sslmode=require
+```
+
+Cuando se escriba el `render.yaml` acordado, estas dos son las que irán allí.
+
+---
+
+### Lo que NO hay que hacer
+
+- ⚠️ **No pongas la cadena del rol dueño en la aplicación.** Es el paso 4 entero
+  tirado a la basura.
+- ⚠️ **No uses la cadena directa para la aplicación.** Sin el *pooler*, cada
+  petición abre conexión contra el proceso de Postgres y el plan gratuito de Neon
+  tiene un límite bajo de conexiones.
+- **No borres `sondeo-sql/`** hasta que la decisión esté tomada del todo.
+
+### Lo que este anexo deja sin resolver
+
+**La disciplina del *pool* sigue sin probarse**, que es justo lo que el sondeo no
+pudo verificar porque PGlite atiende una sola conexión. El paso siguiente —y la
+puerta de verdad— es correr estas mismas comprobaciones **desde Node, con un
+`Pool` de `pg` y varias peticiones concurrentes**, para confirmar que el contexto
+de una quiniela no se cuela en la petición de otra. Hasta que eso pase, no se
+toca ninguna ruta.
 
 ---
 
@@ -6023,6 +6201,92 @@ PostgreSQL de verdad —en CI o en una rama de Neon— y volver a correr estas d
 comprobaciones con un *pool* de conexiones, para cerrar lo que PGlite no puede
 probar. Si se decide no seguir, se borra `sondeo-sql/` y sólo queda M-32 anotado,
 que es un hallazgo que valía la sesión por sí solo.
+
+---
+
+### 📌 Entrada 033 — 20 de agosto de 2026 — Se abre la puerta: el procedimiento de Neon, probado
+
+**Objetivo:** dejar escrito, paso a paso y **sin nada que improvisar**, cómo se
+crea la base de PostgreSQL en Neon, para poder correr las comprobaciones del
+sondeo contra una base de verdad y decidir con eso si se migra.
+
+Conviene ser preciso sobre qué se decidió y qué no. **No se ha decidido migrar
+las 81 rutas.** Lo que se decidió es **abrir la puerta** que proponía la Entrada
+032: montar la base, comprobar el aislamiento con un *pool* de conexiones real
+—lo único que el sondeo no pudo verificar, porque PGlite atiende una sola
+conexión— y decidir después. La aplicación sigue hablando con MongoDB y no se le
+ha tocado una línea.
+
+**Qué se hizo:**
+
+1. **Se subió el sondeo** (`b23f4f1`). `main` y `origin/main` vuelven a estar a
+   la par.
+2. **Se escribieron los dos archivos que se pegan en Neon**: uno crea el rol de
+   la aplicación con sus permisos, y otro es una prueba de aceptación de siete
+   comprobaciones.
+3. ⚠️ **Se ensayaron los tres archivos antes de escribir el procedimiento**, con
+   `sondeo-sql/probar-neon-sql.js`, que aplica `esquema.sql`, `neon-preparar.sql`
+   y `neon-verificar.sql` contra un PostgreSQL de verdad, en ese orden. No se
+   entregan pasos sin haberlos ejecutado.
+4. **Se escribió el Anexo C** con los ocho pasos, lo que no hay que hacer y lo
+   que queda sin resolver.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/neon-preparar.sql` | **Nuevo.** El rol `app_quiniela` y sus permisos mínimos |
+| `sondeo-sql/neon-verificar.sql` | **Nuevo.** Siete comprobaciones dentro de una transacción que termina en `ROLLBACK` |
+| `sondeo-sql/probar-neon-sql.js` | **Nuevo.** Ensaya los tres archivos antes de tocar Neon |
+| `sondeo-sql/LEEME.md` | Se añaden los archivos nuevos y cómo ensayarlos |
+| `avance_proyecto.md` | **Anexo C**, esta entrada y las secciones de cabecera |
+
+**Verificación:**
+
+```
+cd sondeo-sql && node probar-neon-sql.js  → 7/7 pasan
+cd sondeo-sql && npm run sondeo           → 10/10 comprobaciones pasan
+npm test                                  → 129/129
+git push origin main                      → e583e37..b23f4f1
+```
+
+**Hallazgos nuevos:**
+
+1. **El rol de la aplicación no lo puede dar el panel de Neon.** `app_quiniela`
+   se crea por SQL, así que Neon no lo gestiona y **su cadena de conexión no
+   aparece en Connection Details**: hay que armarla a mano cambiando usuario y
+   contraseña sobre la del rol dueño. Es el punto donde es fácil rendirse y
+   acabar poniendo la cadena del dueño en la aplicación, que es tirar a la basura
+   todo el aislamiento.
+
+2. ⚠️ **El *pooler* de Neon obliga al diseño, no lo sugiere.** Trabaja en modo
+   transacción, así que **un `SET` de sesión no sobrevive** de una petición a la
+   siguiente. Por eso el contexto de quiniela va con **`SET LOCAL` dentro de un
+   `BEGIN`** y cada operación tiene que ir en una transacción. Hecho de otro modo,
+   el contexto de una quiniela **se filtraría a la petición siguiente que
+   reutilice la conexión**, que es una fuga peor que C-02 porque sería
+   intermitente y dependería de la carga.
+
+3. **La prueba de aceptación no ensucia la base.** Todo va dentro de una
+   transacción que acaba en `ROLLBACK`, así que se puede repetir cuantas veces se
+   quiera, también sobre una base con datos.
+
+4. **M-30 se resuelve de paso, si esto sigue adelante.** El Anexo C hace crear una
+   base llamada `quiniela` en vez de quedarse con la `neondb` que Neon da por
+   defecto — que es exactamente la misma trampa por la que hoy la base de Mongo se
+   llama `test`.
+
+**Pendiente / siguiente paso:**
+
+El usuario ejecuta el Anexo C. Cuando las siete comprobaciones den `PASA`, **la
+puerta de verdad todavía no está pasada**: falta correr esas mismas
+comprobaciones **desde Node, con un `Pool` de `pg` y varias peticiones a la vez**,
+para confirmar que el contexto de una quiniela no se cuela en la petición de
+otra. Eso es lo primero de la sesión siguiente, y hasta que pase **no se toca
+ninguna ruta**.
+
+Sigue sin contestar, y la Fase E la necesita en cualquiera de los dos escenarios:
+⚠️ **cuál va a ser el dominio definitivo.**
 
 ---
 

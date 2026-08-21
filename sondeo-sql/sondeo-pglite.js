@@ -204,7 +204,7 @@ async function main() {
   }
   const fallos = prueba.filter(p => !p.ok).length;
   console.log(`\n${prueba.length - fallos}/${prueba.length} comprobaciones pasan.`);
-  process.exit(fallos ? 1 : 0);
+  process.exitCode = fallos ? 1 : 0;
 }
 
-main().catch(e => { console.error('SONDEO ROTO:', e); process.exit(1); });
+main().catch(e => { console.error('SONDEO ROTO:', e); process.exitCode = 1; });

@@ -12,6 +12,12 @@
 |---|---|
 | `esquema.sql` | Las 13 colecciones de Mongo modeladas en PostgreSQL: 16 tablas, claves ajenas de verdad y RLS |
 | `sondeo-pglite.js` | El banco de pruebas: arranca un Postgres, aplica el esquema y hace 10 comprobaciones de aislamiento |
+| `neon-preparar.sql` | Crea el rol `app_quiniela` con los permisos mínimos. Se pega en Neon **después** del esquema |
+| `neon-verificar.sql` | La prueba de aceptación de Neon: 7 comprobaciones dentro de una transacción que acaba en `ROLLBACK` |
+| `probar-neon-sql.js` | Ensaya los tres `.sql` de arriba contra un Postgres de verdad, para no entregar pasos sin ejecutarlos |
+
+El procedimiento completo de Neon, paso a paso, está en el **Anexo C** de
+`avance_proyecto.md`.
 
 ## Cómo se ejecuta
 
@@ -21,13 +27,12 @@ esto, y no queremos que un sondeo rompa el CI.
 ```bash
 cd sondeo-sql
 npm install
-npm run sondeo
+npm run sondeo        # el banco de pruebas   -> 10/10 comprobaciones pasan
+node probar-neon-sql.js   # ensayo de lo de Neon -> 7/7 pasan
 ```
 
-Debe terminar con `10/10 comprobaciones pasan.` Tarda unos 3 segundos.
-
-La carpeta tiene su propio `package.json` con su única dependencia, justo para
-que **no toque el `package.json` de la aplicación**.
+Los dos tardan unos 3 segundos. La carpeta tiene su propio `package.json` con su
+única dependencia, justo para que **no toque el `package.json` de la aplicación**.
 
 ## Las tres cosas que hay que saber antes de leer el esquema
 
