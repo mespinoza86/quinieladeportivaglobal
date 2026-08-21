@@ -230,7 +230,7 @@ después, los correos ya enviados no llevan a ninguna parte.
 ### Estado de Git
 
 ```
-(pendiente) El procedimiento de Neon, probado antes de entregarlo ← main
+2132163 El procedimiento de Neon, probado antes de entregarlo ← main = origin/main
 b23f4f1 Sondeo SQL: medir en vez de opinar, y un agujero de rebote (M-33)
 e583e37 Dejar por escrito el dia de hoy, lo que queda y lo de manana
 18d2670 Anotar el commit de la Fase D en el estado de Git
