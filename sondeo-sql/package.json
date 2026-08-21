@@ -1,0 +1,8 @@
+{
+  "name": "sondeo-sql",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Material de sondeo. Nada de la aplicacion depende de esto.",
+  "scripts": { "sondeo": "node sondeo-pglite.js" },
+  "dependencies": { "@electric-sql/pglite": "^0.5.5" }
+}

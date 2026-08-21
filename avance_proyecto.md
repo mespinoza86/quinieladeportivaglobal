@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 19 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 20 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -155,47 +155,70 @@ Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
   no es una regresión. Los dos que bajaron llevan ahora escrito en el código que
   son un suelo y por qué.
 
+### Lo que se hizo el 20 de agosto
+
+Sesión de **análisis y sondeo**, sin tocar una línea de la aplicación. Se revisó
+el documento entero para decidir por dónde seguir, y de esa revisión salió una
+pregunta del usuario que cambió el rumbo del día: **¿y si nos pasamos a SQL, ya
+que los datos de hoy son de prueba y se pueden tirar?**
+
+| Qué | Bitácora |
+|---|---|
+| **Sondeo SQL**: las 13 colecciones modeladas en PostgreSQL, aislamiento por RLS y 10 comprobaciones que pasan | 032 |
+| Hallazgo **M-33** en el código actual de Mongo, encontrado de rebote | 032 |
+
+Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
+
+- ⚠️ **El `tenantPlugin` de hoy tiene un agujero latente (M-33).** Engancha
+  `find*`, `update*` y `delete*`, pero **no `aggregate`, `insertMany` ni
+  `bulkWrite`**. Hoy no hay fuga porque no se usa ninguno de los tres; la primera
+  agregación que alguien escriba saldrá **sin filtro de quiniela y en silencio**.
+  Es la forma exacta que tenía C-02. Este hallazgo vale la sesión por sí solo,
+  independientemente de lo que se decida sobre SQL.
+- **La §20.8 no estaba equivocada: contestaba a otra pregunta.** Decía «no
+  migrar» dando por hecho que había datos que conservar. Sin datos que salvar el
+  balance cambia — pero **el tamaño de la obra no**: son 81 rutas y ~220 llamadas
+  a la base. Renombrar la base son treinta minutos; pasar a SQL son varias
+  sesiones sin nada visible.
+- **El arnés de pruebas se haría más rápido, no más lento.** Era el argumento más
+  fuerte en contra y la medición lo desmontó: `MongoMemoryReplSet` tarda **13,4 s**
+  en levantarse —la mayor parte de `npm test`— y PGlite **2,9 s**.
+- ⚠️ **Si alguna vez se migra, el primer paso es crear un rol sin privilegios.**
+  Un superusuario **se salta RLS siempre**, aunque la tabla lleve `FORCE ROW LEVEL
+  SECURITY`, y es justo el rol que dan por defecto Neon y casi cualquier
+  proveedor. El aislamiento no existiría y nada avisaría.
+
 ### 🌅 Lo siguiente: la sesión de mañana
 
 **Lo primero, siempre:** `git log --oneline -3`, `git status`, `npm test` y
-`npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19,
-porque desde esta máquina no se puede consultar.
+`npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19 y
+el 20, porque desde esta máquina no se puede consultar.
 
-**Lo propuesto es la Fase E — verificación de correo electrónico** (petición 8).
-Es la siguiente por el plan, y **media parte ya está hecha sin saberlo**: el
-modelo `Usuario` ya tiene `emailVerificado`, `tokenVerificacion` y
-`expiracionTokenVerificacion`. Los campos existen y no los usa nadie.
+**Hay una decisión encima de la mesa y todo lo demás depende de ella:
+¿se migra a PostgreSQL o se sigue en MongoDB?** El sondeo de la Entrada 032 la
+dejó informada pero no la toma. En corto:
 
-Tiene **dos decisiones abiertas**, y una cuesta dinero:
+| | A favor de migrar | En contra |
+|---|---|---|
+| | Cierra **C-06** gratis: Neon se suspende pero **se despierta solo** | **81 rutas y ~220 llamadas** que reescribir |
+| | El aislamiento lo aplica la base, no el ORM | Varias sesiones sin nada visible para el usuario |
+| | Cierra **M-01**, **M-02** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
+| | Las pruebas arrancan en 2,9 s en vez de 13,4 s | Ni la Fase E ni la Fase F avanzan mientras tanto |
 
-| Decisión | Por qué no puede darse por supuesta |
-|---|---|
-| **Qué proveedor de envío** — Resend, SendGrid o SMTP propio | Tiene coste y configuración en Render. Es la única dependencia externa de todo el plan de producto |
-| **Qué se le bloquea a una cuenta sin verificar** | ¿Puede entrar pero no unirse a quinielas? ¿No puede ni entrar? Es producto, no técnica, y cambia el middleware |
+**Si se decide migrar**, el primer paso **no** es empezar por las rutas: es
+levantar un PostgreSQL de verdad —en CI o en una rama de Neon— y repetir las diez
+comprobaciones del sondeo **con un *pool* de conexiones**, porque PGlite es de una
+sola conexión y eso quedó sin probar.
 
-**Cómo desbloquearla sin esperar a la primera:** montar toda la mecánica —generar
-el token con su caducidad, la ruta de confirmación, la de reenvío y las
-pantallas— **contra un enviador simulado**, detrás de una interfaz con una sola
-función. Enchufar el proveedor real queda entonces en poner credenciales en
-Render y escribir el adaptador. Es el mismo patrón que `proveedorDeEventos`: una
-costura por la que las pruebas meten algo falso sin tocar la red.
+**Si se decide no migrar**, se borra `sondeo-sql/`, se anota M-33 para arreglarlo
+cuando toque, y la siguiente es la **Fase E — verificación de correo** (petición
+8), con sus dos decisiones abiertas: proveedor de envío y qué se bloquea sin
+verificar. Media parte ya está hecha: el modelo `Usuario` ya tiene los campos.
 
-Lo que **no** se puede dejar para después es la segunda decisión: sin saber qué se
-bloquea, el middleware no se puede escribir. Si no está tomada al empezar, se
-implementa lo demás y el bloqueo se deja en una sola función con el
-comportamiento más suave —se puede entrar, no se puede uno unir a quinielas— y
-anotado como provisional.
-
-**La alternativa, si se prefiere:** saltar a la **Fase F** (sugerencias de
-partidos destacados, petición 10). También tiene decisiones abiertas —qué cuenta
-como «igualados», cuántos puestos son zona de descenso— y además necesita algo
-que la aplicación hoy no consulta: la tabla de posiciones de cada liga.
-Conviene empezar por lo barato, la lista de clásicos escrita a mano, y ver si
-aporta antes de construir lo de la clasificación.
-
-**Y hay una tercera opción que no es producto:** terminar la **Fase 6 de
-modularización**. `server.js` está en 5.270 líneas y hoy creció, no menguó.
-Ninguna fase de producto la necesita, pero cada una la hace más cara.
+⚠️ **Y queda una pregunta sin contestar que la Fase E necesita sí o sí:** cuál va
+a ser **el dominio definitivo**. Los enlaces del correo de verificación llevan la
+URL pública dentro; si el dominio cambia después, los correos ya enviados no
+llevan a ninguna parte.
 
 ### Estado de Git
 
@@ -323,14 +346,46 @@ No hay que volver a pensarlo.
 5. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
    queda provisional para siempre, y no hay política escrita sobre los miembros
    que entran a mitad de temporada.
+6. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
+   `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres
+   —se contaron: cero—, pero la primera agregación que alguien escriba para un
+   informe **saldrá sin filtro de quiniela y en silencio**. Es la forma exacta
+   que tenía C-02. Encontrado de rebote durante el sondeo SQL (Entrada 032).
 
 ### 4. Decisiones abiertas que dependen del usuario
 
-| # | Decisión | Por qué importa |
+**Puesto al día el 20 de agosto.** Un dato de contexto que faltaba y que el
+usuario confirmó ese día: **la aplicación está desplegada en Render, pero todavía
+no la usa nadie.** Eso baja la urgencia de todo lo de abajo y explica por qué se
+pudo aceptar C-06 sin drama.
+
+| # | Decisión | Estado |
 |---|---|---|
-| **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | Un M0 gratuito significa que la aplicación puede morir sola, sin aviso. Incompatible con el objetivo de producción |
-| **M-30** | ¿Se deja la base llamándose `test` o se migra a un nombre propio? | Funciona, pero si alguien "corrige" la URI la aplicación arrancaría vacía y parecería que se perdieron los datos |
-| **Render** | Definir `NODE_ENV=production`, `ALLOWED_ORIGINS` y `DEBUG_ENDPOINTS=false`, y poner `/readyz` como health check | Sin esto el despliegue no está bien configurado |
+| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🔴 **Abierta, y bloquea a las demás.** El sondeo de la Entrada 032 la dejó informada. Todo lo de abajo depende de la respuesta |
+| **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | ✅ **Decidido el 20-ago: se deja como está**, a sabiendas de que la aplicación puede morir sola y sin aviso. Se aceptó porque hoy no la usa nadie. ⚠️ Hay que reabrirlo antes de que entre gente de verdad — o resolverlo de paso, si se migra a Neon, que se despierta solo |
+| **M-30** | ¿Se deja la base llamándose `test`? | ⏸️ **En suspenso**, absorbida por la decisión de SQL: si se migra, la base nueva nace con nombre propio y M-30 desaparece. Si no se migra, vuelve a estar abierta ⚠️ y la ventana barata se cierra en cuanto entren datos de verdad |
+| **Render** | `NODE_ENV=production`, `ALLOWED_ORIGINS`, `DEBUG_ENDPOINTS=false` y `/readyz` como health check | 🟡 **Decidido el cómo, pendiente el cuándo.** Se acordó **escribir un `render.yaml`** en el repositorio, porque hoy no existe ninguno y la configuración vive sólo en el panel web, donde nadie puede auditarla. Está a la espera de la decisión de SQL: la variable de la base va dentro del archivo |
+| **Dominio** | ¿`quinieladeportivaglobal.onrender.com` o un dominio propio? | 🔴 **Abierta.** ⚠️ **La Fase E no puede empezar sin esto**: los enlaces del correo de verificación llevan la URL pública dentro, y si el dominio cambia después, los correos ya enviados no llevan a ninguna parte |
+
+⚠️ **Dos cabos que nadie ha comprobado y no se pueden mirar desde esta máquina:**
+
+1. **Qué hay puesto de verdad en Render.** El `.env` local tiene
+   `NODE_ENV=development` y no define ni `ALLOWED_ORIGINS` ni `DEBUG_ENDPOINTS`.
+   Los tres tienen defensas razonables por defecto en el código —CORS cae en
+   `quinieladeportivaglobal.onrender.com`, los `/debug/*` sólo se abren con el
+   literal `'true'`, y en producción el servidor **se niega a arrancar sin
+   `SESSION_SECRET`**—, así que el riesgo no es el valor por defecto: es que nadie
+   ha confirmado el real.
+2. **Qué forma de URI hay puesta en Render.** Tiene que ser `mongodb+srv://`. El
+   `.env` local usa la forma **sin** SRV por el fallo de DNS de esta máquina, y esa
+   forma **fija los nombres de los tres nodos** del clúster (es **M-31**). Si
+   alguien copió el `.env` local a Render, el día que Atlas cambie la topología
+   deja de conectar sin que nadie haya tocado nada.
+
+Y una tercera, menor: **¿sigue viva la aplicación anterior**
+(`quinieladeportivamundialista.onrender.com`) **y apunta a esta misma base?** Dos
+servicios escribiendo en la misma base sería un problema mayor que cualquiera de
+los de arriba.
 
 *(M-03/M-04 ya no está abierta: se congela al quedar definitivos todos los
 partidos, y las correcciones conservan las reglas originales.)*
@@ -1860,6 +1915,7 @@ en la interfaz.**
 | **M-29** | Sin notificaciones (correo/push) para solicitudes, aprobaciones o cierres | ausente |
 | **M-30** | **La base de datos se llama `test`.** La URI nunca especificó nombre, así que MongoDB usó su valor por defecto. Las 13 colecciones y todos los datos reales viven ahí | `.env` |
 | **M-31** | La URI de desarrollo usa el formato sin SRV, que **fija los nombres de los tres nodos** del clúster. Si Atlas cambia la topología, dejan de ser válidos | `.env`, ver bitácora 005 |
+| **M-33** | El `tenantPlugin` **no engancha `aggregate`, `insertMany` ni `bulkWrite`**. Hoy no hay fuga porque no se usa ninguno (cero llamadas), pero la primera agregacion que alguien escriba saldra sin filtro de quiniela y en silencio. Es la forma que tenia C-02 | `server.js:545-568` |
 
 **Sobre M-30:** no es urgente —funciona— pero tiene una trampa. Si alguien "corrige"
 la URI poniéndole un nombre propio (`/quiniela`), la aplicación arrancaría contra una
@@ -5819,6 +5875,154 @@ npm run test:e2e  → 62/62  (58 anteriores + 4 nuevas, escritorio y móvil)
 Render) y **qué se bloquea a una cuenta sin verificar**. Media parte ya está
 hecha sin saberlo: el modelo `Usuario` ya tiene `emailVerificado`,
 `tokenVerificacion` y `expiracionTokenVerificacion`.
+
+---
+
+### 📌 Entrada 032 — 20 de agosto de 2026 — Sondeo SQL: medir en vez de opinar
+
+**Objetivo:** contestar con números, y no con impresiones, si conviene pasar de
+MongoDB a PostgreSQL, después de que el usuario aportara un dato que cambia la
+pregunta: **los datos de hoy son de prueba y se pueden tirar enteros**.
+
+Conviene decir de entrada por qué esto no contradice la §20.8. Aquella respuesta
+—«no migrar»— contestaba a otra pregunta: daba por hecho que había datos que
+conservar y un histórico que mover. Sin datos que salvar, el balance hay que
+rehacerlo. Lo que **no** cambia es el tamaño de la obra, y era importante decirlo
+antes de empezar: renombrar la base son treinta minutos; pasar a SQL es reescribir
+la capa de datos entera. Que haya que hacer lo primero no abarata lo segundo.
+
+Se acordó una **sesión de sondeo con límite y sin compromiso**: modelar, probar y
+medir; decidir después.
+
+**Qué se hizo:**
+
+1. **Se midió la obra**, para dejar de estimarla a ojo: **13 esquemas** de
+   Mongoose, **81 rutas**, **~220 puntos de llamada** a la base (56 `find`, 55
+   `findOne`, 22 `save`, 36 `lean`, 15 `findById`…), **5 arreglos incrustados** y
+   **2.617 líneas** de pruebas de integración atadas al arnés de Mongo.
+2. **Se modeló el sistema entero en PostgreSQL** (`sondeo-sql/esquema.sql`): las
+   13 colecciones se vuelven **16 tablas**, con claves ajenas de verdad y con el
+   aislamiento por quiniela puesto en *Row-Level Security* en lugar de en el ORM.
+3. **Se montó un banco de pruebas** (`sondeo-sql/sondeo-pglite.js`) que arranca un
+   PostgreSQL de verdad, aplica el esquema y corre **10 comprobaciones** de
+   aislamiento, cerrojo y ranking.
+4. **Se cronometró el arnés de pruebas**, que era la mayor duda de todas.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/esquema.sql` | **Nuevo.** Las 13 colecciones en 16 tablas, con RLS |
+| `sondeo-sql/sondeo-pglite.js` | **Nuevo.** El banco de pruebas y sus mediciones |
+| `sondeo-sql/LEEME.md` | **Nuevo.** Qué es esto, cómo se corre y qué no prueba |
+| `avance_proyecto.md` | Esta entrada, §15 (M-32) y las secciones de cabecera |
+
+⚠️ **Nada de `sondeo-sql/` lo usa la aplicación**, no está enganchado a `npm test`
+y no toca `package.json`. Es material de una exploración: si la decisión es
+quedarse en Mongo, se borra la carpeta y no queda deuda.
+
+**Verificación:**
+
+```
+node sondeo-sql/sondeo-pglite.js  → 10/10 comprobaciones pasan
+
+  OK  Un SELECT sin filtro sólo ve la quiniela del contexto
+  OK  Pedir a propósito la quiniela ajena devuelve vacío
+  OK  Una agregación tampoco escapa (es el hueco de aggregate en Mongoose)
+  OK  Un JOIN de tres tablas no cruza quinielas
+  OK  Escribir en una quiniela ajena lo rechaza la base
+  OK  Sin contexto de quiniela no se ve nada (la puerta de §5.2)
+  OK  AVISO comprobado: el superusuario ve TODAS las quinielas
+  OK  El cerrojo: el primero entra, el segundo rebota
+  OK  El cerrojo caducado lo puede tomar otro
+  OK  El ranking sale en UNA consulta y sin los puntos de la otra quiniela
+
+npm test                          → 129/129, 17,3 s de reloj
+```
+
+Y los tiempos, que son el corazón del sondeo:
+
+| Medida | Mongo (hoy) | PostgreSQL (sondeo) |
+|---|---|---|
+| Arranque del arnés de pruebas | **13.438 ms** (`MongoMemoryReplSet`) | **2.896 ms** (PGlite + esquema) |
+| Aplicar el esquema | — | 96 ms |
+| Consulta con transacción y RLS | — | 1,67 ms |
+| Consulta suelta, sin aislamiento | — | 0,32 ms |
+| Ranking completo | 6 lecturas + armado en JavaScript | **1 consulta**, 4 ms |
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **La trampa más cara de todas: un superusuario se salta RLS siempre**,
+   aunque la tabla lleve `FORCE ROW LEVEL SECURITY`. Si la aplicación se conecta
+   con el rol dueño de la base —que es **justo lo que dan por defecto Neon y casi
+   cualquier proveedor**— el aislamiento no existe y **nada avisa**: las consultas
+   funcionan, devuelven filas, y devuelven también las de las demás quinielas. Es
+   C-02 otra vez, con otro disfraz. El banco lo comprueba en las dos direcciones a
+   propósito: con el rol `app` no se ve lo ajeno, y con el dueño se ve todo. Si
+   algún día se migra, **crear el rol sin privilegios es el primer paso, no el
+   último**.
+
+2. **Se encontró un agujero latente en el código actual de Mongo**, y no tiene
+   nada que ver con SQL: el `tenantPlugin` engancha `find*`, `countDocuments`,
+   `update*` y `delete*`, pero **no `aggregate`, ni `insertMany`, ni `bulkWrite`**.
+   Hoy no hay fuga porque el código no usa ninguno de los tres —se contaron: cero—
+   pero el día que alguien escriba la primera agregación para un informe, **la
+   consulta saldrá sin filtro de quiniela y en silencio**. Queda anotado como
+   **M-33**. No urge, pero es exactamente la forma que tenía C-02.
+
+3. **El arnés de pruebas se haría MÁS RÁPIDO, no más lento.** Era el argumento
+   más fuerte en contra de migrar, y la medición lo desmonta: `MongoMemoryReplSet`
+   tarda **13,4 s** en levantarse —la mayor parte de los 17,3 s que dura `npm
+   test`— y PGlite tarda **2,9 s** con el esquema ya aplicado. PGlite es
+   PostgreSQL 18 compilado a WebAssembly: es un paquete de npm, no necesita
+   binarios, ni Docker, ni red.
+
+4. ⚠️ **PGlite atiende una sola conexión**, y eso deja dos cosas sin probar: la
+   disciplina de `SET LOCAL` dentro de transacción con un *pool* de verdad —que es
+   lo que impide que el contexto de una quiniela se filtre a la petición siguiente
+   que reutilice la conexión— y cualquier carrera real. Hoy **no cuesta nada**:
+   las pruebas de integración no tienen ni un `Promise.all`, así que no hay una
+   sola prueba de concurrencia que se pierda. Pero tampoco se podrían escribir sin
+   un PostgreSQL de verdad. En CI es fácil: GitHub Actions levanta uno como
+   servicio en tres líneas.
+
+5. **`embedded-postgres` no arranca en esta máquina.** Fue el primer camino que se
+   intentó, y falla con `STATUS_IN_PAGE_ERROR` (`0xC0000006`) al ejecutar
+   `initdb.exe`, tanto en la serie 17 como en la 18. Además **todas sus versiones
+   publicadas son *beta***. No hay Docker ni `psql` instalados. Si alguien retoma
+   esto, que no gaste la hora otra vez: **el camino que funciona es PGlite**.
+
+6. **Tres cosas salieron mejor de lo esperado.** El cerrojo distribuido cabe en un
+   `INSERT … ON CONFLICT DO UPDATE … WHERE expira_en <= now()`, que es más simple y
+   más correcto que la versión de Mongo. El ranking, que hoy son seis lecturas
+   completas armadas en JavaScript, sale en **una consulta**. Y `pgcrypto` no hace
+   falta: `gen_random_uuid()` es de serie desde PostgreSQL 13.
+
+7. **Lo que sí obliga a repensar, no solo a reescribir**, son los cinco arreglos
+   incrustados. Al volverse tablas hijas, cada partido y cada pronóstico gana
+   identidad propia —eso cierra **M-02** por obligación— pero los vínculos de hoy
+   son por **nombre**: `Resultado.jornada` es el nombre de la jornada,
+   `Resultado.jugador` es el `username`, `RespuestaTrivia.triviaId` es una cadena.
+   Convertirlos en claves ajenas es la parte cara, y es también **M-01**.
+
+**Pendiente / siguiente paso:**
+
+La decisión, que es del usuario y sigue abierta. El sondeo no la toma: la deja
+informada. Lo que queda sobre la mesa:
+
+- **A favor:** Neon se suspende pero **se despierta solo** al llegar la primera
+  conexión, así que cerraría **C-06** —que hoy está aceptado como riesgo— sin
+  pagar nada; el aislamiento pasa a aplicarlo la base; se cierran **M-01**, **M-02**
+  y **M-33** por obligación del modelo; y las pruebas se aceleran.
+- **En contra:** son **81 rutas y ~220 llamadas** que hay que reescribir, varias
+  sesiones sin nada visible para el usuario, y un tramo largo con la aplicación a
+  medio migrar. Ni la Fase E ni la Fase F avanzan mientras tanto.
+
+Si se decide seguir, **el primer paso no es migrar rutas**: es levantar un
+PostgreSQL de verdad —en CI o en una rama de Neon— y volver a correr estas diez
+comprobaciones con un *pool* de conexiones, para cerrar lo que PGlite no puede
+probar. Si se decide no seguir, se borra `sondeo-sql/` y sólo queda M-32 anotado,
+que es un hallazgo que valía la sesión por sí solo.
 
 ---
 
