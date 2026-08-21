@@ -196,9 +196,9 @@ el 20, porque desde esta máquina no se puede consultar.
 
 **Lo siguiente es el Anexo C**, que el usuario ejecuta a mano en el panel de
 Neon: crear la base, aplicar el esquema, crear el rol de la aplicación y correr
-la prueba de aceptación. Tiene que dar **7 de 7**.
+la prueba de aceptación. Tiene que dar **8 de 8**.
 
-⚠️ **Cuando dé 7 de 7, la puerta TODAVÍA no está pasada.** Falta lo único que el
+⚠️ **Cuando dé 8 de 8, la puerta TODAVÍA no está pasada.** Falta lo único que el
 sondeo no pudo comprobar, porque PGlite atiende una sola conexión: correr esas
 mismas comprobaciones **desde Node, con un `Pool` de `pg` y varias peticiones a
 la vez**, para confirmar que el contexto de una quiniela no se cuela en la
@@ -480,6 +480,13 @@ Cuestan tiempo cada vez que se olvidan:
   contraseña real. Se pilló antes del commit, pero un secreto que llega al
   historial **no se arregla borrándolo después**. La solución no es un aviso más
   grande: es **quitar el hueco** (Entrada 034).
+- ⚠️ **«Failed transaction: ROLLBACK required» no es un error: es el eco de otro.**
+  Es lo que PostgreSQL responde a **todas** las sentencias posteriores a la que
+  falló de verdad, porque la transacción queda abortada. En un editor web, donde
+  se ve la respuesta de la última sentencia, **el error real desaparece de la
+  pantalla**. Lo que hay que buscar es **la primera** que falló, no la última.
+  Costó dos vueltas enteras (Entrada 035).
+
 ---
 
 ## Índice
@@ -2830,15 +2837,15 @@ nombre de una jornada.
 > Escrito el 20 de agosto de 2026, al decidirse abrir la puerta del sondeo SQL
 > (Entrada 033). **Los tres archivos que se pegan están probados**: se ensayaron
 > contra un PostgreSQL de verdad con `sondeo-sql/probar-neon-sql.js` antes de
-> escribir este anexo, y las siete comprobaciones pasan.
+> escribir este anexo, y las ocho comprobaciones pasan.
 
 **Qué deja montado:** una base PostgreSQL en Neon, con las 16 tablas, el
 aislamiento por quiniela aplicado por la base y un rol de aplicación que **no
-puede apagarlo**. Al terminar, la prueba de aceptación tiene que dar **7 de 7**.
+puede apagarlo**. Al terminar, la prueba de aceptación tiene que dar **8 de 8**.
 
 ⚠️ **Esto no migra nada ni toca la aplicación.** Al final de este anexo la
 aplicación sigue hablando con MongoDB exactamente igual que antes. Es la puerta
-que se acordó abrir antes de comprometerse: si las siete comprobaciones no pasan
+que se acordó abrir antes de comprometerse: si las ocho comprobaciones no pasan
 con un *pool* de conexiones de verdad, no se sigue.
 
 ---
@@ -2918,14 +2925,14 @@ en una variable de entorno, que está menos protegida que un gestor.
 
 ### Paso 5 — La prueba de aceptación
 
-Pega **`sondeo-sql/neon-verificar.sql`** entero y ejecútalo. Corre dentro de una
-transacción que termina en `ROLLBACK`: **no deja ni una fila detrás**.
+Pega **`sondeo-sql/neon-verificar.sql`** entero y ejecútalo.
 
-Tiene que devolver **siete líneas, todas diciendo `PASA`**:
+Tiene que devolver **ocho líneas, todas diciendo `PASA`**:
 
 ```
-PASA  El rol app_quiniela no es superusuario ni tiene BYPASSRLS
+PASA  El rol app_quiniela existe y no puede saltarse RLS
 PASA  Las 12 tablas de dominio tienen RLS activo y forzado
+PASA  El dueño puede asumir el rol app_quiniela
 PASA  Sin contexto de quiniela no se ve nada
 PASA  Un SELECT sin filtro solo ve la quiniela del contexto
 PASA  Pedir a proposito la quiniela ajena devuelve vacio
@@ -2936,6 +2943,21 @@ PASA  Escribir en una quiniela ajena lo rechaza la base
 ⚠️ **Si alguna dice `FALLA`, para aquí.** Significa que el aislamiento no está
 puesto, y una aplicación sobre esa base filtraría datos entre quinielas sin
 avisar de nada. Es C-02 otra vez.
+
+**La columna `detalle` trae el error exacto de PostgreSQL.** Eso es lo que hay
+que mirar, y lo que hay que pegar si se pide ayuda — no el mensaje que muestre el
+editor.
+
+> **Por qué el archivo está escrito como un solo bloque `DO` y no como un guion
+> normal.** La primera versión era una tanda de sentencias dentro de un
+> `BEGIN…ROLLBACK`, y en el editor web tenía dos problemas. Uno: en cuanto una
+> sentencia falla, PostgreSQL aborta la transacción y **todo lo demás responde
+> «Failed transaction: ROLLBACK required»**, que no dice qué falló — es el síntoma
+> de lo que vino después, y el error de verdad se pierde de vista. Dos: no todos
+> los editores web mantienen una transacción abierta entre sentencias, así que ni
+> el `ROLLBACK` del final era de fiar. Ahora todo es **una sola sentencia**, cada
+> comprobación atrapa su propio error, y los datos de prueba se borran al final.
+> Ver la Entrada 035.
 
 ### Paso 6 — Armar la cadena de conexión de la aplicación
 
@@ -6413,6 +6435,94 @@ El usuario repite los pasos 4 y 5 del Anexo C con los archivos corregidos. Cuand
 den 7/7, sigue faltando lo mismo que antes: correr las comprobaciones **desde
 Node, con un `Pool` de `pg` y varias peticiones a la vez**, que es lo único que
 PGlite no puede probar. Hasta que eso pase, no se toca ninguna ruta.
+
+---
+
+### 📌 Entrada 035 — 20 de agosto de 2026 — Dejar de adivinar: que el guion diga qué falló
+
+**Objetivo:** el paso 5 del Anexo C volvió a fallar en Neon con el mismo mensaje
+—«Failed transaction: ROLLBACK required»— después de arreglar la causa de la
+Entrada 034. Segunda vez con el mismo síntoma y sin saber la causa.
+
+**Qué se hizo, y por qué se cambió de método:**
+
+La Entrada 034 arregló **una** causa real. Que el síntoma se repitiera sólo
+demostraba que había **otra**, y a esas alturas se estaba adivinando: proponer un
+arreglo, esperar a que el usuario lo probara en Neon, y volver a empezar. Cada
+vuelta cuesta una ida y vuelta con una persona delante.
+
+⚠️ **El problema de fondo no era el SQL: era que el guion no sabía informar.**
+
+`«Failed transaction: ROLLBACK required»` **no dice qué falló.** Es lo que
+PostgreSQL responde a *todas* las sentencias que vienen **después** de la que
+falló de verdad, porque la transacción queda abortada. En un editor web, donde lo
+que se ve es la respuesta de la última sentencia, **el error real desaparece de la
+pantalla**. Se estaba depurando a ciegas por culpa del formato del guion, no por
+culpa de la base.
+
+Así que en vez de adivinar una tercera causa, se rehízo el guion para que
+informe:
+
+1. **Todo va dentro de un único bloque `DO`**, que para el editor es **una sola
+   sentencia**. Ya no hay «sentencias posteriores» que puedan enmascarar nada.
+2. **Cada comprobación tiene su propio `BEGIN … EXCEPTION`**, así que una que
+   falle **se anota con el error exacto de PostgreSQL en la columna `detalle`** y
+   las demás siguen corriendo. Se pasa de «algo falló» a «esto falló, y esto
+   dijo».
+3. **Se añadió una comprobación que antes no existía** y que era sospechosa
+   principal: **¿puede el rol dueño asumir `app_quiniela`?** Si no puede, todo lo
+   demás mediría al dueño en vez de a la aplicación, que es un falso verde peor
+   que un fallo. Si falla, el detalle trae escrito el arreglo:
+   `GRANT app_quiniela TO CURRENT_USER;`. Son **ocho** comprobaciones, no siete.
+4. **Se dejó de depender de que el editor mantenga una transacción abierta.** La
+   versión anterior usaba `BEGIN … ROLLBACK` para no ensuciar la base, y eso sólo
+   funciona si el editor conserva la sesión entre sentencias, cosa que no todos
+   hacen. Ahora la limpieza la hace el propio bloque: borra la semilla al
+   terminar, y si algo revienta antes, el bloque entero se deshace solo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/neon-verificar.sql` | Reescrito como un único bloque `DO`, con 8 comprobaciones que atrapan su propio error |
+| `sondeo-sql/LEEME.md` | 8/8 en vez de 7/7 |
+| `avance_proyecto.md` | Esta entrada, el paso 5 del Anexo C y las referencias del procedimiento |
+
+**Verificación:**
+
+```
+node sondeo-sql/probar-neon-sql.js  → 8/8 pasan, como dueño NO superusuario
+npm test                            → 129/129
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **«Failed transaction: ROLLBACK required» no es un error: es el eco de
+   otro.** Cuando aparezca —en Neon o en cualquier editor SQL— lo que hay que
+   buscar es **la primera** sentencia que falló, no la última. Es la trampa que
+   costó dos vueltas enteras en esta sesión.
+2. **Un guion que se ejecuta a mano, en un editor ajeno y por otra persona, tiene
+   que informar tan bien como una prueba automática.** Aquí el guion era correcto
+   en su intención y aun así inservible para depurar, porque el formato escondía
+   la causa. Un `DO` con `EXCEPTION` por comprobación cuesta unas líneas más y
+   convierte «no sé qué pasó» en «falló la número 3, y dijo esto».
+3. **La comprobación que faltaba era la del propio andamio.** Las siete originales
+   verificaban el aislamiento, pero **ninguna verificaba que se estuviera midiendo
+   con el rol correcto**. Es la misma familia de error que la Entrada 034: no
+   comprobar las condiciones en las que se mide.
+
+**Pendiente / siguiente paso:**
+
+El usuario vuelve a ejecutar el paso 5 con el guion nuevo. Pase o falle, **ahora
+habrá un mensaje concreto** que diga qué ocurre. Después sigue faltando lo mismo
+de siempre: las comprobaciones **desde Node, con un `Pool` de `pg` y varias
+peticiones a la vez**, que es lo único que PGlite no puede probar. Hasta que eso
+pase, no se toca ninguna ruta.
+
+⚠️ Aparte: `sondeo-sql/neon-preparar.sql` apareció en el árbol de trabajo
+**revertido a la versión vieja** —la del hueco `CAMBIAME`—, probablemente porque
+un editor guardó un búfer viejo encima. La versión buena está confirmada; se
+recupera con `git checkout -- sondeo-sql/neon-preparar.sql`.
 
 ---
 

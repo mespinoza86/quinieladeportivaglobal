@@ -28,7 +28,7 @@ esto, y no queremos que un sondeo rompa el CI.
 cd sondeo-sql
 npm install
 npm run sondeo        # el banco de pruebas   -> 10/10 comprobaciones pasan
-node probar-neon-sql.js   # ensayo de lo de Neon -> 7/7 pasan
+node probar-neon-sql.js   # ensayo de lo de Neon -> 8/8 pasan
 ```
 
 Los dos tardan unos 3 segundos. La carpeta tiene su propio `package.json` con su
