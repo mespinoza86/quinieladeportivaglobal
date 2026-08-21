@@ -46,6 +46,20 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- Que nadie mas pueda crear objetos sueltos en public.
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
+-- ⚠️ EN NEON HACE FALTA ESTO, Y NO ES OBVIO (Entrada 037)
+--
+-- En un PostgreSQL normal, un rol con CREATEROLE que crea otro rol queda como
+-- administrador suyo y puede asumirlo con SET ROLE. En Neon NO: neondb_owner
+-- crea `app_quiniela` sin problema, pero al intentar asumirlo responde
+--
+--     permission denied to set role "app_quiniela"
+--
+-- Y asumirlo hace falta, porque es la unica forma de comprobar el aislamiento
+-- desde el editor SQL: ponerse en la piel de la aplicacion. Sin esta linea, la
+-- prueba de aceptacion se para en la comprobacion 3 -a proposito: seguir seria
+-- medir al dueño y creer que se esta midiendo a la aplicacion-.
+GRANT app_quiniela TO CURRENT_USER;
+
 
 -- ---------- Paso 2: la contraseña, SIN guardarla en ningun archivo ----------
 --

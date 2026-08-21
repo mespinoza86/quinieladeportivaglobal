@@ -14,8 +14,21 @@
  * bajo el, que es lo que Neon da de verdad. Si algun dia vuelve a correrse como
  * superusuario, este archivo deja de probar lo que dice probar.
  *
- * La unica diferencia que queda con Neon es el nombre de la base en el
- * GRANT CONNECT, que aqui se sustituye por la de PGlite.
+ * ⚠️ LO QUE ESTE ENSAYO SIGUE SIN PODER REPRODUCIR (Entrada 037)
+ *
+ * Aqui `duenio` CREA el rol `app_quiniela`, y en PostgreSQL quien crea un rol
+ * queda como administrador suyo y puede asumirlo con SET ROLE. En Neon eso NO
+ * pasa: neondb_owner lo crea igual, pero al asumirlo responde
+ * "permission denied to set role". Por eso `neon-preparar.sql` lleva un
+ * GRANT app_quiniela TO CURRENT_USER explicito.
+ *
+ * Este ensayo no habria detectado esa diferencia, porque en PGlite el permiso
+ * ya venia dado. Es la cuarta vez en esta sesion que el fallo esta en el borde
+ * entre el guion y el sitio donde corre, y no en el SQL. Lo unico que lo
+ * detecto fue la comprobacion 3 del propio guion, ejecutada en Neon.
+ *
+ * La otra diferencia que queda es el nombre de la base en el GRANT CONNECT,
+ * que aqui se sustituye por la de PGlite.
  */
 'use strict';
 

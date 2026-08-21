@@ -492,6 +492,11 @@ Cuestan tiempo cada vez que se olvidan:
   limpieza, así que corría entera, calculaba las ocho comprobaciones y las
   borraba antes de que nadie las viera: desde fuera parecía que no hacía nada
   (Entrada 036).
+- ⚠️ **En Neon, crear un rol no da derecho a asumirlo.** Hace falta
+  `GRANT <rol> TO CURRENT_USER;`. El sintoma es `permission denied to set role`
+  y llega **despues** de que el `CREATE ROLE` haya ido bien, que es lo que
+  despista: parece que el rol quedo mal creado, y esta perfectamente creado
+  (Entrada 037).
 
 ---
 
@@ -3032,6 +3037,46 @@ Cuando se escriba el `render.yaml` acordado, estas dos son las que irán allí.
 
 ---
 
+### Paso 9 — La puerta de verdad: el aislamiento con un *pool*
+
+Los ocho `PASA` del paso 5 se consiguen con **una sola conexión**. La aplicación
+no funciona así: usa un *pool*, y **la conexión que atendió a la quiniela A la
+reutiliza después otra petición cualquiera**.
+
+Ahí está el riesgo que ninguna comprobación anterior ha tocado. El aislamiento se
+apoya en una variable de sesión, `app.quiniela_id`; si sobreviviera al final de
+la petición, la siguiente leería con el contexto de la anterior. Y sería una fuga
+**peor que C-02**: intermitente, dependiente de la carga y silenciosa — con poco
+tráfico no aparece nunca, y con mucho aparece a ratos.
+
+La defensa es que el contexto se fija con `SET LOCAL` **dentro de una
+transacción**, para que PostgreSQL lo deshaga al cerrarla. Esto lo comprueba:
+
+```bash
+cd sondeo-sql
+npm install
+npm run pool
+```
+
+Necesita `DATABASE_URL` en el `.env` de la raíz —la cadena **con *pooler*** y con
+el rol **`app_quiniela`**—. Si detecta que falta el *pooler* o que el usuario es
+el rol dueño, avisa: en cualquiera de los dos casos la prueba valdría menos de lo
+que parece.
+
+Lo que hace: levanta seis quinielas, lanza **240 peticiones concurrentes** sobre
+un *pool* de diez conexiones y comprueba que ninguna ve datos de otra; después
+lanza veinte consultas **sin contexto** sobre esas mismas conexiones ya usadas,
+que deben ver **cero filas**; y por último alterna quinielas distintas sobre el
+mismo *pool* para forzar que una conexión pase de una a otra entre peticiones.
+Crea sus propios datos con nombres que empiezan por `pool_` y los borra al
+terminar, pase lo que pase.
+
+⚠️ **Si esto falla, no se sigue.** No hay arreglo «de código» que valga: querría
+decir que el modelo de aislamiento no aguanta el modo en que la aplicación va a
+usar la base.
+
+---
+
 ### Lo que NO hay que hacer
 
 - ⚠️ **No pongas la cadena del rol dueño en la aplicación.** Es el paso 4 entero
@@ -3043,12 +3088,12 @@ Cuando se escriba el `render.yaml` acordado, estas dos son las que irán allí.
 
 ### Lo que este anexo deja sin resolver
 
-**La disciplina del *pool* sigue sin probarse**, que es justo lo que el sondeo no
-pudo verificar porque PGlite atiende una sola conexión. El paso siguiente —y la
-puerta de verdad— es correr estas mismas comprobaciones **desde Node, con un
-`Pool` de `pg` y varias peticiones concurrentes**, para confirmar que el contexto
-de una quiniela no se cuela en la petición de otra. Hasta que eso pase, no se
-toca ninguna ruta.
+**Nada, si el paso 9 pasa.** Con los ocho `PASA` del paso 5 y el `pool` del paso
+9 en verde, la puerta está pasada y la decisión de migrar las 81 rutas se toma
+con datos y no con impresiones.
+
+Lo que sigue fuera del alcance de este anexo es la **migración en sí**: ninguna
+ruta de la aplicación habla todavía con PostgreSQL, y eso es deliberado.
 
 ---
 
@@ -6623,6 +6668,103 @@ Después sigue faltando lo mismo de siempre, y conviene no perderlo de vista ent
 tantas vueltas: las comprobaciones **desde Node, con un `Pool` de `pg` y varias
 peticiones a la vez**, que es lo único que PGlite no puede probar por atender una
 sola conexión. Hasta que eso pase, **no se toca ninguna ruta**.
+
+---
+
+### 📌 Entrada 037 — 20 de agosto de 2026 — En Neon, crear un rol no da derecho a asumirlo
+
+**Objetivo:** con el guion reescrito en las Entradas 035 y 036, la prueba de
+aceptación por fin **enseñó el error de verdad** en vez de esconderlo. Arreglarlo.
+
+**Lo que devolvió Neon:**
+
+```
+1  El rol app_quiniela existe y no puede saltarse RLS    PASA   superusuario=f bypassrls=f
+2  Las 12 tablas de dominio tienen RLS activo y forzado  PASA   12 de 12
+3  El dueño puede asumir el rol app_quiniela             FALLA  permission denied to set role
+                                                                "app_quiniela"
+```
+
+Y ahí se paró, con **tres filas de ocho**. La parada es deliberada: la
+comprobación 3 hace `RETURN` si falla, porque **seguir habría medido al rol dueño
+creyendo que se medía a la aplicación**. Cinco `PASA` falsos habrían sido mucho
+peor que un `FALLA` honesto.
+
+**La causa:**
+
+⚠️ **En un PostgreSQL normal, quien crea un rol queda como administrador suyo y
+puede asumirlo con `SET ROLE`. En Neon no.** `neondb_owner` crea `app_quiniela`
+sin problema —el paso 4 nunca dio error— pero al intentar ponerse en su piel, lo
+rechaza.
+
+Y asumirlo hace falta, porque desde el editor SQL es la **única** forma de
+comprobar el aislamiento: hay que consultar como consultaría la aplicación.
+
+**Qué se hizo:**
+
+1. **`neon-preparar.sql` lleva ahora `GRANT app_quiniela TO CURRENT_USER;`**, con
+   la explicación al lado. Deja de ser un paso manual que alguien tendría que
+   descubrir por su cuenta.
+2. **Se documentó en `probar-neon-sql.js` que este ensayo no puede detectar esa
+   diferencia**, porque en PGlite el permiso ya viene dado: allí `duenio` crea el
+   rol y por eso puede asumirlo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/neon-preparar.sql` | `GRANT app_quiniela TO CURRENT_USER;` y el porqué |
+| `sondeo-sql/probar-neon-sql.js` | Se deja escrito qué diferencia con Neon sigue sin poder reproducir |
+| `sondeo-sql/probar-pool.js` | **Nuevo.** La puerta de verdad: el aislamiento con un `Pool` de conexiones |
+| `sondeo-sql/package.json` | Se añade `pg` y el guion `npm run pool` |
+| `avance_proyecto.md` | Esta entrada, el Anexo C y las trampas conocidas |
+
+**Verificación:**
+
+```
+node sondeo-sql/probar-neon-sql.js  → 8/8 pasan (el GRANT no rompe nada)
+node --check sondeo-sql/probar-pool.js → sintaxis correcta
+npm test                            → 129/129
+```
+
+⚠️ **`probar-pool.js` todavía no se ha ejecutado de verdad**, porque necesita un
+PostgreSQL con *pool* —o sea, Neon— y en esta máquina no hay ninguno. Está
+escrito y listo, no verificado.
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **En Neon, crear un rol no da derecho a asumirlo.** Hace falta
+   `GRANT <rol> TO CURRENT_USER;`. El síntoma es `permission denied to set role`,
+   y llega **después** de que el `CREATE ROLE` haya ido bien, que es lo que
+   despista: parece que el rol quedó mal creado, y está perfectamente creado.
+
+2. **Cuarta vez en la misma sesión con la misma raíz, y ya no es casualidad: es
+   un patrón que conviene nombrar.** Las Entradas 034, 035, 036 y ésta son todas
+   *el ensayo local no reproduce el sitio real* — privilegios, transacciones del
+   editor, presentación de resultados, y ahora permisos de rol del proveedor.
+   Ninguna era un fallo del SQL.
+   **Lo que rompió la racha no fue un ensayo mejor: fue hacer que el guion
+   informara.** Los tres primeros se arreglaron adivinando, uno por vuelta. El
+   cuarto se arregló en una sola vuelta porque la comprobación 3 dijo qué pasaba y
+   dejó escrito el arreglo en el mismo mensaje. **Cuando algo lo ejecuta otra
+   persona en una herramienta ajena, invertir en que el guion explique el fallo
+   rinde más que invertir en un ensayo más fiel.**
+
+3. **Detenerse a la primera comprobación que invalida el resto es una decisión de
+   diseño, no una limitación.** Tres filas y un `FALLA` claro valen más que ocho
+   filas de las que cinco mienten.
+
+**Pendiente / siguiente paso:**
+
+El usuario ejecuta `GRANT app_quiniela TO CURRENT_USER;` —una línea, el rol ya
+existe y no hay que recrearlo— y repite la prueba de aceptación. Debe dar **8 de
+8**.
+
+Después, **la puerta de verdad**: poner `DATABASE_URL` en el `.env` con la cadena
+del *pooler* y el rol `app_quiniela`, y correr `npm run pool` desde `sondeo-sql/`.
+Comprueba con conexiones reutilizadas lo único que PGlite no puede: que el
+contexto de una quiniela **no se cuele en la petición siguiente**. Hasta que eso
+pase en verde, **no se toca ninguna ruta**.
 
 ---
 

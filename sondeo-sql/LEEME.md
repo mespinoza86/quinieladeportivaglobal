@@ -15,6 +15,8 @@
 | `neon-preparar.sql` | Crea el rol `app_quiniela` con los permisos mínimos. Se pega en Neon **después** del esquema |
 | `neon-verificar.sql` | La prueba de aceptación de Neon: 7 comprobaciones dentro de una transacción que acaba en `ROLLBACK` |
 | `probar-neon-sql.js` | Ensaya los tres `.sql` de arriba contra un Postgres de verdad, para no entregar pasos sin ejecutarlos |
+| `probar-pool.js` | **La puerta de verdad.** Corre contra Neon con un `Pool` de conexiones y comprueba lo único que PGlite no puede: que el contexto de una quiniela no se cuele en la petición siguiente |
+| `probar-pool.js` | **La puerta de verdad.** Corre contra Neon con un `Pool` de conexiones y comprueba lo único que PGlite no puede: que el contexto de una quiniela no se cuele en la petición siguiente |
 
 El procedimiento completo de Neon, paso a paso, está en el **Anexo C** de
 `avance_proyecto.md`.
