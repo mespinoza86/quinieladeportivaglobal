@@ -8,6 +8,11 @@
 -- FALLA, la columna `detalle` trae el error exacto de PostgreSQL: eso es lo
 -- que hay que mirar, y lo que hay que pegar si se pide ayuda.
 --
+-- La primera vez sale el aviso "Table verif_resultados does not exist,
+-- skipping". Es normal y no es un error: lo da el DROP TABLE IF EXISTS de mas
+-- abajo, que limpia los resultados de la ejecucion anterior y la primera vez
+-- no tiene nada que limpiar.
+--
 -- ⚠️ POR QUE ESTA ESCRITO ASI, Y NO COMO UN GUION NORMAL (Entrada 035)
 --
 -- La primera version era una tanda de sentencias sueltas dentro de un
@@ -181,6 +186,19 @@ BEGIN
 END
 $verif$;
 
-SELECT n AS "#", prueba, resultado, detalle FROM verif_resultados ORDER BY n;
+-- ⚠️ Este SELECT es la ULTIMA sentencia del archivo, y es a proposito.
+--
+-- Antes habia un DROP TABLE detras, para no dejar la tabla de resultados en la
+-- base. Parecia limpio y era un error: muchos editores web —el de Neon entre
+-- ellos— muestran solo la salida de la ULTIMA sentencia, y un DROP TABLE no
+-- devuelve filas. El guion corria entero, las ocho comprobaciones pasaban, y en
+-- pantalla no aparecia nada. Ver la Entrada 036.
+--
+-- La tabla `verif_resultados` se queda, entonces. No estorba —no la usa nadie— y
+-- se borra sola al principio de la proxima ejecucion, con el DROP TABLE IF
+-- EXISTS de la primera linea. Ese es tambien el motivo del aviso
+-- "Table verif_resultados does not exist, skipping" la primera vez: es normal.
+--
+-- Si quieres quitarla a mano cuando termines:  DROP TABLE verif_resultados;
 
-DROP TABLE verif_resultados;
+SELECT n AS "#", prueba, resultado, detalle FROM verif_resultados ORDER BY n;

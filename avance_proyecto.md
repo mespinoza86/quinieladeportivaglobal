@@ -486,6 +486,12 @@ Cuestan tiempo cada vez que se olvidan:
   se ve la respuesta de la última sentencia, **el error real desaparece de la
   pantalla**. Lo que hay que buscar es **la primera** que falló, no la última.
   Costó dos vueltas enteras (Entrada 035).
+- ⚠️ **En un editor SQL web, la última sentencia del guion es la única que se ve.**
+  Un guion pensado para pegarse en uno **tiene que terminar en el `SELECT` que
+  interesa**. La prueba de aceptación de Neon acababa en un `DROP TABLE` de
+  limpieza, así que corría entera, calculaba las ocho comprobaciones y las
+  borraba antes de que nadie las viera: desde fuera parecía que no hacía nada
+  (Entrada 036).
 
 ---
 
@@ -2947,6 +2953,20 @@ avisar de nada. Es C-02 otra vez.
 **La columna `detalle` trae el error exacto de PostgreSQL.** Eso es lo que hay
 que mirar, y lo que hay que pegar si se pide ayuda — no el mensaje que muestre el
 editor.
+
+La primera vez sale el aviso `Table "verif_resultados" does not exist, skipping`.
+**Es normal y no es un error:** lo da el `DROP TABLE IF EXISTS` del principio,
+que limpia los resultados de la ejecución anterior y la primera vez no tiene nada
+que limpiar.
+
+> ⚠️ **El guion termina en el `SELECT` a propósito.** Antes tenía detrás un
+> `DROP TABLE` de limpieza, y eso lo hacía inservible: el editor de Neon muestra
+> sólo la salida de la **última** sentencia, así que el guion corría entero, las
+> ocho comprobaciones pasaban, y la tabla se borraba antes de que nadie la viera.
+> Desde fuera parecía que no había hecho nada. Ver la Entrada 036.
+>
+> La tabla `verif_resultados` se queda en la base, entonces. No estorba y se
+> borra sola en la siguiente ejecución.
 
 > **Por qué el archivo está escrito como un solo bloque `DO` y no como un guion
 > normal.** La primera versión era una tanda de sentencias dentro de un
@@ -6523,6 +6543,86 @@ pase, no se toca ninguna ruta.
 **revertido a la versión vieja** —la del hueco `CAMBIAME`—, probablemente porque
 un editor guardó un búfer viejo encima. La versión buena está confirmada; se
 recupera con `git checkout -- sondeo-sql/neon-preparar.sql`.
+
+---
+
+### 📌 Entrada 036 — 20 de agosto de 2026 — La limpieza que se comió el resultado
+
+**Objetivo:** el guion reescrito en la Entrada 035 **corrió sin errores** —el
+usuario lo confirmó— pero en pantalla no apareció la tabla de resultados. Sólo
+salía el aviso `Table "verif_resultados" does not exist, skipping`.
+
+**Qué pasaba:**
+
+El aviso era inocente: lo da el `DROP TABLE IF EXISTS` de la primera línea, que
+la primera vez no tiene nada que limpiar. No era el problema.
+
+El problema estaba en la **última** línea. El archivo terminaba así:
+
+```sql
+SELECT ... FROM verif_resultados ORDER BY n;   -- las ocho comprobaciones
+DROP TABLE verif_resultados;                   -- "limpieza"
+```
+
+⚠️ **Muchos editores web —el de Neon entre ellos— muestran sólo la salida de la
+última sentencia**, y un `DROP TABLE` no devuelve filas. Así que el guion corría
+entero, las ocho comprobaciones pasaban, se calculaba la tabla… y la sentencia
+siguiente la borraba antes de que nadie la viera. Desde fuera parecía que no
+había hecho nada.
+
+**El arreglo es quitar el `DROP TABLE`**: el `SELECT` pasa a ser la última
+sentencia del archivo. La tabla `verif_resultados` se queda en la base, que no
+estorba a nadie, y se borra sola al principio de la siguiente ejecución con el
+`DROP TABLE IF EXISTS` que ya estaba.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/neon-verificar.sql` | Se quita el `DROP TABLE` final; el `SELECT` queda el último. Se documenta que el aviso de la primera vez es normal |
+| `avance_proyecto.md` | Esta entrada, el paso 5 del Anexo C y las trampas conocidas |
+
+**Verificación:**
+
+```
+node sondeo-sql/probar-neon-sql.js  → 8/8 pasan
+npm test                            → 129/129
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **En un editor SQL web, la última sentencia del guion es la única que se
+   ve.** Cualquier guion pensado para pegarse en uno **tiene que terminar en el
+   `SELECT` que interesa**. Poner la limpieza detrás del resultado es tan natural
+   escribiéndolo como fatal ejecutándolo: el resultado existe, es correcto, y no
+   llega a la pantalla.
+
+2. **Tres vueltas seguidas con la misma raíz.** Las Entradas 034, 035 y ésta son
+   el mismo error con tres disfraces: **el ensayo local no reproducía las
+   condiciones reales**. Primero por privilegios —se corría como superusuario—,
+   luego por el manejo de transacciones del editor, y ahora por cómo el editor
+   muestra los resultados. `probar-neon-sql.js` ejecuta el SQL y lee la respuesta
+   mediante la librería, así que **nunca vio ninguno de los tres problemas**: los
+   tres estaban en el borde entre el guion y la herramienta que lo ejecuta, que es
+   justo lo que un ensayo programático no toca.
+   La lección para lo que venga: **cuando un procedimiento lo ejecuta una persona
+   en una herramienta ajena, la herramienta es parte de lo que hay que probar**, y
+   eso no se puede automatizar del todo desde aquí.
+
+3. **La limpieza automática tiene un coste que hay que decidir a conciencia.**
+   Aquí se prefirió **dejar rastro** —una tabla de resultados que sobrevive— antes
+   que un guion que no deja ver lo que hizo. Para un procedimiento manual, poder
+   ver el resultado vale más que dejar la base impoluta.
+
+**Pendiente / siguiente paso:**
+
+El usuario vuelve a ejecutar el paso 5. Esta vez la tabla de las ocho
+comprobaciones tiene que aparecer en pantalla.
+
+Después sigue faltando lo mismo de siempre, y conviene no perderlo de vista entre
+tantas vueltas: las comprobaciones **desde Node, con un `Pool` de `pg` y varias
+peticiones a la vez**, que es lo único que PGlite no puede probar por atender una
+sola conexión. Hasta que eso pase, **no se toca ninguna ruta**.
 
 ---
 
