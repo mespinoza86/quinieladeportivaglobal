@@ -117,8 +117,23 @@ CREATE TABLE jornadas (
   quiniela_id uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
   nombre      text NOT NULL,
   creada_en   timestamptz NOT NULL DEFAULT now(),
+  /*
+   * ⚠️ "La jornada actual es LA ULTIMA QUE SE CREO" (Fase B, Entrada 028), y en
+   * Mongo eso se resolvia con `sort({_id: -1})`: un ObjectId lleva la fecha de
+   * creacion dentro, asi que ordenar por el era ordenar por creacion.
+   *
+   * Un uuid es ALEATORIO. Ordenar por `id` aqui daria un orden arbitrario y la
+   * regla se romperia EN SILENCIO -seguiria devolviendo una jornada, solo que
+   * la que no es-. Y `creada_en` tampoco basta por si solo: `now()` es la hora
+   * de la TRANSACCION, asi que dos jornadas creadas en la misma quedarian
+   * empatadas.
+   *
+   * Esta secuencia es estrictamente creciente y es la que manda al ordenar.
+   */
+  secuencia   bigint GENERATED ALWAYS AS IDENTITY,
   UNIQUE (quiniela_id, nombre)
 );
+CREATE INDEX ON jornadas (quiniela_id, secuencia DESC);
 
 -- Era Jornada.partidos[]. Cada partido gana id propio: eso es M-02.
 CREATE TABLE partidos (
@@ -135,7 +150,13 @@ CREATE TABLE partidos (
   api_league_id  text,
   api_date       text,
   api_status     text,
-  UNIQUE (jornada_id, orden)
+  /*
+   * DEFERRABLE porque renumerar hace falta: al borrar el partido de la posicion
+   * 2, los de despues bajan una. Si la unicidad se comprobara fila a fila, la
+   * renumeracion chocaria consigo misma a mitad. Diferida, se comprueba al
+   * cerrar la transaccion, cuando el orden ya es coherente otra vez.
+   */
+  UNIQUE (jornada_id, orden) DEFERRABLE INITIALLY IMMEDIATE
 );
 
 CREATE TABLE resultados (

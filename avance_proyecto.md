@@ -2591,7 +2591,7 @@ anterior cerrada.
 |---|---|---|---|
 | **1** | **Cimientos** | `src/db.js`, `db/esquema.sql`, arnés PGlite, 13 pruebas | ✅ Entrada 040 |
 | **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias` y sus reglas | ✅ Entrada 041 |
-| **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | |
+| **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ Entrada 042 |
 | **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | |
 | **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | |
 | **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | |
@@ -7271,6 +7271,102 @@ Sigue siendo aditiva y sigue sin tocar `server.js`.
 El cambio de base de `server.js` —con las sesiones a `connect-pg-simple`— se hará
 cuando las tajadas 3 a 6 hayan dejado listos los módulos de dominio, para que el
 tiempo con la aplicación apagada sea el más corto posible.
+
+---
+
+### 📌 Entrada 042 — 20 de agosto de 2026 — Migración, tajada 3: jornadas, partidos, jugadores y equipos
+
+**Objetivo:** portar el dominio básico. Sigue siendo aditiva: `server.js` no se
+toca y las 129 pruebas de Mongo siguen verdes.
+
+**El hallazgo que podía haber roto la Fase B sin que nadie lo notara:**
+
+⚠️ **«La jornada actual es la última que se creó» se resolvía en Mongo con
+`sort({_id: -1})`.** Un ObjectId lleva la fecha de creación dentro, así que
+ordenar por él era ordenar por creación. **Un uuid es aleatorio.** Traducir esa
+consulta a `ORDER BY id DESC` habría dado un orden arbitrario **sin fallar
+nunca**: la ruta seguiría devolviendo una jornada, sólo que la que no es.
+
+Y `creada_en` tampoco bastaba: `now()` es la hora de la **transacción**, así que
+dos jornadas creadas en la misma quedan empatadas. La tabla lleva ahora una
+columna `secuencia` (`GENERATED ALWAYS AS IDENTITY`), estrictamente creciente, y
+es la que manda al ordenar.
+
+Es el tipo de cosa que sólo se ve mirando *por qué* funcionaba lo viejo, no
+traduciendo lo que decía.
+
+**El otro cambio de fondo: M-02 deja de poder ocurrir.**
+
+En Mongo, guardar una jornada reemplazaba el arreglo de partidos entero, y los
+pronósticos —que apuntaban **por posición**— pasaban a otro partido en silencio.
+Aquí cada partido tiene identidad, y `guardar` **reconcilia por posición en vez
+de borrar y reinsertar**: el partido de la posición 0 conserva su `id`, así que
+lo que colgaba de él sigue colgando de él. Borrar y reinsertar habría sido más
+corto de escribir y se habría llevado los pronósticos por delante en cascada.
+
+Lo mismo al eliminar partidos: los que sobreviven conservan su `id` aunque
+cambien de posición. En Mongo aquello era un `splice` y los pronósticos
+posteriores pasaban a apuntar al partido de al lado.
+
+**Qué se hizo:**
+
+1. **`src/jornadas.js`** — la jornada actual, listar, buscar por nombre, guardar
+   con reconciliación, agregar partido, eliminar partidos con renumeración y
+   fijar comodines.
+2. **`src/jugadores.js`** — nombres que juegan (miembros de dentro + históricos
+   sin cuenta), y los equipos.
+3. **`test/dominio.test.js`** — 18 pruebas.
+4. `db/esquema.sql`: columna `secuencia` en `jornadas` y unicidad **diferible**
+   de `(jornada_id, orden)`.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/jornadas.js` | **Nuevo.** Jornadas y partidos |
+| `src/jugadores.js` | **Nuevo.** Jugadores y equipos |
+| `test/dominio.test.js` | **Nuevo.** 18 pruebas |
+| `db/esquema.sql` | `jornadas.secuencia`; `UNIQUE (jornada_id, orden) DEFERRABLE` |
+| `package.json` | La suite nueva entra en `npm test` y en `test:postgres` |
+
+**Verificación:**
+
+```
+node --test test/dominio.test.js → 18/18
+npm run test:postgres           → 55 pruebas en 7,4 s
+npm test                        → 184/184
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Ordenar por `id` deja de significar «por antigüedad» al pasar de ObjectId
+   a uuid.** Cualquier `sort({_id: …})` que quede por portar hay que mirarlo dos
+   veces: si lo que quería era orden de creación, necesita su propia columna.
+2. **Renumerar posiciones exige unicidad diferible.** Al borrar el partido de la
+   posición 2, los siguientes bajan una; comprobada fila a fila, la renumeración
+   choca consigo misma a mitad. `DEFERRABLE` la comprueba al cerrar la
+   transacción, cuando el orden ya vuelve a ser coherente.
+3. **Los nombres de jugadores salen de dos sitios que no se pueden unir en un
+   `JOIN`**: `membresias` es de plataforma y `jugadores` lleva RLS. Son dos
+   consultas, la primera sin contexto y la segunda dentro de él. Un `JOIN`
+   dejaría fuera a unos o a otros según por dónde se mirara.
+4. **El propietario es jugador desde que crea la quiniela.** Una prueba nueva
+   falló por esperar lo contrario, y **la equivocada era la prueba**: crear una
+   quiniela deja una membresía activa, y `estado IN ('activo','pendiente_retiro')`
+   la incluye. Quedó anotado en la propia prueba, porque leyendo el código parece
+   que sólo entran quienes fueron aprobados.
+5. **`listar` trae las jornadas con sus partidos en UNA consulta** (`json_agg`).
+   En Mongo eran una por jornada. No estaba en la lista de N+1 conocidos porque
+   el arreglo venía incrustado; al separarse en tablas, evitarlo era gratis.
+6. **`src/validacion.js` se reutiliza tal cual.** No sabía nada de Mongoose, así
+   que la migración no lo toca: es la recompensa de haberlo extraído en la Fase 6.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 4 — puntuación**: `resultados`/`pronosticos`, `resultados_oficiales`, el
+motor de puntos y el ranking materializado (`puntos_jornada`). Es la más
+enredada de las que quedan, porque es donde vive la regla de congelar los puntos
+de una jornada terminada.
 
 ---
 
