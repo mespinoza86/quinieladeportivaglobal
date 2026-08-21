@@ -20,55 +20,48 @@
 ### ⚠️ Lo primero, en un minuto
 
 ```bash
-git log --oneline -3     # debe empezar por 18d2670
-git status               # debe estar limpio
-npm test                 # 129/129
-npm run test:e2e         # 62/62
+git branch --show-current   # debe decir: postgres
+git log --oneline -3        # debe empezar por 99bac51
+git status                  # debe estar limpio
+npm test                    # 184/184
+npm run test:postgres       # 55, en ~7 s
 ```
 
-**`main` y `origin/main` están a la par**, y lo estuvieron al cerrar cada paso
-del 19 de agosto. Los siete commits que habían quedado sin subir del día 18 —el
-plan de producto, las fases A y B y el cambio de regla de la jornada actual— se
-subieron esa mañana, y encima van los seis del 19.
+⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
+aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
-> Lo que se aprendió al encontrarlos: **la documentación de continuidad estuvo
-> una tarde entera existiendo solo en un disco.** Confirmarla es parte de
-> terminar, no un trámite posterior.
+**`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
+sigue hablando con MongoDB. La rama `postgres` tiene 184 y añade una capa de
+datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
-> hay que mirarlo en GitHub a mano. No hay forma de consultarlo desde aquí.
+> hay que mirarlo en GitHub a mano.
 
 ### Dónde estamos
 
-**Toda la deuda técnica planificada está cerrada** —fases 0 a 5, más el
-endurecimiento y las cinco prioridades altas de la auditoría (Entrada 015)— y el
-trabajo ha pasado a ser **producto**: el plan de las diez peticiones de §20, del
-que van hechas **las fases A, B, C y D**. Quedan la E —verificación de correo— y
-la F —sugerencias de partidos—, y las dos esperan una decisión del usuario.
+**En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
+después de un sondeo que la midió en vez de opinarla. Van **3 tajadas de 7**.
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **129** (46 de arquitectura + 83 de integración), ~12 s |
-| Pruebas de navegador | **62** (31 × escritorio y móvil), ~2 min |
-| Integración continua | En verde, en cada empujón y cada PR contra `main` |
-| `npm audit --omit=dev` | 0 vulnerabilidades |
-| `server.js` | 5.270 líneas; `src/` tiene 451 en cuatro módulos |
+| Pruebas en `main` | **129**, ~12 s |
+| Pruebas en `postgres` | **184** (129 de Mongo + 55 nuevas) |
+| Sólo las de PostgreSQL | **55**, ~7 s |
+| Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
+| Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
+| `server.js` | 5.270 líneas, **sin tocar** |
+| `src/` | 8 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores` |
 
-Tres cambios de producto que conviene tener presentes antes de tocar nada:
+**Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
-- **El cierre es POR PARTIDO, no por jornada.** La jornada no tiene
-  `fechaCierre`: un partido se cierra a su hora de inicio, y ahí mismo su
-  pronóstico deja de poder editarse y pasa a ser visible para los demás. Una sola
-  regla para las dos cosas (Entrada 019).
-- **La jornada actual es LA ÚLTIMA QUE SE CREÓ**, y se ordena por `_id`, no por
-  `createdAt` —ese campo no existe en `Jornada`—. La decide el servidor en
-  `GET /api/jornada-actual` y las tres pantallas la consumen (Entradas 027 y 028).
-- **Los partidos de una jornada salen SOLO del API** (Entrada 031). Se retiró el
-  alta manual y la pantalla de importar: `jornadas.html` es la única, y hace
-  agregar, modificar, eliminar y ver. Si el proveedor no cubre un partido, ese
-  partido no puede entrar en una quiniela. Se aceptó a sabiendas.
-- **El módulo de Campeón del Mundo se retiró** (Entrada 013). Sus dos colecciones
-  siguen en Mongo, inertes.
+- El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
+  no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
+- Las reglas de plataforma y de dominio básico están portadas, con 55 pruebas.
+- Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
+  los 13,4 de `MongoMemoryReplSet`.
+
+**Lo que NO está hecho**: ninguna ruta habla todavía con PostgreSQL. `server.js`
+sigue entero sobre Mongoose.
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -80,185 +73,127 @@ Tres cambios de producto que conviene tener presentes antes de tocar nada:
 | **3** | Red de pruebas: de **6 a 53 pruebas**, con MongoDB en memoria | 008, 009 |
 | **4** | **Cerrados C-01 y C-05**: caché de partidos compartida, ventanas por estado, cerrojo distribuido | 010 |
 | **5** | Ranking materializado (`PuntosJornada`), caché por quiniela y paginación de la tabla general | 012 |
-| **6.1** | Endurecimiento: plazos del sincronizador y robustez de la lectura | 016 |
-| **6.2** | Validación de dominio y privacidad por defecto de los pronósticos | 017 |
-| **6.3** | Ojo para ver la contraseña; cierre por partido en vez de por jornada | 018, 019 |
-| **6.4** | La caché del ranking sobrevive a los ciclos que no mueven puntos | 020 |
-| **6.5** | **Cerrado S-04**: construcción de HTML sin agujeros de inyección | 021 |
-| **6.6** | Transacciones en las secuencias de varias escrituras | 022 |
-| **6.7** | Primeras pruebas de navegador (Playwright), escritorio y móvil | 023 |
-| **6.8** | E2E de resultados y trivias; **CSP cerrada**; CI; M-26; primera tajada de módulos | 024 |
-| **6.9** | El CI en verde: el comodín de `node --test` no funciona en Node 20 | 025 |
+| **6.1–6.9** | Endurecimiento, validación, cierre por partido, S-04, transacciones, Playwright, CI | 016–025 |
 
 También se resolvieron dos incidentes de infraestructura (bitácoras 004 y 005) y
 se absorbió `HANDOFF.md` en el Anexo A (bitácora 002).
 
-**El consumo de APIFootball dejó de crecer con el número de quinielas.** Antes,
-cien quinielas siguiendo los mismos partidos costaban cien veces más cuota que
-una; ahora cuestan lo mismo, porque el partido se consulta una vez y todas leen
-de la misma caché. Ver §9.4 y la bitácora 010.
+### Lo que se hizo el 18 y el 19 de agosto — el plan de producto
 
-### Lo que se hizo el 18 de agosto por la tarde
+Las **fases A, B, C y D** de §20, más la corrección de la regla de la jornada
+actual. Cuatro cosas de esos dos días que hay que tener presentes:
 
-| Fase | Qué se hizo | Bitácora | Commit |
-|---|---|---|---|
-| **A** | La tarjeta *Llenar Quiniela* dejó de estirarse a 411×261 px en escritorio, y la tabla por jornada tiene tarjeta propia en la portada | 026 | `b8ce1dd` |
-| **B** | Una sola regla para "la jornada actual", servida por `GET /api/jornada-actual` y consumida por las tres pantallas. Selector de jornadas en llenar quiniela; resultados oficiales abre en la sugerida; podio de la jornada en la portada | 027 | `623a6ee` |
-| **B (corrección)** | La regla pasa de derivarse de las fechas de los partidos a ser el orden de creación, por decisión del usuario | 028 | `61f3dae` |
+- **El cierre es POR PARTIDO, no por jornada.** Un partido se cierra a su hora de
+  inicio, y ahí su pronóstico deja de poder editarse y pasa a ser visible
+  (Entrada 019).
+- **La jornada actual es LA ÚLTIMA QUE SE CREÓ** (Entradas 027 y 028).
+- **Los partidos salen SOLO del API** (Entrada 031). `jornadas.html` es la única
+  pantalla y hace agregar, modificar, eliminar y ver.
+- **Una liga se identifica por su `league_id`, no por su nombre** (Entrada 030).
 
-Lo que hay que recordar de la Fase B, porque no es evidente leyendo el código:
+### Lo que se hizo el 20 de agosto — el día largo
 
-- **Lo valioso no era la regla, era que hubiera UNA.** El criterio cambió a mitad
-  de camino y no importó: el endpoint, el selector y el podio siguieron en pie. Si
-  mañana cambia otra vez, se toca `calcularJornadaActual()` en `server.js` y nada
-  más.
-- **El carrusel de la portada ahora recorre una lista**, no un booleano
-  (`private/js/index-rotador.js`). El acuerdo con los paneles es uno solo: **un
-  panel oculto es un panel sin nada que enseñar, y se salta**. Los paneles
-  arrancan ocultos y se destapan al tener contenido.
-- **Las pruebas cruzan las fechas a propósito**: la jornada más nueva lleva los
-  partidos más viejos. Si se "arreglan" para que vayan alineadas, dejan de
-  distinguir qué regla aplica el servidor y pasarían con cualquiera.
+Once entradas de bitácora, de la **032** a la **042**. Se puede contar en tres
+actos.
 
-### Lo que se hizo el 19 de agosto
+**Acto 1 — el sondeo (032).** El usuario preguntó si convenía pasarse a SQL
+aprovechando que los datos de hoy son de prueba. Se midió en vez de opinar: 13
+esquemas, 81 rutas, **~220 llamadas a la base**, 5 arreglos incrustados. Se
+modeló el sistema entero en PostgreSQL y se montó un banco de pruebas con 10
+comprobaciones. **Y se desmontó el argumento más fuerte en contra**: las pruebas
+se harían más rápidas, no más lentas. De rebote apareció **M-33**, un agujero
+real del código actual de Mongo.
 
-**Siete commits** —dos de ellos solo para anotar aquí el estado de Git—. Se
-cerraron los dos cabos que arrastraban dos sesiones y se completaron **dos fases
-enteras del plan de producto**.
+**Acto 2 — la puerta (033 a 039).** Se escribió el **Anexo C**, el procedimiento
+para montar la base en Neon, y se ejecutó. Costó **cuatro vueltas de depuración**,
+las cuatro con la misma raíz: *el ensayo local no reproducía el sitio real*
+—privilegios, transacciones del editor, presentación de resultados y permisos de
+rol del proveedor—. Ninguna era un fallo del SQL. **Lo que rompió la racha no fue
+un ensayo mejor: fue hacer que el guion informara.** Al final: **8/8** en la
+prueba de aceptación y **4/4** en la del *pool*, con 240 peticiones concurrentes
+y ni un cruce.
 
-| Qué | Bitácora | Commit |
-|---|---|---|
-| Se confirmó y subió la documentación que llevaba una tarde sin commitear, y con ella los 7 commits pendientes | — | `5cca387` |
-| **La prueba de humo que faltaba**: barrido de los 23 botones `data-ir-a` en escritorio y móvil. Destapó una barra amarilla vacía en *Llenar Jornada* | 029 | `73ca4f7` |
-| **Fase C** — buscador de ligas dinámico (petición 9) | 030 | `79aa6a8` |
-| Decisión: los partidos salen solo del API | — | `fff7eb9` |
-| **Fase D** — una sola pantalla de jornadas (petición 3) | 031 | `e7482b7` |
+**Acto 3 — la migración empieza (040 a 042).** Rama `postgres` y tres tajadas:
+los cimientos de la capa de datos, la plataforma y el dominio básico. **55
+pruebas nuevas**, todas verdes, sin tocar `server.js`.
 
-**De 119 a 129 pruebas rápidas y de 46 a 62 de navegador.**
+Cinco cosas de ese día que **no se deducen leyendo el código**:
 
-Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
-
-- **Una liga se identifica por su `league_id`, no por su nombre.** Era el fallo de
-  fondo del buscador viejo: si el proveedor renombraba una competición, la opción
-  dejaba de encontrar nada **en silencio** —cero partidos, y parecía que ese día
-  no se jugaba—. Ver la Entrada 030.
-- **La lista de competiciones bloqueadas vive ahora solo en `src/ligas.js`**, y se
-  aplica **siempre**. Antes estaba en el navegador y solo actuaba si había un
-  torneo elegido: con «Todos los torneos» se colaban las sub-20 y las femeniles.
-  Es un cambio de comportamiento deliberado.
-- **La duplicación estaba peor catalogada de lo que nadie creía.** Las dos
-  pantallas de jornadas compartían **tres copias enteras** de código, y la Fase C
-  arregló el desplegable de una dejando intacto el de la otra sin que nadie lo
-  notara. Lo cuenta la Entrada 031, y es el mejor argumento que hay en este
-  documento a favor de no tener dos de nada.
-- **Borrar código mueve los contadores centinela de `architecture.test.js`**, y eso
-  no es una regresión. Los dos que bajaron llevan ahora escrito en el código que
-  son un suelo y por qué.
-
-### Lo que se hizo el 20 de agosto
-
-Sesión de **análisis y sondeo**, sin tocar una línea de la aplicación. Se revisó
-el documento entero para decidir por dónde seguir, y de esa revisión salió una
-pregunta del usuario que cambió el rumbo del día: **¿y si nos pasamos a SQL, ya
-que los datos de hoy son de prueba y se pueden tirar?**
-
-| Qué | Bitácora |
-|---|---|
-| **Sondeo SQL**: las 13 colecciones modeladas en PostgreSQL, aislamiento por RLS y 10 comprobaciones que pasan | 032 |
-| Hallazgo **M-33** en el código actual de Mongo, encontrado de rebote | 032 |
-
-Cuatro cosas que conviene tener presentes y no se deducen leyendo el código:
-
-- ⚠️ **El `tenantPlugin` de hoy tiene un agujero latente (M-33).** Engancha
-  `find*`, `update*` y `delete*`, pero **no `aggregate`, `insertMany` ni
-  `bulkWrite`**. Hoy no hay fuga porque no se usa ninguno de los tres; la primera
-  agregación que alguien escriba saldrá **sin filtro de quiniela y en silencio**.
-  Es la forma exacta que tenía C-02. Este hallazgo vale la sesión por sí solo,
-  independientemente de lo que se decida sobre SQL.
-- **La §20.8 no estaba equivocada: contestaba a otra pregunta.** Decía «no
-  migrar» dando por hecho que había datos que conservar. Sin datos que salvar el
-  balance cambia — pero **el tamaño de la obra no**: son 81 rutas y ~220 llamadas
-  a la base. Renombrar la base son treinta minutos; pasar a SQL son varias
-  sesiones sin nada visible.
-- **El arnés de pruebas se haría más rápido, no más lento.** Era el argumento más
-  fuerte en contra y la medición lo desmontó: `MongoMemoryReplSet` tarda **13,4 s**
-  en levantarse —la mayor parte de `npm test`— y PGlite **2,9 s**.
-- ⚠️ **Si alguna vez se migra, el primer paso es crear un rol sin privilegios.**
-  Un superusuario **se salta RLS siempre**, aunque la tabla lleve `FORCE ROW LEVEL
-  SECURITY`, y es justo el rol que dan por defecto Neon y casi cualquier
-  proveedor. El aislamiento no existiría y nada avisaría.
+- ⚠️ **Ordenar por `id` deja de significar «por antigüedad»** al pasar de
+  ObjectId a uuid. `sort({_id: -1})` era «la última creada» porque un ObjectId
+  lleva la fecha dentro; un uuid es aleatorio. Traducirlo mal habría roto la
+  Fase B **sin fallar nunca**. Por eso `jornadas` tiene una columna `secuencia`.
+- ⚠️ **Un superusuario se salta RLS siempre**, aunque la tabla lleve `FORCE ROW
+  LEVEL SECURITY`, y el rol dueño puede **apagarlo**. La aplicación se conecta
+  con `app_quiniela`, y tanto `src/db.js` como el arnés de pruebas **se plantan**
+  si detectan privilegios de más.
+- ⚠️ **La transacción va por PETICIÓN, no por consulta.** Cada `await` es un
+  viaje a la base; una transacción por consulta multiplica el coste por cuatro
+  **y parece culpa de PostgreSQL**. Por eso `enQuiniela` es reentrante.
+- **M-02 deja de poder ocurrir.** Guardar una jornada **reconcilia por posición**
+  en vez de borrar y reinsertar, así que los partidos conservan su `id` y los
+  pronósticos siguen colgando de quien colgaban.
+- **Se encontró un bug que no estaba en ninguna lista**: degradar a dos
+  administradores a la vez podía dejar la quiniela **sin ninguno**, porque la
+  cuenta y el guardado iban en dos pasos.
 
 ### 🌅 Lo siguiente: la sesión de mañana
 
-**Lo primero, siempre:** `git log --oneline -3`, `git status`, `npm test` y
-`npm run test:e2e`. Y mirar en GitHub que el CI haya pasado los commits del 19 y
-el 20, porque desde esta máquina no se puede consultar.
+**Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
+`git log --oneline -3`, `git status` y `npm test`.
 
-**El sondeo SQL terminó, y la puerta está pasada.** El Anexo C se ejecutó entero
-contra Neon: la prueba de aceptación dio **8 de 8** (Entrada 038) y la del *pool*
-—240 peticiones concurrentes sobre seis quinielas— dio **4 de 4** sin un solo
-cruce (Entrada 039). El aislamiento por RLS aguanta el modo real en que la
-aplicación usaría la base.
+**Lo siguiente es la tajada 4 — puntuación**: `resultados`/`pronosticos`,
+`resultados_oficiales`, el motor de puntos y el ranking materializado
+(`puntos_jornada`). Es **la más enredada de las que quedan**, porque es donde
+vive la regla de congelar los puntos de una jornada terminada y la de recalcular
+sólo lo que sigue vivo.
 
-**Queda una sola cosa, y es una decisión, no una comprobación:**
+Lo que hay que respetar al escribirla, y está en §21.2:
 
-| A favor de migrar | En contra |
-|---|---|
-| El aislamiento lo aplica la base, y **aguanta la concurrencia** (probado) | **81 rutas y ~220 llamadas** que reescribir |
-| Cierra **C-06** gratis: Neon se suspende pero **se despierta solo** | Varias sesiones sin nada visible para el usuario |
-| Cierra **M-01**, **M-02**, **M-30** y **M-33** por obligación del modelo | Un tramo largo con la aplicación a medio migrar |
-| Las pruebas arrancan en 2,9 s en vez de 13,4 s | Ni la Fase E ni la Fase F avanzan mientras tanto |
+1. La transacción es **por petición**; `enQuiniela` es reentrante.
+2. El contexto se fija con `SET LOCAL`, dentro de la transacción.
+3. La aplicación **no** se conecta con el rol dueño.
 
-⚠️ **Dos cosas que hay que tener presentes al escribir la capa de datos**, si se
-decide migrar. No se deducen del esquema y equivocarlas sale caro:
-
-- **La transacción se abre por PETICIÓN, no por consulta.** Todas las consultas
-  de una petición caben en la misma transacción con el mismo contexto, así que el
-  sobrecoste del aislamiento se paga una vez. Si se implementa una transacción
-  por consulta, el coste se multiplica por cuatro y **parecerá culpa de
-  PostgreSQL** (Entrada 039).
-- **Desarrollar en local contra Neon será lento**, porque cada viaje a la base
-  desde esta máquina son ~116 ms. Lo sensato es **PGlite en local** —arranca en
-  2,9 s y no toca la red— y dejar Neon para el CI y producción. Es lo que
-  conserva el ritmo de trabajo.
-
-**Si se decide no migrar**, se borra `sondeo-sql/`, se arregla **M-33** —que es un
-agujero real del código de hoy y no depende de nada de esto— y la siguiente es la
-**Fase E — verificación de correo** (petición 8), con sus dos decisiones
-abiertas: proveedor de envío y qué se bloquea sin verificar. Media parte ya está
-hecha: el modelo `Usuario` ya tiene los campos.
-
-⚠️ **Y sigue sin contestar una pregunta que la Fase E necesita en cualquiera de
-los dos escenarios:** cuál va a ser **el dominio definitivo**. Los enlaces del
-correo de verificación llevan la URL pública dentro; si el dominio cambia
-después, los correos ya enviados no llevan a ninguna parte.
+⚠️ **Y una advertencia sobre el calendario, para que no sorprenda:** el límite
+entre Mongo y PostgreSQL no se puede partir por la mitad. En cuanto `quinielas`
+viva en PostgreSQL con identificadores uuid, las colecciones de dominio que sigan
+en Mongo —con `quinielaId` de tipo ObjectId— dejan de poder apuntar a ellas.
+**Hay un momento en el que la aplicación se apaga y no vuelve hasta que las siete
+tajadas estén hechas.** Ese momento es la **tajada 7**, y se ha retrasado a
+propósito construyendo antes, a un lado, todo lo que se puede probar sin Express.
 
 ### Estado de Git
 
+**Hay dos ramas vivas y cada una está en un mundo distinto.** No mezclarlas.
+
 ```
-2132163 El procedimiento de Neon, probado antes de entregarlo ← main = origin/main
-b23f4f1 Sondeo SQL: medir en vez de opinar, y un agujero de rebote (M-33)
-e583e37 Dejar por escrito el dia de hoy, lo que queda y lo de manana
-18d2670 Anotar el commit de la Fase D en el estado de Git
-e7482b7 Fase D: una sola pantalla de jornadas
-fff7eb9 Decision: los partidos salen solo del API
-3470844 Anotar el commit de la Fase C en el estado de Git
-79aa6a8 Fase C: el buscador de ligas deja de ser una lista fija
-73ca4f7 La prueba de humo que faltaba, y la barra amarilla
-5cca387 Poner al dia el punto de partida y el inventario
-61f3dae La jornada actual pasa a ser la ultima creada
-623a6ee Fase B: una sola respuesta a "cual es la jornada actual"
-b8ce1dd Fase A: la tarjeta que se estiraba y la que faltaba
-3cad275 Detallar cada fase del plan para poder arrancar sin volver a pensarlo
-6b5876b Plan de producto: las diez peticiones analizadas y ordenadas (S20)
+postgres  ← AQUÍ SE TRABAJA. La migración.
+  99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
+  04ec8af Migracion, tajada 2: la plataforma
+  9a52f01 Migracion, tajada 1: los cimientos de la capa de datos
+       │
+main    ← intacta, desplegable, CI en verde. Sigue sobre MongoDB.
+  8c07e07 La puerta esta pasada, y un numero que hay que saber leer
+  3695776 Ocho de ocho en Neon, y el guardian que faltaba en la puerta
+  d7243b9 En Neon, crear un rol no da derecho a asumirlo
+  26f82e4 La limpieza que se comio el resultado
+  e94752a Dejar de adivinar: que el guion diga que fallo
+  d6e0c07 El ensayo que no ensayaba: corria como superusuario
+  f2b6110 Anotar el commit del procedimiento de Neon en el estado de Git
+  2132163 El procedimiento de Neon, probado antes de entregarlo
+  b23f4f1 Sondeo SQL: medir en vez de opinar, y un agujero de rebote (M-33)
+  e583e37 Dejar por escrito el dia de hoy, lo que queda y lo de manana
 ```
 
 > ⚠️ Esta lista es una foto y envejece. **Comprueba con `git log --oneline` y
-> `git status -sb` dónde está `main` de verdad** antes de fiarte de ella.
+> `git status -sb` dónde estás de verdad** antes de fiarte de ella.
 
-**Las ocho ramas de trabajo están ya contenidas en `main`** —verificado con
-`git branch --merged main`, ninguna queda fuera— y se pueden borrar cuando se
-quiera:
+**`postgres` se funde en `main` cuando las 184 pruebas rápidas y las 62 de
+navegador pasen contra PostgreSQL**, es decir, al terminar la tajada 7. Hasta
+entonces `main` no recibe nada de la migración.
+
+Las ocho ramas de trabajo antiguas están contenidas en `main` y se pueden borrar
+cuando se quiera:
 
 ```bash
 git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright \
@@ -268,7 +203,7 @@ git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright \
 > ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
 > `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
 > borra del árbol al retroceder. El síntoma es `Cannot find module 'mongoose'`.
-> La cura es `npm install`, no reinstalar nada más.
+> La cura es `npm install`.
 
 ### ⚠️ Antes de arrancar la aplicación, lee esto
 
@@ -290,144 +225,202 @@ documentadas en detalle en las bitácoras 004 y 005.
 ### Comandos habituales
 
 ```bash
-npm start                  # arranca la aplicación
-npm test                   # las 129 pruebas rápidas (~12 s, sin red, sin tocar la base real)
+npm start                  # arranca la aplicación (sigue sobre MongoDB)
+npm test                   # TODAS las pruebas rápidas
+                           #   en main:     129, ~12 s
+                           #   en postgres: 184, ~13 s
+npm run test:postgres      # solo las 55 de PostgreSQL, ~7 s  (solo en la rama)
 npm run test:arquitectura  # solo las 46 de arquitectura
-npm run test:integracion   # solo las 83 de integración
+npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
 ```
 
-**Las pruebas de navegador necesitan `npx playwright install chromium`** una vez
-por máquina; los navegadores no van en el repositorio. No hace falta levantar
-nada a mano: Playwright arranca la aplicación con una base en memoria
-(`test/e2e/arrancar.js`).
+**Ninguna prueba necesita red ni base real.** Las de Mongo levantan
+`MongoMemoryReplSet`; las de PostgreSQL levantan **PGlite**, que es PostgreSQL 18
+compilado a WebAssembly y va como paquete de npm. Las de navegador necesitan
+`npx playwright install chromium` una vez por máquina.
+
+**Para tocar la base de Neon** —y sólo si hace falta comprobar algo contra ella:
+
+```bash
+cd sondeo-sql && npm install
+node probar-neon-sql.js    # ensaya los .sql del Anexo C contra un Postgres local
+npm run pool               # LA PUERTA: aislamiento con pool real, exige DATABASE_URL
+```
+
+⚠️ `npm run pool` necesita `DATABASE_URL` en el `.env` de la raíz, con **el rol
+`app_quiniela`** (no el dueño) y **la cadena con `-pooler`**. Se planta si
+detecta cualquiera de las dos cosas mal, en vez de dar un verde sin valor.
 
 ---
 
 ## 🎯 LO QUE QUEDA PENDIENTE
 
-Ordenado por lo que conviene hacer antes. **Puesto al día el 19 de agosto de
-2026**, al cerrar las fases C y D. Nada de lo que queda está empezado.
+**Puesto al día el 20 de agosto de 2026 por la noche**, al cerrar la tajada 3 de
+la migración. Está dividido en dos mundos que conviene no mezclar: **lo que falta
+de la migración** (§A) y **lo que ya estaba pendiente antes y sigue estándolo**
+(§B).
 
-### 1. ✅ Lo que arrastraban las sesiones anteriores — cerrado
+---
 
-**Cerrado el 19 de agosto (Entrada 029).** `main` está subido y la prueba de humo
-que arrastraba la Entrada 024 dejó de ser una revisión manual pendiente: se
-automatizó en `test/e2e/navegacion.spec.js`, que pulsa los **23 botones** en
-escritorio y móvil y comprueba además que ninguna pantalla pinta tarjetas de
-aviso vacías. Se miraron también, con capturas, el selector de jornada, el podio
-de la portada, los resultados oficiales y la tabla por jornada.
+## A. La migración a PostgreSQL — 3 tajadas de 7
 
-Lo único que sigue sin mirarse a fondo son los **resultados de trivias**: las
-pruebas de `resultados.spec.js` cubren que los datos llegan a la pantalla, pero
-nadie ha vuelto a verlos con datos de verdad desde la Entrada 024.
+El plan completo, con sus decisiones de alcance y sus reglas, está en **§21**.
+Esto es sólo el estado.
 
-### 2. Plan de producto (§20) — lo que falta
+| # | Tajada | Qué entra | Estado |
+|---|---|---|---|
+| **1** | Cimientos | `src/db.js`, `db/esquema.sql`, arnés PGlite | ✅ `9a52f01` — Entrada 040 |
+| **2** | Plataforma | `usuarios`, `quinielas`, `membresias` | ✅ `04ec8af` — Entrada 041 |
+| **3** | Dominio básico | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ `99bac51` — Entrada 042 |
+| **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ⬜ **la siguiente** |
+| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ⬜ |
+| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ⬜ |
+| **7** | **El cambio y la limpieza** | `server.js` pasa a PostgreSQL; sesiones a `connect-pg-simple`; fuera `mongoose`; `render.yaml`; documentación | ⬜ |
+
+### A.1 Lo que hay que saber de cada tajada que falta
+
+**Tajada 4 — puntuación.** Es la más enredada. Ahí vive la regla de **congelar
+los puntos de una jornada terminada** (`puntos_jornada`), que es lo que hace que
+corregir un resultado años después no arrastre los cambios de configuración
+ocurridos desde entonces. El motor de puntos —`puntosDePartido` y
+`puntosDeJornada`— son **funciones puras** y no tocan la base: se pueden mover
+tal cual. Lo que hay que reescribir es lo que las rodea.
+
+**Tajada 5 — trivias.** Ocho tipos, autorresolución y reconciliación. El esquema
+ya trae el índice único `(quiniela_id, jugador_id, trivia_id)` que cierra
+**S-10** —el doble envío concurrente que daba puntos dobles— y el índice de
+**M-25**, que en Mongo seguía pendiente.
+
+**Tajada 6 — sincronizador.** `fixtures` y `job_locks` **no llevan `quiniela_id`
+y eso es a propósito**: son justo la parte que todas las quinielas comparten, y
+es lo que cerró C-01 y C-05. El cerrojo distribuido cabe en un
+`INSERT … ON CONFLICT DO UPDATE … WHERE expira_en <= now()`, más simple y más
+correcto que la versión de Mongo (comprobado en el sondeo).
+
+**Tajada 7 — el cambio.** ⚠️ **Es donde la aplicación se apaga y vuelve.** Incluye
+las sesiones (`connect-mongo` → `connect-pg-simple`, con su tabla), quitar
+`mongoose`, `connect-mongo` y `mongodb-memory-server`, retirar
+`src/transacciones.js` —se queda sin trabajo—, portar las 83 pruebas de
+integración y las 62 de navegador, y escribir el `render.yaml`.
+
+### A.2 Lo que la migración cierra de la lista vieja de hallazgos
+
+No hay que arreglarlos aparte: salen por obligación del modelo nuevo.
+
+| Hallazgo | Cómo lo cierra |
+|---|---|
+| **C-06** — el clúster M0 que se pausa y hay que despertar a mano | Neon se suspende pero **se despierta solo** al llegar una conexión |
+| **C-04** — `server.js` monolítico | La capa de datos sale a `src/`; `server.js` menguará de verdad por primera vez |
+| **M-01** — el vínculo con el jugador es por cadena | `jugador_id` con clave ajena |
+| **M-02** — el vínculo partido↔pronóstico es por índice de array | `partido_id`, y `guardar` reconcilia por posición para no romperlo |
+| **M-25** — falta índice en `Trivia` | Está en `db/esquema.sql` |
+| **M-30** — la base se llama `test` | La base nueva se llama `quiniela` |
+| **M-33** — el `tenantPlugin` no engancha `aggregate` | Lo aplica la base con RLS: no hay hueco por donde escaparse |
+| **S-10** — sin índice único en `RespuestaTrivia` | `UNIQUE (quiniela_id, jugador_id, trivia_id)` |
+
+⚠️ **Hasta que la migración termine, todos esos siguen abiertos en `main`.** Si la
+migración se abandonara, **M-33 hay que arreglarlo aparte**: es un agujero real
+del código que hoy corre.
+
+### A.3 Lo que la migración NO toca
+
+- **El frontend.** Es la decisión de alcance de §21.1: claves ajenas dentro,
+  nombres en el API. Los 39 scripts de `private/js/` no cambian, salvo las **4
+  apariciones de `_id` en 3 archivos**.
+- **`src/validacion.js`, `src/fechas.js` y `src/ligas.js`.** No sabían nada de
+  Mongoose, así que se reutilizan tal cual.
+- **Las reglas de producto.** El cierre por partido, la jornada actual, los
+  partidos sólo del API: todo eso sigue igual.
+
+---
+
+## B. Lo que ya estaba pendiente antes de la migración
+
+### B.1 Plan de producto (§20) — quedan dos fases
 
 | Orden | Fase | Peticiones | Qué hace falta antes de empezar |
 |---|---|---|---|
 | ✅ | **A — Retoques de interfaz** | 4, 6 | Hecha (Entrada 026) |
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
-| ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030). Se buscan **7 días hacia adelante** |
-| ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031). Los partidos salen **solo del API** |
-| **3.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de correo** (tiene coste y configuración en Render). Media parte ya está hecha: el modelo `Usuario` ya tiene los campos |
-| **4.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Lo más especulativo y lo más caro |
-| — | **Aparte 1** | 7 (SQL) | Respondida en §20.8: **no migrar** por ahora. No bloquea nada |
+| ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030) |
+| ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031) |
+| **1.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de envío** (tiene coste y configuración en Render) y **decidir qué se bloquea sin verificar**. Media parte ya está hecha: el modelo `Usuario` ya tiene los campos, y siguen estando en el esquema nuevo |
+| **2.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Necesita la tabla de posiciones de cada liga, que hoy no se consulta |
+| ✅ | **Aparte** | 7 (SQL) | **Respondida y en marcha**: se migra. Ver §21 |
 
-El detalle de cada fase —qué archivos se tocan y cómo se comprueba— está en §20.
-No hay que volver a pensarlo.
+✅ **El dominio definitivo ya está decidido**: `quinieladeportivaglobal.onrender.com`,
+que además ya es el valor por defecto de CORS en `server.js`. Era el cabo que
+bloqueaba la Fase E; **ya no bloquea**.
 
-### 3. Deuda técnica que sigue abierta
+**Cuándo hacer la Fase E:** después de la migración, y sobre PostgreSQL. Hacerla
+ahora significaría escribirla dos veces.
 
-1. **Terminar la Fase 6 de modularización.** `server.js` está en **5.270
-   líneas**, y el 19 de agosto **creció**: las fases C y D le añadieron rutas.
-   Hecho: `src/transacciones.js`, `src/validacion.js`, `src/fechas.js` y
-   `src/ligas.js` (451 líneas en cuatro módulos). Faltan **las rutas, los modelos
-   y el sincronizador**,
-   que sí tocan Express y merecen su propia sesión con prueba de humo.
-   **Dos invariantes** que hay que respetar en cada tajada: lo extraído **se
-   reexporta** desde `server.js`, y los módulos de `src/` **no pueden depender de
-   `server.js`** —sería un ciclo y el troceado dejaría de servir—.
+### B.2 Deuda técnica que sigue abierta
+
+1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
+   `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres,
+   pero la primera agregación que alguien escriba **saldrá sin filtro de quiniela
+   y en silencio**. Es la forma exacta que tenía C-02. **La migración lo cierra;
+   si se abandonara, hay que arreglarlo aparte.**
 2. **`style-src` conserva `unsafe-inline`.** Se cerraron `script-src` y
    `script-src-attr` (Entrada 024); los estilos no.
 3. **Paginación del resto de listados (M-26).** La tabla general sí está
    paginada, y tres endpoints aceptan acotarse; el resto es deuda transversal.
-4. **`Jornada` es el único esquema de dominio sin `timestamps`** (cinco de siete
-   lo llevan). No se añadió porque el `_id` resuelve lo que hacía falta, pero si
-   alguna vez hay que saber cuándo se **tocó** una jornada —no cuándo se creó—,
-   ahí está el hueco (Entrada 028).
-5. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
+4. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
    queda provisional para siempre, y no hay política escrita sobre los miembros
    que entran a mitad de temporada.
-6. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
-   `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres
-   —se contaron: cero—, pero la primera agregación que alguien escriba para un
-   informe **saldrá sin filtro de quiniela y en silencio**. Es la forma exacta
-   que tenía C-02. Encontrado de rebote durante el sondeo SQL (Entrada 032).
+5. **Los resultados de trivias no se han mirado con datos de verdad** desde la
+   Entrada 024. Las pruebas cubren que los datos llegan a la pantalla, no que se
+   vean bien. Es una revisión de diez minutos con la aplicación levantada.
 
-### 4. Decisiones abiertas que dependen del usuario
+*(«`Jornada` es el único esquema sin `timestamps`» deja de aplicar: en el modelo
+nuevo la tabla lleva `creada_en` y `secuencia`.)*
 
-**Puesto al día el 20 de agosto.** Un dato de contexto que faltaba y que el
-usuario confirmó ese día: **la aplicación está desplegada en Render, pero todavía
-no la usa nadie.** Eso baja la urgencia de todo lo de abajo y explica por qué se
-pudo aceptar C-06 sin drama.
+### B.3 Decisiones del usuario — cómo quedaron
 
 | # | Decisión | Estado |
 |---|---|---|
-| **SQL** | ¿Se migra a PostgreSQL o se sigue en MongoDB? | 🔴 **La puerta se pasó el 20-ago; la decisión es lo único que queda.** El Anexo C se ejecutó entero contra Neon: **8 de 8** en la aceptación (Entrada 038) y **4 de 4** en el *pool*, con 240 peticiones concurrentes y ni un cruce (Entrada 039). Ya no faltan comprobaciones: falta decidir. Todo lo de abajo depende de la respuesta |
-| **C-06** | ¿Se sube el clúster de Atlas a un plan que no se pause? | ✅ **Decidido el 20-ago: se deja como está**, a sabiendas de que la aplicación puede morir sola y sin aviso. Se aceptó porque hoy no la usa nadie. ⚠️ Hay que reabrirlo antes de que entre gente de verdad — o resolverlo de paso, si se migra a Neon, que se despierta solo |
-| **M-30** | ¿Se deja la base llamándose `test`? | ⏸️ **En suspenso**, absorbida por la decisión de SQL: si se migra, la base nueva nace con nombre propio y M-30 desaparece. Si no se migra, vuelve a estar abierta ⚠️ y la ventana barata se cierra en cuanto entren datos de verdad |
-| **Render** | `NODE_ENV=production`, `ALLOWED_ORIGINS`, `DEBUG_ENDPOINTS=false` y `/readyz` como health check | 🟡 **Decidido el cómo, pendiente el cuándo.** Se acordó **escribir un `render.yaml`** en el repositorio, porque hoy no existe ninguno y la configuración vive sólo en el panel web, donde nadie puede auditarla. Está a la espera de la decisión de SQL: la variable de la base va dentro del archivo |
-| **Dominio** | ¿`quinieladeportivaglobal.onrender.com` o un dominio propio? | 🔴 **Abierta.** ⚠️ **La Fase E no puede empezar sin esto**: los enlaces del correo de verificación llevan la URL pública dentro, y si el dominio cambia después, los correos ya enviados no llevan a ninguna parte |
+| **SQL** | ¿Migrar a PostgreSQL? | ✅ **Sí, decidido el 20-ago.** En marcha, 3 tajadas de 7 |
+| **Dominio** | ¿Cuál es el definitivo? | ✅ **`quinieladeportivaglobal.onrender.com`** |
+| **C-06** | ¿Se paga un clúster que no se pause? | ✅ **No hace falta pagarlo**: Neon se despierta solo. Quedó resuelto de paso |
+| **M-30** | ¿La base sigue llamándose `test`? | ✅ **Resuelto**: la nueva se llama `quiniela` |
+| **Render** | Variables y health check | 🟡 **Decidido el cómo** (un `render.yaml` versionado), **pendiente el cuándo**: va en la tajada 7, cuando ya se sepa que la variable es `DATABASE_URL` |
+| **Correo** | Proveedor de envío para la Fase E | 🔴 **Abierta.** Es la única dependencia externa que queda |
+| **Bloqueo** | Qué se le impide a una cuenta sin verificar | 🔴 **Abierta.** Es producto, no técnica |
 
 ⚠️ **Dos cabos que nadie ha comprobado y no se pueden mirar desde esta máquina:**
 
-1. **Qué hay puesto de verdad en Render.** El `.env` local tiene
-   `NODE_ENV=development` y no define ni `ALLOWED_ORIGINS` ni `DEBUG_ENDPOINTS`.
-   Los tres tienen defensas razonables por defecto en el código —CORS cae en
-   `quinieladeportivaglobal.onrender.com`, los `/debug/*` sólo se abren con el
-   literal `'true'`, y en producción el servidor **se niega a arrancar sin
-   `SESSION_SECRET`**—, así que el riesgo no es el valor por defecto: es que nadie
-   ha confirmado el real.
-2. **Qué forma de URI hay puesta en Render.** Tiene que ser `mongodb+srv://`. El
-   `.env` local usa la forma **sin** SRV por el fallo de DNS de esta máquina, y esa
-   forma **fija los nombres de los tres nodos** del clúster (es **M-31**). Si
-   alguien copió el `.env` local a Render, el día que Atlas cambie la topología
-   deja de conectar sin que nadie haya tocado nada.
+1. **Qué hay puesto de verdad en Render** (`NODE_ENV`, `ALLOWED_ORIGINS`,
+   `DEBUG_ENDPOINTS`, health check). El `.env` local tiene
+   `NODE_ENV=development` y no define los otros dos.
+2. **Si sigue viva la aplicación anterior** (`quinieladeportivamundialista.onrender.com`)
+   **y si apunta a la misma base.** Dos servicios escribiendo en la misma base
+   sería un problema mayor que cualquiera de los de arriba.
 
-Y una tercera, menor: **¿sigue viva la aplicación anterior**
-(`quinieladeportivamundialista.onrender.com`) **y apunta a esta misma base?** Dos
-servicios escribiendo en la misma base sería un problema mayor que cualquiera de
-los de arriba.
+### B.4 Cosas que vigilar cuando haya tráfico real
 
-*(M-03/M-04 ya no está abierta: se congela al quedar definitivos todos los
-partidos, y las correcciones conservan las reglas originales.)*
-
-### 5. Cosas que vigilar cuando haya tráfico real
-
-- **`/api/admin/sync-metricas` tras el primer despliegue de la Fase 4.** Es la
-  forma de comprobar en producción que la deduplicación hace lo que dice:
+- **`/api/admin/sync-metricas` tras el primer despliegue.**
   `consultasAhorradasPorDeduplicacion` debe crecer en cuanto haya dos quinielas
-  siguiendo los mismos partidos. Desde la Entrada 016 conviene mirar también
-  `ciclosAbandonadosPorTiempo`: si crece, el proveedor tarda más que el plazo del
-  ciclo y hay que revisar `APIFOOTBALL_TIMEOUT_MS`.
+  siguiendo los mismos partidos. Mirar también `ciclosAbandonadosPorTiempo`.
 - **`syncsSinCambioDePuntos`** en el primer domingo con partidos en vivo: debe
-  crecer mucho más deprisa que `jornadasReescritas`. Si no, la caché del ranking
-  se está tirando sin motivo (Entrada 020).
-- **La cuota del proveedor, cuando se empiecen a armar jornadas de verdad.** El
-  buscador de la Fase C consulta siete días de una vez, y aunque la respuesta se
-  guarda diez minutos, esa caché vive **en memoria del proceso**: con dos
-  instancias en Render son dos consultas por cada diez minutos, no una. Si la
-  cuota aprieta, lo primero que hay que mirar es cuántas instancias hay
-  levantadas (Entrada 030).
+  crecer mucho más deprisa que `jornadasReescritas` (Entrada 020).
+- **La cuota del proveedor.** El buscador de la Fase C consulta siete días de una
+  vez y su caché vive **en memoria del proceso**: con dos instancias en Render son
+  dos consultas por cada diez minutos, no una (Entrada 030).
+- ⚠️ **La latencia entre Render y Neon.** Desde esta máquina un viaje a Neon son
+  ~116 ms; entre Render y Neon **en la misma región** deben ser 1–5 ms. Si no lo
+  son, están en regiones distintas y hay que moverlo (Entrada 039).
 - **Anexo B, procedimiento C**: auditar si la fuga C-02 dañó datos. Hoy no hay
-  nada que auditar (0 trivias, 0 respuestas, una sola quiniela). Repetir cuando
-  haya varias quinielas y dos coincidan en el nombre de una jornada.
+  nada que auditar. Repetir cuando haya varias quinielas.
 
-### 6. Trampas conocidas del entorno de trabajo
+
+---
+
+## C. Trampas conocidas del entorno de trabajo
 
 Cuestan tiempo cada vez que se olvidan:
 
@@ -503,6 +496,25 @@ Cuestan tiempo cada vez que se olvidan:
   y llega **despues** de que el `CREATE ROLE` haya ido bien, que es lo que
   despista: parece que el rol quedo mal creado, y esta perfectamente creado
   (Entrada 037).
+- ⚠️ **Los acentos graves dentro de comillas dobles de `node -e "…"` ejecutan lo
+  que envuelven.** Es la misma familia que lo del heredoc, y volvió a morder dos
+  veces el 20 de agosto editando `avance_proyecto.md`: el texto entre acentos
+  desaparece del archivo, sustituido por la salida de un comando que no existe, y
+  **se escribe igual y sin avisar**. La salida es la de siempre: **el texto largo
+  va en un archivo, no en la línea de comandos**.
+- ⚠️ **La sustitución de procesos de bash (`<(…)`) no funciona al pasársela a
+  Node en Windows.** Node recibe una ruta tipo `/proc/694/fd/63` y la interpreta
+  como `C:\proc\…`, que no existe. Es la misma familia que lo de `/tmp`. Usar
+  archivos de verdad con rutas absolutas de Windows (Entrada 043).
+- ⚠️ **Ordenar por `id` deja de significar «por antigüedad» al pasar de ObjectId
+  a uuid.** Un ObjectId lleva la fecha de creación dentro; un uuid es aleatorio.
+  Cualquier `sort({_id: …})` que quede por portar hay que mirarlo dos veces: si
+  lo que quería era orden de creación, necesita su propia columna. Traducirlo mal
+  **no falla**, sólo devuelve lo que no es (Entrada 042).
+- ⚠️ **En PostgreSQL, renumerar posiciones exige unicidad diferible.** Al borrar
+  el elemento de la posición 2, los siguientes bajan una; comprobada fila a fila,
+  la renumeración choca consigo misma a mitad. `DEFERRABLE` la comprueba al
+  cerrar la transacción (Entrada 042).
 - ⚠️ **`rolsuper` y `rolbypassrls` no bastan para saber si un rol es seguro.** El
   dueño de las tablas no es ninguna de las dos cosas y aun así puede **apagar
   RLS** con un `ALTER TABLE`. La pregunta correcta es si es dueño de alguna
@@ -7367,6 +7379,87 @@ npm test                        → 184/184
 motor de puntos y el ranking materializado (`puntos_jornada`). Es la más
 enredada de las que quedan, porque es donde vive la regla de congelar los puntos
 de una jornada terminada.
+
+---
+
+### 📌 Entrada 043 — 20 de agosto de 2026 — Punto de control: dónde queda todo
+
+**Objetivo:** dejar el documento en un estado del que se pueda retomar mañana sin
+tener que reconstruir nada de cabeza. El día ha sido largo —**doce entradas, de
+la 032 a ésta**— y la cabecera había envejecido a mitad de camino.
+
+**Qué se hizo:**
+
+Se reescribió la cabecera entera del documento, que es lo que se lee al retomar:
+
+1. **«Lo primero, en un minuto»** ahora avisa de lo que más puede despistar:
+   ⚠️ **el trabajo está en la rama `postgres`, no en `main`.** Quien abra el
+   proyecto y corra `npm test` en `main` verá 129 pruebas y una aplicación sobre
+   MongoDB, y pensará que no se ha hecho nada.
+2. **«Dónde estamos»** separa lo que está probado y cerrado de lo que no: el
+   aislamiento aguanta, las reglas están portadas, **y ninguna ruta habla todavía
+   con PostgreSQL**.
+3. **«Lo que se hizo el 20 de agosto»** cuenta el día en tres actos —el sondeo,
+   la puerta y las tres primeras tajadas— con las cinco cosas que no se deducen
+   leyendo el código.
+4. **«Estado de Git»** describe **dos ramas vivas** y deja claro cuál es cuál.
+5. **«Comandos habituales»** distingue lo que da cada rama, y añade cómo se
+   toca la base de Neon.
+6. **«Lo que queda pendiente»** se partió en dos mundos que no conviene mezclar:
+   **§A la migración** y **§B lo que ya estaba pendiente antes**.
+
+**Lo que se aclaró al escribirlo, y no estaba escrito en ningún sitio:**
+
+- **Ocho hallazgos viejos los cierra la migración sin trabajo aparte** —C-04,
+  C-06, M-01, M-02, M-25, M-30, M-33 y S-10—, y ahora hay una tabla que dice
+  cuál cierra cada pieza del modelo nuevo. ⚠️ Con una advertencia: **hasta que la
+  migración termine siguen todos abiertos en `main`**, y si se abandonara,
+  **M-33 hay que arreglarlo aparte** porque es un agujero del código que hoy
+  corre.
+- **La Fase E ya no está bloqueada.** El dominio definitivo se decidió hoy
+  —`quinieladeportivaglobal.onrender.com`, que además ya era el valor por defecto
+  de CORS—. Le quedan dos decisiones, las dos de producto: **proveedor de correo**
+  y **qué se bloquea sin verificar**.
+- **La Fase E se hace DESPUÉS de la migración**, y sobre PostgreSQL. Hacerla
+  ahora sería escribirla dos veces.
+- **Se retiró un pendiente que dejó de aplicar**: «`Jornada` es el único esquema
+  sin `timestamps`». En el modelo nuevo la tabla lleva `creada_en` y `secuencia`.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Cabecera, estado de Git, comandos y la sección de pendientes, reescritos enteros. Esta entrada |
+
+**Verificación:**
+
+```
+npm test              → 184/184
+npm run test:postgres → 55, ~7 s
+git status            → limpio
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Un documento de continuidad con dos ramas vivas necesita decir en cuál se
+   trabaja, y decirlo lo primero.** Toda la cabecera daba por supuesto que sólo
+   había una. Quien retome en `main` y corra las pruebas verá un proyecto que no
+   ha avanzado.
+2. **Separar «lo de la migración» de «lo de antes» hizo aparecer solapamientos
+   que nadie había cruzado.** Ocho hallazgos de la lista vieja los cierra el
+   modelo nuevo sin trabajo aparte; verlo puestos en una tabla cambia cómo se lee
+   la lista de deuda, y evita que alguien se ponga a arreglar a mano algo que va a
+   desaparecer solo.
+3. **La rama se subió.** La lección de la Entrada 029 —«la documentación de
+   continuidad estuvo una tarde entera existiendo sólo en un disco»— se aplica
+   igual al código de una rama larga: tres tajadas de trabajo viviendo en un solo
+   disco es un riesgo que no hace falta correr.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 4 — puntuación.** Todo lo que hace falta saber para empezarla está en
+§21 y en §A.1: qué entra, qué reglas hay que respetar y por qué el motor de
+puntos se puede mover tal cual.
 
 ---
 
