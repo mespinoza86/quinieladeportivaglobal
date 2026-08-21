@@ -461,7 +461,25 @@ Cuestan tiempo cada vez que se olvidan:
   202. Hace falta que un administrador la apruebe antes de poder seleccionarla.
   Una prueba que lo ignore recibe un 409 «Debes seleccionar una quiniela activa»
   y parece un fallo de permisos (Entrada 030).
-
+- ⚠️ **Un banco de pruebas con más privilegios que producción da falsos verdes.**
+  El ensayo del sondeo SQL corría como superusuario y por eso pasaba 7/7 aquí y
+  fallaba en Neon: los superusuarios **se saltan RLS**, y el rol dueño de Neon no
+  es superusuario. Vale para cualquier arnés, no sólo para éste — si las pruebas
+  corren con más permisos que la aplicación, todo lo que dependa de permisos está
+  sin probar. Ahora `probar-neon-sql.js` **se niega a arrancar** si detecta que
+  tiene privilegios de más (Entrada 034).
+- ⚠️ **`FORCE ROW LEVEL SECURITY` también alcanza al dueño de la tabla.**
+  Cualquier carga inicial, migración o respaldo **tiene que fijar
+  `app.quiniela_id`** antes de escribir en las 12 tablas de dominio, o la política
+  rechaza la inserción. Es bueno —el aislamiento no tiene puerta trasera— pero hay
+  que saberlo antes de escribir el script, no descubrirlo con un error a mitad de
+  una transacción (Entrada 034).
+- ⚠️ **Un hueco que pide un secreto dentro de un archivo versionado se rellena.**
+  `neon-preparar.sql` tenía un `CAMBIAME-por-algo-largo-y-aleatorio` con un aviso
+  al lado de no guardarlo en el repositorio, y aun así acabó conteniendo una
+  contraseña real. Se pilló antes del commit, pero un secreto que llega al
+  historial **no se arregla borrándolo después**. La solución no es un aviso más
+  grande: es **quitar el hueco** (Entrada 034).
 ---
 
 ## Índice
@@ -2868,11 +2886,28 @@ tablas y activa RLS en las 12 de dominio.
 
 ### Paso 4 — Crear el rol de la aplicación
 
-Abre **`sondeo-sql/neon-preparar.sql`** y ⚠️ **cambia la contraseña** de la
-primera línea por una larga y aleatoria. **No la guardes en el repositorio**: va
-a las variables de entorno de Render y a tu gestor de contraseñas.
+Son **dos** cosas, y están separadas a propósito.
 
-Pega el archivo entero en el SQL Editor y ejecútalo.
+1. **Pega entero `sondeo-sql/neon-preparar.sql`** y ejecútalo. Crea el rol
+   `app_quiniela` con sus permisos mínimos, **sin contraseña**.
+2. **Escribe a mano esta única línea** en el SQL Editor, con una contraseña larga
+   y aleatoria, y ejecútala:
+
+   ```sql
+   ALTER ROLE app_quiniela PASSWORD 'la-que-acabes-de-generar';
+   ```
+
+⚠️ **La contraseña no va en ningún archivo del repositorio, y el archivo ya no
+tiene dónde ponerla.** Guárdala sólo en tu gestor de contraseñas y en las
+variables de entorno de Render. Que **no** sea una que uses en otro sitio: acaba
+en una variable de entorno, que está menos protegida que un gestor.
+
+> **Por qué está separado así.** La primera versión de este anexo tenía un hueco
+> que decía «CAMBIAME por algo largo y aleatorio» dentro del archivo, y pasó lo
+> que pasa con esos huecos: se rellenó con la contraseña de verdad, en un archivo
+> versionado. Se pilló antes de confirmarlo, pero un secreto que llega a un
+> commit **no se arregla borrándolo después**: se queda en el historial para
+> siempre. Ver la Entrada 034.
 
 > **Por qué este paso existe y no es opcional.** RLS no protege contra un
 > superusuario ni contra un rol con `BYPASSRLS`, y el rol dueño puede **apagar
@@ -6287,6 +6322,97 @@ ninguna ruta**.
 
 Sigue sin contestar, y la Fase E la necesita en cualquiera de los dos escenarios:
 ⚠️ **cuál va a ser el dominio definitivo.**
+
+---
+
+### 📌 Entrada 034 — 20 de agosto de 2026 — El ensayo que no ensayaba, y una contraseña a punto de subirse
+
+**Objetivo:** arreglar el paso 5 del Anexo C, que le falló al usuario en Neon con
+«Failed transaction: ROLLBACK required», y cerrar de raíz una fuga de secreto que
+apareció por el camino.
+
+**Qué pasó:**
+
+El paso 5 —la prueba de aceptación— **falló en Neon aunque pasaba 7/7 aquí**. La
+causa es exactamente la que este mismo material lleva advirtiendo desde la
+Entrada 032, aplicada en la dirección contraria:
+
+> **El ensayo corría como superusuario, y los superusuarios se saltan RLS.**
+
+PGlite conecta como `postgres`, que es superusuario. En Neon, el rol dueño
+(`neondb_owner`) **no lo es**, y como las tablas llevan `FORCE ROW LEVEL
+SECURITY`, **el dueño también está sujeto a las políticas**. Las inserciones de
+datos de prueba del archivo corrían antes de fijar el contexto de quiniela, así
+que en Neon las rechazó la política —`new row violates row-level security policy
+for table "jugadores"`— y todo lo que venía detrás se saltó, que es lo que el
+editor de Neon resume como «ROLLBACK required».
+
+⚠️ **La ironía es la lección:** el archivo advertía por escrito de que un
+superusuario se salta RLS, y el ensayo que lo verificaba corría como
+superusuario. **Un banco de pruebas con más privilegios que el entorno real no
+prueba lo que dice probar.** El fallo no fue del SQL: fue del ensayo.
+
+**Y por el camino apareció otra cosa.** `neon-preparar.sql` tenía un hueco que
+decía `CAMBIAME-por-algo-largo-y-aleatorio`, y pasó lo que pasa con esos huecos:
+el usuario lo rellenó con una contraseña personal de verdad, **en un archivo
+versionado en git**. Se detectó antes de confirmarlo —se comprobó buscando la
+cadena en todo el historial con `git log -S`, y nunca llegó a ningún commit— pero el margen fue de un `git add`.
+
+**Qué se hizo:**
+
+1. **El ensayo ahora crea un rol `duenio` `NOSUPERUSER NOBYPASSRLS CREATEROLE`** y
+   corre todo bajo él, que es lo que Neon da de verdad. Además **comprueba al
+   arrancar** que no tiene privilegios de más y se niega a seguir si los tiene:
+   si algún día alguien lo devuelve a superusuario, el ensayo lo dice en vez de
+   dar un falso verde.
+2. **La prueba de aceptación fija el contexto de quiniela antes de cada bloque de
+   inserciones**, como hará la aplicación. No es un rodeo: es la demostración de
+   que `FORCE ROW LEVEL SECURITY` hace su trabajo incluso con el dueño.
+3. **`neon-preparar.sql` ya no tiene dónde poner un secreto.** El rol se crea
+   **sin contraseña**, y la contraseña se pone con un `ALTER ROLE` suelto que se
+   escribe a mano en el editor de Neon y no se guarda en ningún archivo. Un hueco
+   que pide un secreto en un archivo versionado es una trampa, no una comodidad.
+4. **Se corrigió el paso 4 del Anexo C** para reflejarlo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `sondeo-sql/probar-neon-sql.js` | Corre como dueño sin privilegios y se niega a correr con ellos |
+| `sondeo-sql/neon-verificar.sql` | Fija el contexto de quiniela antes de sembrar los datos |
+| `sondeo-sql/neon-preparar.sql` | Rol sin contraseña; la contraseña va en una línea aparte |
+| `avance_proyecto.md` | Esta entrada, el paso 4 del Anexo C y las trampas conocidas |
+
+**Verificación:**
+
+```
+node sondeo-sql/probar-neon-sql.js  → 7/7 pasan, ahora como dueño NO superusuario
+git log -S <la contraseña> --all      → vacío: nunca llegó a ningún commit
+npm test                            → 129/129
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Un banco de pruebas con más privilegios que producción da falsos verdes.**
+   Vale para cualquier arnés, no sólo para éste: si las pruebas corren como
+   superusuario y la aplicación no, **todo lo que dependa de permisos está sin
+   probar**. Por eso el ensayo ahora se niega a arrancar con privilegios de más.
+2. ⚠️ **`FORCE ROW LEVEL SECURITY` también alcanza al dueño de la tabla**, y eso
+   cambia cómo se siembran datos: cualquier script de carga inicial, migración o
+   respaldo **tiene que fijar `app.quiniela_id`** antes de escribir en las 12
+   tablas de dominio. Es bueno —significa que el aislamiento no tiene puerta
+   trasera— pero hay que saberlo antes, no descubrirlo con un error.
+3. **Un hueco que pide un secreto dentro de un archivo versionado se rellena.**
+   No sirve de nada escribir «no lo guardes en el repositorio» al lado del hueco:
+   el sitio para escribirlo está ahí, y el archivo está en git. La solución no es
+   un aviso más grande, es **quitar el hueco**.
+
+**Pendiente / siguiente paso:**
+
+El usuario repite los pasos 4 y 5 del Anexo C con los archivos corregidos. Cuando
+den 7/7, sigue faltando lo mismo que antes: correr las comprobaciones **desde
+Node, con un `Pool` de `pg` y varias peticiones a la vez**, que es lo único que
+PGlite no puede probar. Hasta que eso pase, no se toca ninguna ruta.
 
 ---
 

@@ -41,13 +41,27 @@ INSERT INTO quinielas (id, nombre, codigo_ingreso, propietario_id)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','Quiniela A','VERIF-A','11111111-1111-1111-1111-111111111111'),
        ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','Quiniela B','VERIF-B','22222222-2222-2222-2222-222222222222');
 
-INSERT INTO jugadores (quiniela_id, nombre) VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','ana_v'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','beto_v');
+-- ⚠️ Estas dos tablas SI llevan RLS, y las tablas estan en FORCE ROW LEVEL
+-- SECURITY, asi que el rol dueño tambien esta sujeto a la politica: sin
+-- contexto de quiniela, sus propias inserciones son rechazadas.
+--
+-- No es un estorbo, es la prueba de que FORCE funciona. Por eso hay que fijar
+-- el contexto antes de cada bloque, igual que hara la aplicacion.
+--
+-- (`usuarios` y `quinielas` son de plataforma y no llevan RLS: por eso las de
+-- arriba no necesitaron contexto.)
 
-INSERT INTO jornadas (quiniela_id, nombre) VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','Jornada 1'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','Jornada 1');
+SELECT set_config('app.quiniela_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true);
+INSERT INTO jugadores (quiniela_id, nombre)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','ana_v');
+INSERT INTO jornadas  (quiniela_id, nombre)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','Jornada 1');
+
+SELECT set_config('app.quiniela_id', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', true);
+INSERT INTO jugadores (quiniela_id, nombre)
+  VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','beto_v');
+INSERT INTO jornadas  (quiniela_id, nombre)
+  VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','Jornada 1');
 
 -- ---------- Desde aqui, como se conecta la aplicacion de verdad ----------
 SET LOCAL ROLE app_quiniela;
