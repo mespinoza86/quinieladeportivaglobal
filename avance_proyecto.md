@@ -23,15 +23,15 @@
 git branch --show-current   # debe decir: postgres
 git log --oneline -3        # debe empezar por f947039
 git status                  # debe estar limpio
-npm test                    # 313/313
-npm run test:postgres       # 184, en ~20 s
+npm test                    # 333/333
+npm run test:postgres       # 204, en ~25 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 313 y añade una capa de
+sigue hablando con MongoDB. La rama `postgres` tiene 333 y añade una capa de
 datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
@@ -41,25 +41,25 @@ datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
 después de un sondeo que la midió en vez de opinarla. Van **6 tajadas de 7**, y
-de la séptima, **3 pasos de 7**.
+de la séptima, **4 pasos de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **313** (129 de Mongo + 184 nuevas) |
-| Sólo las de PostgreSQL | **184**, ~20 s |
+| Pruebas en `postgres` | **333** (129 de Mongo + 204 nuevas) |
+| Sólo las de PostgreSQL | **204**, ~25 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
 | `server.js` | **4.873 líneas**, intacto y verde. Sigue sobre Mongo **a propósito**: el servidor nuevo crece a su lado |
-| Rutas ya sobre PostgreSQL | **42 de 81**, en `src/servidor.js` y `src/rutas/` |
+| Rutas ya sobre PostgreSQL | **52 de 81**, en `src/servidor.js` y `src/rutas/` |
 | `src/` | 21 módulos + `src/rutas/` (2). Todo lo que era `server.js` menos las rutas que faltan |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Todas las reglas están portadas, con 184 pruebas contando las de las rutas.
-  **Lo que falta son 39 rutas y el cambio.**
+- Todas las reglas están portadas, con 204 pruebas contando las de las rutas.
+  **Lo que falta son 29 rutas y el cambio.**
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
@@ -181,10 +181,9 @@ Seis cosas de ese día que **no se deducen leyendo el código**:
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es el paso 7.4 — las rutas de puntuación**: `/api/resultados`,
-`/api/resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos` y
-`/api/clasificacion-jornada`. Son 10 rutas y todas apoyan en `src/ranking.js` y
-`src/pronosticos.js`, que ya están probados.
+**Lo siguiente es el paso 7.5 — las rutas de trivias**: 12 rutas, más el
+`_id → id` de los 3 archivos del frontend. Los módulos `src/trivias.js` y
+`src/respuestas-trivia.js` ya están probados con 27 pruebas.
 
 ⚠️ **La regla que no hay que olvidar al escribirlas**, y que ya mordió una vez:
 el middleware NO abre transacción; cada ruta envuelve su cuerpo en
@@ -212,6 +211,8 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  66bbc94 Tajada 7, paso 4: las rutas de puntuacion
+  ff13833 Anotar el commit de los pasos 7.1 a 7.3 en el estado de Git
   8cb7fe5 Tajada 7, pasos 1 a 3: el servidor nuevo
   826a1aa Anotar el commit de la tajada 6 en el estado de Git
   d44bb4d Migracion, tajada 6: el sincronizador
@@ -280,9 +281,9 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 313, ~20 s
-npm run test:postgres      # solo las 184 de PostgreSQL, ~20 s (solo en la rama)
-npm run test:rutas         # solo las 46 del servidor nuevo
+                           #   en postgres: 333, ~25 s
+npm run test:postgres      # solo las 204 de PostgreSQL, ~25 s (solo en la rama)
+npm run test:rutas         # solo las 66 del servidor nuevo
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -344,8 +345,8 @@ punto sin retorno es el 7.7**; hasta entonces `server.js` sigue vivo y verde.
 | **7.1** | Cimientos: helmet, CORS, sesiones sobre `connect-pg-simple`, sondas, guardias, errores, registro y login | 7 | ✅ Entrada 047 |
 | **7.2** | Plataforma: `quinielas`, `quiniela-actual`, `admin-mode`, miembros, configuración | 19 | ✅ Entrada 047 |
 | **7.3** | Dominio: `jornadas`, `jugadores`, `equipos`, `jornada-actual` | 16 | ✅ Entrada 047 |
-| **7.4** | **Puntuación**: `resultados`, `resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos`, `clasificacion-jornada` | 10 | ⬜ **el siguiente** |
-| **7.5** | Trivias, más el `_id → id` de los 3 archivos del frontend | 12 | ⬜ |
+| **7.4** | Puntuación: `resultados`, `resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos`, `clasificacion-jornada` | 10 | ✅ Entrada 048 |
+| **7.5** | **Trivias**, más el `_id → id` de los 3 archivos del frontend | 12 | ⬜ **el siguiente** |
 | **7.6** | Sincronizador y admin: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 17 | ⬜ |
 | **7.7** | ⚠️ **El cambio.** `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ⬜ |
 
@@ -8004,6 +8005,90 @@ probados.
 
 Luego **7.5 trivias** (12 rutas, incluye el `_id → id` del frontend), **7.6
 sincronizador y admin** (17 rutas y `src/proveedor.js`), y **7.7 el cambio**.
+
+---
+
+### 📌 Entrada 048 — 21 de agosto de 2026 — Tajada 7, paso 4: las rutas de puntuación
+
+**Objetivo:** las diez rutas de pronósticos, resultados oficiales y las dos
+tablas. Con éstas van **52 de las 81 rutas** sobre PostgreSQL.
+
+**Lo que este paso puso a prueba de verdad: la regla de privacidad.**
+
+Cuatro de estas diez rutas entregan pronósticos ajenos, y las cuatro tienen que
+aplicar la misma regla —**de otro participante sólo se ve lo de los partidos que
+ya empezaron**—. Esa regla ya se rompió una vez: `/api/resultados-con-equipos` se
+quedó fuera del repaso de privacidad porque llamaba `jornadaAcceso` a lo que las
+otras llamaban `jornadaDoc`, y la prueba que buscaba el patrón viejo no la vio.
+
+Aquí las cuatro pasan por **una sola función** (`taparAjenos`) que se apoya en el
+`bloqueado` que ya devuelve `pronosticos.deJugador`. Una regla en un solo lugar no
+se puede quedar a medio cambiar.
+
+⚠️ Y lo que no se puede ver **no es un 403**: llega con los marcadores en `null` o
+en `''`, con la fila puesta. Así la pantalla muestra la jornada a medias en vez de
+quedarse en blanco, que es justo lo que se quería arreglar.
+
+**Qué se hizo:**
+
+1. **`src/rutas/puntuacion.js`** — las diez rutas, más la caché del ranking y la
+   paginación de la tabla general.
+2. **`src/pronosticos.js`** — nueva función `tabla()`: todos los pronósticos de la
+   quiniela en UNA consulta.
+3. **`test/rutas.test.js`** — 20 pruebas nuevas (66 en total).
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/rutas/puntuacion.js` | **Nuevo.** 10 rutas, caché y paginación |
+| `src/pronosticos.js` | `tabla()`: la tabla de todos contra todos, en una consulta |
+| `src/servidor.js` | Engancha el grupo nuevo |
+| `test/rutas.test.js` | 20 pruebas más |
+| `avance_proyecto.md` | Esta entrada y el estado |
+
+**Verificación:**
+
+```
+node --test test/rutas.test.js → 66/66
+npm run test:postgres          → 204 pruebas
+npm test                       → 333/333
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **`/api/resultados` escrita de la forma natural era un N+1 de libro.** La
+   primera versión pedía los pronósticos de cada jugador en cada jornada: con
+   veinte jugadores y cuarenta jornadas son **ochocientos viajes a la base para
+   pintar una pantalla**. Se reescribió como una sola consulta con cinco `JOIN`.
+   Es el mismo N+1 que la Fase 5 quitó de la tabla general, y volvió a aparecer
+   en cuanto se portó la ruta sin pensarlo.
+2. ⚠️ **Cargar un resultado oficial CIERRA el partido, aunque se juegue en 2099.**
+   Una prueba mal planteada lo destapó: cargaba el resultado y luego intentaba
+   pronosticar, esperando que se guardara. No se guarda, y es correcto —acertar
+   después de saber el resultado no es acertar—. La prueba estaba mal, no el
+   código, y quedó reescrita al derecho **y con una segunda que fija el
+   comportamiento** para que nadie lo «arregle».
+3. **La caché del ranking va por quiniela, y hay una prueba que lo fija.** Una
+   caché global sería C-02 otra vez, y esta vez **en memoria, donde RLS no
+   llega**: la base no puede salvarnos de un `Map` mal indexado.
+4. **La paginación sólo aparece si se pide.** Sin `?pagina` ni `?limite` la
+   respuesta es el objeto de siempre: hay pantallas que lo esperan entero y
+   romperlas por paginar no compensa.
+5. **`/api/resultados-seguros` conserva su reparto de responsabilidades.** La
+   contraseña protege lo PROPIO —la pantalla se usa en el móvil de uno delante
+   de los demás—; para lo ajeno no se pide nada, porque sólo se entrega lo
+   visible. Ahí vivía una puerta abierta: una rama «jornada sin fecha» saltaba a
+   la vez la comprobación de identidad y la de contraseña.
+
+**Pendiente / siguiente paso:**
+
+**Paso 7.5 — trivias**: 12 rutas, más el `_id → id` de los 3 archivos del
+frontend. Los módulos `src/trivias.js` y `src/respuestas-trivia.js` ya están
+probados con 27 pruebas.
+
+Luego **7.6 sincronizador y admin** (17 rutas y `src/proveedor.js`) y **7.7 el
+cambio**.
 
 ---
 
