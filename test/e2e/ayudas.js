@@ -22,7 +22,18 @@ function credenciales(prefijo = 'e2e') {
   };
 }
 
-/** Registra una cuenta por la interfaz y deja la sesión iniciada. */
+/**
+ * Registra una cuenta por la interfaz, **confirma el correo** y entra.
+ *
+ * ⚠️ Desde la Fase E el registro ya NO abre sesión: la cuenta nace sin
+ * confirmar y sin confirmar no se entra. Este ayudante recorre las tres
+ * pantallas de verdad —registro, confirmación y login— en vez de saltarse la
+ * del medio: si la verificación se rompe, se caen las 62 pruebas y no una.
+ *
+ * El enlace sale de `/e2e/ultimo-correo`, una puerta que sólo declara el arnés
+ * (ver `test/e2e/arrancar.js`). No se puede leer de la base porque allí sólo
+ * está el hash del token.
+ */
 async function registrarse(page, prefijo) {
   const datos = credenciales(prefijo);
 
@@ -33,7 +44,24 @@ async function registrarse(page, prefijo) {
   await page.locator('#confirmarPassword').fill(datos.password);
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
 
-  // El registro lleva a la pantalla de quinielas.
+  /*
+   * El registro ya no navega. La señal inequívoca de que fue bien es que el
+   * formulario se retira: esperar por el TEXTO del mensaje sería frágil, porque
+   * ese mismo elemento pinta también los errores.
+   */
+  await page.locator('#registroForm').waitFor({ state: 'hidden' });
+
+  const correo = await (await page.request.get('/e2e/ultimo-correo')).json();
+  const token = correo.texto.match(/token=([a-f0-9]{64})/)[1];
+
+  await page.goto(`/verificar-correo.html?token=${token}`);
+  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+
+  await page.waitForURL('**/login.html');
+  await page.locator('#identificador').fill(datos.username);
+  await page.locator('#password').fill(datos.password);
+  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+
   await page.waitForURL('**/quinielas.html');
 
   return datos;

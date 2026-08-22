@@ -59,6 +59,33 @@ services:
       - key: DEBUG_ENDPOINTS
         value: 'false'
 
+      # ---------- Correo (Fase E) ----------
+      #
+      # ⛔ Sin esto NADIE puede usar la aplicacion: la cuenta nace sin confirmar
+      # y sin confirmar no se entra. Con MAIL_TRANSPORT sin poner, el correo se
+      # escribe en el registro en vez de enviarse y nadie recibe su enlace.
+      - key: MAIL_TRANSPORT
+        value: brevo
+
+      # La clave de Brevo. Se eligio Brevo porque permite verificar UNA sola
+      # direccion de remitente sin poseer un dominio, que es la situacion de
+      # este proyecto: onrender.com no es un dominio donde poner registros DNS.
+      - key: MAIL_API_KEY
+        sync: false
+
+      # ⚠️ Tiene que ser la direccion verificada en Brevo. Si no lo es, el envio
+      # falla con un error del proveedor que lo dice, y la cuenta se crea igual
+      # pero sin correo.
+      - key: MAIL_FROM
+        sync: false
+
+      - key: MAIL_FROM_NAME
+        value: Quiniela Deportiva Global
+
+      # De donde cuelga el enlace del correo. Sin esto apuntaria a localhost.
+      - key: APP_ORIGIN
+        value: https://quinieladeportivaglobal.onrender.com
+
       # Los trabajos periodicos corren dentro del proceso web y el cerrojo
       # distribuido evita que varias instancias los dupliquen. Se pone en
       # 'false' el dia que convenga moverlos a un proceso aparte: se despliega

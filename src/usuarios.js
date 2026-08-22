@@ -128,6 +128,27 @@ async function autenticar(identificador, password) {
   return usuario;
 }
 
+/** Busca por correo normalizado. Lo usa el reenvío de la confirmación. */
+async function porEmail(email) {
+  const { rows: [usuario] } = await db.consulta(
+    'SELECT id, username, email, email_verificado, activo FROM usuarios WHERE email_normalizado = $1',
+    [normalizarIdentidad(email)]);
+  return usuario || null;
+}
+
+/**
+ * Da la dirección por confirmada. Idempotente a propósito: abrir dos veces el
+ * mismo enlace no debe dar error, sólo no hacer nada la segunda.
+ */
+async function marcarVerificado(id) {
+  const { rows: [usuario] } = await db.consulta(
+    `UPDATE usuarios SET email_verificado = true, updated_at = now()
+      WHERE id = $1 AND activo
+      RETURNING id, username, email, email_verificado`,
+    [id]);
+  return usuario || null;
+}
+
 async function porId(id) {
   const { rows: [usuario] } = await db.consulta(
     'SELECT id, username, email, email_verificado, activo FROM usuarios WHERE id = $1', [id]);
@@ -136,6 +157,6 @@ async function porId(id) {
 
 module.exports = {
   normalizarIdentidad, publico, validarRegistro,
-  enUso, crear, autenticar, porId,
+  enUso, crear, autenticar, porId, porEmail, marcarVerificado,
   SALT_ROUNDS
 };

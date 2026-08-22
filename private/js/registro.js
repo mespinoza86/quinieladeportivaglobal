@@ -25,7 +25,15 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'No se pudo crear la cuenta.');
-      window.location.href = '/quinielas.html';
+
+      /*
+       * Ya no se entra al registrarse: la cuenta nace sin confirmar y sin
+       * confirmar no se entra (Fase E). Lo que toca es decir que mire el
+       * correo, y el formulario se retira para que nadie lo mande dos veces.
+       */
+      form.hidden = true;
+      mensaje.textContent = data.mensaje
+        || 'Te enviamos un correo para confirmar tu dirección.';
     } catch (error) {
       mensaje.textContent = error.message;
     } finally {

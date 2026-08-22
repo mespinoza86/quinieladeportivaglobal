@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmar correo</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/verificar-correo.js" defer></script>
+</head>
+<body class="app-body auth-page">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow">Quiniela Deportiva</p><h1>Confirmar correo</h1></div>
+        <div class="app-logo">✉️</div>
+      </div>
+      <p class="hero-text" id="estado">Comprobando el enlace…</p>
+    </section>
+
+    <section class="app-panel">
+      <p id="mensaje" class="form-message" role="status"></p>
+
+      <button id="irLogin" hidden type="button">Iniciar sesión</button>
+
+      <!--
+        El reenvío sólo aparece cuando el enlace falló. Pedir el correo antes de
+        que haga falta es ruido: la mayoría de quien abre esta página viene de
+        un enlace que funciona y no tiene que escribir nada.
+      -->
+      <div id="bloqueReenvio" hidden>
+        <p class="helper-text">¿El enlace venció o ya se usó? Te enviamos otro.</p>
+        <label for="email" class="field-label">Tu correo</label>
+        <input id="email" type="email" autocomplete="email" />
+        <button id="reenviar" class="secondary-button" type="button">Reenviar confirmación</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 295/295
+npm test                    # 310/310
 npm run test:e2e            # 62/62, ~2,5 min
 ```
 
@@ -38,8 +38,9 @@ borraron los datos de prueba.
 ✅ **Y desplegado**: `https://quinieladeportivaglobal.onrender.com` responde,
 habla con Neon y mantiene la sesión. El viaje Render → Neon son **3 ms**.
 
-**No queda nada de la migración por hacer.** Lo pendiente es §B: la Fase E y la
-Fase F, las dos de producto.
+**La migración no deja nada pendiente.** La **Fase E** (verificación de correo)
+está escrita y probada pero ⛔ **NO desplegada**: necesita una cuenta de Brevo y
+cinco variables. Ver «Lo siguiente». Después queda la Fase F.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
@@ -52,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **295**, ~45 s |
+| Pruebas rápidas | **310**, ~47 s |
 | Pruebas de navegador | **62**, ~2,5 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -73,8 +74,8 @@ entradas de bitácora (040 a 052).
 - **Ocho hallazgos viejos quedan cerrados** por el modelo nuevo, más tres que
   aparecieron al portar (M-34, M-35 y el hueco de los dos relojes). Ver §A.2.
 
-**Lo que NO está hecho**: nada de la migración. Queda §B —la Fase E y la Fase F—
-y dos cabos de limpieza que no corren prisa, en «Lo siguiente».
+**Lo que NO está hecho**: poner el correo en pie para desplegar la Fase E, y la
+Fase F entera. Los dos, en «Lo siguiente».
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -279,58 +280,80 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
   gratis porque estaba vacía. Entrada 053.
 
 
-### 🌅 Lo siguiente: la Fase E, y dos cabos de limpieza
+### 🌅 Lo siguiente: poner el correo en pie y desplegar la Fase E
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-✅ **La migración y el despliegue están cerrados.** La aplicación corre sobre
-PostgreSQL en `https://quinieladeportivaglobal.onrender.com`, con la base en
-Neon (Oregón) y **3 ms** de viaje entre las dos.
+⛔ **La Fase E está escrita y probada, pero NO desplegada. Y desplegarla sin lo
+de abajo dejaría la aplicación sin admitir cuentas nuevas**: se crearían, pero
+sin correo nadie recibiría el enlace y **sin confirmar no se entra**.
 
-#### Dos cabos de limpieza, que no corren prisa
+Son tres cosas, en este orden.
 
-1. **Borrar el proyecto de Neon en Ohio.** Ya no lo usa nadie. Un proyecto que
-   nadie mira pero al que alguien podría apuntar por error es peor que no
-   tenerlo. Neon → proyecto de Ohio → *Settings* → *Delete project*.
-2. **Borrar `verif_resultados` en Oregón.** Es la tabla que deja la prueba de
-   aceptación del Anexo C. ⚠️ **Hay que hacerlo con el rol dueño**: `app_quiniela`
-   no puede, y está bien que no pueda (regla 3 de §21.2).
+#### 1. El esquema de Neon, otra vez
 
-   ```sql
-   DROP TABLE IF EXISTS verif_resultados;
-   ```
+El esquema cambió: entra la tabla `auth_tokens` y salen dos columnas de
+`usuarios`. La base sigue vacía, así que vale el mismo procedimiento:
 
-#### Lo que queda del proyecto: §B
+Editor SQL de Neon, **con el rol dueño** → `db/poner-al-dia.sql`, pegando dentro
+el contenido actual de `db/esquema.sql`. Se planta solo si encuentra datos.
 
-- **Fase E — verificación de correo.** Media parte ya está hecha: la tabla
-  `usuarios` tiene `email_verificado`, `token_verificacion` y su expiración.
-  ⚠️ Le faltan **dos decisiones que son tuyas**:
-  - **Qué proveedor de envío.** Tiene coste y configuración en Render. Es la
-    única dependencia externa nueva de todo lo que queda.
-  - **Qué se le impide a una cuenta sin verificar.** ¿Puede entrar y no
-    pronosticar? ¿No puede ni entrar? ¿Puede todo durante unos días? Es producto,
-    no técnica, y cambia bastante el trabajo.
-- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas: qué
-  cuenta como «igualados» y qué es un «clásico». Necesita la tabla de posiciones
-  de cada liga, que hoy no se consulta.
+Al terminar deben ser **19 tablas** (18 más `auth_tokens`).
 
-#### ⚠️ Y lo primero que hay que mirar con tráfico real
+#### 2. Una cuenta de Brevo
 
-Ahora ya se puede, y está en §B.4. En `/api/admin/sync-metricas`:
+1. Crear cuenta en [brevo.com](https://www.brevo.com) (el plan gratuito da 300
+   correos al día, de sobra).
+2. **Verificar una dirección de remitente**: *Senders & IP* → *Senders* → añadir
+   la tuya y confirmar el correo que te mandan. ⚠️ **Sin esto los envíos fallan**,
+   y el error del proveedor lo dice con esas palabras.
+3. **Crear una clave de API**: *SMTP & API* → *API Keys* → *Generate a new API
+   key*. Se enseña **una sola vez**.
 
-- **`consultasAhorradasPorDeduplicacion`** debe crecer en cuanto haya **dos
-  quinielas siguiendo los mismos partidos**. Si se queda en cero, la
-  deduplicación no está funcionando y la cuota del proveedor se gasta de más
-  **sin que nada falle**. Es la promesa de C-01, y es la única que todavía no se
-  ha visto cumplirse con datos de verdad.
-- **`syncsSinCambioDePuntos`** debe crecer mucho más deprisa que
-  `jornadasReescritas` el primer domingo con partidos en vivo.
-- **`ciclosAbandonadosPorTiempo`**: si sube, el proveedor está tardando.
+#### 3. Cinco variables en Render
+
+Servicio → *Environment*. Están todas en `render.yaml`, pero recuerda que
+**Render no lo aplica solo**:
+
+| Variable | Valor |
+|---|---|
+| `MAIL_TRANSPORT` | `brevo` |
+| `MAIL_API_KEY` | la clave del paso 2 |
+| `MAIL_FROM` | ⚠️ **la dirección verificada en Brevo**, no otra |
+| `MAIL_FROM_NAME` | `Quiniela Deportiva Global` |
+| `APP_ORIGIN` | `https://quinieladeportivaglobal.onrender.com` |
+
+`APP_ORIGIN` es de dónde cuelga el enlace del correo. Sin ella apuntaría a
+`localhost` y no le serviría a nadie.
+
+> ⚠️ Si `MAIL_TRANSPORT` se queda sin poner, el correo se **escribe en el
+> registro** en vez de enviarse. La aplicación arranca y avisa fuerte, pero
+> nadie podría entrar. Es el fallo más silencioso de esta fase.
+
+#### Cómo comprobar que quedó
+
+Crea una cuenta en producción y mira que llegue el correo. Si no llega, los
+registros de Render traen el error del proveedor tal cual — dice si falta
+verificar el remitente o si se agotó la cuota del día, que son los dos fallos
+habituales del plan gratuito.
+
+#### Y después: la Fase F
+
+Es lo último de §20. **Sugerencias de partidos destacados**, y le faltan las
+heurísticas: qué cuenta como «igualados» y qué es un «clásico». Necesita la
+tabla de posiciones de cada liga, que hoy no se consulta.
+
+#### ⚠️ Lo primero que hay que mirar con tráfico real
+
+En `/api/admin/sync-metricas`: **`consultasAhorradasPorDeduplicacion`** debe
+crecer en cuanto haya **dos quinielas siguiendo los mismos partidos**. Si se
+queda en cero, la deduplicación no funciona y la cuota del proveedor se gasta de
+más **sin que nada falle**. Es la promesa de C-01, y la única que todavía no se
+ha visto cumplirse con datos de verdad.
 
 Y lo que sigue sin haberse visto nunca: **la aplicación con varias quinielas y
-gente dentro a la vez**. El aislamiento está probado por todos lados, pero eso es
-distinto de haberlo visto funcionando.
+gente dentro a la vez**.
 
 #### Las cuatro reglas del código, que siguen valiendo
 
@@ -546,8 +569,8 @@ borrar un archivo es facil, y resucitarlo "temporalmente" tambien.
 | ✅ | **B — Qué es "la jornada actual"** | 1, 2, 5 | Hecha (Entradas 027 y 028) |
 | ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030) |
 | ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031) |
-| **1.º** | **E — Verificación de correo** | 8 | ⚠️ **Elegir proveedor de envío** (tiene coste y configuración en Render) y **decidir qué se bloquea sin verificar**. Media parte ya está hecha: el modelo `Usuario` ya tiene los campos, y siguen estando en el esquema nuevo |
-| **2.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Necesita la tabla de posiciones de cada liga, que hoy no se consulta |
+| ✅ | **E — Verificación de correo** | 8 | Hecha (Entrada 054). **Brevo**, y **sin confirmar no se entra** |
+| **1.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Necesita la tabla de posiciones de cada liga, que hoy no se consulta |
 | ✅ | **Aparte** | 7 (SQL) | **Respondida y en marcha**: se migra. Ver §21 |
 
 ✅ **El dominio definitivo ya está decidido**: `quinieladeportivaglobal.onrender.com`,
@@ -594,8 +617,8 @@ Lo que sigue abierto:
 | **M-30** | ¿La base sigue llamándose `test`? | ✅ **Resuelto**: la nueva se llama `quiniela` |
 | **Render** | Variables y health check | ✅ **Puesto y desplegado** (22-ago). ⚠️ Render **no** aplica `render.yaml` solo: hubo que poner a mano las variables, el *health check* **y el Start Command**, que fue el que tumbó el primer intento |
 | **Región** | ¿Dónde va la base? | ✅ **Oregón, la misma que Render** (22-ago). Estuvo en Ohio y costaba 47 ms por consulta |
-| **Correo** | Proveedor de envío para la Fase E | 🔴 **Abierta.** Es la única dependencia externa que queda |
-| **Bloqueo** | Qué se le impide a una cuenta sin verificar | 🔴 **Abierta.** Es producto, no técnica |
+| **Correo** | Proveedor de envío para la Fase E | ✅ **Brevo** (22-ago): permite verificar una sola dirección de remitente **sin poseer un dominio**, que es la situación de este proyecto. Resend queda escrito para el día que haya dominio |
+| **Bloqueo** | Qué se le impide a una cuenta sin verificar | ✅ **Sin confirmar no se entra** (22-ago), igual que en GymTrack |
 
 ✅ **Los dos cabos que no se podían mirar desde esta máquina los cerró el usuario**
 el 22 de agosto: lo que hay puesto en Render, y si seguía viva la aplicación
@@ -8783,6 +8806,129 @@ de producto, y la **Fase F** (sugerencias de partidos destacados).
 puede mirar de verdad: `consultasAhorradasPorDeduplicacion` en
 `/api/admin/sync-metricas` debe crecer en cuanto haya dos quinielas siguiendo los
 mismos partidos.
+
+---
+
+### 📌 Entrada 054 — 22 de agosto de 2026 — Fase E: verificación de correo
+
+**Objetivo:** que una cuenta nueva confirme su dirección antes de poder entrar.
+Es la primera de las dos fases de producto que quedaban de §20.
+
+**De dónde salió el diseño: de GymTrack.**
+
+El usuario preguntó si me acordaba de cómo se hizo allí. **No me acordaba** —la
+memoria de este proyecto sólo guarda sus convenciones de documentación— pero el
+proyecto está en esta misma máquina (`gimnasio/13_Agosto_2026/gymtrack`) y se
+leyó entero antes de escribir una línea. Seis decisiones se traen tal cual, y
+están explicadas abajo porque **ninguna es obvia mirando el resultado**.
+
+**Las dos decisiones del usuario:**
+
+| Decisión | Elegido | Por qué |
+|---|---|---|
+| **Proveedor** | **Brevo** | Permite verificar **una sola dirección de remitente sin poseer un dominio**. `onrender.com` no es un dominio propio donde poner registros DNS, así que Resend —que los exige— no servía |
+| **Qué se bloquea** | **Sin confirmar no se entra** | Lo mismo que GymTrack: lo más simple de explicar y lo más fácil de probar |
+
+`resend` queda **escrito por adelantado** en el mismo archivo para el día que
+haya dominio propio. Migrar será cambiar tres variables.
+
+**Lo que hace que esto sea seguro, y no se ve en el resultado:**
+
+1. ⚠️ **Del token sólo se guarda el hash.** El valor en claro existe dentro de
+   `emitir()` y del enlace del correo, y en ningún sitio más. Una filtración de
+   la base **no entrega la capacidad de entrar en cuentas ajenas**. Por eso las
+   columnas `token_verificacion` y `expiracion_token_verificacion` **salieron de
+   `usuarios`**: guardaban el token en claro.
+2. ⚠️ **La comprobación de «está confirmado» va DESPUÉS de validar la
+   contraseña.** El orden es la mitad de la protección: avisar de que una cuenta
+   existe pero no está confirmada **antes** de comprobar la clave revelaría qué
+   correos están registrados a cualquiera que pruebe direcciones.
+3. **El reenvío responde lo mismo exista o no la cuenta**, y no reenvía a una ya
+   confirmada: ni da pistas ni gasta cuota.
+4. **Emitir un token anula los pendientes del mismo propósito.** Si alguien pide
+   el enlace tres veces, sólo el último sirve — de lo contrario un correo viejo
+   reenviado seguiría abriendo la cuenta.
+5. **Que el correo no salga NO tumba el registro.** La cuenta se crea igual y
+   `correoEnviado` deja que la pantalla ofrezca reenviarlo: un proveedor caído no
+   puede impedir que alguien se dé de alta.
+6. **El nombre se escapa dentro del HTML del correo**, igual que en el DOM.
+
+**Qué se hizo:**
+
+1. **`db/esquema.sql`** — tabla `auth_tokens` con el hash, y fuera las dos
+   columnas de token en claro de `usuarios`.
+2. **`src/correo.js`** — los tres transportes, la plantilla y `intentar()`.
+3. **`src/tokens.js`** — emitir, buscar utilizable y marcar usado.
+4. **`src/servidor.js`** — el registro ya no abre sesión; el login bloquea; dos
+   rutas nuevas.
+5. **`public/verificar-correo.html`** y su script.
+6. **`private/js/registro.js` y `login.js`** — la nueva secuencia.
+7. **15 pruebas** de la fase, y los dos arneses adaptados.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/correo.js` | **Nuevo.** Consola, Brevo y Resend |
+| `src/tokens.js` | **Nuevo.** Tokens de un solo uso, hasheados |
+| `db/esquema.sql` | Tabla `auth_tokens`; fuera el token en claro de `usuarios` |
+| `src/servidor.js` | Registro sin sesión, login bloqueado, `/verificar-correo` y `/reenviar-verificacion` |
+| `src/usuarios.js` | `porEmail` y `marcarVerificado` |
+| `public/verificar-correo.html` | **Nueva.** La pantalla del enlace |
+| `private/js/verificar-correo.js` | **Nuevo** |
+| `private/js/registro.js`, `login.js` | La secuencia nueva |
+| `test/rutas.test.js` | `cuentaNueva` pasa por el flujo real; 15 pruebas de la fase |
+| `test/e2e/ayudas.js`, `arrancar.js` | El flujo por la interfaz, y la puerta del arnés |
+| `test/postgres-en-memoria.js` | `auth_tokens` y la bandeja, en el vaciado |
+| `render.yaml`, `.env.example` | Las cinco variables de correo |
+
+**Verificación:**
+
+```
+npm test         → 310/310
+npm run test:e2e →  62/62
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Bloquear el login rompía las 111 pruebas de rutas y las 62 de
+   navegador**, porque todas registran una cuenta y entran acto seguido. Se
+   resolvió haciendo que los dos ayudantes **recorran el flujo de verdad** —alta,
+   token del correo, confirmación y login— en vez de marcar la cuenta como
+   verificada en la base. Cuesta dos peticiones más por cuenta y a cambio, **si
+   la verificación se rompe, se cae la suite entera** en vez de un puñado de
+   pruebas dedicadas.
+2. ⚠️ **Las pruebas de navegador corren en OTRO proceso**, así que no pueden leer
+   la bandeja del transporte de consola, y el token no está en la base. Se les
+   dio una puerta —`/e2e/ultimo-correo`— **declarada en `test/e2e/arrancar.js` y
+   no en `crearApp`**: en producción esa ruta no existe, no es que responda 404
+   por una bandera. Era eso o dejar el token asomar en alguna respuesta.
+3. **Esperar por el TEXTO de un mensaje es frágil cuando ese elemento también
+   pinta los errores.** La primera versión del ayudante esperaba a que
+   `#registroMensaje` dijera «correo», y la suite se colgó: cada prueba agotaba
+   su plazo. La señal inequívoca es que **el formulario se retira**.
+4. **La bandeja del transporte de consola vive en memoria, no en la base**, así
+   que `TRUNCATE` no la vacía. Sin limpiarla entre pruebas, una prueba leería el
+   último correo de la anterior **y pasaría por casualidad**.
+5. **Una sola tabla para dos flujos.** `auth_tokens` tiene ya
+   `restablecer_password` en su `CHECK` aunque hoy no se use: la mecánica es
+   idéntica —valor aleatorio, vence, un solo uso, pertenece a alguien— y
+   separarlas obligaría a escribir dos veces lo mismo.
+6. ⚠️ **En producción con el transporte de consola nadie podría usar la
+   aplicación**, porque nadie recibiría su enlace y sin confirmar no se entra. El
+   módulo avisa fuerte al arrancar en vez de que se descubra por los usuarios.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Antes de desplegar esto hacen falta dos cosas en Brevo y cinco variables en
+Render**, y están en «Lo siguiente». Sin ellas, **la aplicación desplegada dejaría
+de admitir cuentas nuevas**: se crearían, pero sin correo nadie podría entrar.
+
+⚠️ **Y el esquema de Neon cambió**: hay que aplicar `auth_tokens` y quitar las dos
+columnas viejas. La base está vacía, así que vale otra vez `db/poner-al-dia.sql`.
+
+Después queda la **Fase F** — sugerencias de partidos destacados—, que necesita
+definir las heurísticas.
 
 ---
 

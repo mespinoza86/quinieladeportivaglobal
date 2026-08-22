@@ -196,13 +196,41 @@ test('las rutas de autenticación tienen limitación de intentos', () => {
   assert.match(server, /skipSuccessfulRequests: true/);
 });
 
-test('el registro regenera la sesión igual que el login', () => {
+test('el registro NO abre sesión, y el login la regenera', () => {
+  /*
+   * Antes esto vigilaba que el registro regenerara la sesion, contra fijacion:
+   * si alguien conseguia fijar un identificador antes del alta, se quedaba
+   * dentro de la cuenta nueva.
+   *
+   * Desde la Fase E la proteccion es mas fuerte: el registro NO abre sesion
+   * ninguna, porque la cuenta nace sin confirmar y sin confirmar no se entra.
+   * No hay sesion que fijar.
+   */
   const registro = server.slice(
     server.indexOf("app.post('/api/auth/registro'"),
-    server.indexOf('async function iniciarSesion')
+    server.indexOf('async function enviarConfirmacion')
   );
-  assert.ok(registro.length > 0, 'No se localizó el bloque de registro');
-  assert.match(registro, /req\.session\.regenerate\(/);
+  assert.ok(registro.length > 0, 'No se localizo el bloque de registro');
+  assert.doesNotMatch(registro, /req\.session\.usuarioId =/,
+    'registrarse no puede dejar la sesion iniciada');
+
+  // El login si la regenera, y ahi la fijacion sigue siendo un riesgo real.
+  const login = server.slice(
+    server.indexOf('async function iniciarSesion'),
+    server.indexOf("app.post('/api/auth/login'")
+  );
+  assert.match(login, /req\.session\.regenerate\(/);
+
+  /*
+   * Y la comprobacion de "esta confirmado" va DESPUES de validar la
+   * contrasena. El orden es la mitad de la proteccion: avisar de que una
+   * cuenta existe pero no esta confirmada antes de comprobar la clave
+   * revelaria que correos estan registrados.
+   */
+  assert.ok(
+    login.indexOf('Usuario, correo o contraseña incorrectos') < login.indexOf('email_verificado'),
+    'la contrasena se comprueba antes que la verificacion'
+  );
 });
 
 test('las trivias tienen los índices que evitan puntos duplicados', () => {

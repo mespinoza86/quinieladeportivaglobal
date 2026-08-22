@@ -138,6 +138,13 @@ async function levantar() {
  */
 async function vaciar() {
   /*
+   * La bandeja del transporte de consola vive en memoria del proceso, no en la
+   * base, asi que TRUNCATE no la toca. Sin esto, una prueba leeria el ultimo
+   * correo de la prueba ANTERIOR y pasaria por casualidad.
+   */
+  require('../src/correo').bandeja.length = 0;
+
+  /*
    * `TRUNCATE` exige ser dueño de las tablas, y `app_quiniela` no lo es a
    * propósito. Así que se vuelve al rol dueño el rato justo y se regresa.
    *
@@ -148,6 +155,7 @@ async function vaciar() {
   await db.consulta(`
     RESET ROLE;
     TRUNCATE usuarios, quinielas, membresias, fixtures, job_locks, sesiones,
+             auth_tokens,
              jugadores, jornadas, partidos, resultados, pronosticos,
              resultados_oficiales, resultados_oficiales_partidos,
              trivias, respuestas_trivia, equipos,

@@ -26,12 +26,38 @@ CREATE TABLE usuarios (
   email_normalizado             text NOT NULL UNIQUE,
   password                      text NOT NULL,
   email_verificado              boolean NOT NULL DEFAULT false,
-  token_verificacion            text,
-  expiracion_token_verificacion timestamptz,
   activo                        boolean NOT NULL DEFAULT true,
   created_at                    timestamptz NOT NULL DEFAULT now(),
   updated_at                    timestamptz NOT NULL DEFAULT now()
 );
+
+/*
+ * Tokens de un solo uso: confirmar el correo, y manana restablecer la
+ * contrasena. Una sola tabla para los dos porque la mecanica es IDENTICA: un
+ * valor aleatorio, que vence, que se usa una vez y que pertenece a alguien.
+ *
+ * ⚠️ Se guarda el SHA-256 del token, NUNCA el token. Una filtracion de la base
+ * no debe entregar la capacidad de entrar en cuentas ajenas. Por eso estas
+ * columnas salieron de `usuarios`, donde `token_verificacion` era `text` en
+ * claro.
+ */
+CREATE TABLE auth_tokens (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  proposito  text NOT NULL CHECK (proposito IN ('verificar_email','restablecer_password')),
+  token_hash char(64) NOT NULL,
+  expira_en  timestamptz NOT NULL,
+  usado_en   timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- La busqueda siempre entra por el hash, y debe ser unico: dos filas con el
+-- mismo hash harian ambiguo a quien pertenece el token.
+CREATE UNIQUE INDEX auth_tokens_hash ON auth_tokens (token_hash);
+
+-- Para anular los pendientes de alguien al emitirle uno nuevo.
+CREATE INDEX auth_tokens_pendientes ON auth_tokens (usuario_id, proposito)
+  WHERE usado_en IS NULL;
 
 CREATE TABLE quinielas (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -55,6 +55,8 @@ const db = require('./db');
 const usuariosMod = require('./usuarios');
 const quinielasMod = require('./quinielas');
 const membresiasMod = require('./membresias');
+const tokensMod = require('./tokens');
+const correoMod = require('./correo');
 
 const RAIZ = path.join(__dirname, '..');
 
@@ -280,17 +282,82 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
     }
 
     /*
-     * Se regenera la sesión igual que en el login: si alguien consiguió fijar
-     * un identificador de sesión antes del registro, aquí deja de servirle.
+     * ⚠️ NO se abre sesión al registrarse. La cuenta todavía no está confirmada
+     * y entrar sin confirmar es justamente lo que se decidió impedir (Fase E).
+     *
+     * Que el correo no salga NO tumba el registro: la cuenta se crea igual y
+     * `correoEnviado` deja que la pantalla ofrezca reenviarlo. Un proveedor
+     * caído no puede impedir que alguien se dé de alta.
      */
-    req.session.regenerate(errorSesion => {
-      if (errorSesion) {
-        return res.status(500).json({
-          error: 'La cuenta se creó, pero no se pudo iniciar la sesión. Inicia sesión manualmente.'
-        });
-      }
-      req.session.usuarioId = usuario.id;
-      res.status(201).json({ success: true, usuario: usuariosMod.publico(usuario) });
+    const correoEnviado = await enviarConfirmacion(usuario);
+
+    res.status(201).json({
+      success: true,
+      usuario: usuariosMod.publico(usuario),
+      correoEnviado,
+      mensaje: correoEnviado
+        ? 'Te enviamos un correo para confirmar tu dirección. Revisa también la carpeta de correo no deseado.'
+        : 'La cuenta se creó, pero no pudimos enviar el correo de confirmación. Pide que te lo reenviemos.'
+    });
+  });
+
+  /* ---------- Confirmar el correo ---------- */
+
+  /**
+   * Emite el token y manda el enlace. Se usa al registrarse y al reenviar.
+   *
+   * El enlace apunta a una PÁGINA del propio sitio, no a una ruta de API: quien
+   * abre un correo lo hace en un navegador y espera ver algo, no un JSON.
+   */
+  async function enviarConfirmacion(usuario) {
+    const token = await tokensMod.emitir(usuario.id, tokensMod.VERIFICAR_EMAIL);
+    /*
+     * Se quita la barra final si la hay: el enlace se arma como
+     * `${base}/pagina.html`, así que un APP_ORIGIN terminado en barra daría una
+     * URL con dos, y algunos clientes de correo la parten ahí.
+     */
+    const base = (process.env.APP_ORIGIN || `http://localhost:${PORT}`).replace(/\/+$/, '');
+
+    return correoMod.intentar(
+      () => correoMod.enviarVerificacion({
+        para: usuario.email,
+        nombre: usuario.username,
+        url: `${base}/verificar-correo.html?token=${token}`,
+        horas: tokensMod.HORAS_VERIFICACION
+      }),
+      `la confirmación de ${usuario.email}`);
+  }
+
+  app.post('/api/auth/verificar-correo', async (req, res) => {
+    const token = String(req.body?.token || '');
+    if (!token) return res.status(400).json({ error: 'Falta el token.' });
+
+    const fila = await tokensMod.usable(token, tokensMod.VERIFICAR_EMAIL);
+    if (!fila) {
+      return res.status(400).json({
+        error: 'El enlace no es válido, ya se usó o venció. Pide que te lo reenviemos.'
+      });
+    }
+
+    await tokensMod.marcarUsado(fila.id);
+    await usuariosMod.marcarVerificado(fila.usuario_id);
+
+    res.json({ success: true, username: fila.username, email: fila.email });
+  });
+
+  /*
+   * ⚠️ Responde siempre lo mismo, exista o no la cuenta y esté o no confirmada.
+   * Si distinguiera, cualquiera podría averiguar qué direcciones están
+   * registradas probando correos. Tampoco reenvía a una cuenta ya confirmada:
+   * ni da pistas ni gasta cuota.
+   */
+  app.post('/api/auth/reenviar-verificacion', limiteRegistro, async (req, res) => {
+    const usuario = await usuariosMod.porEmail(req.body?.email || '');
+    if (usuario && !usuario.email_verificado) await enviarConfirmacion(usuario);
+
+    res.json({
+      success: true,
+      mensaje: 'Si esa dirección tiene una cuenta sin confirmar, le enviamos el enlace.'
     });
   });
 
@@ -306,6 +373,19 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
     // Un solo mensaje para las tres formas de fallar: no existe, inactiva, o
     // la contraseña no es. Distinguirlas diría qué cuentas existen.
     if (!usuario) return res.status(401).json({ error: 'Usuario, correo o contraseña incorrectos.' });
+
+    /*
+     * ⚠️ La comprobación va DESPUÉS de validar la contraseña, y el orden es la
+     * mitad de la protección: avisar de que una cuenta existe pero no está
+     * confirmada ANTES de comprobar la clave revelaría qué correos están
+     * registrados a cualquiera que pruebe direcciones.
+     */
+    if (!usuario.email_verificado) {
+      return res.status(403).json({
+        error: 'Todavía no has confirmado tu correo. Revisa tu bandeja de entrada y la carpeta de correo no deseado.',
+        requiereVerificacion: true
+      });
+    }
 
     req.session.regenerate(error => {
       if (error) return res.status(500).json({ error: 'No se pudo iniciar la sesión.' });

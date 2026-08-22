@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const db = require('../src/db');
+const correo = require('../src/correo');
 const enMemoria = require('./postgres-en-memoria');
 
 let app;
@@ -63,13 +64,47 @@ function credenciales(prefijo = 'usu') {
   };
 }
 
-/** Registra una cuenta y devuelve un agente con la sesión ya iniciada. */
+/**
+ * El token del último correo enviado.
+ *
+ * ⚠️ Sale de la bandeja del transporte de consola porque **la base sólo guarda
+ * el hash**: no hay forma de leerlo de la base, y ésa es justamente la
+ * propiedad que se quiere.
+ */
+function ultimoToken() {
+  const mensaje = correo.bandeja.at(-1);
+  assert.ok(mensaje, 'no se envió ningún correo');
+  const hallado = mensaje.texto.match(/token=([a-f0-9]{64})/);
+  assert.ok(hallado, `el correo no trae un enlace con token:
+${mensaje.texto}`);
+  return hallado[1];
+}
+
+/**
+ * Registra una cuenta, **confirma el correo** y devuelve un agente con la
+ * sesión iniciada.
+ *
+ * ⚠️ Pasa por el flujo de verdad —registro, token del correo, confirmación y
+ * login— en vez de marcar la cuenta como verificada en la base. Cuesta dos
+ * peticiones más por cuenta y a cambio, si la verificación se rompe, **se cae
+ * la suite entera** en vez de un puñado de pruebas dedicadas.
+ */
 async function cuentaNueva(prefijo = 'usu') {
   const agente = request.agent(app);
   const datos = credenciales(prefijo);
-  const res = await agente.post('/api/auth/registro').send(datos);
-  assert.equal(res.status, 201, `No se pudo registrar: ${JSON.stringify(res.body)}`);
-  return { agente, datos, usuarioId: res.body.usuario?.id };
+
+  const alta = await agente.post('/api/auth/registro').send(datos);
+  assert.equal(alta.status, 201, `No se pudo registrar: ${JSON.stringify(alta.body)}`);
+
+  const confirmada = await agente.post('/api/auth/verificar-correo')
+    .send({ token: ultimoToken() });
+  assert.equal(confirmada.status, 200, `No se pudo confirmar: ${JSON.stringify(confirmada.body)}`);
+
+  const entrada = await agente.post('/api/auth/login')
+    .send({ identificador: datos.username, password: datos.password });
+  assert.equal(entrada.status, 200, `No se pudo entrar: ${JSON.stringify(entrada.body)}`);
+
+  return { agente, datos, usuarioId: alta.body.usuario?.id };
 }
 
 /** Crea una quiniela, la deja seleccionada y activa el Admin Mode. */
@@ -1739,4 +1774,183 @@ test('sin clave configurada, las rutas del proveedor dicen POR QUÉ', async () =
   } finally {
     process.env.APIFOOTBALL_COM_KEY = clave;
   }
+});
+
+/* ==================== Fase E — verificación de correo ==================== */
+
+const tokens = require('../src/tokens');
+
+/** Registra sin confirmar. Devuelve el agente, los datos y el token del correo. */
+async function sinConfirmar(prefijo = 'nuevo') {
+  const agente = request.agent(app);
+  const datos = credenciales(prefijo);
+  const alta = await agente.post('/api/auth/registro').send(datos);
+  assert.equal(alta.status, 201, JSON.stringify(alta.body));
+  return { agente, datos, alta, token: ultimoToken() };
+}
+
+test('registrarse NO abre sesión: la cuenta nace sin confirmar', async () => {
+  const { agente, alta } = await sinConfirmar();
+
+  assert.equal(alta.body.success, true);
+  assert.equal(alta.body.usuario.emailVerificado, false);
+  assert.equal(alta.body.correoEnviado, true);
+
+  const yo = await agente.get('/api/auth/me');
+  assert.equal(yo.status, 401, 'entrar sin confirmar es justo lo que se impide');
+});
+
+test('⚠️ sin confirmar no se entra, y el mensaje dice qué hacer', async () => {
+  const { datos } = await sinConfirmar();
+
+  const entrada = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: datos.password });
+
+  assert.equal(entrada.status, 403);
+  assert.equal(entrada.body.requiereVerificacion, true);
+  assert.match(entrada.body.error, /confirmado tu correo/);
+});
+
+test('⚠️ la contraseña se comprueba ANTES de mirar si está confirmado', async () => {
+  const { datos } = await sinConfirmar();
+
+  const malaClave = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: 'no-es-esta-larga' });
+
+  /*
+   * 401 y no 403: con la contraseña equivocada la respuesta tiene que ser
+   * indistinguible de la de una cuenta que no existe. Si aquí saliera
+   * "confirma tu correo", cualquiera podría averiguar qué direcciones están
+   * registradas probándolas.
+   */
+  assert.equal(malaClave.status, 401);
+  assert.equal(malaClave.body.requiereVerificacion, undefined);
+
+  const inexistente = await request(app).post('/api/auth/login')
+    .send({ identificador: 'no-existe-nadie', password: 'no-es-esta-larga' });
+  assert.equal(malaClave.body.error, inexistente.body.error);
+});
+
+test('el enlace del correo confirma la cuenta y entonces sí se entra', async () => {
+  const { datos, token } = await sinConfirmar();
+
+  const confirmada = await request(app).post('/api/auth/verificar-correo').send({ token });
+  assert.equal(confirmada.status, 200);
+  assert.equal(confirmada.body.username, datos.username);
+
+  const entrada = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: datos.password });
+  assert.equal(entrada.status, 200);
+  assert.equal(entrada.body.usuario.emailVerificado, true);
+});
+
+test('⚠️ el token es de UN SOLO uso', async () => {
+  const { token } = await sinConfirmar();
+
+  assert.equal((await request(app).post('/api/auth/verificar-correo').send({ token })).status, 200);
+
+  const segunda = await request(app).post('/api/auth/verificar-correo').send({ token });
+  assert.equal(segunda.status, 400);
+  assert.match(segunda.body.error, /ya se usó o venció/);
+});
+
+test('un token inventado, vacío o de otro propósito no confirma nada', async () => {
+  for (const token of ['', 'a'.repeat(64), 'no-es-un-hash']) {
+    const res = await request(app).post('/api/auth/verificar-correo').send({ token });
+    assert.equal(res.status, 400, `aceptó "${token.slice(0, 12)}"`);
+  }
+});
+
+test('⚠️ en la base NO se guarda el token, sólo su hash', async () => {
+  const { token } = await sinConfirmar();
+
+  const { rows } = await db.consulta('SELECT token_hash FROM auth_tokens');
+  assert.equal(rows.length, 1);
+  assert.notEqual(rows[0].token_hash, token, 'el token en claro no puede estar en la base');
+  assert.equal(rows[0].token_hash, tokens.hashDe(token),
+    'una filtración de la base no debe entregar la capacidad de entrar en cuentas ajenas');
+});
+
+test('⚠️ pedir el enlace otra vez anula el anterior', async () => {
+  const { datos, token: primero } = await sinConfirmar();
+
+  await request(app).post('/api/auth/reenviar-verificacion').send({ email: datos.email });
+  const segundo = ultimoToken();
+
+  assert.notEqual(primero, segundo);
+
+  const viejo = await request(app).post('/api/auth/verificar-correo').send({ token: primero });
+  assert.equal(viejo.status, 400, 'un correo viejo reenviado no puede seguir abriendo la cuenta');
+
+  assert.equal((await request(app).post('/api/auth/verificar-correo').send({ token: segundo })).status, 200);
+});
+
+test('⚠️ el reenvío responde lo MISMO exista o no la cuenta', async () => {
+  const { datos } = await sinConfirmar();
+
+  const existe = await request(app).post('/api/auth/reenviar-verificacion').send({ email: datos.email });
+  const noExiste = await request(app).post('/api/auth/reenviar-verificacion')
+    .send({ email: 'nadie-de-por-aqui@ejemplo.com' });
+
+  assert.equal(existe.status, 200);
+  assert.equal(noExiste.status, 200);
+  assert.deepEqual(existe.body, noExiste.body,
+    'distinguirlas diría qué direcciones están registradas');
+});
+
+test('no se reenvía a una cuenta ya confirmada: ni da pistas ni gasta cuota', async () => {
+  const { datos, token } = await sinConfirmar();
+  await request(app).post('/api/auth/verificar-correo').send({ token });
+
+  const cuantosAntes = correo.bandeja.length;
+  const res = await request(app).post('/api/auth/reenviar-verificacion').send({ email: datos.email });
+
+  assert.equal(res.status, 200);
+  assert.equal(correo.bandeja.length, cuantosAntes, 'no debía salir ningún correo');
+});
+
+test('un token vencido no sirve', async () => {
+  const { token } = await sinConfirmar();
+
+  await db.consulta("UPDATE auth_tokens SET expira_en = now() - interval '1 hour'");
+
+  const res = await request(app).post('/api/auth/verificar-correo').send({ token });
+  assert.equal(res.status, 400);
+});
+
+test('borrar la cuenta se lleva sus tokens', async () => {
+  const { datos } = await sinConfirmar();
+
+  await db.consulta('DELETE FROM usuarios WHERE email = $1', [datos.email]);
+
+  const { rows } = await db.consulta('SELECT count(*)::int n FROM auth_tokens');
+  assert.equal(rows[0].n, 0, 'la clave ajena en cascada se los lleva');
+});
+
+/* ---------- El correo ---------- */
+
+test('el correo lleva el enlace, el nombre y el plazo', async () => {
+  const { datos } = await sinConfirmar();
+  const mensaje = correo.bandeja.at(-1);
+
+  assert.equal(mensaje.para, datos.email);
+  assert.match(mensaje.asunto, /Confirma tu correo/);
+  assert.ok(mensaje.texto.includes(datos.username), 'debe saludar por su nombre');
+  assert.match(mensaje.texto, /verificar-correo\.html\?token=[a-f0-9]{64}/);
+  assert.match(mensaje.texto, /vence en 24 hora/);
+});
+
+test('⚠️ el nombre se escapa dentro del HTML del correo', () => {
+  const { html } = correo.plantilla({
+    titulo: 'x', saludo: 'Hola <script>alert(1)</script>:', parrafo: 'y',
+    boton: 'z', url: 'https://ejemplo.com', pie: 'w'
+  });
+
+  assert.doesNotMatch(html, /<script>/, 'el nombre viaja dentro del HTML: hay que escaparlo igual que en el DOM');
+  assert.match(html, /&lt;script&gt;/);
+});
+
+test('el transporte de pruebas es el de consola, y no envía nada', () => {
+  assert.equal(correo.TRANSPORTE, 'consola',
+    'con otro transporte estas pruebas mandarían correos de verdad a direcciones inventadas');
 });

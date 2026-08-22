@@ -17,6 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
         })
       });
       const data = await response.json();
+
+      /*
+       * Una cuenta sin confirmar no es un error de credenciales: se le lleva a
+       * la pantalla que sabe reenviar el enlace, en vez de dejarle releyendo un
+       * mensaje sin nada que hacer.
+       */
+      if (!response.ok && data.requiereVerificacion) {
+        window.location.href = '/verificar-correo.html';
+        return;
+      }
+
       if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesión.');
       window.location.href = '/quinielas.html';
     } catch (error) {

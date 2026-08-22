@@ -80,6 +80,24 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
   const { crearApp } = require('../../src/servidor');
   const { app } = crearApp({ pool: adaptador, secretoSesion: process.env.SESSION_SECRET });
 
+  /*
+   * ⚠️ UNA PUERTA QUE SOLO EXISTE EN EL ARNES.
+   *
+   * Las pruebas corren en OTRO proceso, asi que no pueden leer la bandeja del
+   * transporte de consola, que vive en memoria de este. Y el token no esta en
+   * la base: solo su hash.
+   *
+   * Se registra AQUI y no en `crearApp`, asi que en produccion esta ruta no
+   * existe -no es que responda 404 por una bandera: no esta declarada-. Es la
+   * unica forma de que una prueba de navegador siga el flujo real del correo
+   * sin abrir un agujero en la aplicacion.
+   */
+  app.get('/e2e/ultimo-correo', (req, res) => {
+    const mensaje = require('../../src/correo').bandeja.at(-1);
+    if (!mensaje) return res.status(404).json({ error: 'no se envio ningun correo' });
+    res.json(mensaje);
+  });
+
   const escuchando = app.listen(PUERTO, () => {
     console.log(`E2E: aplicación en http://127.0.0.1:${PUERTO}`);
   });
