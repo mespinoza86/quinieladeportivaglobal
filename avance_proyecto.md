@@ -212,7 +212,7 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  (última) Tajada 7, pasos 1 a 3: el servidor nuevo
+  8cb7fe5 Tajada 7, pasos 1 a 3: el servidor nuevo
   826a1aa Anotar el commit de la tajada 6 en el estado de Git
   d44bb4d Migracion, tajada 6: el sincronizador
   81937cb Anotar el commit de la tajada 5 en el estado de Git
