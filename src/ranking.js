@@ -51,6 +51,7 @@ const puntuacionMod = require('./puntuacion');
 const pronosticosMod = require('./pronosticos');
 const oficialesMod = require('./oficiales');
 const jugadoresMod = require('./jugadores');
+const respuestasTriviaMod = require('./respuestas-trivia');
 
 const CAMPOS_DE_PUNTUACION = ['marcadorExacto', 'resultadoCorrecto', 'comodinExacto', 'comodinResultado'];
 
@@ -284,12 +285,7 @@ async function tablaGeneral(quinielaId, { puntuacionActual, incluirExpulsados = 
 
     /* ---------- Trivias: ya traen sus puntos resueltos (M-04) ---------- */
 
-    const { rows: trivias } = await c.query(
-      `SELECT j.nombre, COALESCE(sum(rt.puntos), 0)::int AS puntos
-         FROM respuestas_trivia rt
-         JOIN jugadores j ON j.id = rt.jugador_id
-        GROUP BY j.nombre`);
-    const puntosDeTrivias = new Map(trivias.map(f => [f.nombre, f.puntos]));
+    const puntosDeTrivias = await respuestasTriviaMod.puntosPorJugador(quinielaId);
 
     /* ---------- Armado ---------- */
 

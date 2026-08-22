@@ -222,6 +222,19 @@ CREATE TABLE trivias (
 -- Es M-25, que en Mongo sigue pendiente.
 CREATE INDEX ON trivias (quiniela_id, jornada_id, partido_id, tipo);
 
+/*
+ * Una trivia activa por partido y tipo. No es adorno: la reconciliacion del
+ * codigo viejo miraba si existia y, si no, la creaba. Entre mirar y escribir
+ * cabe otra peticion, y ahi salian dos preguntas identicas sobre el mismo
+ * partido, cada una con sus respuestas y sus puntos. Con el indice, quien
+ * decide es la base y el segundo intento choca en vez de duplicar.
+ *
+ * Parcial porque una trivia sin partido no tiene con quien chocar.
+ */
+CREATE UNIQUE INDEX trivias_partido_tipo_activa
+  ON trivias (quiniela_id, partido_id, tipo)
+  WHERE activa AND partido_id IS NOT NULL;
+
 CREATE TABLE respuestas_trivia (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   quiniela_id     uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,

@@ -23,15 +23,15 @@
 git branch --show-current   # debe decir: postgres
 git log --oneline -3        # debe empezar por f947039
 git status                  # debe estar limpio
-npm test                    # 211/211
-npm run test:postgres       # 82, en ~8 s
+npm test                    # 238/238
+npm run test:postgres       # 109, en ~11 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 211 y añade una capa de
+sigue hablando con MongoDB. La rama `postgres` tiene 238 y añade una capa de
 datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
@@ -40,24 +40,24 @@ datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 ### Dónde estamos
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
-después de un sondeo que la midió en vez de opinarla. Van **4 tajadas de 7**.
+después de un sondeo que la midió en vez de opinarla. Van **5 tajadas de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **211** (129 de Mongo + 82 nuevas) |
-| Sólo las de PostgreSQL | **82**, ~8 s |
+| Pruebas en `postgres` | **238** (129 de Mongo + 109 nuevas) |
+| Sólo las de PostgreSQL | **109**, ~11 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
 | `server.js` | 5.262 líneas. Sólo se le movió `partidoYaInicio` a `src/fechas.js`: **ninguna ruta habla con PostgreSQL** |
-| `src/` | 14 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores`, `puntuacion`, `pronosticos`, `oficiales`, `ranking` |
+| `src/` | 16 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores`, `puntuacion`, `pronosticos`, `oficiales`, `ranking`, `trivias`, `respuestas-trivia` |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Las reglas de plataforma, de dominio básico y de puntuación están portadas,
-  con 82 pruebas.
+- Las reglas de plataforma, de dominio, de puntuación y de trivias están
+  portadas, con 109 pruebas.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
@@ -138,13 +138,13 @@ Cinco cosas de ese día que **no se deducen leyendo el código**:
   administradores a la vez podía dejar la quiniela **sin ninguno**, porque la
   cuenta y el guardado iban en dos pasos.
 
-### Lo que se hizo el 21 de agosto — la tajada 4, la más enredada
+### Lo que se hizo el 21 de agosto — las tajadas 4 y 5
 
-Una entrada, la **044**: la puntuación entera —pronósticos, resultados oficiales,
-motor de puntos y ranking congelado—, con **27 pruebas nuevas**. Sigue sin haber
-ninguna ruta hablando con PostgreSQL.
+Dos entradas, la **044** y la **045**: la puntuación entera —pronósticos,
+resultados oficiales, motor de puntos y ranking congelado— y las trivias, con
+**54 pruebas nuevas**. Sigue sin haber ninguna ruta hablando con PostgreSQL.
 
-Tres cosas de ese día que **no se deducen leyendo el código**:
+Cinco cosas de ese día que **no se deducen leyendo el código**:
 
 - ⚠️ **Se encontraron DOS errores activos en `main`**, los dos dando números
   creíbles y equivocados sin fallar nunca. **M-02** no era deuda de modelo sino
@@ -161,17 +161,28 @@ Tres cosas de ese día que **no se deducen leyendo el código**:
 - **La decisión anterior se tomó mal la primera vez**, y lo destapó una prueba
   que contradecía a otra. Dos pruebas que se contradicen no son una prueba mal
   escrita: son una decisión mal tomada.
+- ⚠️ **M-02 tenía un gemelo en las trivias**, y nadie lo había anotado: la trivia
+  guardaba `partidoIndex`, y el mismo `splice` dejaba las preguntas apuntando al
+  partido de al lado. Misma forma, mismo silencio.
+- ⚠️ **Las trivias tenían dos relojes de cierre que no coincidían**: se bloqueaba
+  responder por el inicio del partido, pero la privacidad se decidía por la fecha
+  de cierre. Con el partido empezado y la fecha por llegar, nadie podía responder
+  **y aun así las respuestas seguían ocultas**. Ahora es un solo reloj.
 
 ### 🌅 Lo siguiente: la sesión de mañana
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es la tajada 5 — trivias**: `trivias`, `respuestas_trivia`, los
-ocho tipos, la autorresolución y la reconciliación. El esquema ya trae el índice
-único que cierra **S-10** —el doble envío concurrente que daba puntos dobles— y
-el índice de **M-25**. La tabla general ya lee la suma de `respuestas_trivia`,
-así que esa columna funciona desde la tajada 4.
+**Lo siguiente es la tajada 6 — sincronizador**: `fixtures`, `job_locks`,
+APIFootball y las métricas. Ahí entra lo que la tajada 5 dejó fuera a propósito:
+`obtenerEvento` y el intérprete de los ocho tipos de trivia, que hoy siguen en
+`server.js`.
+
+⚠️ **`fixtures` y `job_locks` no llevan `quiniela_id`, y es a propósito**: son
+justo la parte que todas las quinielas comparten, y es lo que cerró C-01 y C-05.
+El cerrojo distribuido cabe en un `INSERT … ON CONFLICT DO UPDATE … WHERE
+expira_en <= now()`, más simple y más correcto que la versión de Mongo.
 
 Lo que hay que respetar al escribirla, y está en §21.2:
 
@@ -193,6 +204,8 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  (última) Migracion, tajada 5: las trivias
+  da4905b Anotar el commit de la tajada 4 en el estado de Git
   53f3ff8 Migracion, tajada 4: la puntuacion
   f947039 Punto de control: dejar por escrito donde queda todo
   99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
@@ -255,8 +268,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 211, ~18 s
-npm run test:postgres      # solo las 82 de PostgreSQL, ~8 s  (solo en la rama)
+                           #   en postgres: 238, ~18 s
+npm run test:postgres      # solo las 109 de PostgreSQL, ~11 s (solo en la rama)
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -304,16 +317,11 @@ Esto es sólo el estado.
 | **2** | Plataforma | `usuarios`, `quinielas`, `membresias` | ✅ `04ec8af` — Entrada 041 |
 | **3** | Dominio básico | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ `99bac51` — Entrada 042 |
 | **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
-| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ⬜ **la siguiente** |
-| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ⬜ |
+| **5** | Trivias | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
+| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ⬜ **la siguiente** |
 | **7** | **El cambio y la limpieza** | `server.js` pasa a PostgreSQL; sesiones a `connect-pg-simple`; fuera `mongoose`; `render.yaml`; documentación | ⬜ |
 
 ### A.1 Lo que hay que saber de cada tajada que falta
-
-**Tajada 5 — trivias.** Ocho tipos, autorresolución y reconciliación. El esquema
-ya trae el índice único `(quiniela_id, jugador_id, trivia_id)` que cierra
-**S-10** —el doble envío concurrente que daba puntos dobles— y el índice de
-**M-25**, que en Mongo seguía pendiente.
 
 **Tajada 6 — sincronizador.** `fixtures` y `job_locks` **no llevan `quiniela_id`
 y eso es a propósito**: son justo la parte que todas las quinielas comparten, y
@@ -338,10 +346,11 @@ No hay que arreglarlos aparte: salen por obligación del modelo nuevo.
 | **M-01** — el vínculo con el jugador es por cadena | `jugador_id` con clave ajena |
 | **M-02** — el vínculo partido↔pronóstico es por índice de array. ⚠️ **No es deuda de modelo: es un fallo activo**, el `splice` de `server.js:1592` desalinea los pronósticos de todos | `partido_id`, y `guardar` reconcilia por posición para no romperlo (Entrada 044) |
 | **M-34** — ⚠️ **el comodín marcado tarde no mueve los puntos.** Se copiaba dentro del resultado oficial, y un partido terminado ya no se vuelve a consultar | El comodín vive sólo en `partidos` y el motor lo lee de ahí (Entrada 044) |
-| **M-25** — falta índice en `Trivia` | Está en `db/esquema.sql` |
+| **M-25** — falta índice en `Trivia` | Está en `db/esquema.sql` (Entrada 045) |
 | **M-30** — la base se llama `test` | La base nueva se llama `quiniela` |
 | **M-33** — el `tenantPlugin` no engancha `aggregate` | Lo aplica la base con RLS: no hay hueco por donde escaparse |
-| **S-10** — sin índice único en `RespuestaTrivia` | `UNIQUE (quiniela_id, jugador_id, trivia_id)` |
+| **S-10** — sin índice único en `RespuestaTrivia` | `UNIQUE (quiniela_id, jugador_id, trivia_id)`, con prueba que lo fija (Entrada 045) |
+| **M-35** — ⚠️ **el gemelo de M-02 en las trivias**: guardaban `partidoIndex`, y el mismo `splice` dejaba las preguntas apuntando al partido de al lado | `partido_id` con borrado en cascada (Entrada 045) |
 
 ⚠️ **Hasta que la migración termine, todos esos siguen abiertos en `main`.** Si la
 migración se abandonara, **M-33 hay que arreglarlo aparte**: es un agujero real
@@ -382,13 +391,15 @@ ahora significaría escribirla dos veces.
 
 ### B.2 Deuda técnica que sigue abierta
 
-0. ⚠️ **M-02 y M-34 siguen vivos en `main`.** Los dos se encontraron el 21 de
-   agosto al portar la puntuación (Entrada 044) y los dos dan números
-   equivocados **sin fallar**: borrar un partido descoloca los pronósticos de
-   todos, y marcar un comodín después de que el partido terminó no mueve nada.
-   **La migración los cierra.** Si se fuera a enseñar la aplicación con datos
-   que importen antes de la tajada 7, M-02 merece un parche aparte: es el que
-   puede ensuciar datos.
+0. ⚠️ **M-02, M-34 y M-35 siguen vivos en `main`.** Los tres se encontraron el 21
+   de agosto al portar la puntuación y las trivias (Entradas 044 y 045), y los
+   tres dan números equivocados **sin fallar**: borrar un partido descoloca los
+   pronósticos de todos (M-02) **y las trivias de los partidos siguientes**
+   (M-35), y marcar un comodín después de que el partido terminó no mueve nada
+   (M-34). **La migración los cierra.** Si se fuera a enseñar la aplicación con
+   datos que importen antes de la tajada 7, M-02 y M-35 merecen un parche aparte:
+   son los que pueden ensuciar datos, y **los dos salen del mismo `splice`**
+   (`server.js:1592`).
 1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
    `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres,
    pero la primera agregación que alguien escriba **saldrá sin filtro de quiniela
@@ -2633,7 +2644,7 @@ anterior cerrada.
 | **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias` y sus reglas | ✅ Entrada 041 |
 | **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ Entrada 042 |
 | **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
-| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | |
+| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
 | **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | |
 | **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | |
 
@@ -7629,6 +7640,119 @@ npm test                           → 211/211
 reconciliación. El esquema ya trae el índice único que cierra **S-10** y el
 índice de **M-25**. La tabla general ya lee la suma de `respuestas_trivia`, así
 que la columna de trivias funciona desde ya.
+
+---
+
+### 📌 Entrada 045 — 21 de agosto de 2026 — Migración, tajada 5: las trivias
+
+**Objetivo:** portar las ocho preguntas por partido, sus respuestas, la
+reconciliación y la autorresolución. Sigue siendo aditiva: `server.js` no se
+toca y ninguna ruta habla todavía con PostgreSQL.
+
+**Lo que se decidió, y lo que se dejó para la tajada 6.**
+
+Interpretar el JSON del proveedor —quién anotó primero, cuántas amarillas, si
+hubo penales— **no entra aquí**. Es la frontera con APIFootball y es la tajada 6.
+`resolverPendientes` recibe `obtenerEvento` e `interpretar` **como argumentos**,
+igual que la carga manual de resultados recibe el normalizador. No es un adorno
+de diseño: es lo que permite probar la resolución entera —los ocho tipos, el
+reparto de puntos, los fallos parciales— **sin red y sin proveedor falso**.
+
+**Tres cambios de comportamiento, y por qué cada uno.**
+
+⚠️ **1. La privacidad pasa a decidirse trivia a trivia.** En Mongo era todo o
+nada: hasta que la **última** trivia de la jornada cerraba, ninguna respuesta
+ajena se veía. Ahora cada pregunta se abre cuando le toca, que es exactamente lo
+que ya hacían los pronósticos desde la Entrada 019. Dos reglas distintas para la
+misma pantalla no se sostenían.
+
+⚠️ **2. Una trivia cerrada ya no tumba el envío entero.** Mongo devolvía 403 y
+**no guardaba ninguna**: quien llegaba tarde a una sola pregunta perdía las diez.
+Ahora la cerrada se salta y se cuenta, como los pronósticos.
+
+⚠️ **3. Los dos relojes del cierre se unen, y arreglan un hueco.** Guardar una
+respuesta se bloqueaba con `partidoYaInicio`, pero la privacidad se decidía con
+`fechaCierre`. Con el partido ya empezado y la fecha por llegar había un hueco:
+**nadie podía responder y aun así las respuestas seguían ocultas**. `estaCerrada`
+los une —cerrada cuando pasó su fecha **o** empezó su partido, lo que ocurra
+antes—. Nunca deja responder más tiempo que antes.
+
+**Qué se hizo:**
+
+1. **`src/trivias.js`** — los ocho tipos, las opciones, el cierre, crear,
+   reconciliar, eliminar y resolver.
+2. **`src/respuestas-trivia.js`** — guardar y leer respuestas con la privacidad
+   por pregunta, y la suma que alimenta la columna «Trivias» del ranking.
+3. **`test/trivias.test.js`** — 27 pruebas.
+4. `db/esquema.sql`: índice único parcial `trivias (quiniela_id, partido_id, tipo)
+   WHERE activa`.
+5. `src/ranking.js` deja de tener su propia consulta de puntos de trivias y usa
+   la del módulo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/trivias.js` | **Nuevo.** Preguntas, reconciliación y resolución |
+| `src/respuestas-trivia.js` | **Nuevo.** Respuestas y privacidad |
+| `test/trivias.test.js` | **Nuevo.** 27 pruebas |
+| `db/esquema.sql` | Índice único parcial que cierra la carrera de la reconciliación |
+| `src/ranking.js` | La columna «Trivias» sale del módulo, no de una consulta repetida |
+| `package.json` | La suite nueva entra en `npm test` y en `test:postgres` |
+| `avance_proyecto.md` | Esta entrada y el estado |
+
+**Verificación:**
+
+```
+node --test test/trivias.test.js → 27/27
+npm run test:postgres           → 109 pruebas
+npm test                        → 238/238
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **M-02 tenía un gemelo en las trivias, y nadie lo había anotado.** La
+   trivia guardaba `partidoIndex` —un número— más una copia de los dos equipos.
+   El `splice` de `server.js:1592` tampoco toca las trivias, así que borrar un
+   partido dejaba las preguntas de los siguientes apuntando al partido de al
+   lado. Es la misma forma y el mismo silencio. Aquí es `partido_id` con borrado
+   en cascada, y hay una prueba que lo fija.
+2. ⚠️ **La reconciliación tenía una carrera de libro.** Miraba si la trivia
+   existía y, si no, la creaba. Entre mirar y escribir cabe otra petición, y ahí
+   salían dos preguntas idénticas sobre el mismo partido, cada una con sus
+   respuestas y sus puntos. El índice único parcial lo cierra: **quien decide es
+   la base**, y el segundo intento actualiza en vez de duplicar. Es el mismo
+   patrón que el código de ingreso de la tajada 2.
+3. **Repartir los puntos de una trivia es UN `UPDATE`, no un bucle.** Mongo leía
+   cada respuesta y la volvía a escribir: con cuarenta jugadores eran ochenta
+   viajes a la base **por pregunta**. Un `CASE WHEN respuesta = … END` lo hace de
+   una vez.
+4. **Buscar el partido de una trivia deja de ser una heurística.** Mongo
+   comparaba los nombres de los dos equipos en los dos órdenes posibles, porque
+   la trivia llevaba una copia. Con `partido_id` no hay nada que emparejar y por
+   tanto nada que se pueda emparejar mal. Es el mismo alivio que tuvo
+   `puntosPuedenHaberCambiado` en la tajada 4.
+5. **Los equipos ya no se copian dentro de la trivia**, se leen del partido. Es
+   la misma decisión que el comodín en la Entrada 044, y por la misma razón: un
+   dato copiado es un dato que se puede quedar viejo.
+6. **`activa` es una columna que nadie apaga.** El código viejo la crea siempre
+   en `true` y borra de verdad cuando quiere quitar una trivia. Se conserva
+   porque el índice único parcial la usa, pero conviene saber que hoy no
+   distingue nada.
+7. **Una respuesta vacía del intérprete NO marca la trivia como resuelta.** Si lo
+   hiciera, una pregunta que el proveedor todavía no puede contestar quedaría
+   cerrada en cero para siempre. Se reintenta en el pase siguiente.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 6 — sincronizador**: `fixtures`, `job_locks`, APIFootball y las
+métricas. Ahí entra lo que esta tajada dejó fuera a propósito: `obtenerEvento` y
+el intérprete de los ocho tipos —`resolverRespuestaTrivia` y sus ayudantes—, que
+hoy siguen en `server.js`.
+
+⚠️ Recordar que `fixtures` y `job_locks` **no llevan `quiniela_id` y es a
+propósito**: son justo la parte que todas las quinielas comparten, y es lo que
+cerró C-01 y C-05.
 
 ---
 
