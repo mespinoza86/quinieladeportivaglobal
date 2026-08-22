@@ -9,14 +9,15 @@
   "scripts": {
     "start": "node server.js",
     "check": "node --check server.js",
-    "test": "node --test test/architecture.test.js test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js test/integracion.test.js",
+    "test": "node --test test/architecture.test.js test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js test/rutas.test.js test/integracion.test.js",
     "test:arquitectura": "node --test test/architecture.test.js",
     "test:integracion": "node --test test/integracion.test.js",
     "migrate:legacy:dry": "node scripts/migrate-legacy.js",
     "migrate:legacy": "node scripts/migrate-legacy.js --execute",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:postgres": "node --test test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js"
+    "test:postgres": "node --test test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js test/rutas.test.js",
+    "test:rutas": "node --test test/rutas.test.js"
   },
   "dependencies": {
     "axios": "^1.11.0",

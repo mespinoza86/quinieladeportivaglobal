@@ -256,6 +256,12 @@ module.exports = {
   iniciar, cerrar, usarAdaptador, comprobarRol,
   consulta, enTransaccion, enQuiniela, quinielaActual,
   aplicarEsquema, RUTA_ESQUEMA,
+  /*
+   * El pool crudo. Lo pide `connect-pg-simple`, que habla con la base por su
+   * cuenta y no pasa por los ayudantes de aqui: una sesion no pertenece a
+   * ninguna quiniela, asi que no hay contexto que fijar.
+   */
+  fuenteActual: () => fuente,
   get iniciada() { return Boolean(fuente); },
   get esDePruebas() { return esAdaptador; }
 };

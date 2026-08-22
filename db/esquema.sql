@@ -92,6 +92,24 @@ CREATE TABLE job_locks (
   expira_en timestamptz NOT NULL
 );
 
+/*
+ * Las sesiones. La forma la impone `connect-pg-simple`, no nosotros: los tres
+ * nombres de columna y sus tipos son los que esa biblioteca espera encontrar.
+ *
+ * Estaban en Mongo (`connect-mongo`) y no aparecian en el plan de migracion:
+ * salieron al revisar package.json en la tajada 1. Sin esta tabla, la
+ * aplicacion arranca y deja entrar a la gente, pero nadie sigue dentro en la
+ * peticion siguiente.
+ *
+ * El indice sobre expire lo usa la limpieza periodica de sesiones caducadas.
+ */
+CREATE TABLE sesiones (
+  sid    text PRIMARY KEY,
+  sess   json NOT NULL,
+  expire timestamptz NOT NULL
+);
+CREATE INDEX ON sesiones (expire);
+
 -- ---------------------------------------------------------------------
 -- Dominio: todas llevan quiniela_id y todas llevan RLS.
 -- ---------------------------------------------------------------------

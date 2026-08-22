@@ -147,7 +147,7 @@ async function vaciar() {
    */
   await db.consulta(`
     RESET ROLE;
-    TRUNCATE usuarios, quinielas, membresias, fixtures, job_locks,
+    TRUNCATE usuarios, quinielas, membresias, fixtures, job_locks, sesiones,
              jugadores, jornadas, partidos, resultados, pronosticos,
              resultados_oficiales, resultados_oficiales_partidos,
              trivias, respuestas_trivia, equipos,
