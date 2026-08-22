@@ -209,6 +209,8 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  d44bb4d Migracion, tajada 6: el sincronizador
+  81937cb Anotar el commit de la tajada 5 en el estado de Git
   53fd287 Migracion, tajada 5: las trivias
   da4905b Anotar el commit de la tajada 4 en el estado de Git
   53f3ff8 Migracion, tajada 4: la puntuacion
