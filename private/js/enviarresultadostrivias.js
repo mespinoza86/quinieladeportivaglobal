@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             textoResultado += `\n${partido}\n`;
           }
 
-          const respuesta = respuestaDeJugador(respuestas, jugador, trivia._id);
+          const respuesta = respuestaDeJugador(respuestas, jugador, trivia.id);
 
           textoResultado += `${index + 1}. ${trivia.pregunta}\n`;
           textoResultado += `   Respuesta: ${respuesta}\n`;

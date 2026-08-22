@@ -147,7 +147,13 @@ test('las trivias se crean, se responden y se ven en su pantalla', async ({ page
   }, jornada);
 
   expect(creadas.ok, JSON.stringify(creadas.cuerpo)).toBe(true);
-  expect(creadas.cuerpo.creadas).toHaveLength(2);
+  /*
+   * `creadas` es un NÚMERO, no la lista de trivias creadas. Cambió al portar la
+   * ruta (paso 7.6): nada del frontend usaba los documentos, y devolver una
+   * cuenta la deja igual que su ruta hermana, el PUT de reconciliación, que
+   * responde `creadas`, `actualizadas` y `eliminadas`.
+   */
+  expect(creadas.cuerpo.creadas).toBe(2);
 
   // La pantalla muestra las dos preguntas con sus opciones.
   /*

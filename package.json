@@ -2,25 +2,26 @@
   "name": "quiniela_paso_paso_menu_2",
   "version": "1.0.0",
   "description": "Una aplicación de Quiniela Deportiva",
-  "main": "server.js",
+  "main": "arrancar.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js",
-    "test": "node --test test/architecture.test.js test/integracion.test.js",
+    "start": "node arrancar.js",
+    "check": "node --check arrancar.js",
+    "test": "node --test test/architecture.test.js test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js test/rutas.test.js",
     "test:arquitectura": "node --test test/architecture.test.js",
-    "test:integracion": "node --test test/integracion.test.js",
     "migrate:legacy:dry": "node scripts/migrate-legacy.js",
     "migrate:legacy": "node scripts/migrate-legacy.js --execute",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:postgres": "node --test test/db.test.js test/plataforma.test.js test/dominio.test.js test/puntuacion.test.js test/trivias.test.js test/sincronizador.test.js test/rutas.test.js",
+    "test:rutas": "node --test test/rutas.test.js"
   },
   "dependencies": {
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
-    "connect-mongo": "^5.1.0",
+    "connect-pg-simple": "^10.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.1",
     "express": "^4.21.2",
@@ -28,14 +29,14 @@
     "express-rate-limit": "^8.6.2",
     "express-session": "^1.18.0",
     "helmet": "^8.3.0",
-    "mongoose": "^8.16.1"
+    "pg": "^8.23.0"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
     "@playwright/test": "^1.62.1",
-    "mongodb-memory-server": "^11.2.0",
     "supertest": "^7.2.2"
   }
 }

@@ -56,4 +56,32 @@ function parseFechaPartidoCostaRica(apiDate) {
   return new Date(Date.UTC(year, month - 1, day, hour + 6, minute, 0));
 }
 
-module.exports = { extraerFechaApi, parseFechaPartidoCostaRica };
+/**
+ * ¿Este partido ya empezó, y por tanto su pronóstico está cerrado?
+ *
+ * Es la regla del cierre POR PARTIDO (Entrada 019): un partido se cierra a su
+ * hora de inicio, y ahí su pronóstico deja de poder editarse y pasa a ser
+ * visible. Los demás partidos de la misma jornada siguen abiertos.
+ *
+ * Manda el resultado oficial si lo hay: si el proveedor dice que está en juego,
+ * en el descanso o terminado, da igual lo que dijera el calendario. Sólo cuando
+ * no hay resultado se mira la hora prevista.
+ *
+ * ⚠️ Vive aquí, y no en quien la usa, porque la usan los DOS mundos: las rutas
+ * de `server.js` y `src/pronosticos.js`. Tener dos copias de esta regla sería
+ * tener dos respuestas distintas a "¿puedo cambiar mi pronóstico?", y hay un
+ * guardián en `architecture.test.js` que lo impide a propósito.
+ *
+ * Acepta el nombre del campo en las dos formas —`apiDate` de Mongo y del API,
+ * `api_date` de PostgreSQL— para que sirva a los dos sin traductor por medio.
+ */
+function partidoYaInicio(partido, oficial = null, ahora = new Date()) {
+  if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) return true;
+
+  const fecha = parseFechaPartidoCostaRica(partido?.apiDate ?? partido?.api_date);
+  if (!fecha) return false;
+
+  return fecha <= ahora;
+}
+
+module.exports = { extraerFechaApi, parseFechaPartidoCostaRica, partidoYaInicio };

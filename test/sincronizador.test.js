@@ -1,0 +1,448 @@
+/*
+ * Sincronizador, caché de partidos y cerrojo (tajada 6 de la migración).
+ *
+ * Lo que se prueba con especial cuidado, porque es donde está el dinero —la
+ * cuota del proveedor— y donde estaban C-01, C-02 y C-05:
+ *
+ *   - **Dos quinielas que siguen el mismo partido lo consultan UNA vez.**
+ *   - **La ventana evita preguntar por lo que no ha cambiado**, y un partido
+ *     terminado no se vuelve a consultar jamás.
+ *   - **El cerrojo sólo lo tiene uno**, caduca solo, y sólo lo suelta su dueño.
+ *   - **Un error del proveedor no borra un marcador bueno.**
+ *   - **El censo no cruza quinielas** aunque compartan nombre de jornada.
+ *
+ * ⚠️ Ni una sola prueba de aquí sale a la red: `consultar` es un argumento.
+ */
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const db = require('../src/db');
+const usuarios = require('../src/usuarios');
+const quinielasMod = require('../src/quinielas');
+const jornadas = require('../src/jornadas');
+const fixtures = require('../src/fixtures');
+const cerrojos = require('../src/cerrojos');
+const sinc = require('../src/sincronizador');
+const oficiales = require('../src/oficiales');
+const pronosticos = require('../src/pronosticos');
+const ranking = require('../src/ranking');
+const enMemoria = require('./postgres-en-memoria');
+
+test.before(async () => { await enMemoria.levantar(); });
+test.after(async () => { await db.cerrar(); });
+test.beforeEach(async () => { await enMemoria.vaciar(); sinc.reiniciarMetricas(); });
+
+const PUNTUACION = quinielasMod.PUNTUACION_POR_DEFECTO;
+
+let n = 0;
+async function quinielaNueva() {
+  n += 1;
+  const u = await usuarios.crear({
+    username: `u${n}`, email: `u${n}@x.com`, password: 'contrasena-larga-1'
+  });
+  return quinielasMod.crear({ nombre: `Q-${n}`, propietarioId: u.id });
+}
+
+const partido = (equipo1, equipo2, extra = {}) => ({
+  equipo1, equipo2, logoEquipo1: '', logoEquipo2: '', comodin: false,
+  apiFixtureId: null, apiLeagueId: null, apiDate: '2026-09-01 15:00', apiStatus: null,
+  ...extra
+});
+
+/** Un evento del proveedor, con la forma que devuelve APIFootball. */
+const eventoDe = ({ local = 'A', visitante = 'B', m1 = 1, m2 = 0, estado = 'Finished' } = {}) => ({
+  match_hometeam_name: local,
+  match_awayteam_name: visitante,
+  match_hometeam_score: String(m1),
+  match_awayteam_score: String(m2),
+  match_hometeam_ft_score: String(m1),
+  match_awayteam_ft_score: String(m2),
+  match_status: estado
+});
+
+const descriptor = (clave, extra = {}) => ({
+  clave, apiFixtureId: clave, apiDate: '2026-09-01 15:00',
+  busqueda: { fecha: '2026-09-01', ligaId: '', equipo1: 'A', equipo2: 'B' },
+  ...extra
+});
+
+/* ==================== La identidad compartida ==================== */
+
+test('un partido con id del proveedor se identifica por ese id', () => {
+  assert.equal(fixtures.claveDeFixture({ apiFixtureId: '12345' }), '12345');
+  assert.equal(fixtures.claveDeFixture({ api_fixture_id: '12345' }), '12345',
+    'las dos formas del nombre, porque la fila viene de PostgreSQL');
+});
+
+test('sin id del proveedor, la fecha y los equipos son la identidad', () => {
+  const clave = fixtures.claveDeFixture({
+    apiDate: '2026-09-01 15:00', equipo1: 'Sapríssa F.C.', equipo2: 'Alajuelense'
+  });
+  assert.equal(clave, 'sin-id:2026-09-01:saprissa fc|alajuelense');
+});
+
+test('un partido sin fecha ni equipos no tiene clave, y no se sigue', () => {
+  assert.equal(fixtures.claveDeFixture({ equipo1: 'A' }), null);
+  assert.equal(fixtures.claveDeFixture({}), null);
+});
+
+/* ==================== La ventana ==================== */
+
+test('un partido terminado no se vuelve a consultar nunca', () => {
+  assert.equal(fixtures.calcularProximaConsulta('TC', '2026-09-01 15:00'), null);
+});
+
+test('un partido en vivo se consulta cada minuto', () => {
+  const ahora = new Date('2026-09-01T21:20:00Z');
+  const proxima = fixtures.calcularProximaConsulta('LIVE', '2026-09-01 15:00', ahora);
+  assert.equal(proxima.getTime() - ahora.getTime(), fixtures.VENTANAS_MS.enVivo);
+});
+
+test('la próxima consulta nunca se pospone más allá del pitido inicial', () => {
+  /*
+   * Un partido que empieza en tres horas cae en la ventana "lejano" de seis.
+   * Sin el tope se consultaría por primera vez tres horas DESPUÉS de empezar.
+   */
+  const ahora = new Date('2026-09-01T18:00:00Z');          // faltan 3 h
+  const proxima = fixtures.calcularProximaConsulta('PROGRAMADO', '2026-09-01 15:00', ahora);
+
+  assert.equal(proxima.toISOString(), '2026-09-01T21:00:00.000Z',
+    'debe caer justo en el inicio, no seis horas después');
+});
+
+test('un error acorta la espera en vez de alargarla', () => {
+  const ahora = new Date('2026-08-01T00:00:00Z');
+  const conError = fixtures.calcularProximaConsulta('PROGRAMADO', '2026-09-01 15:00', ahora, true);
+  const sinError = fixtures.calcularProximaConsulta('PROGRAMADO', '2026-09-01 15:00', ahora, false);
+
+  assert.ok(conError < sinError, 'ante un fallo se reintenta antes, no después');
+});
+
+test('tocaConsultar respeta la ventana, el estado y el forzado', () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+  const futuro = { estado: 'PROGRAMADO', proximaConsulta: new Date('2026-09-01T18:00:00Z') };
+  const vencido = { estado: 'PROGRAMADO', proximaConsulta: new Date('2026-09-01T06:00:00Z') };
+
+  assert.equal(fixtures.tocaConsultar(null, ahora), true, 'nunca visto: se consulta');
+  assert.equal(fixtures.tocaConsultar(futuro, ahora), false);
+  assert.equal(fixtures.tocaConsultar(vencido, ahora), true);
+  assert.equal(fixtures.tocaConsultar({ estado: 'TC' }, ahora), false);
+  assert.equal(fixtures.tocaConsultar(futuro, ahora, true), true, 'forzar se salta la ventana');
+});
+
+/* ==================== La caché ==================== */
+
+test('guardar un evento deja el fixture consultable, con su estado', async () => {
+  const d = descriptor('fx1');
+  const hubo = await fixtures.guardar(d, { evento: eventoDe({ estado: 'Finished' }) });
+
+  assert.equal(hubo, true);
+
+  const cache = await fixtures.porClaves(['fx1']);
+  assert.equal(cache.get('fx1').estado, 'TC');
+  assert.equal(cache.get('fx1').proximaConsulta, null, 'terminado: no se pregunta más');
+});
+
+test('un error del proveedor NO borra el marcador que ya se tenía', async () => {
+  const d = descriptor('fx1');
+  await fixtures.guardar(d, { evento: eventoDe({ m1: 3, m2: 2, estado: '70' }) });
+
+  const previo = (await fixtures.porClaves(['fx1'])).get('fx1');
+  await fixtures.guardar(d, { evento: null, error: 'ECONNRESET', previo });
+
+  const despues = (await fixtures.porClaves(['fx1'])).get('fx1');
+  assert.equal(despues.evento.match_hometeam_score, '3', 'el marcador bueno sobrevive al fallo de red');
+  assert.equal(despues.estado, 'LIVE', 'y el estado también: se conserva el último que se supo');
+  assert.equal(despues.fallosConsecutivos, 1);
+  assert.equal(despues.ultimoError, 'ECONNRESET');
+});
+
+test('un acierto después de un fallo pone el contador de fallos a cero', async () => {
+  const d = descriptor('fx1');
+  await fixtures.guardar(d, { evento: null, error: 'timeout' });
+
+  const previo = (await fixtures.porClaves(['fx1'])).get('fx1');
+  await fixtures.guardar(d, { evento: eventoDe(), previo });
+
+  assert.equal((await fixtures.porClaves(['fx1'])).get('fx1').fallosConsecutivos, 0);
+});
+
+/* ==================== El cerrojo ==================== */
+
+test('el cerrojo lo toma uno solo', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+
+  assert.equal(await cerrojos.tomar('prueba', 60_000, ahora, 'A'), true);
+  assert.equal(await cerrojos.tomar('prueba', 60_000, ahora, 'B'), false,
+    'mientras el de A siga vivo, B no lo consigue');
+});
+
+test('el cerrojo caduca solo: un proceso muerto no lo bloquea para siempre', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+  const masTarde = new Date('2026-09-01T12:02:00Z');
+
+  await cerrojos.tomar('prueba', 60_000, ahora, 'A');   // caduca al minuto
+  assert.equal(await cerrojos.tomar('prueba', 60_000, masTarde, 'B'), true);
+});
+
+test('sólo lo suelta su dueño', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+  await cerrojos.tomar('prueba', 60_000, ahora, 'A');
+
+  assert.equal(await cerrojos.soltar('prueba', 'B'), false, 'B no puede soltar lo de A');
+  assert.equal(await cerrojos.tomar('prueba', 60_000, ahora, 'B'), false);
+
+  assert.equal(await cerrojos.soltar('prueba', 'A'), true);
+  assert.equal(await cerrojos.tomar('prueba', 60_000, ahora, 'B'), true);
+});
+
+test('un ciclo abandonado que termina tarde no le quita el cerrojo al siguiente', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+  const masTarde = new Date('2026-09-01T12:10:00Z');
+
+  await cerrojos.tomar('prueba', 60_000, ahora, 'proc#1');       // ciclo 1, se abandona
+  await cerrojos.tomar('prueba', 60_000, masTarde, 'proc#2');    // ciclo 2, mismo proceso
+
+  // El ciclo 1 termina por fin y suelta. No debe llevarse el cerrojo del 2.
+  await cerrojos.soltar('prueba', 'proc#1');
+
+  assert.equal(await cerrojos.tomar('prueba', 60_000, masTarde, 'otro'), false,
+    'el cerrojo sigue siendo del ciclo 2');
+});
+
+/* ==================== El censo y la deduplicación ==================== */
+
+test('dos quinielas con el mismo partido lo consultan UNA vez', async () => {
+  const a = await quinielaNueva();
+  const b = await quinielaNueva();
+
+  for (const q of [a, b]) {
+    await jornadas.guardar(q.id, 'J1', [
+      partido('A', 'B', { apiFixtureId: '111' }),
+      partido('C', 'D', { apiFixtureId: '222' })
+    ]);
+  }
+
+  const { catalogo, partidosSeguidos, trabajo } = await sinc.censar();
+
+  assert.equal(partidosSeguidos, 4, 'cuatro partidos entre las dos quinielas');
+  assert.equal(catalogo.size, 2, 'pero sólo dos partidos distintos que consultar');
+  assert.equal(trabajo.length, 2, 'una entrada de trabajo por jornada y quiniela');
+});
+
+test('el censo no mezcla las jornadas de dos quinielas con el mismo nombre', async () => {
+  const a = await quinielaNueva();
+  const b = await quinielaNueva();
+
+  await jornadas.guardar(a.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+  await jornadas.guardar(b.id, 'J1', [partido('C', 'D', { apiFixtureId: '222' })]);
+
+  const { trabajo } = await sinc.censar();
+
+  const deA = trabajo.find(t => t.quinielaId === a.id);
+  const deB = trabajo.find(t => t.quinielaId === b.id);
+
+  assert.deepEqual(deA.claves, ['111']);
+  assert.deepEqual(deB.claves, ['222'], 'es C-02: mismo nombre, datos distintos');
+});
+
+test('una quiniela archivada no gasta cuota', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+  await quinielasMod.cambiarEstado(q.id, 'archivada');
+
+  const { catalogo, quinielas } = await sinc.censar();
+
+  assert.equal(quinielas.length, 0);
+  assert.equal(catalogo.size, 0);
+});
+
+/* ==================== El refresco ==================== */
+
+test('sólo se consulta lo que ya venció, y se cuenta lo evitado', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+
+  await fixtures.guardar(descriptor('fx1'), { evento: eventoDe({ estado: 'Finished' }), ahora });
+
+  const catalogo = new Map([['fx1', descriptor('fx1')], ['fx2', descriptor('fx2')]]);
+
+  const consultadas = [];
+  const refrescadas = await sinc.refrescarPendientes(catalogo, {
+    ahora,
+    consultar: async d => { consultadas.push(d.clave); return eventoDe(); }
+  });
+
+  assert.deepEqual(consultadas, ['fx2'], 'fx1 está terminado: no se le pregunta');
+  assert.deepEqual([...refrescadas], ['fx2']);
+  assert.equal(sinc.metricas.consultasEvitadasPorVentana, 1);
+});
+
+test('un fallo del proveedor no tumba el refresco de los demás', async () => {
+  const catalogo = new Map([['fx1', descriptor('fx1')], ['fx2', descriptor('fx2')]]);
+
+  const refrescadas = await sinc.refrescarPendientes(catalogo, {
+    consultar: async d => {
+      if (d.clave === 'fx1') throw new Error('el proveedor devolvió 500');
+      return eventoDe();
+    }
+  });
+
+  assert.deepEqual([...refrescadas], ['fx2']);
+  assert.equal(sinc.metricas.erroresApi, 1);
+  assert.equal((await fixtures.porClaves(['fx1'])).get('fx1').ultimoError, 'el proveedor devolvió 500');
+});
+
+/* ==================== El ciclo entero ==================== */
+
+test('un ciclo completo escribe los resultados oficiales y mueve los puntos', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1', pronosticos: [{ marcador1: 2, marcador2: 1 }],
+    ahora: new Date('2026-01-01')
+  });
+
+  const r = await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe({ m1: 2, m2: 1, estado: 'Finished' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  assert.equal(r.omitido, false);
+  assert.equal(r.fixturesUnicos, 1);
+  assert.equal(r.jornadasReescritas, 1);
+
+  const { clasificacion, estado } = await ranking.clasificacionDeJornada(q.id, 'J1', { puntuacionActual: PUNTUACION });
+  assert.equal(estado, 'confirmada', 'el partido terminó: la jornada se congela');
+  assert.equal(clasificacion.find(f => f.jugador === 'ana').puntos, 5);
+});
+
+test('el proveedor que da local y visitante al revés no invierte el marcador', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1', pronosticos: [{ marcador1: 0, marcador2: 3 }],
+    ahora: new Date('2026-01-01')
+  });
+
+  // El proveedor devuelve B como local: su 3-0 es el 0-3 de la jornada.
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe({ local: 'B', visitante: 'A', m1: 3, m2: 0, estado: 'Finished' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const { clasificacion } = await ranking.clasificacionDeJornada(q.id, 'J1', { puntuacionActual: PUNTUACION });
+  assert.equal(clasificacion.find(f => f.jugador === 'ana').puntos, 5,
+    'sin voltear, un 0-3 acertado contaría como fallo');
+});
+
+test('un ciclo sin datos nuevos no reescribe ninguna jornada', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe({ estado: 'Finished' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const segundo = await sinc.ejecutarCiclo({
+    consultar: async () => { throw new Error('no debería preguntarse'); },
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  assert.equal(segundo.jornadasReescritas, 0);
+  assert.equal(segundo.fixturesRefrescados, 0);
+});
+
+test('el minuto en vivo llega a la pantalla pero no rehace la clasificación', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe({ m1: 0, m2: 0, estado: '31' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const antes = sinc.metricas.syncsSinCambioDePuntos;
+
+  // Mismo 0-0, otro minuto: cambia lo que se ve, no lo que se puntúa.
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+  await fixtures.guardar(descriptor('111'), { evento: eventoDe({ m1: 0, m2: 0, estado: '75' }) });
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  assert.ok(sinc.metricas.syncsSinCambioDePuntos > antes,
+    'invalidar la tabla cada minuto es el peor momento para recalcularla');
+
+  const { partidos } = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(partidos[0].minuto, '75', 'y aun así el minuto nuevo sí se guardó');
+});
+
+test('una carga manual bloqueada no la pisa el proveedor', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+
+  const { normalizarMarcador } = require('../src/validacion');
+  await oficiales.guardarManual(q.id, 'J1', [{ marcador1: 4, marcador2: 4 }], normalizarMarcador);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe({ m1: 1, m2: 0, estado: 'Finished' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const { partidos } = await oficiales.deJornada(q.id, 'J1');
+  assert.deepEqual([partidos[0].marcador1, partidos[0].marcador2], [4, 4],
+    'el administrador miró el partido: es la última palabra');
+});
+
+test('el ciclo se salta si otra instancia tiene el cerrojo', async () => {
+  const ahora = new Date('2026-09-01T12:00:00Z');
+  await cerrojos.tomar(sinc.CERROJO_SYNC, 5 * 60_000, ahora, 'otra-instancia');
+
+  const r = await sinc.ejecutarCiclo({
+    ahora,
+    consultar: async () => { throw new Error('no debería llegar aquí'); },
+    reescribirJornada: async () => {}
+  });
+
+  assert.equal(r.omitido, true);
+  assert.equal(sinc.metricas.ciclosOmitidosPorCerrojo, 1);
+});
+
+test('el ciclo suelta el cerrojo aunque falle por el camino', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoDe(),
+    reescribirJornada: async () => { throw new Error('reventó al reescribir'); }
+  });
+
+  const estado = await cerrojos.estado(sinc.CERROJO_SYNC);
+  assert.ok(new Date(estado.expira_en) <= new Date(0),
+    'sin esto, un fallo dejaría la sincronización parada cinco minutos');
+});
+
+/* ==================== El vigilante ==================== */
+
+test('el vigilante devuelve el control cuando una promesa no termina', async () => {
+  const nuncaTermina = new Promise(() => {});
+
+  await assert.rejects(
+    () => sinc.conVigilante(nuncaTermina, 20, 'se acabó el tiempo'),
+    error => error.esTiempoAgotado === true && /se acabó el tiempo/.test(error.message));
+});
+
+test('el limitador no lanza más tareas a la vez de las permitidas', async () => {
+  let simultaneas = 0;
+  let maximo = 0;
+
+  await sinc.conLimiteDeConcurrencia([1, 2, 3, 4, 5, 6, 7, 8], 3, async () => {
+    simultaneas += 1;
+    maximo = Math.max(maximo, simultaneas);
+    await new Promise(r => setTimeout(r, 5));
+    simultaneas -= 1;
+  });
+
+  assert.equal(maximo, 3, 'sin tope, ocho peticiones a la vez contra el proveedor');
+});
