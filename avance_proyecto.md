@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 20 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 21 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -21,7 +21,7 @@
 
 ```bash
 git branch --show-current   # debe decir: postgres
-git log --oneline -3        # debe empezar por f947039
+git log --oneline -3        # debe empezar por 540d157
 git status                  # debe estar limpio
 npm test                    # 358/358
 npm run test:postgres       # 229, en ~30 s
@@ -31,8 +31,13 @@ npm run test:postgres       # 229, en ~30 s
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 358 y añade una capa de
-datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
+sigue hablando con MongoDB.
+
+⚠️ **En la rama `postgres` hay DOS servidores a la vez, y es a propósito**:
+`server.js` sobre Mongo —que es el que arranca `npm start` y el que se despliega—
+y `src/servidor.js` sobre PostgreSQL, con **66 de las 81 rutas** ya portadas y sus
+propias pruebas. Se cambia el uno por el otro en el paso 7.7. El detalle de esta
+convivencia y de cómo se deshace está en **§A.4**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
@@ -63,8 +68,10 @@ de la séptima, **5 pasos de 7**.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
-**Lo que NO está hecho**: ninguna ruta habla todavía con PostgreSQL. `server.js`
-sigue entero sobre Mongoose.
+**Lo que NO está hecho**: quedan **15 rutas** por portar —sincronizador, admin,
+proveedor y depuración— y el **cambio** (paso 7.7), que es lo único irreversible
+de toda la migración. Lo que hoy se despliega sigue siendo `server.js` sobre
+Mongoose.
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -140,74 +147,130 @@ Cinco cosas de ese día que **no se deducen leyendo el código**:
   administradores a la vez podía dejar la quiniela **sin ninguno**, porque la
   cuenta y el guardado iban en dos pasos.
 
-### Lo que se hizo el 21 de agosto — las tajadas 4, 5 y 6
+### Lo que se hizo el 21 de agosto — el día de las rutas
 
-Tres entradas, de la **044** a la **046**: la puntuación, las trivias y el
-sincronizador, con **83 pruebas nuevas**. Al terminar el día **todas las reglas
-están portadas y ninguna ruta habla todavía con PostgreSQL**: lo que queda es
-la tajada 7, que es el cambio.
+**Seis entradas de bitácora, de la 044 a la 049.** Se puede contar en dos actos.
 
-Seis cosas de ese día que **no se deducen leyendo el código**:
+**Acto 1 — se terminan de portar las reglas (044 a 046).** Las tajadas 4, 5 y 6:
+la puntuación, las trivias y el sincronizador. **83 pruebas nuevas**, todas
+verdes, sin tocar `server.js`. Al acabar el acto, **todas las reglas de negocio
+del sistema viven en `src/` y están probadas**, y ninguna ruta habla todavía con
+PostgreSQL.
 
-- ⚠️ **Se encontraron DOS errores activos en `main`**, los dos dando números
-  creíbles y equivocados sin fallar nunca. **M-02** no era deuda de modelo sino
-  un fallo vivo: el `splice` de `server.js:1592` desalinea los pronósticos de
-  todos los jugadores. Y **M-34**: marcar un comodín después de que el partido
-  terminó no movía los puntos, porque el comodín se copiaba dentro del resultado
-  oficial y un partido terminado ya no se vuelve a consultar.
-- ⚠️ **El comodín NO se congela, y la puntuación SÍ.** Parece incoherente y no lo
-  es: la puntuación es **global** y tocarla barrería todas las jornadas jugadas
-  de golpe (eso es M-03); el comodín es **local** a una jornada y quien lo marca
-  la tiene delante. Congelarlo dejaría a un administrador que se equivocó de
-  casilla sin forma de arreglarlo. La respuesta estaba en el código viejo: la
-  ruta del comodín llamaba a recalcular, la de la puntuación no.
-- **La decisión anterior se tomó mal la primera vez**, y lo destapó una prueba
-  que contradecía a otra. Dos pruebas que se contradicen no son una prueba mal
-  escrita: son una decisión mal tomada.
-- ⚠️ **M-02 tenía un gemelo en las trivias**, y nadie lo había anotado: la trivia
-  guardaba `partidoIndex`, y el mismo `splice` dejaba las preguntas apuntando al
-  partido de al lado. Misma forma, mismo silencio.
-- ⚠️ **Las trivias tenían dos relojes de cierre que no coincidían**: se bloqueaba
-  responder por el inicio del partido, pero la privacidad se decidía por la fecha
-  de cierre. Con el partido empezado y la fecha por llegar, nadie podía responder
-  **y aun así las respuestas seguían ocultas**. Ahora es un solo reloj.
+**Acto 2 — las rutas empiezan a hablar PostgreSQL (047 a 049).** Arranca la
+tajada 7, la única que no puede ser aditiva, y se parte en siete pasos. Van
+cinco: cimientos, plataforma, dominio, puntuación y trivias. **66 de las 81
+rutas** ya corren sobre PostgreSQL, en un servidor nuevo que crece **al lado**
+de `server.js`, no encima.
+
+| Tajada / paso | Qué entró | Entrada |
+|---|---|---|
+| **4** | Motor de puntos, pronósticos, resultados oficiales, ranking congelado | 044 |
+| **5** | Trivias: ocho tipos, reconciliación y autorresolución | 045 |
+| **6** | Caché de partidos, cerrojo distribuido, ciclo y métricas; `src/eventos.js` | 046 |
+| **7.1–7.3** | Servidor nuevo: cimientos, plataforma y dominio (42 rutas) | 047 |
+| **7.4** | Puntuación (10 rutas) | 048 |
+| **7.5** | Trivias (14 rutas) y el `_id → id` del frontend | 049 |
+
+#### Las tres decisiones de fondo del día
+
+1. ⚠️ **Un servidor NUEVO, al lado, no cirugía sobre `server.js`.** Portar 81
+   rutas en sitio habría tumbado sus 83 pruebas de integración con el primer
+   grupo, y no habrían vuelto a pasar hasta el final: varios días trabajando a
+   ciegas sobre lo único que demuestra que la aplicación funciona. El apagado de
+   verdad queda reducido a **una línea de `package.json`** en el paso 7.7.
+2. ⚠️ **La transacción se abre DENTRO de la ruta, no en el middleware.**
+   Traducir `tenantContext.run({quinielaId}, next)` a `db.enQuiniela(id, next)`
+   habría sido un error grave y silencioso: `next()` de Express retorna antes de
+   que el manejador async termine, así que se haría COMMIT y se soltaría la
+   conexión **con la ruta todavía corriendo**. La otra salida —mantenerla abierta
+   hasta que la respuesta termine— agota el *pool* de Neon con clientes lentos.
+3. **El comodín NO se congela, y la puntuación SÍ.** Parece incoherente y no lo
+   es: la puntuación es **global** y tocarla barrería todas las jornadas jugadas
+   de golpe (eso es M-03); el comodín es **local** a una jornada y quien lo marca
+   la tiene delante. La respuesta estaba en el código viejo: la ruta del comodín
+   llamaba a recalcular, la de la puntuación no.
+
+#### Los cinco errores que se encontraron, todos silenciosos
+
+Ninguno falla. Los cinco dan un número creíble y equivocado, o dejan ver lo que
+no debería verse.
+
+⚠️ **Los cuatro primeros están vivos hoy en `main`.** El quinto no: se coló al
+escribir el servidor nuevo y lo cazó una prueba el mismo día.
+
+| Hallazgo | Qué hace | Dónde |
+|---|---|---|
+| **M-02** | El `splice` al borrar un partido desalinea los pronósticos de **todos** los jugadores | `server.js:1592` |
+| **M-34** | Marcar un comodín después de que el partido terminó **no mueve los puntos**: el comodín se copiaba en el resultado oficial y un partido terminado ya no se consulta | Entrada 044 |
+| **M-35** | El gemelo de M-02 en las trivias: guardaban `partidoIndex`, y el mismo `splice` dejaba las preguntas apuntando al partido de al lado | Entrada 045 |
+| Dos relojes | Las trivias bloqueaban responder por el inicio del partido pero decidían la privacidad por la fecha de cierre: había un hueco donde **nadie podía responder y nada era visible** | Entrada 045 |
+| `req.path` | Dentro de `app.use('/api', …)` viene relativo al punto de montaje, así que la excepción que deja **desarchivar** una quiniela nunca casaba. **No estaba en `main`**: el código viejo usaba `originalUrl` y tenía razón | Entrada 047 |
+
+#### Seis cosas más que no se deducen leyendo el código
+
 - **El cerrojo distribuido deja de necesitar un `catch`.** En Mongo había que
   atrapar el código 11000 porque el choque contra el índice único ERA la
-  respuesta «lo tiene otro». En PostgreSQL es una sentencia: si no devuelve
-  fila, no es tuyo.
+  respuesta «lo tiene otro». En PostgreSQL es una sentencia: si no devuelve fila,
+  no es tuyo.
+- ⚠️ **`jsonb ||` es superficial.** Fundir `{puntuacion:{marcadorExacto:9}}`
+  sobre el bloque **sustituye el objeto `puntuacion` entero** y se lleva los otros
+  cinco campos. En Mongo lo hacía `$set` por campos y no se notaba.
+- ⚠️ **Un `JOIN` sin su columna en el `SELECT` da un `undefined` silencioso**, y
+  eso dejaba abiertas trivias de partidos ya jugados.
+- ⚠️ **El N+1 vuelve solo al portar una ruta sin pensarla.** `/api/resultados`
+  escrita de la forma natural pedía los pronósticos de cada jugador en cada
+  jornada: **ochocientos viajes a la base** con veinte jugadores y cuarenta
+  jornadas. Es el mismo N+1 que la Fase 5 ya había quitado.
+- **Dos guardianes de la Fase 6 pagaron solos durante la migración**: el de
+  funciones duplicadas cazó `partidoYaInicio` (tajada 4) y el del VAR cazó que
+  `esGolApiFootball` se había mudado a `src/` (tajada 6).
+- **Y dos veces la prueba estaba mal, no el código.** Una esperaba poder
+  pronosticar después de cargar el resultado oficial —que cierra el partido—, y
+  otra escribía respuestas con un `INSERT … SELECT FROM jugadores` sobre un
+  propietario recién creado: insertaba **cero filas** y pasaba sin probar nada.
+  **Un `INSERT` que no inserta no falla.**
+
 
 ### 🌅 Lo siguiente: la sesión de mañana
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es el paso 7.6 — sincronizador y admin**: 15 rutas —`/api/admin/*`,
-`/api/football/*`, `/api/debug/*` y `/api/sync-resultados-oficiales`— más
-`src/proveedor.js`, que es **lo único que queda por sacar de `server.js`**: ir a
-pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota. Y el
-planificador que llama al `tick`.
+**Lo siguiente es el paso 7.6 — sincronizador y admin.** 15 rutas:
+`/api/admin/*`, `/api/football/*`, `/api/debug/*` y
+`/api/sync-resultados-oficiales`. Más dos piezas que no son rutas:
 
-Después sólo queda **7.7, el cambio**.
+- **`src/proveedor.js`** — es **lo único que queda por sacar de `server.js`**: ir
+  a pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota.
+  `src/eventos.js` ya sabe LEER la respuesta; falta quien la va a buscar.
+- **El planificador** que llama al `tick` del sincronizador cada minuto.
 
-⚠️ **La regla que no hay que olvidar al escribirlas**, y que ya mordió una vez:
-el middleware NO abre transacción; cada ruta envuelve su cuerpo en
-`enQuiniela(req, …)`. `next()` de Express retorna antes de que el manejador
-async termine, así que abrirla en el middleware haría COMMIT con la ruta
-todavía corriendo.
+Después sólo queda **7.7, el cambio**, cuyo contenido está en §A.0.
 
-Lo que hay que respetar al escribirla, y está en §21.2:
+#### Las cuatro reglas que hay que respetar al escribir una ruta
+
+Las tres primeras son de §21.2 y sostienen el aislamiento. La cuarta se aprendió
+el 21 de agosto y ya mordió una vez.
 
 1. La transacción es **por petición**; `enQuiniela` es reentrante.
 2. El contexto se fija con `SET LOCAL`, dentro de la transacción.
 3. La aplicación **no** se conecta con el rol dueño.
+4. ⚠️ **El middleware NO abre transacción**: cada ruta envuelve su cuerpo en
+   `enQuiniela(req, …)`. `next()` de Express retorna antes de que el manejador
+   async termine, así que abrirla en el middleware haría COMMIT con la ruta
+   todavía corriendo.
 
-⚠️ **Y una advertencia sobre el calendario, para que no sorprenda:** el límite
-entre Mongo y PostgreSQL no se puede partir por la mitad. En cuanto `quinielas`
-viva en PostgreSQL con identificadores uuid, las colecciones de dominio que sigan
-en Mongo —con `quinielaId` de tipo ObjectId— dejan de poder apuntar a ellas.
-**Hay un momento en el que la aplicación se apaga y no vuelve hasta que las siete
-tajadas estén hechas.** Ese momento es la **tajada 7**, y se ha retrasado a
-propósito construyendo antes, a un lado, todo lo que se puede probar sin Express.
+#### ⚠️ Y lo que pasa en el 7.7, para que no sorprenda
+
+**Es el único punto sin retorno de toda la migración**, y hasta llegar a él
+`server.js` sigue vivo, verde y desplegable. El límite entre Mongo y PostgreSQL
+no se puede partir por la mitad: en cuanto la aplicación cambie de base, lo que
+quede en Mongo deja de poder apuntar a lo que ya está en PostgreSQL.
+
+Por eso el 7.7 se ha ido retrasando a propósito, construyendo antes —a un lado y
+con sus pruebas— todo lo que se puede probar sin Express y sin apagar nada.
+
 
 ### Estado de Git
 
@@ -215,6 +278,7 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  540d157 Anotar el commit del paso 7.5 en el estado de Git   ← cabeza, 21-ago
   4ad4e65 Tajada 7, paso 5: las rutas de trivias
   0190378 Bitacora del paso 7.4, y finales de linea normalizados
   66bbc94 Tajada 7, paso 4: las rutas de puntuacion
@@ -226,7 +290,7 @@ postgres  ← AQUÍ SE TRABAJA. La migración.
   53fd287 Migracion, tajada 5: las trivias
   da4905b Anotar el commit de la tajada 4 en el estado de Git
   53f3ff8 Migracion, tajada 4: la puntuacion
-  f947039 Punto de control: dejar por escrito donde queda todo
+  f947039 Punto de control: dejar por escrito donde queda todo   ← hasta aquí, 20-ago
   99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
   04ec8af Migracion, tajada 2: la plataforma
   9a52f01 Migracion, tajada 1: los cimientos de la capa de datos
@@ -319,14 +383,14 @@ detecta cualquiera de las dos cosas mal, en vez de dar un verde sin valor.
 
 ## 🎯 LO QUE QUEDA PENDIENTE
 
-**Puesto al día el 20 de agosto de 2026 por la noche**, al cerrar la tajada 3 de
+**Puesto al día el 21 de agosto de 2026 por la noche**, al cerrar el paso 7.5 de
 la migración. Está dividido en dos mundos que conviene no mezclar: **lo que falta
 de la migración** (§A) y **lo que ya estaba pendiente antes y sigue estándolo**
 (§B).
 
 ---
 
-## A. La migración a PostgreSQL — 3 tajadas de 7
+## A. La migración a PostgreSQL — 6 tajadas de 7, y 5 pasos de 7 de la séptima
 
 El plan completo, con sus decisiones de alcance y sus reglas, está en **§21**.
 Esto es sólo el estado.
@@ -339,7 +403,7 @@ Esto es sólo el estado.
 | **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | Trivias | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
 | **6** | Sincronizador | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
-| **7** | **El cambio y la limpieza** | Ver el desglose de abajo | 🟡 **en curso: 3 pasos de 7** |
+| **7** | **El cambio y la limpieza** | Ver el desglose de abajo | 🟡 **en curso: 5 pasos de 7** |
 
 ### A.0 La tajada 7, paso a paso
 
@@ -372,7 +436,7 @@ No hay que arreglarlos aparte: salen por obligación del modelo nuevo.
 | Hallazgo | Cómo lo cierra |
 |---|---|
 | **C-06** — el clúster M0 que se pausa y hay que despertar a mano | Neon se suspende pero **se despierta solo** al llegar una conexión |
-| **C-04** — `server.js` monolítico | La capa de datos sale a `src/`; `server.js` menguará de verdad por primera vez |
+| **C-04** — `server.js` monolítico | Todo salió a `src/`: 21 módulos y `src/rutas/`. `server.js` **desaparece** en el paso 7.7 |
 | **M-01** — el vínculo con el jugador es por cadena | `jugador_id` con clave ajena |
 | **M-02** — el vínculo partido↔pronóstico es por índice de array. ⚠️ **No es deuda de modelo: es un fallo activo**, el `splice` de `server.js:1592` desalinea los pronósticos de todos | `partido_id`, y `guardar` reconcilia por posición para no romperlo (Entrada 044) |
 | **M-34** — ⚠️ **el comodín marcado tarde no mueve los puntos.** Se copiaba dentro del resultado oficial, y un partido terminado ya no se vuelve a consultar | El comodín vive sólo en `partidos` y el motor lo lee de ahí (Entrada 044) |
@@ -389,12 +453,29 @@ del código que hoy corre.
 ### A.3 Lo que la migración NO toca
 
 - **El frontend.** Es la decisión de alcance de §21.1: claves ajenas dentro,
-  nombres en el API. Los 39 scripts de `private/js/` no cambian, salvo las **4
-  apariciones de `_id` en 3 archivos**.
+  nombres en el API. De los 39 scripts de `private/js/` sólo cambiaron **3**, y
+  sólo en las 4 apariciones de `_id` (Entrada 049).
 - **`src/validacion.js`, `src/fechas.js` y `src/ligas.js`.** No sabían nada de
   Mongoose, así que se reutilizan tal cual.
 - **Las reglas de producto.** El cierre por partido, la jornada actual, los
   partidos sólo del API: todo eso sigue igual.
+
+### A.4 ⚠️ Deuda temporal, creada a propósito, que MUERE en el paso 7.7
+
+Trabajar con un servidor nuevo al lado del viejo tiene un precio, y conviene
+tenerlo escrito para que nadie lo confunda con un descuido. Nada de esto es
+opcional: **son las cinco cosas que hay que deshacer al hacer el cambio.**
+
+| Qué hay hoy | Por qué está así | Qué se hace en el 7.7 |
+|---|---|---|
+| **Dos servidores en el repositorio**: `server.js` (Mongo) y `src/servidor.js` + `src/rutas/` (PostgreSQL) | Portar 81 rutas en sitio habría dejado las 83 pruebas de integración en rojo durante días | `npm start` pasa a apuntar al nuevo y **`server.js` se borra** |
+| **Dos suites de rutas**: `test/integracion.test.js` (83, contra Mongo) y `test/rutas.test.js` (91, contra PostgreSQL) | La vieja es la red de seguridad mientras la nueva crece | Se borra la vieja; la nueva se queda |
+| **`trivia.id ?? trivia._id`** en 3 archivos del frontend | Las MISMAS pantallas se sirven desde los dos servidores, y el viejo devuelve `_id` | Se quita el respaldo: sólo `trivia.id` |
+| **Las 62 pruebas de navegador arrancan Mongo** (`test/e2e/arrancar.js`) | Corren contra el servidor viejo, que es el que hoy se despliega | El arranque pasa a PGlite y las pruebas al servidor nuevo |
+| **`src/transacciones.js` sigue ahí** | Lo usa `server.js` | Se retira: en PostgreSQL las transacciones son de serie y se queda sin trabajo |
+
+Además, en el 7.7 salen del `package.json`: **`mongoose`**, **`connect-mongo`** y
+**`mongodb-memory-server`**.
 
 ---
 
@@ -427,7 +508,7 @@ ahora significaría escribirla dos veces.
    pronósticos de todos (M-02) **y las trivias de los partidos siguientes**
    (M-35), y marcar un comodín después de que el partido terminó no mueve nada
    (M-34). **La migración los cierra.** Si se fuera a enseñar la aplicación con
-   datos que importen antes de la tajada 7, M-02 y M-35 merecen un parche aparte:
+   datos que importen antes del paso 7.7, M-02 y M-35 merecen un parche aparte:
    son los que pueden ensuciar datos, y **los dos salen del mismo `splice`**
    (`server.js:1592`).
 1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
@@ -8191,6 +8272,95 @@ pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota. Y el
 planificador que llama al `tick`.
 
 Después sólo queda **7.7, el cambio**.
+
+---
+
+### 📌 Entrada 050 — 21 de agosto de 2026 — Punto de control: el día entero, y qué queda
+
+**Objetivo:** dejar el documento en un estado del que se pueda retomar sin
+reconstruir nada de cabeza. El día ha sido largo —**seis entradas, de la 044 a la
+049**— y la cabecera se había quedado contando sólo la mitad.
+
+**Qué se hizo:**
+
+Se reescribieron las cuatro secciones que se leen al retomar:
+
+1. **«Lo primero, en un minuto»** — corregía el commit de cabeza y, sobre todo,
+   una frase que había dejado de ser cierta: decía que la capa nueva «todavía no
+   la usa ninguna ruta». La usan **66 de 81**. Ahora avisa de lo que más puede
+   despistar: ⚠️ **en la rama hay DOS servidores a la vez, y es a propósito.**
+2. **«Dónde estamos»** — «lo que NO está hecho» ya no dice «ninguna ruta»: dice
+   las 15 que faltan y el paso 7.7, que es lo único irreversible.
+3. **«Lo que se hizo el 21 de agosto»** — reescrita entera. Contaba tres entradas
+   de las seis. Ahora cuenta el día en **dos actos** —terminar de portar las
+   reglas, y las rutas—, con una tabla de qué entró en cada paso, **las tres
+   decisiones de fondo**, **los cinco errores silenciosos** y seis cosas que no
+   se deducen del código.
+4. **«Lo siguiente»** — arrastraba texto de hace dos días que repetía §21.2 y
+   hablaba de la tajada 7 como si no hubiera empezado. Ahora dice el paso 7.6,
+   sus dos piezas que no son rutas, y **las cuatro reglas** que hay que respetar
+   al escribir una ruta.
+
+**Y se añadió una sección que faltaba: §A.4.**
+
+Trabajar con un servidor nuevo al lado del viejo crea **deuda temporal a
+propósito**, y no estaba escrita en ninguna parte. Son cinco cosas —dos
+servidores, dos suites de rutas, el respaldo `trivia.id ?? trivia._id`, las
+pruebas de navegador arrancando Mongo, y `src/transacciones.js`— y **las cinco
+mueren en el paso 7.7**. Sin esa tabla, cualquiera de ellas parece un descuido.
+
+**Lo que se aclaró al escribirlo, y no estaba escrito:**
+
+- ⚠️ **Cuatro de los cinco errores del día están vivos en `main`; el quinto no.**
+  El del `req.path` se coló al escribir el servidor nuevo y lo cazó una prueba el
+  mismo día — el código viejo usaba `originalUrl` y tenía razón. La diferencia
+  importa: es «hay un fallo en producción» contra «me equivoqué y lo arreglé», y
+  mezclarlos hace la lista de deuda menos creíble.
+- **C-04 pasó de promesa a hecho.** Decía que `server.js` «menguará de verdad por
+  primera vez»; ya menguó, y en el 7.7 desaparece.
+- **El `_id → id` del frontend dejó de ser pendiente.** Estaba en §A.3 como algo
+  por hacer; se hizo en la Entrada 049, en 3 archivos de los 39.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Cabecera, «dónde estamos», el día 21, «lo siguiente» y el estado de Git, reescritos. **§A.4 nueva.** Precisiones en §A.2, §A.3 y §B.2. Esta entrada |
+
+**Verificación:**
+
+```
+npm test              → 358/358
+npm run test:postgres → 229
+git status            → limpio
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Una frase de la cabecera llevaba dos entradas siendo falsa.** «La capa de
+   datos sobre PostgreSQL todavía no la usa ninguna ruta» era cierta el 20 de
+   agosto y dejó de serlo con la Entrada 047. Nadie la volvió a leer porque las
+   entradas nuevas se añaden abajo y la cabecera se actualiza por campos sueltos
+   —números de pruebas, commits— y no por sentido. **Al cerrar el día conviene
+   leer la cabecera entera, no parchearla.**
+2. **Un método de trabajo que crea deuda a propósito tiene que decirlo por
+   escrito.** Dos servidores en el repositorio es una decisión razonada, pero
+   quien la vea sin explicación la leerá como un trabajo a medias. §A.4 existe
+   para eso, y va con la lista exacta de lo que hay que deshacer.
+3. **Separar «lo de hoy» de «lo de siempre» sigue pagando.** §A es la migración y
+   §B lo que ya estaba pendiente. Hoy §B **no cambió en nada**: las dos fases de
+   producto y sus dos decisiones abiertas —proveedor de correo y qué se bloquea
+   sin verificar— siguen exactamente donde estaban.
+
+**Pendiente / siguiente paso:**
+
+**Paso 7.6 — sincronizador y admin.** 15 rutas más `src/proveedor.js` y el
+planificador. Después, **7.7: el cambio**, que es el único punto sin retorno.
+
+⚠️ **Y tres cosas que no son programar y hacen falta antes de desplegar** (§B.3):
+`DATABASE_URL` en Render con el rol `app_quiniela` y la cadena con `-pooler`;
+comprobar que Render y Neon están en la misma región; y saber si sigue viva la
+aplicación anterior apuntando a la misma base.
 
 ---
 
