@@ -273,9 +273,27 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
       });
     }
 
+    /*
+     * ⚠️ LA CUENTA Y SU TOKEN VAN JUNTOS O NO VAN.
+     *
+     * Sin esta transacción, un fallo al emitir el token dejaba la cuenta creada
+     * y **a la persona atrapada**: no puede entrar, porque no está confirmada,
+     * y no puede volver a registrarse, porque su nombre y su correo ya están
+     * cogidos. Sin ninguna salida y sin ningún mensaje que lo explique.
+     *
+     * No es hipotético: pasó al desplegar la Fase E contra una base a la que
+     * todavía le faltaba `auth_tokens` (Entrada 055).
+     */
     let usuario;
+    let token;
     try {
-      usuario = await usuariosMod.crear({ username, email, password });
+      ({ usuario, token } = await db.enTransaccion(async () => {
+        const creado = await usuariosMod.crear({ username, email, password });
+        return {
+          usuario: creado,
+          token: await tokensMod.emitir(creado.id, tokensMod.VERIFICAR_EMAIL)
+        };
+      }));
     } catch (e) {
       if (e.duplicado) return res.status(409).json({ error: e.message });
       throw e;
@@ -285,11 +303,12 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
      * ⚠️ NO se abre sesión al registrarse. La cuenta todavía no está confirmada
      * y entrar sin confirmar es justamente lo que se decidió impedir (Fase E).
      *
-     * Que el correo no salga NO tumba el registro: la cuenta se crea igual y
-     * `correoEnviado` deja que la pantalla ofrezca reenviarlo. Un proveedor
-     * caído no puede impedir que alguien se dé de alta.
+     * Y el envío va FUERA de la transacción, a propósito: es una llamada de red
+     * que puede tardar segundos, y retener una conexión de la base mientras
+     * tanto agotaría el pool. Que el correo no salga no tumba el registro:
+     * `correoEnviado` deja que la pantalla ofrezca reenviarlo.
      */
-    const correoEnviado = await enviarConfirmacion(usuario);
+    const correoEnviado = await enviarEnlace(usuario, token);
 
     res.status(201).json({
       success: true,
@@ -309,8 +328,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * El enlace apunta a una PÁGINA del propio sitio, no a una ruta de API: quien
    * abre un correo lo hace en un navegador y espera ver algo, no un JSON.
    */
-  async function enviarConfirmacion(usuario) {
-    const token = await tokensMod.emitir(usuario.id, tokensMod.VERIFICAR_EMAIL);
+  function enviarEnlace(usuario, token) {
     /*
      * Se quita la barra final si la hay: el enlace se arma como
      * `${base}/pagina.html`, así que un APP_ORIGIN terminado en barra daría una
@@ -326,6 +344,11 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
         horas: tokensMod.HORAS_VERIFICACION
       }),
       `la confirmación de ${usuario.email}`);
+  }
+
+  /** Emite un token nuevo y manda el enlace. Es lo que usa el reenvío. */
+  async function enviarConfirmacion(usuario) {
+    return enviarEnlace(usuario, await tokensMod.emitir(usuario.id, tokensMod.VERIFICAR_EMAIL));
   }
 
   app.post('/api/auth/verificar-correo', async (req, res) => {

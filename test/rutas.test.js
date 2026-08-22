@@ -1954,3 +1954,34 @@ test('el transporte de pruebas es el de consola, y no envía nada', () => {
   assert.equal(correo.TRANSPORTE, 'consola',
     'con otro transporte estas pruebas mandarían correos de verdad a direcciones inventadas');
 });
+
+test('⚠️ si el token no se puede emitir, la cuenta NO se crea', async () => {
+  const datos = credenciales('atom');
+
+  /*
+   * Se rompe la emisión del token a propósito. Sin la transacción, la cuenta
+   * quedaba creada y la persona ATRAPADA: no puede entrar porque no está
+   * confirmada, y no puede volver a registrarse porque su nombre y su correo ya
+   * están cogidos. Sin salida y sin ningún mensaje que lo explique.
+   *
+   * No es hipotético: pasó al desplegar la Fase E contra una base a la que
+   * todavía le faltaba `auth_tokens` (Entrada 055).
+   */
+  const original = tokens.emitir;
+  tokens.emitir = async () => { throw new Error('auth_tokens no existe'); };
+
+  try {
+    const res = await request(app).post('/api/auth/registro').send(datos);
+    assert.equal(res.status, 500);
+  } finally {
+    tokens.emitir = original;
+  }
+
+  const { rows } = await db.consulta(
+    'SELECT count(*)::int n FROM usuarios WHERE username = $1', [datos.username]);
+  assert.equal(rows[0].n, 0, 'la cuenta no puede quedar creada sin su token');
+
+  // Y la prueba de que no queda atrapada: puede registrarse otra vez.
+  const segunda = await request(app).post('/api/auth/registro').send(datos);
+  assert.equal(segunda.status, 201);
+});
