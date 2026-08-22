@@ -193,7 +193,7 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  (última) Migracion, tajada 4: la puntuacion
+  53f3ff8 Migracion, tajada 4: la puntuacion
   f947039 Punto de control: dejar por escrito donde queda todo
   99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
   04ec8af Migracion, tajada 2: la plataforma
