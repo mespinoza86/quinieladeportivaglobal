@@ -21,17 +21,17 @@
 
 ```bash
 git branch --show-current   # debe decir: postgres
-git log --oneline -3        # debe empezar por 99bac51
+git log --oneline -3        # debe empezar por f947039
 git status                  # debe estar limpio
-npm test                    # 184/184
-npm run test:postgres       # 55, en ~7 s
+npm test                    # 211/211
+npm run test:postgres       # 82, en ~8 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 184 y añade una capa de
+sigue hablando con MongoDB. La rama `postgres` tiene 211 y añade una capa de
 datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
@@ -40,23 +40,24 @@ datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 ### Dónde estamos
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
-después de un sondeo que la midió en vez de opinarla. Van **3 tajadas de 7**.
+después de un sondeo que la midió en vez de opinarla. Van **4 tajadas de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **184** (129 de Mongo + 55 nuevas) |
-| Sólo las de PostgreSQL | **55**, ~7 s |
+| Pruebas en `postgres` | **211** (129 de Mongo + 82 nuevas) |
+| Sólo las de PostgreSQL | **82**, ~8 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
-| `server.js` | 5.270 líneas, **sin tocar** |
-| `src/` | 8 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores` |
+| `server.js` | 5.262 líneas. Sólo se le movió `partidoYaInicio` a `src/fechas.js`: **ninguna ruta habla con PostgreSQL** |
+| `src/` | 14 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores`, `puntuacion`, `pronosticos`, `oficiales`, `ranking` |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Las reglas de plataforma y de dominio básico están portadas, con 55 pruebas.
+- Las reglas de plataforma, de dominio básico y de puntuación están portadas,
+  con 82 pruebas.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
@@ -113,7 +114,7 @@ un ensayo mejor: fue hacer que el guion informara.** Al final: **8/8** en la
 prueba de aceptación y **4/4** en la del *pool*, con 240 peticiones concurrentes
 y ni un cruce.
 
-**Acto 3 — la migración empieza (040 a 042).** Rama `postgres` y tres tajadas:
+**Acto 3 — la migración empieza (040 a 043).** Rama `postgres` y tres tajadas:
 los cimientos de la capa de datos, la plataforma y el dominio básico. **55
 pruebas nuevas**, todas verdes, sin tocar `server.js`.
 
@@ -137,16 +138,40 @@ Cinco cosas de ese día que **no se deducen leyendo el código**:
   administradores a la vez podía dejar la quiniela **sin ninguno**, porque la
   cuenta y el guardado iban en dos pasos.
 
+### Lo que se hizo el 21 de agosto — la tajada 4, la más enredada
+
+Una entrada, la **044**: la puntuación entera —pronósticos, resultados oficiales,
+motor de puntos y ranking congelado—, con **27 pruebas nuevas**. Sigue sin haber
+ninguna ruta hablando con PostgreSQL.
+
+Tres cosas de ese día que **no se deducen leyendo el código**:
+
+- ⚠️ **Se encontraron DOS errores activos en `main`**, los dos dando números
+  creíbles y equivocados sin fallar nunca. **M-02** no era deuda de modelo sino
+  un fallo vivo: el `splice` de `server.js:1592` desalinea los pronósticos de
+  todos los jugadores. Y **M-34**: marcar un comodín después de que el partido
+  terminó no movía los puntos, porque el comodín se copiaba dentro del resultado
+  oficial y un partido terminado ya no se vuelve a consultar.
+- ⚠️ **El comodín NO se congela, y la puntuación SÍ.** Parece incoherente y no lo
+  es: la puntuación es **global** y tocarla barrería todas las jornadas jugadas
+  de golpe (eso es M-03); el comodín es **local** a una jornada y quien lo marca
+  la tiene delante. Congelarlo dejaría a un administrador que se equivocó de
+  casilla sin forma de arreglarlo. La respuesta estaba en el código viejo: la
+  ruta del comodín llamaba a recalcular, la de la puntuación no.
+- **La decisión anterior se tomó mal la primera vez**, y lo destapó una prueba
+  que contradecía a otra. Dos pruebas que se contradicen no son una prueba mal
+  escrita: son una decisión mal tomada.
+
 ### 🌅 Lo siguiente: la sesión de mañana
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es la tajada 4 — puntuación**: `resultados`/`pronosticos`,
-`resultados_oficiales`, el motor de puntos y el ranking materializado
-(`puntos_jornada`). Es **la más enredada de las que quedan**, porque es donde
-vive la regla de congelar los puntos de una jornada terminada y la de recalcular
-sólo lo que sigue vivo.
+**Lo siguiente es la tajada 5 — trivias**: `trivias`, `respuestas_trivia`, los
+ocho tipos, la autorresolución y la reconciliación. El esquema ya trae el índice
+único que cierra **S-10** —el doble envío concurrente que daba puntos dobles— y
+el índice de **M-25**. La tabla general ya lee la suma de `respuestas_trivia`,
+así que esa columna funciona desde la tajada 4.
 
 Lo que hay que respetar al escribirla, y está en §21.2:
 
@@ -168,6 +193,8 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  (última) Migracion, tajada 4: la puntuacion
+  f947039 Punto de control: dejar por escrito donde queda todo
   99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
   04ec8af Migracion, tajada 2: la plataforma
   9a52f01 Migracion, tajada 1: los cimientos de la capa de datos
@@ -228,8 +255,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 184, ~13 s
-npm run test:postgres      # solo las 55 de PostgreSQL, ~7 s  (solo en la rama)
+                           #   en postgres: 211, ~18 s
+npm run test:postgres      # solo las 82 de PostgreSQL, ~8 s  (solo en la rama)
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -276,19 +303,12 @@ Esto es sólo el estado.
 | **1** | Cimientos | `src/db.js`, `db/esquema.sql`, arnés PGlite | ✅ `9a52f01` — Entrada 040 |
 | **2** | Plataforma | `usuarios`, `quinielas`, `membresias` | ✅ `04ec8af` — Entrada 041 |
 | **3** | Dominio básico | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ `99bac51` — Entrada 042 |
-| **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ⬜ **la siguiente** |
-| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ⬜ |
+| **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
+| **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ⬜ **la siguiente** |
 | **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ⬜ |
 | **7** | **El cambio y la limpieza** | `server.js` pasa a PostgreSQL; sesiones a `connect-pg-simple`; fuera `mongoose`; `render.yaml`; documentación | ⬜ |
 
 ### A.1 Lo que hay que saber de cada tajada que falta
-
-**Tajada 4 — puntuación.** Es la más enredada. Ahí vive la regla de **congelar
-los puntos de una jornada terminada** (`puntos_jornada`), que es lo que hace que
-corregir un resultado años después no arrastre los cambios de configuración
-ocurridos desde entonces. El motor de puntos —`puntosDePartido` y
-`puntosDeJornada`— son **funciones puras** y no tocan la base: se pueden mover
-tal cual. Lo que hay que reescribir es lo que las rodea.
 
 **Tajada 5 — trivias.** Ocho tipos, autorresolución y reconciliación. El esquema
 ya trae el índice único `(quiniela_id, jugador_id, trivia_id)` que cierra
@@ -316,7 +336,8 @@ No hay que arreglarlos aparte: salen por obligación del modelo nuevo.
 | **C-06** — el clúster M0 que se pausa y hay que despertar a mano | Neon se suspende pero **se despierta solo** al llegar una conexión |
 | **C-04** — `server.js` monolítico | La capa de datos sale a `src/`; `server.js` menguará de verdad por primera vez |
 | **M-01** — el vínculo con el jugador es por cadena | `jugador_id` con clave ajena |
-| **M-02** — el vínculo partido↔pronóstico es por índice de array | `partido_id`, y `guardar` reconcilia por posición para no romperlo |
+| **M-02** — el vínculo partido↔pronóstico es por índice de array. ⚠️ **No es deuda de modelo: es un fallo activo**, el `splice` de `server.js:1592` desalinea los pronósticos de todos | `partido_id`, y `guardar` reconcilia por posición para no romperlo (Entrada 044) |
+| **M-34** — ⚠️ **el comodín marcado tarde no mueve los puntos.** Se copiaba dentro del resultado oficial, y un partido terminado ya no se vuelve a consultar | El comodín vive sólo en `partidos` y el motor lo lee de ahí (Entrada 044) |
 | **M-25** — falta índice en `Trivia` | Está en `db/esquema.sql` |
 | **M-30** — la base se llama `test` | La base nueva se llama `quiniela` |
 | **M-33** — el `tenantPlugin` no engancha `aggregate` | Lo aplica la base con RLS: no hay hueco por donde escaparse |
@@ -361,6 +382,13 @@ ahora significaría escribirla dos veces.
 
 ### B.2 Deuda técnica que sigue abierta
 
+0. ⚠️ **M-02 y M-34 siguen vivos en `main`.** Los dos se encontraron el 21 de
+   agosto al portar la puntuación (Entrada 044) y los dos dan números
+   equivocados **sin fallar**: borrar un partido descoloca los pronósticos de
+   todos, y marcar un comodín después de que el partido terminó no mueve nada.
+   **La migración los cierra.** Si se fuera a enseñar la aplicación con datos
+   que importen antes de la tajada 7, M-02 merece un parche aparte: es el que
+   puede ensuciar datos.
 1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
    `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres,
    pero la primera agregación que alguien escriba **saldrá sin filtro de quiniela
@@ -2604,7 +2632,7 @@ anterior cerrada.
 | **1** | **Cimientos** | `src/db.js`, `db/esquema.sql`, arnés PGlite, 13 pruebas | ✅ Entrada 040 |
 | **2** | **Plataforma** | `usuarios`, `quinielas`, `membresias` y sus reglas | ✅ Entrada 041 |
 | **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ Entrada 042 |
-| **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | |
+| **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | |
 | **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | |
 | **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | |
@@ -7460,6 +7488,147 @@ git status            → limpio
 **Tajada 4 — puntuación.** Todo lo que hace falta saber para empezarla está en
 §21 y en §A.1: qué entra, qué reglas hay que respetar y por qué el motor de
 puntos se puede mover tal cual.
+
+---
+
+### 📌 Entrada 044 — 21 de agosto de 2026 — Migración, tajada 4: la puntuación
+
+**Objetivo:** portar el motor de puntos, los pronósticos, los resultados
+oficiales y el ranking materializado. Es la tajada más enredada de las que
+quedaban, porque es donde vive la regla de congelar los puntos de una jornada
+terminada.
+
+**Lo que se hizo antes de escribir nada: leer POR QUÉ funcionaba lo viejo.**
+
+Las tres preguntas de alcance se revisaron contra el código antes de decidir, y
+las tres cambiaron de respuesta al mirarlas de cerca. Salieron **dos errores del
+código que corre hoy en `main`** y un cabo que nadie había atado.
+
+⚠️ **Error 1 — marcar un comodín tarde no movía los puntos.** El comodín es una
+propiedad del partido, pero en Mongo se **copiaba** dentro del resultado oficial
+en cada ciclo del sincronizador, y el motor lo leía de esa copia. Un partido
+terminado ya no se vuelve a consultar, así que la copia se quedaba con el valor
+viejo para siempre. La ruta llamaba a recalcular acto seguido y no servía de
+nada: no fallaba, no avisaba, y daba un número creíble y equivocado.
+
+⚠️ **Error 2 — M-02 no era deuda de modelo, era un fallo activo.** La ruta de
+borrar partidos hace `splice` sobre el arreglo de la jornada y **nunca toca los
+pronósticos de los jugadores**. Desde esa posición en adelante, cada pronóstico
+pasa a puntuarse contra el partido de al lado. En silencio.
+
+**Cabo suelto** — al reconciliar por posición, cambiar el partido de una posición
+por otro distinto dejaba el pronóstico viejo pegado al partido nuevo.
+
+**Las tres decisiones, y por qué cada una:**
+
+| Decisión | Qué se eligió | Qué se acepta a cambio |
+|---|---|---|
+| **El comodín** | Vive **sólo en `partidos`**. El motor lo recibe como argumento explícito. `resultados_oficiales_partidos` no tiene dónde copiarlo | Una sola fuente de verdad, y corregir una casilla mal puesta pasa a tener efecto de verdad. A cambio, la carga manual **ignora** el comodín que venga en el cuerpo: manda la jornada, no el formulario |
+| **El emparejamiento** | Por **`partido_id`**, no por posición | Cierra M-02 de raíz. La aritmética de `puntosDePartido` se mueve **intacta**, así que ningún puntaje ya emitido cambia de valor |
+| **La foto congelada** | **Sustitución completa**, y sólo las cuatro reglas de puntuación | Es una fotografía, no un ajuste. Fundirla como se funde `quinielas.configuracion` dejaría sobrevivir una clave del congelado anterior dentro del siguiente |
+
+**Y una decisión que se tomó dos veces, porque la primera estaba mal.**
+
+Se decidió al principio que la foto congelada guardara **también los comodines**,
+para que tocar una casilla en enero no reescribiera su clasificación en marzo.
+Al escribir las pruebas, dos de ellas se contradijeron: una exigía que corregir
+un comodín moviera los puntos, la otra que no los moviera. No podían tener razón
+las dos.
+
+Lo que zanjó la duda no fue una opinión sino el código: **cambiar
+`configuracion.puntuacion` NO llama a recalcular nada** (`server.js:1330`),
+mientras que **la ruta del comodín SÍ llama, sobre esa jornada concreta**
+(`server.js:1617`). La intención del código original era inequívoca.
+
+Y la diferencia de fondo es de **alcance**:
+
+- `configuracion.puntuacion` es **global**: subir el marcador exacto de 5 a 10
+  tocaría todas las jornadas jugadas de golpe, sin que nadie mirara ninguna. Eso
+  es M-03 y por eso se congela.
+- `partidos.comodin` es **local a una jornada**: quien lo marca está editando esa
+  jornada y la tiene delante. Es una corrección, no un barrido.
+
+Congelarlo además dejaba a un administrador que se equivocó de casilla **sin
+ninguna forma de arreglarlo**, que es exactamente el error de Mongo que esta
+tajada venía a cerrar. Se quitó de la foto.
+
+**Qué se hizo:**
+
+1. **`src/puntuacion.js`** — el motor puro: puntos por partido y por jornada,
+   estadísticas de desempate, si una jornada está terminada, y el orden y los
+   puestos de una clasificación.
+2. **`src/pronosticos.js`** — leer y guardar pronósticos con el cierre por
+   partido, y la traducción de posición a `partido_id`, que ocurre una sola vez.
+3. **`src/oficiales.js`** — resultados oficiales, carga manual y el detector de
+   «esto puede haber movido la tabla».
+4. **`src/ranking.js`** — congelar, recalcular, descongelar, la clasificación por
+   jornada y la tabla general.
+5. **`test/puntuacion.test.js`** — 27 pruebas.
+6. Dos retoques a la tajada 3: el filtro de expulsados en `jugadores.nombres`, y
+   el cabo del `api_fixture_id` en `jornadas.guardar`.
+7. **`partidoYaInicio` se mudó a `src/fechas.js`**, y `server.js` la importa en
+   vez de definirla.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/puntuacion.js` | **Nuevo.** El motor, sin base de datos |
+| `src/pronosticos.js` | **Nuevo.** Pronósticos y el cierre por partido |
+| `src/oficiales.js` | **Nuevo.** Resultados oficiales |
+| `src/ranking.js` | **Nuevo.** Congelado y las dos tablas |
+| `test/puntuacion.test.js` | **Nuevo.** 27 pruebas |
+| `src/fechas.js` | Recibe `partidoYaInicio`: la usan los dos mundos |
+| `server.js` | Importa `partidoYaInicio` en vez de definirla. **Único cambio; ninguna ruta habla todavía con PostgreSQL** |
+| `src/jornadas.js` | `guardar` borra los pronósticos de un partido que cambió de `api_fixture_id` |
+| `src/jugadores.js` | `nombres` acepta `incluirExpulsados` |
+| `package.json` | La suite nueva entra en `npm test` y en `test:postgres` |
+| `avance_proyecto.md` | Cabecera al día (decía `99bac51`, ya iba por `f947039`). Esta entrada |
+
+**Verificación:**
+
+```
+node --test test/puntuacion.test.js → 27/27
+npm run test:postgres              → 82 pruebas en 7,7 s
+npm test                           → 211/211
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **El comodín tardío no movía los puntos** (error activo en `main`). La
+   migración lo cierra.
+2. ⚠️ **M-02 es un fallo activo, no deuda de modelo**: el `splice` de
+   `server.js:1592` desalinea los pronósticos de todos los jugadores. La
+   migración lo cierra.
+3. **Dos pruebas que se contradicen son una decisión mal tomada, no una prueba
+   mal escrita.** El primer diseño congelaba los comodines; escribir las pruebas
+   lo destapó antes de que llegara a ninguna ruta. La lección no es «escribe
+   pruebas» sino **dónde estaba la respuesta**: en qué rutas llamaban a
+   recalcular y cuáles no, que es información que sólo existe en el código viejo.
+4. **El centinela de funciones duplicadas de `architecture.test.js` cazó
+   `partidoYaInicio` a la primera.** Dos copias de esa regla son dos respuestas
+   distintas a «¿puedo cambiar mi pronóstico?». Se mudó a `src/fechas.js`, que ya
+   era el sitio compartido por los dos mundos. **Es la primera vez que un
+   guardián escrito en la Fase 6 paga solo durante la migración.**
+5. **La carga manual tomaba el comodín del cuerpo de la petición**
+   (`server.js:3221`): lo que el navegador devolviera. Funcionaba porque el
+   cliente lee y reescribe, pero es una copia que puede desviarse. Ahora se
+   ignora.
+6. **`puntosPuedenHaberCambiado` pasó de heurística a comparación.** En Mongo
+   tenía que emparejar por equipos, con normalización de nombres y el caso de
+   local y visitante invertidos. Por `partido_id` son seis líneas y no hay nada
+   que pueda equivocarse. La heurística de equipos sigue haciendo falta, pero
+   sólo en la frontera con el proveedor: eso es la tajada 6.
+7. **Una jornada sin partidos no se da por terminada.** Sin esa línea, una
+   jornada recién creada y vacía se congelaría con todo el mundo a cero y no
+   volvería a calcularse nunca.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 5 — trivias**: `trivias`, `respuestas_trivia`, autorresolución y
+reconciliación. El esquema ya trae el índice único que cierra **S-10** y el
+índice de **M-25**. La tabla general ya lee la suma de `respuestas_trivia`, así
+que la columna de trivias funciona desde ya.
 
 ---
 

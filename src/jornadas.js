@@ -28,6 +28,7 @@
 'use strict';
 
 const db = require('./db');
+const pronosticos = require('./pronosticos');
 
 /** De columnas de la base a la forma que espera el frontend. Sin tocar nada. */
 function partidoPublico(fila) {
@@ -157,12 +158,36 @@ async function guardar(quinielaId, nombre, partidos) {
       [quinielaId, nombre]);
 
     const { rows: existentes } = await c.query(
-      'SELECT id, orden FROM partidos WHERE jornada_id = $1 ORDER BY orden', [j.id]);
+      'SELECT id, orden, api_fixture_id FROM partidos WHERE jornada_id = $1 ORDER BY orden',
+      [j.id]);
+
+    /*
+     * ⚠️ Conservar el id es lo correcto cuando la posición sigue siendo EL MISMO
+     * partido. Cuando pasa a ser OTRO —el administrador cambia el tercer partido
+     * de la jornada por uno distinto— los pronósticos que colgaban del viejo se
+     * quedarían pegados al nuevo y puntuarían contra un partido que nadie
+     * pronosticó.
+     *
+     * Desde la Fase D los partidos salen sólo del API, así que hay una señal
+     * limpia para distinguir los dos casos: el `api_fixture_id`. Si cambia por
+     * otro distinto, es otro partido y lo que colgaba de él ya no vale.
+     *
+     * Sólo cuando los dos identificadores existen. Si el viejo venía sin él, no
+     * hay forma de saberlo y no se toca nada: borrar pronósticos por si acaso
+     * sería peor que dejarlos.
+     */
+    const cambiaronDePartido = [];
 
     // Los que ya estaban en esa posición se actualizan y conservan su id.
     for (let i = 0; i < partidos.length; i++) {
       const valores = valoresDePartido(partidos[i]);
       if (i < existentes.length) {
+        const antes = existentes[i].api_fixture_id;
+        const ahora = partidos[i].apiFixtureId;
+        if (antes && ahora && String(antes) !== String(ahora)) {
+          cambiaronDePartido.push(existentes[i].id);
+        }
+
         await c.query(
           `UPDATE partidos SET equipo1=$2, equipo2=$3, logo_equipo1=$4, logo_equipo2=$5,
                   comodin=$6, api_fixture_id=$7, api_league_id=$8, api_date=$9, api_status=$10
@@ -184,7 +209,9 @@ async function guardar(quinielaId, nombre, partidos) {
         [j.id, partidos.length]);
     }
 
-    return { nombre };
+    const pronosticosBorrados = await pronosticos.borrarDePartidos(c, cambiaronDePartido);
+
+    return { nombre, partidosReemplazados: cambiaronDePartido.length, pronosticosBorrados };
   });
 }
 

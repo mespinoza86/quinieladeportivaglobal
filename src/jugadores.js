@@ -24,15 +24,23 @@ const db = require('./db');
  * consultas y no un `JOIN`: la primera va sin contexto y la segunda dentro de
  * él. Mezclarlas en una sola dejaría fuera a los miembros o a los históricos,
  * según por dónde se mirara.
+ *
+ * `incluirExpulsados` es la opción `configuracion.incluirExpulsadosEnRanking`:
+ * decide si quien fue expulsado sigue apareciendo en la tabla de posiciones.
+ * Quitarlo del ranking no borra sus puntos, sólo su fila.
  */
-async function nombres(quinielaId) {
+async function nombres(quinielaId, { incluirExpulsados = false } = {}) {
+  const estados = incluirExpulsados
+    ? ['activo', 'pendiente_retiro', 'expulsado']
+    : ['activo', 'pendiente_retiro'];
+
   const { rows: miembros } = await db.consulta(
     `SELECT u.username
        FROM membresias m
        JOIN usuarios u ON u.id = m.usuario_id
-      WHERE m.quiniela_id = $1 AND m.estado IN ('activo', 'pendiente_retiro')
+      WHERE m.quiniela_id = $1 AND m.estado = ANY($2::text[])
       ORDER BY m.created_at`,
-    [quinielaId]);
+    [quinielaId, estados]);
 
   const historicos = await db.enQuiniela(quinielaId, async c => {
     const { rows } = await c.query('SELECT nombre FROM jugadores');

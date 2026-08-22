@@ -793,7 +793,7 @@ const {
   MAX_LARGO_NOMBRE_JORNADA
 } = require('./src/validacion');
 
-const { extraerFechaApi, parseFechaPartidoCostaRica } = require('./src/fechas');
+const { extraerFechaApi, parseFechaPartidoCostaRica, partidoYaInicio } = require('./src/fechas');
 
 /* Fase C: qué ligas se ofrecen y sobre qué rango de fechas. */
 const {
@@ -2988,16 +2988,7 @@ app.get('/api/resultados', async (req, res) => {
 
 /* parseFechaPartidoCostaRica vive en src/fechas.js desde la Fase B. */
 
-function partidoYaInicio(partido, oficial = null) {
-  if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) {
-    return true;
-  }
-
-  const fecha = parseFechaPartidoCostaRica(partido.apiDate);
-  if (!fecha) return false;
-
-  return fecha <= new Date();
-}
+/* partidoYaInicio vive en src/fechas.js desde la tajada 4. */
 
 app.post('/api/resultados', async (req, res) => {
   try {
