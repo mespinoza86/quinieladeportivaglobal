@@ -23,6 +23,12 @@ let adaptador;
 
 test.before(async () => {
   process.env.NODE_ENV = 'test';
+  /*
+   * Las rutas que hablan con el proveedor comprueban la clave ANTES de pedir
+   * nada, para dar un motivo en vez de un error críptico. Aquí no se usa —la
+   * puerta al exterior se sustituye con `usarFuente`— pero tiene que estar.
+   */
+  process.env.APIFOOTBALL_COM_KEY = 'clave-falsa-no-se-usa';
   adaptador = await enMemoria.levantar();
   /*
    * El almacén de sesiones habla con la base por su cuenta, sin pasar por los
@@ -1410,4 +1416,327 @@ test('las trivias de una quiniela no se ven ni se responden desde otra', async (
   });
   assert.equal(intento.body.desconocidas, 1, 'la trivia de A no existe para B');
   assert.equal(intento.body.guardadas, 0);
+});
+
+/* ==================== 7.6 — Sincronizador, admin y proveedor ==================== */
+
+const proveedor = require('../src/proveedor');
+const sincronizador = require('../src/sincronizador');
+const planificador = require('../src/planificador');
+
+/** Sustituye la puerta al proveedor y la restaura al terminar. */
+async function conProveedorFalso(respuestas, fn) {
+  const anterior = proveedor.usarFuente(async params => {
+    const clave = `${params.action}${params.match_id ? ':' + params.match_id : ''}`;
+    return typeof respuestas === 'function' ? respuestas(params) : (respuestas[clave] ?? []);
+  });
+  try { return await fn(); } finally { proveedor.usarFuente(anterior); }
+}
+
+const eventoApi = ({ id = '1', local = 'Alfa', visitante = 'Beta', liga = 'Primera', pais = 'Costa Rica' } = {}) => ({
+  match_id: id,
+  match_date: '2099-01-01',
+  match_time: '15:00',
+  match_status: 'Finished',
+  league_name: liga,
+  country_name: pais,
+  league_id: '7',
+  match_hometeam_name: local,
+  match_awayteam_name: visitante,
+  team_home_badge: '', team_away_badge: '',
+  match_hometeam_score: '2',
+  match_awayteam_score: '1',
+  match_hometeam_ft_score: '2',
+  match_awayteam_ft_score: '1'
+});
+
+/* ---------- El proveedor ---------- */
+
+test('el cliente del proveedor tiene un plazo máximo de espera', () => {
+  assert.ok(proveedor.TIMEOUT_MS > 0,
+    'el valor por defecto de axios es esperar para siempre, y una petición colgada apaga el sincronizador en silencio');
+});
+
+test('los partidos del proveedor llegan traducidos a la forma de la aplicación', async () => {
+  const jefe = await admin('jefe');
+
+  await conProveedorFalso({ get_events: [eventoApi()] }, async () => {
+    const res = await jefe.agente.get('/api/football/fixtures?date=2099-01-01');
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1);
+    assert.deepEqual(
+      { equipo1: res.body[0].equipo1, equipo2: res.body[0].equipo2, apiFixtureId: res.body[0].apiFixtureId },
+      { equipo1: 'Alfa', equipo2: 'Beta', apiFixtureId: 1 });
+  });
+});
+
+test('⚠️ las competiciones bloqueadas se descartan en el servidor, no en el navegador', async () => {
+  const jefe = await admin('jefe');
+
+  const lista = [
+    eventoApi({ id: '1', liga: 'Primera División' }),
+    eventoApi({ id: '2', liga: 'Primera División Femenina' })
+  ];
+
+  await conProveedorFalso({ get_events: lista }, async () => {
+    // Sin torneo elegido: antes el filtro sólo se aplicaba si había uno.
+    const res = await jefe.agente.get('/api/football/fixtures?date=2099-01-01');
+    assert.equal(res.body.length, 1);
+    assert.equal(res.body[0].apiFixtureId, 1);
+  });
+});
+
+test('sin fecha, el buscador de partidos responde 400 y no consulta nada', async () => {
+  const jefe = await admin('jefe');
+  let consultas = 0;
+
+  await conProveedorFalso(() => { consultas += 1; return []; }, async () => {
+    const res = await jefe.agente.get('/api/football/fixtures');
+    assert.equal(res.status, 400);
+  });
+
+  assert.equal(consultas, 0, 'una petición inválida no debe gastar cuota');
+});
+
+test('el buscador de ligas agrupa por país y se cachea', async () => {
+  const jefe = await admin('jefe');
+  proveedor.vaciarCacheLigas();
+
+  let consultas = 0;
+  const lista = [
+    eventoApi({ id: '1', pais: 'Costa Rica' }),
+    eventoApi({ id: '2', pais: 'México' })
+  ];
+
+  await conProveedorFalso(() => { consultas += 1; return lista; }, async () => {
+    const primera = await jefe.agente.get('/api/football/ligas-disponibles');
+    assert.equal(primera.status, 200);
+    assert.equal(primera.body.deCache, false);
+    assert.ok(primera.body.paises.length >= 2);
+
+    const segunda = await jefe.agente.get('/api/football/ligas-disponibles');
+    assert.equal(segunda.body.deCache, true);
+  });
+
+  assert.equal(consultas, 1, 'quien arma una jornada abre esa pantalla varias veces seguidas');
+  proveedor.vaciarCacheLigas();
+});
+
+test('un miembro normal no puede consultar las ligas disponibles', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+
+  const res = await socio.agente.get('/api/football/ligas-disponibles');
+  assert.equal(res.status, 403);
+});
+
+/* ---------- Sincronizar a mano ---------- */
+
+test('sincronizar una jornada a mano escribe los resultados y mueve los puntos', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiFixtureId: '1' })]
+  });
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 2, marcador2: 1 }]
+  });
+
+  await conProveedorFalso({ 'get_events:1': [eventoApi()] }, async () => {
+    const res = await jefe.agente.post('/api/sync-resultados-oficiales/J1').send({});
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.success, true);
+  });
+
+  const tabla = await jefe.agente.get('/api/clasificacion-jornada?jornada=J1');
+  assert.equal(tabla.body.estado, 'confirmada', 'el partido vino terminado');
+  assert.equal(tabla.body.clasificacion.find(f => f.jugador === jefe.datos.username).puntos, 5);
+});
+
+test('sincronizar una jornada que no existe responde 404', async () => {
+  const jefe = await admin('jefe');
+
+  await conProveedorFalso({}, async () => {
+    const res = await jefe.agente.post('/api/sync-resultados-oficiales/No%20existe').send({});
+    assert.equal(res.status, 404);
+  });
+});
+
+test('⚠️ la sincronización a mano se salta las ventanas de consulta', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiFixtureId: '1', apiDate: '2099-06-01 15:00' })]
+  });
+
+  let consultas = 0;
+  const responder = () => { consultas += 1; return [eventoApi({ id: '1' })]; };
+
+  await conProveedorFalso(responder, async () => {
+    await jefe.agente.post('/api/sync-resultados-oficiales/J1').send({});
+    await jefe.agente.post('/api/sync-resultados-oficiales/J1').send({});
+  });
+
+  assert.equal(consultas, 2,
+    'es una petición explícita de quien está mirando la pantalla, no el reloj');
+});
+
+/* ---------- Modo admin ---------- */
+
+test('el modo admin carga los pronósticos de otra persona', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta')]
+  });
+
+  const res = await jefe.agente.post('/api/admin/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 3, marcador2: 0 }]
+  });
+
+  assert.equal(res.status, 200);
+
+  const suyos = await jefe.agente.get(`/api/resultados/${socio.datos.username}/J1`);
+  assert.equal(suyos.body[0].marcador1, 3);
+});
+
+test('⚠️ el modo admin NO aplica el cierre por partido', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+
+  // El partido ya empezó: por la vía normal esto no se guardaría.
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiDate: '2020-01-01 15:00' })]
+  });
+
+  const res = await jefe.agente.post('/api/admin/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 1 }]
+  });
+
+  assert.equal(res.status, 200);
+  const suyos = await jefe.agente.get(`/api/resultados/${socio.datos.username}/J1`);
+  assert.equal(suyos.body[0].marcador1, 1,
+    'un administrador transcribe lo que ya recibió, y suele hacerlo con la jornada empezada');
+});
+
+test('el modo admin valida los marcadores igual que la vía normal', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await jefe.agente.post('/api/admin/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 999, marcador2: 0 }]
+  });
+
+  assert.equal(res.status, 400);
+});
+
+test('un miembro normal no puede usar el modo admin', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await socio.agente.post('/api/admin/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+
+  assert.equal(res.status, 403);
+});
+
+/* ---------- Métricas ---------- */
+
+test('las métricas del sincronizador traen su configuración y el cerrojo', async () => {
+  const jefe = await admin('jefe');
+  const res = await jefe.agente.get('/api/admin/sync-metricas');
+
+  assert.equal(res.status, 200);
+  assert.equal(typeof res.body.ciclos, 'number');
+  assert.equal(typeof res.body.consultasAhorradasPorDeduplicacion, 'number');
+  assert.ok(res.body.configuracion.intervaloCicloMs > 0);
+  assert.ok(res.body.configuracion.ventanasMs.enVivo > 0);
+  assert.ok(res.body.instancia);
+});
+
+test('un miembro normal no ve las métricas', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+
+  assert.equal((await socio.agente.get('/api/admin/sync-metricas')).status, 403);
+});
+
+/* ---------- Depuración ---------- */
+
+test('⚠️ los endpoints de depuración responden 404, no 403, con la bandera apagada', async () => {
+  const jefe = await admin('jefe');
+
+  for (const ruta of [
+    '/api/debug/estado-partido/Finished',
+    '/api/debug/jornadas',
+    '/api/debug/api-football-match/1'
+  ]) {
+    const res = await jefe.agente.get(ruta);
+    assert.equal(res.status, 404, `${ruta} revela que existe`);
+  }
+});
+
+/* ---------- El planificador ---------- */
+
+test('un ciclo completo por el planificador usa el proveedor de verdad', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiFixtureId: '1' })]
+  });
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 2, marcador2: 1 }]
+  });
+
+  sincronizador.reiniciarMetricas();
+
+  await conProveedorFalso({ 'get_events:1': [eventoApi()] }, async () => {
+    const r = await planificador.unCiclo();
+    assert.equal(r.omitido, false);
+    assert.equal(r.jornadasReescritas, 1);
+  });
+
+  assert.ok(sincronizador.metricas.llamadasApi > 0, 'las llamadas se cuentan para las métricas');
+
+  const tabla = await jefe.agente.get('/api/clasificacion-jornada?jornada=J1');
+  assert.equal(tabla.body.clasificacion.find(f => f.jugador === jefe.datos.username).puntos, 5);
+});
+
+test('el barrido de trivias recorre cada quiniela en su propio contexto', async () => {
+  const a = await admin('bta');
+  const b = await admin('btb');
+
+  for (const quien of [a, b]) {
+    await quien.agente.post('/api/jornadas').send({
+      nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiFixtureId: '1' })]
+    });
+  }
+
+  const r = await planificador.resolverTriviasDeTodas();
+
+  assert.equal(r.quinielas, 2, 'las dos quinielas activas, una por una');
+  assert.equal(r.resueltas, 0, 'sin trivias no hay nada que resolver');
+});
+
+test('una quiniela archivada no entra en el barrido de trivias', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.patch('/api/quiniela-actual/archivar').send({ archivada: true });
+
+  const r = await planificador.resolverTriviasDeTodas();
+  assert.equal(r.quinielas, 0, 'nadie va a puntuar ahí, y recorrerla gasta llamadas');
+});
+
+test('sin clave configurada, las rutas del proveedor dicen POR QUÉ', async () => {
+  const jefe = await admin('jefe');
+  const clave = process.env.APIFOOTBALL_COM_KEY;
+  delete process.env.APIFOOTBALL_COM_KEY;
+
+  try {
+    const res = await jefe.agente.get('/api/football/fixtures?date=2099-01-01');
+    assert.equal(res.status, 500);
+    assert.match(res.body.error, /APIFOOTBALL_COM_KEY/,
+      'un error críptico aquí cuesta media hora de diagnóstico');
+  } finally {
+    process.env.APIFOOTBALL_COM_KEY = clave;
+  }
 });

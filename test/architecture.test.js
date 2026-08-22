@@ -477,11 +477,20 @@ test('el proveedor externo tiene un plazo máximo de espera', () => {
    * `cicloEnCurso` solo se libera en su `finally`, el auto-sync del proceso se
    * apagaba en silencio hasta el siguiente reinicio.
    */
-  assert.match(serverSinComentarios, /const TIMEOUT_APIFOOTBALL_MS = Number\(process\.env\.APIFOOTBALL_TIMEOUT_MS/);
+  /*
+   * Se mira el conjunto: el cliente vive en src/proveedor.js desde la tajada
+   * 7.6. Es la regla de la cabecera de este archivo —las DEFINICIONES se buscan
+   * en `fuente`— y es el tercer centinela que la aprende durante la migracion,
+   * despues de partidoYaInicio y del VAR.
+   */
+  assert.match(fuenteSinComentarios, /const TIMEOUT_MS = Number\(process\.env\.APIFOOTBALL_TIMEOUT_MS/);
   assert.match(
-    serverSinComentarios,
-    /axios\.create\(\{\s*baseURL: 'https:\/\/apiv3\.apifootball\.com\/',\s*timeout: TIMEOUT_APIFOOTBALL_MS\s*\}\)/
+    fuenteSinComentarios,
+    /axios\.create\(\{\s*baseURL: 'https:\/\/apiv3\.apifootball\.com\/',\s*timeout: TIMEOUT_MS\s*\}\)/
   );
+
+  // Y una sola puerta al exterior: dos clientes serian dos plazos de espera.
+  assert.equal(fuenteSinComentarios.split('axios.create(').length - 1, 1);
 });
 
 test('un ciclo de sincronización que no termina no bloquea al planificador', () => {

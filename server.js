@@ -9,7 +9,6 @@ const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const axios = require('axios');
 const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 require('dotenv').config();
@@ -401,26 +400,13 @@ app.get('/css/:filename', (req, res) => {
 });
 
 
-
-
-
-/* ================= API-Football ================= */
-
-
 /*
- * `timeout` no es decorativo. El valor por defecto de axios es 0 —esperar para
- * siempre—, y una petición que se queda colgada deja sin resolver la promesa
- * del ciclo de sincronización. Como `cicloEnCurso` solo se libera en el
- * `finally` de ese ciclo, el auto-sync del proceso se apaga en silencio hasta
- * el siguiente reinicio: nadie ve un error, simplemente `ultimoCiclo` deja de
- * moverse en /api/admin/sync-metricas.
+ * Hablar con APIFootball vive en src/proveedor.js desde la tajada 7.6: el
+ * cliente, el plazo de espera y las cuatro consultas. Aqui solo quedan los
+ * alias que usan las rutas de este archivo, que desaparece en el paso 7.7.
  */
-const TIMEOUT_APIFOOTBALL_MS = Number(process.env.APIFOOTBALL_TIMEOUT_MS || 15_000);
-
-const apiFootballCom = axios.create({
-  baseURL: 'https://apiv3.apifootball.com/',
-  timeout: TIMEOUT_APIFOOTBALL_MS
-});
+const proveedor = require('./src/proveedor');
+const TIMEOUT_APIFOOTBALL_MS = proveedor.TIMEOUT_MS;
 
 
 /* ================= Schemas ================= */
@@ -1629,60 +1615,8 @@ app.post('/api/jornadas/comodin',requireAdmin, async (req, res) => {
 
 /* ================= API-Football ================= */
 
-/*
- * Traduce un evento crudo del proveedor a la forma que usa la aplicación.
- *
- * Estaba incrustado dentro de la ruta de partidos. Se saca porque desde la Fase
- * C hay DOS cosas que leen la misma respuesta —la lista de partidos y la de
- * ligas disponibles— y dos traducciones del mismo JSON acabarían discrepando en
- * algún campo sin que nadie lo note.
- */
-function mapearEventoDelProveedor(item) {
-  return {
-    apiFixtureId: Number(item.match_id),
-    fecha: `${item.match_date} ${item.match_time}`,
-    estado: item.match_status || 'NS',
-    minuto: null,
-    liga: item.league_name || '',
-    pais: item.country_name || '',
-    temporada: '',
-    apiLeagueId: Number(item.league_id),
-    equipo1: item.match_hometeam_name,
-    equipo2: item.match_awayteam_name,
-    logoEquipo1: item.team_home_badge || '',
-    logoEquipo2: item.team_away_badge || '',
-    marcador1: item.match_hometeam_score !== '' ? Number(item.match_hometeam_score) : null,
-    marcador2: item.match_awayteam_score !== '' ? Number(item.match_awayteam_score) : null
-  };
-}
-
-/**
- * Los partidos de un rango de fechas, ya traducidos.
- *
- * Es la única puerta hacia `get_events`. Va por `proveedorDeEventos` como las
- * demás consultas al exterior, y por la misma razón: es la costura por la que
- * las pruebas meten un proveedor falso sin tocar la red.
- */
-async function buscarEventosPorRango({ desde, hasta, ligaId } = {}) {
-  const params = {
-    action: 'get_events',
-    from: desde,
-    to: hasta,
-    APIkey: process.env.APIFOOTBALL_COM_KEY,
-    timezone: 'America/Costa_Rica'
-  };
-
-  if (ligaId) params.league_id = ligaId;
-
-  const response = await apiFootballCom.get('', { params });
-
-  if (!Array.isArray(response.data)) {
-    console.log('Respuesta APIfootball.com:', response.data);
-    return [];
-  }
-
-  return response.data.map(mapearEventoDelProveedor);
-}
+/* mapearEventoDelProveedor y buscarEventosPorRango viven en src/proveedor.js. */
+const buscarEventosPorRango = argumentos => proveedor.porRango(argumentos);
 
 app.get('/api/football/fixtures', async (req, res) => {
   try {
@@ -1812,14 +1746,7 @@ app.get('/api/football/ligas-disponibles', requireAdmin, async (req, res) => {
 
 app.get('/api/football/leagues', async (req, res) => {
   try {
-    const response = await apiFootballCom.get('', {
-      params: {
-        action: 'get_leagues',
-        APIkey: process.env.APIFOOTBALL_COM_KEY
-      }
-    });
-
-    res.json(response.data);
+    res.json(await proveedor.ligas());
   } catch (error) {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: 'Error consultando ligas' });
@@ -1860,49 +1787,9 @@ function obtenerMarcador90Minutos(fixture) {
 
 /* extraerFechaApi vive en src/fechas.js desde la Fase B. */
 
-async function buscarEventoPorId(matchId) {
-  if (!matchId) return null;
+const buscarEventoPorId = matchId => proveedor.porId(matchId);
 
-  const response = await apiFootballCom.get('', {
-    params: {
-      action: 'get_events',
-      match_id: String(matchId),
-      timezone: 'America/Costa_Rica',
-      APIkey: process.env.APIFOOTBALL_COM_KEY
-    }
-  });
-
-  return Array.isArray(response.data) ? response.data[0] : null;
-}
-
-async function buscarEventoPorFallback(partido) {
-  const fecha = extraerFechaApi(partido.apiDate);
-  if (!fecha) return null;
-
-  const params = {
-    action: 'get_events',
-    from: fecha,
-    to: fecha,
-    APIkey: process.env.APIFOOTBALL_COM_KEY
-  };
-
-  if (partido.apiLeagueId) {
-    params.league_id = partido.apiLeagueId;
-  }
-
-  const response = await apiFootballCom.get('', { params });
-  const eventos = Array.isArray(response.data) ? response.data : [];
-
-  const equipo1 = normalizarEquipo(partido.equipo1);
-  const equipo2 = normalizarEquipo(partido.equipo2);
-
-  return eventos.find(evento => {
-    const local = normalizarEquipo(evento.match_hometeam_name);
-    const visita = normalizarEquipo(evento.match_awayteam_name);
-
-    return local === equipo1 && visita === equipo2;
-  }) || null;
-}
+const buscarEventoPorFallback = partido => proveedor.porFecha(partido);
 
 
 /* ================= Sincronizador — Fase 4 (C-01, C-05) =================
@@ -3636,25 +3523,7 @@ if (partido && partidoYaInicio(partido, oficial)) {
 });
 
 
-async function obtenerEventoTrivia(apiFixtureId) {
-  if (!apiFixtureId) return null;
-
-  const response = await apiFootballCom.get('', {
-    params: {
-      action: 'get_events',
-      match_id: String(apiFixtureId),
-      APIkey: process.env.APIFOOTBALL_COM_KEY,
-      timezone: 'America/Costa_Rica'
-    }
-  });
-
-  if (!Array.isArray(response.data) || response.data.length === 0) {
-    console.log('APIfootball.com no devolvió evento para trivia:', apiFixtureId, response.data);
-    return null;
-  }
-
-  return response.data[0];
-}
+/* obtenerEventoTrivia es proveedor.porId: la MISMA consulta. Tajada 7.6. */
 
 /* Los lectores del JSON del proveedor viven en src/eventos.js desde la tajada 6. */
 
@@ -3712,7 +3581,7 @@ async function resolverTriviasPendientes(jornadaNombre = null) {
         continue;
       }
 
-      const evento = await obtenerEventoTrivia(trivia.apiFixtureId);
+      const evento = await proveedor.porId(trivia.apiFixtureId);
       const respuestaCorrecta = resolverRespuestaTrivia(trivia, evento);
 
       if (!respuestaCorrecta) continue;
@@ -4624,21 +4493,12 @@ app.get('/api/debug/api-football-match/:matchId', requireDebug, requireAdmin, as
   try {
     const { matchId } = req.params;
 
-    const response = await apiFootballCom.get('', {
-      params: {
-        action: 'get_events',
-        match_id: String(matchId),
-        APIkey: process.env.APIFOOTBALL_COM_KEY,
-        timezone: 'America/Costa_Rica'
-      }
-    });
+    const evento = await proveedor.porId(matchId);
 
     res.json({
       matchId,
-      tipoRespuesta: typeof response.data,
-      esArray: Array.isArray(response.data),
-      cantidad: Array.isArray(response.data) ? response.data.length : null,
-      data: response.data
+      encontrado: Boolean(evento),
+      data: evento
     });
 
   } catch (error) {
@@ -4651,7 +4511,7 @@ app.get('/api/debug/api-football-match/:matchId', requireDebug, requireAdmin, as
 
 app.get('/debug/trivia-goles/:matchId', requireDebug, requireAdmin, async (req, res) => {
   try {
-    const evento = await obtenerEventoTrivia(req.params.matchId);
+    const evento = await proveedor.porId(req.params.matchId);
 
     if (!evento) {
       return res.json({

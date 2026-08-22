@@ -23,8 +23,8 @@
 git branch --show-current   # debe decir: postgres
 git log --oneline -3        # debe empezar por c123468
 git status                  # debe estar limpio
-npm test                    # 358/358
-npm run test:postgres       # 229, en ~30 s
+npm test                    # 378/378
+npm run test:postgres       # 249, en ~36 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
@@ -35,7 +35,7 @@ sigue hablando con MongoDB.
 
 ⚠️ **En la rama `postgres` hay DOS servidores a la vez, y es a propósito**:
 `server.js` sobre Mongo —que es el que arranca `npm start` y el que se despliega—
-y `src/servidor.js` sobre PostgreSQL, con **66 de las 81 rutas** ya portadas y sus
+y `src/servidor.js` sobre PostgreSQL, con **las 81 rutas** ya portadas y sus
 propias pruebas. Se cambia el uno por el otro en el paso 7.7. El detalle de esta
 convivencia y de cómo se deshace está en **§A.4**.
 
@@ -46,31 +46,33 @@ convivencia y de cómo se deshace está en **§A.4**.
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
 después de un sondeo que la midió en vez de opinarla. Van **6 tajadas de 7**, y
-de la séptima, **5 pasos de 7**.
+de la séptima, **6 pasos de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **358** (129 de Mongo + 229 nuevas) |
-| Sólo las de PostgreSQL | **229**, ~30 s |
+| Pruebas en `postgres` | **378** (129 de Mongo + 249 nuevas) |
+| Sólo las de PostgreSQL | **249**, ~36 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
-| `server.js` | **4.873 líneas**, intacto y verde. Sigue sobre Mongo **a propósito**: el servidor nuevo crece a su lado |
-| Rutas ya sobre PostgreSQL | **66 de 81**, en `src/servidor.js` y `src/rutas/` |
-| `src/` | 21 módulos + `src/rutas/` (2). Todo lo que era `server.js` menos las rutas que faltan |
+| `server.js` | **4.733 líneas**, verde y desplegable. Sigue sobre Mongo **a propósito**: el servidor nuevo crece a su lado |
+| Rutas ya sobre PostgreSQL | ✅ **81 de 81**, en `src/servidor.js` y `src/rutas/` (4) |
+| `src/` | 23 módulos + `src/rutas/` (4). **Todo lo que era `server.js`** |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Todas las reglas están portadas, con 229 pruebas contando las de las rutas.
-  **Lo que falta son 15 rutas y el cambio.**
+- **Las 81 rutas están portadas**, con 249 pruebas. `src/servidor.js` responde a
+  todo lo que responde `server.js`.
+- Ninguna prueba sale a la red: quien lee el JSON del proveedor se prueba con un
+  JSON escrito a mano, y quien lo pide se sustituye con `proveedor.usarFuente()`.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
-**Lo que NO está hecho**: quedan **15 rutas** por portar —sincronizador, admin,
-proveedor y depuración— y el **cambio** (paso 7.7), que es lo único irreversible
-de toda la migración. Lo que hoy se despliega sigue siendo `server.js` sobre
+**Lo que NO está hecho**: el **cambio** (paso 7.7), que es lo único irreversible
+de toda la migración y **no añade funcionalidad**: apaga el servidor viejo y
+enciende el nuevo. Lo que hoy se despliega sigue siendo `server.js` sobre
 Mongoose.
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
@@ -237,21 +239,30 @@ escribir el servidor nuevo y lo cazó una prueba el mismo día.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es el paso 7.6 — sincronizador y admin.** 15 rutas:
-`/api/admin/*`, `/api/football/*`, `/api/debug/*` y
-`/api/sync-resultados-oficiales`. Más dos piezas que no son rutas:
+**Lo siguiente es el paso 7.7 — el cambio.** Es el último, y ⚠️ **el único sin
+retorno de toda la migración**. No añade funcionalidad: apaga el servidor viejo
+y enciende el nuevo.
 
-- **`src/proveedor.js`** — es **lo único que queda por sacar de `server.js`**: ir
-  a pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota.
-  `src/eventos.js` ya sabe LEER la respuesta; falta quien la va a buscar.
-- **El planificador** que llama al `tick` del sincronizador cada minuto.
+Lo que entra, en orden:
 
-Después sólo queda **7.7, el cambio**, cuyo contenido está en §A.0.
+1. **`npm start` apunta a `src/servidor.js`**, con su arranque propio: abre el
+   puerto de inmediato y deja que `/readyz` diga si la base ya responde.
+2. **Las 62 pruebas de navegador** pasan a arrancar PGlite en vez de Mongo
+   (`test/e2e/arrancar.js`).
+3. **Se borra `server.js`** y con él `test/integracion.test.js`.
+4. **Se quita el respaldo `trivia.id ?? trivia._id`** de los 3 archivos del
+   frontend, y `src/transacciones.js`.
+5. **Fuera del `package.json`**: `mongoose`, `connect-mongo` y
+   `mongodb-memory-server`.
+6. **`render.yaml`** versionado, y la documentación al día.
 
-#### Las cuatro reglas que hay que respetar al escribir una ruta
+La lista completa de lo que hay que deshacer está en **§A.4**.
+
+#### Las cuatro reglas del código nuevo, que siguen valiendo
 
 Las tres primeras son de §21.2 y sostienen el aislamiento. La cuarta se aprendió
-el 21 de agosto y ya mordió una vez.
+el 21 de agosto y ya mordió una vez. No quedan rutas por escribir, pero sí por
+tocar.
 
 1. La transacción es **por petición**; `enQuiniela` es reentrante.
 2. El contexto se fija con `SET LOCAL`, dentro de la transacción.
@@ -352,9 +363,9 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 358, ~30 s
-npm run test:postgres      # solo las 229 de PostgreSQL, ~30 s (solo en la rama)
-npm run test:rutas         # solo las 91 del servidor nuevo
+                           #   en postgres: 378, ~36 s
+npm run test:postgres      # solo las 249 de PostgreSQL, ~36 s (solo en la rama)
+npm run test:rutas         # solo las 111 del servidor nuevo
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -404,7 +415,7 @@ Esto es sólo el estado.
 | **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | Trivias | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
 | **6** | Sincronizador | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
-| **7** | **El cambio y la limpieza** | Ver el desglose de abajo | 🟡 **en curso: 5 pasos de 7** |
+| **7** | **El cambio y la limpieza** | Ver el desglose de abajo | 🟡 **en curso: 6 pasos de 7** |
 
 ### A.0 La tajada 7, paso a paso
 
@@ -418,8 +429,8 @@ punto sin retorno es el 7.7**; hasta entonces `server.js` sigue vivo y verde.
 | **7.3** | Dominio: `jornadas`, `jugadores`, `equipos`, `jornada-actual` | 16 | ✅ Entrada 047 |
 | **7.4** | Puntuación: `resultados`, `resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos`, `clasificacion-jornada` | 10 | ✅ Entrada 048 |
 | **7.5** | Trivias, más el `_id → id` de los 3 archivos del frontend | 14 | ✅ Entrada 049 |
-| **7.6** | **Sincronizador y admin**: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 15 | ⬜ **el siguiente** |
-| **7.7** | ⚠️ **El cambio.** `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ⬜ |
+| **7.6** | Sincronizador y admin: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 15 | ✅ Entrada 051 |
+| **7.7** | ⚠️ **El cambio, y lo único sin retorno.** `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ⬜ |
 
 ⚠️ **Antes de desplegar hacen falta tres cosas que no son programar**, y están en
 §B.3: `DATABASE_URL` en Render con el rol `app_quiniela` y la cadena con
@@ -8362,6 +8373,110 @@ planificador. Después, **7.7: el cambio**, que es el único punto sin retorno.
 `DATABASE_URL` en Render con el rol `app_quiniela` y la cadena con `-pooler`;
 comprobar que Render y Neon están en la misma región; y saber si sigue viva la
 aplicación anterior apuntando a la misma base.
+
+---
+
+### 📌 Entrada 051 — 21 de agosto de 2026 — Tajada 7, paso 6: el sincronizador, el proveedor y las últimas rutas
+
+**Objetivo:** las 15 rutas que faltaban, más las dos piezas que no son rutas: ir
+a pedirle datos a APIFootball, y el reloj que dispara los trabajos periódicos.
+
+## ✅ Las 81 rutas están portadas
+
+Es el hito del paso: **`src/servidor.js` responde a todo lo que responde
+`server.js`**. Se comprueba comparando las dos listas de rutas, y la diferencia
+es vacía. Lo que queda es el **cambio** —paso 7.7—, que no añade
+funcionalidad: apaga el viejo y enciende el nuevo.
+
+**La separación que faltaba: pedir y leer no son lo mismo.**
+
+`src/eventos.js` sabía **leer** la respuesta del proveedor desde la tajada 6.
+Faltaba quien **va a buscarla**, y eso es `src/proveedor.js`: la URL, la clave,
+el plazo de espera y las cuatro consultas.
+
+No es una separación estética. Es lo que permite que **las 249 pruebas de
+PostgreSQL no salgan a la red ni una vez**: quien interpreta se prueba con un
+JSON escrito a mano, y quien pide se sustituye entero con `usarFuente()`. Las
+pruebas del paso ejercitan el buscador de partidos, el de ligas con su caché, la
+sincronización a mano y un ciclo completo del planificador **sin tocar
+internet**.
+
+**Qué se hizo:**
+
+1. **`src/proveedor.js`** — el cliente, el plazo, las cuatro consultas
+   (`porRango`, `porId`, `porFecha`, `ligas`), la caché de ligas disponibles y
+   `usarFuente()`.
+2. **`src/planificador.js`** — los dos relojes: el ciclo de sincronización y el
+   barrido de trivias, con su interruptor `JOBS_HABILITADOS`.
+3. **`src/rutas/admin.js`** — las 15 rutas: proveedor, sincronización a mano,
+   modo admin, métricas y depuración.
+4. **`server.js`** — importa el proveedor en vez de definirlo. **−140 líneas**, y
+   `axios` deja de aparecer en él.
+5. **`test/rutas.test.js`** — 20 pruebas nuevas (111 en total).
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/proveedor.js` | **Nuevo.** La única puerta al exterior del proyecto |
+| `src/planificador.js` | **Nuevo.** Los trabajos periódicos |
+| `src/rutas/admin.js` | **Nuevo.** 15 rutas |
+| `src/servidor.js` | Engancha el grupo nuevo |
+| `server.js` | **4.733 líneas** (eran 4.873). Importa el proveedor; ya no requiere `axios` |
+| `test/architecture.test.js` | El centinela del plazo de espera mira el conjunto |
+| `test/rutas.test.js` | 20 pruebas más |
+| `avance_proyecto.md` | Esta entrada y el estado |
+
+**Verificación:**
+
+```
+node --test test/rutas.test.js → 111/111
+npm run test:postgres          → 249 pruebas
+npm test                       → 378/378
+rutas sin portar               → 0 de 81
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **`obtenerEventoTrivia` y `buscarEventoPorId` eran la MISMA consulta**, con
+   dos nombres y dos cuerpos: mismo `action`, mismo `match_id`, misma zona
+   horaria. La única diferencia era que una escribía en el registro cuando venía
+   vacía. Nadie lo había notado porque vivían a mil setecientas líneas de
+   distancia. Ahora es `proveedor.porId`, una sola vez.
+2. ⚠️ **Es el TERCER centinela que buscaba una definición en `server.js` cuando
+   ya vivía en `src/`**, después de `partidoYaInicio` (tajada 4) y del VAR
+   (tajada 6). La cabecera del arnés dice la regla —**las definiciones se buscan
+   en el conjunto, los usos en `server.js`**— y tres centinelas no la seguían. No
+   es que fallen: es que se escribieron cuando todo estaba en un archivo. Se
+   aprovechó para añadir uno nuevo que vigila que **haya un solo `axios.create`**:
+   dos clientes serían dos plazos de espera distintos.
+3. **El modo admin NO aplica el cierre por partido, y eso es correcto.** Un
+   administrador transcribe lo que ya recibió por otro medio, y suele hacerlo con
+   la jornada empezada. Es la diferencia con `POST /api/resultados`, y por eso
+   exige `requireAdmin`. Hay una prueba que lo fija para que nadie lo «arregle».
+4. **`/api/debug/*` responde 404 y no 403 con la bandera apagada**, para no
+   revelar siquiera que la ruta existe. Hay prueba.
+5. **La sincronización a mano se salta las ventanas a propósito.** Es una
+   petición explícita de quien está mirando la pantalla, no el reloj: dos
+   llamadas seguidas consultan dos veces. También con prueba, porque «ahorra
+   cuota» es justo el argumento con el que alguien lo cambiaría.
+6. **El barrido de trivias no entra en las quinielas archivadas.** Nadie va a
+   puntuar ahí y recorrerlas sólo gasta llamadas al proveedor.
+
+**Pendiente / siguiente paso:**
+
+**Paso 7.7 — el cambio.** ⚠️ **Es el único punto sin retorno de toda la
+migración.** No añade funcionalidad: cambia cuál de los dos servidores arranca.
+
+La lista exacta de lo que hay que deshacer está en **§A.4**, y son cinco cosas:
+los dos servidores, las dos suites de rutas, el respaldo `trivia.id ?? trivia._id`,
+las pruebas de navegador arrancando Mongo, y `src/transacciones.js`. Más el
+`render.yaml` y sacar `mongoose`, `connect-mongo` y `mongodb-memory-server`.
+
+⚠️ **Y las tres cosas que no son programar** (§B.3): `DATABASE_URL` en Render con
+el rol `app_quiniela` y la cadena con `-pooler`; comprobar que Render y Neon
+están en la misma región; y saber si sigue viva la aplicación anterior apuntando
+a la misma base.
 
 ---
 

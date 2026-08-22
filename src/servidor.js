@@ -440,6 +440,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   require('./rutas/dominio')(app, ctx);
   require('./rutas/puntuacion')(app, ctx);
   require('./rutas/trivias')(app, ctx);
+  require('./rutas/admin')(app, ctx);
 
   /* ---------- Archivos ---------- */
 
