@@ -86,6 +86,76 @@ async function deJugador(quinielaId, jugadorNombre, jornadaNombre, { puedeVerTod
   });
 }
 
+/**
+ * Los resultados de las trivias de una jornada: qué respondió cada quien y
+ * cuántos puntos sacó, con el estado del partido al lado.
+ *
+ * Va en dos consultas —las trivias con su partido, y todas las respuestas— y no
+ * en una por trivia. Con ocho preguntas y veinte jugadores eso era la
+ * diferencia entre dos viajes a la base y ocho.
+ */
+async function deJornada(quinielaId, jornadaNombre, ahora = new Date()) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: trivias } = await c.query(`
+      SELECT t.*, p.orden, p.equipo1, p.equipo2,
+             rop.estado, rop.minuto, rop.fecha, rop.marcador1, rop.marcador2
+        FROM trivias t
+        JOIN jornadas j ON j.id = t.jornada_id
+        LEFT JOIN partidos p ON p.id = t.partido_id
+        LEFT JOIN resultados_oficiales_partidos rop ON rop.partido_id = t.partido_id
+       WHERE j.nombre = $1 AND t.activa
+       ORDER BY p.orden, t.tipo`,
+      [jornadaNombre]);
+
+    if (!trivias.length) {
+      return { jornadaNombre, fechaCierre: null, cerrada: false, trivias: [] };
+    }
+
+    const { rows: respuestas } = await c.query(`
+      SELECT rt.trivia_id, j.nombre AS jugador, rt.respuesta, rt.puntos
+        FROM respuestas_trivia rt
+        JOIN jugadores j ON j.id = rt.jugador_id
+       WHERE rt.trivia_id = ANY($1::uuid[])
+       ORDER BY j.nombre`,
+      [trivias.map(t => t.id)]);
+
+    const porTrivia = new Map();
+    for (const r of respuestas) {
+      if (!porTrivia.has(r.trivia_id)) porTrivia.set(r.trivia_id, []);
+      porTrivia.get(r.trivia_id).push({
+        jugador: r.jugador, respuesta: r.respuesta, puntos: r.puntos || 0
+      });
+    }
+
+    const fechaCierre = trivias[0].fecha_cierre;
+
+    return {
+      jornadaNombre,
+      fechaCierre,
+      cerrada: fechaCierre ? new Date(fechaCierre) <= ahora : false,
+      trivias: trivias.map(t => ({
+        id: t.id,
+        jornadaNombre,
+        partidoIndex: t.orden,
+        equipo1: t.equipo1,
+        equipo2: t.equipo2,
+        pregunta: t.pregunta,
+        tipo: t.tipo,
+        // Sin resolver todavía: la pantalla lo dice en vez de dejar el hueco.
+        respuestaCorrecta: t.respuesta_correcta || 'Pendiente de calcular',
+        resuelta: t.resuelta,
+        puntos: t.puntos || 1,
+        estado: t.estado || 'PROGRAMADO',
+        minuto: t.minuto ?? null,
+        fecha: t.fecha || '',
+        marcador1: t.marcador1 ?? null,
+        marcador2: t.marcador2 ?? null,
+        respuestas: porTrivia.get(t.id) || []
+      }))
+    };
+  });
+}
+
 /** Los puntos de trivias de cada jugador. Es la columna «Trivias» del ranking. */
 async function puntosPorJugador(quinielaId) {
   return db.enQuiniela(quinielaId, async c => {
@@ -150,4 +220,4 @@ async function guardar(quinielaId, { jugador, usuarioId = null, respuestas, ahor
   });
 }
 
-module.exports = { deJugador, puntosPorJugador, guardar };
+module.exports = { deJugador, deJornada, puntosPorJugador, guardar };

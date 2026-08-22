@@ -439,6 +439,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   require('./rutas/plataforma').conQuiniela(app, ctx);
   require('./rutas/dominio')(app, ctx);
   require('./rutas/puntuacion')(app, ctx);
+  require('./rutas/trivias')(app, ctx);
 
   /* ---------- Archivos ---------- */
 

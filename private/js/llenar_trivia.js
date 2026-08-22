@@ -306,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h3>${grupo.titulo}</h3>
 
           ${grupo.trivias.map(trivia => {
-            const previa = respuestaPrevia(respuestasPrevias, trivia._id);
+            const previa = respuestaPrevia(respuestasPrevias, trivia.id ?? trivia._id);
             const bloqueada = triviaBloqueada(trivia);
 
             return html`
@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 <select
                   class="respuesta-trivia"
-                  data-trivia-id="${trivia._id}"
+                  data-trivia-id="${trivia.id ?? trivia._id}"
                   ${bloqueada ? 'disabled' : ''}
                 >
                   <option value="">Seleccione respuesta</option>

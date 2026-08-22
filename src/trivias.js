@@ -146,6 +146,74 @@ async function activas(quinielaId) {
   });
 }
 
+/**
+ * Las trivias que todavía admiten respuesta.
+ *
+ * Una trivia deja de estar abierta cuando pasa su fecha de cierre **o** cuando
+ * empieza su partido, lo que ocurra antes. Va en una consulta con su `LEFT
+ * JOIN` al resultado oficial: en Mongo era una consulta por trivia para buscar
+ * la jornada y otra para el resultado, con veinte trivias eran cuarenta viajes.
+ */
+async function abiertas(quinielaId, ahora = new Date()) {
+  return db.enQuiniela(quinielaId, async c => {
+    /*
+     * La consulta va escrita entera y no sobre `SELECT_TRIVIA`: hace falta
+     * `rop.estado`, y añadir el `JOIN` sin añadir la columna daba un `undefined`
+     * silencioso que dejaba abiertas trivias de partidos ya empezados.
+     */
+    const { rows } = await c.query(`
+      SELECT t.*, j.nombre AS jornada_nombre,
+             p.orden, p.equipo1, p.equipo2, p.api_date,
+             rop.estado AS oficial_estado
+        FROM trivias t
+        JOIN jornadas j ON j.id = t.jornada_id
+        LEFT JOIN partidos p ON p.id = t.partido_id
+        LEFT JOIN resultados_oficiales_partidos rop ON rop.partido_id = t.partido_id
+       WHERE t.activa
+       ORDER BY j.secuencia, p.orden, t.tipo`);
+
+    return rows
+      .filter(t => !estaCerrada(
+        t,
+        t.partido_id ? t : null,
+        t.oficial_estado ? { estado: t.oficial_estado } : null,
+        ahora))
+      .map(triviaPublica);
+  });
+}
+
+/**
+ * La jornada de trivias más reciente, con todas sus preguntas.
+ *
+ * «Más reciente» es la de fecha de cierre más tardía, no la última creada: es
+ * la que la portada enseña, y lo que ahí importa es cuál se está jugando.
+ */
+async function ultima(quinielaId, ahora = new Date()) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: [reciente] } = await c.query(
+      `SELECT j.nombre, t.fecha_cierre
+         FROM trivias t JOIN jornadas j ON j.id = t.jornada_id
+        WHERE t.activa
+        ORDER BY t.fecha_cierre DESC NULLS LAST, t.created_at DESC
+        LIMIT 1`);
+
+    if (!reciente) {
+      return { jornadaNombre: null, fechaCierre: null, cerrada: false, trivias: [] };
+    }
+
+    const { rows } = await c.query(
+      `${SELECT_TRIVIA} WHERE j.nombre = $1 AND t.activa ORDER BY p.orden, t.tipo`,
+      [reciente.nombre]);
+
+    return {
+      jornadaNombre: reciente.nombre,
+      fechaCierre: reciente.fecha_cierre,
+      cerrada: reciente.fecha_cierre ? new Date(reciente.fecha_cierre) <= ahora : false,
+      trivias: rows.map(triviaPublica)
+    };
+  });
+}
+
 /** Los nombres de las jornadas que tienen alguna trivia activa. */
 async function jornadasConTrivias(quinielaId) {
   return db.enQuiniela(quinielaId, async c => {
@@ -385,7 +453,7 @@ async function resolverPendientes(quinielaId, { obtenerEvento, interpretar, jorn
 
 module.exports = {
   TIPOS_TRIVIA, opcionesTrivia, estaCerrada, triviaPublica,
-  deJornada, activas, jornadasConTrivias, porId,
+  deJornada, activas, abiertas, ultima, jornadasConTrivias, porId,
   crear, reconciliar, eliminar, asegurar,
   resolverPendientes
 };

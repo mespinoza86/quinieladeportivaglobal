@@ -1001,3 +1001,413 @@ test('⚠️ la caché de la tabla no cruza entre quinielas', async () => {
   assert.equal(tablaB.body[a.datos.username], undefined,
     'una caché global sería C-02 otra vez, y en memoria, donde RLS no llega');
 });
+
+/* ==================== 7.5 — Trivias ==================== */
+
+const CIERRE_FUTURO = '2099-06-01T12:00:00.000Z';
+const CIERRE_PASADO = '2020-06-01T12:00:00.000Z';
+
+/** Una jornada con un partido y sus trivias creadas. */
+async function conTrivias(jefe, { tipos = ['ambos_anotan'], fechaCierre = CIERRE_FUTURO, apiDate = '2099-01-01 15:00' } = {}) {
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { apiDate, apiFixtureId: 'fx-1' })]
+  });
+  const r = await jefe.agente.post('/api/admin/trivias').send({
+    jornadaNombre: 'J1', partidoIndex: 0, tipos, fechaCierre
+  });
+  assert.equal(r.status, 200, `No se pudieron crear las trivias: ${JSON.stringify(r.body)}`);
+
+  const lista = await jefe.agente.get('/api/admin/trivias/J1');
+  return lista.body;
+}
+
+test('el catálogo trae los ocho tipos con su pregunta', async () => {
+  const jefe = await admin('jefe');
+  const res = await jefe.agente.get('/api/tipos-trivia');
+
+  assert.equal(res.body.length, 8);
+  assert.ok(res.body.every(t => t.tipo && t.pregunta));
+});
+
+test('crear trivias las deja listas, con la pregunta y las opciones puestas', async () => {
+  const jefe = await admin('jefe');
+  const trivias = await conTrivias(jefe, { tipos: ['ambos_anotan', 'primer_gol'] });
+
+  assert.equal(trivias.length, 2);
+
+  const primerGol = trivias.find(t => t.tipo === 'primer_gol');
+  assert.match(primerGol.pregunta, /anota primero/);
+  assert.deepEqual(primerGol.opciones, ['Alfa', 'Beta', 'Nadie anotará'],
+    'las opciones llevan los equipos del PARTIDO, no una copia');
+});
+
+test('⚠️ una trivia trae `id`, no `_id`', async () => {
+  const jefe = await admin('jefe');
+  const [trivia] = await conTrivias(jefe);
+
+  assert.ok(trivia.id, 'es el cambio de §21.1: uuid de verdad');
+  assert.equal('_id' in trivia, false);
+});
+
+test('sin trivias habilitadas no se pueden crear ni responder', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ puntuacion: { triviasHabilitadas: false } });
+
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const creacion = await jefe.agente.post('/api/admin/trivias').send({
+    jornadaNombre: 'J1', partidoIndex: 0, tipos: ['ambos_anotan'], fechaCierre: CIERRE_FUTURO
+  });
+  assert.equal(creacion.status, 409);
+
+  const respuesta = await jefe.agente.post('/api/respuestas-trivia')
+    .send({ jugador: jefe.datos.username, respuestas: [] });
+  assert.equal(respuesta.status, 409,
+    'apagarlas con preguntas ya publicadas dejaría a la gente respondiendo a nada');
+});
+
+test('crear trivias sin los datos completos se rechaza con 400', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await jefe.agente.post('/api/admin/trivias')
+    .send({ jornadaNombre: 'J1', partidoIndex: 0, tipos: [] });
+
+  assert.equal(res.status, 400);
+});
+
+test('un miembro normal no administra trivias', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await conTrivias(jefe);
+
+  const res = await socio.agente.post('/api/admin/trivias').send({
+    jornadaNombre: 'J1', partidoIndex: 0, tipos: ['primer_gol'], fechaCierre: CIERRE_FUTURO
+  });
+
+  assert.equal(res.status, 403);
+});
+
+/* ---------- Reconciliar ---------- */
+
+test('la reconciliación crea, actualiza y borra en una sola pasada', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe, { tipos: ['ambos_anotan', 'primer_gol'] });
+
+  const res = await jefe.agente.put('/api/admin/trivias/J1').send({
+    fechaCierre: CIERRE_FUTURO,
+    configuracion: [{ partidoIndex: 0, tipos: ['ambos_anotan', 'hubo_penales'] }]
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.creadas, 1);
+  assert.equal(res.body.eliminadas, 1);
+
+  const lista = await jefe.agente.get('/api/admin/trivias/J1');
+  assert.deepEqual(lista.body.map(t => t.tipo).sort(), ['ambos_anotan', 'hubo_penales']);
+});
+
+test('mover la fecha de cierre reabre las preguntas', async () => {
+  const jefe = await admin('jefe');
+  const [trivia] = await conTrivias(jefe);
+
+  await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username,
+    respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+
+  const res = await jefe.agente.put('/api/admin/trivias/J1').send({
+    fechaCierre: '2099-07-01T12:00:00.000Z',
+    configuracion: [{ partidoIndex: 0, tipos: ['ambos_anotan'] }]
+  });
+
+  assert.equal(res.body.actualizadas, 1);
+
+  const lista = await jefe.agente.get('/api/admin/trivias/J1');
+  assert.equal(lista.body[0].resuelta, false);
+});
+
+test('borrar una trivia se lleva sus respuestas', async () => {
+  const jefe = await admin('jefe');
+  const [trivia] = await conTrivias(jefe);
+
+  await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+
+  const borrada = await jefe.agente.delete(`/api/admin/trivias/${trivia.id}`);
+  assert.equal(borrada.status, 200);
+
+  assert.equal((await jefe.agente.get('/api/admin/trivias/J1')).body.length, 0);
+
+  const mias = await jefe.agente
+    .get(`/api/respuestas-trivia/${jefe.datos.username}/J1`);
+  assert.deepEqual(mias.body, [], 'no quedan puntos sin pregunta a la que pertenecer');
+});
+
+test('borrar una trivia que no existe responde 404', async () => {
+  const jefe = await admin('jefe');
+  const res = await jefe.agente
+    .delete('/api/admin/trivias/00000000-0000-0000-0000-000000000000');
+
+  assert.equal(res.status, 404);
+});
+
+/* ---------- Consulta ---------- */
+
+test('⚠️ /api/trivias/activas no se confunde con una jornada llamada «activas»', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe);
+
+  const res = await jefe.agente.get('/api/trivias/activas');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.length, 1, 'la ruta literal debe declararse antes que /:jornadaNombre');
+});
+
+test('una trivia cuyo partido ya empezó deja de estar activa', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe, { apiDate: '2020-01-01 15:00' });
+
+  assert.equal((await jefe.agente.get('/api/trivias/activas')).body.length, 0);
+  assert.equal((await jefe.agente.get('/api/trivias')).body.length, 1,
+    'sigue existiendo: sólo deja de admitir respuestas');
+});
+
+test('latest trae la jornada de trivias más reciente con todas sus preguntas', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe, { tipos: ['ambos_anotan', 'hubo_penales'] });
+
+  const res = await jefe.agente.get('/api/trivias/latest');
+
+  assert.equal(res.body.jornadaNombre, 'J1');
+  assert.equal(res.body.trivias.length, 2);
+  assert.equal(res.body.cerrada, false);
+});
+
+test('latest sin ninguna trivia responde vacío en vez de fallar', async () => {
+  const jefe = await admin('jefe');
+  const res = await jefe.agente.get('/api/trivias/latest');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.jornadaNombre, null);
+  assert.deepEqual(res.body.trivias, []);
+});
+
+test('las jornadas con trivias se listan con su fecha de cierre', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe);
+
+  const res = await jefe.agente.get('/api/trivias-jornadas');
+
+  assert.equal(res.body.length, 1);
+  assert.equal(res.body[0].jornadaNombre, 'J1');
+  assert.equal(res.body[0].cerrada, false);
+});
+
+/* ---------- Responder ---------- */
+
+test('una respuesta se guarda y se puede corregir hasta el cierre', async () => {
+  const jefe = await admin('jefe');
+  const [trivia] = await conTrivias(jefe);
+
+  await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+  const segunda = await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'No' }]
+  });
+
+  assert.equal(segunda.body.guardadas, 1);
+
+  const mias = await jefe.agente.get(`/api/respuestas-trivia/${jefe.datos.username}/J1`);
+  assert.equal(mias.body[0].respuesta, 'No');
+});
+
+test('nadie responde en nombre de otro', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  const [trivia] = await conTrivias(jefe);
+
+  const res = await socio.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+
+  assert.equal(res.status, 403);
+});
+
+test('⚠️ una trivia cerrada se salta, y las abiertas del mismo envío sí se guardan', async () => {
+  const jefe = await admin('jefe');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [
+      partido('Alfa', 'Beta', { apiDate: '2020-01-01 15:00' }),    // ya empezó
+      partido('Gamma', 'Delta', { apiDate: '2099-01-01 15:00' })   // por jugar
+    ]
+  });
+  for (const indice of [0, 1]) {
+    await jefe.agente.post('/api/admin/trivias').send({
+      jornadaNombre: 'J1', partidoIndex: indice, tipos: ['ambos_anotan'], fechaCierre: CIERRE_FUTURO
+    });
+  }
+
+  const trivias = await jefe.agente.get('/api/admin/trivias/J1');
+  const res = await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username,
+    respuestas: trivias.body.map(t => ({ triviaId: t.id, respuesta: 'Sí' }))
+  });
+
+  assert.equal(res.body.guardadas, 1);
+  assert.equal(res.body.cerradas, 1,
+    'Mongo devolvía 403 y no guardaba ninguna: llegar tarde a una costaba las diez');
+});
+
+test('las respuestas ajenas no se ven hasta que la trivia cierra', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  const [trivia] = await conTrivias(jefe);
+
+  await socio.agente.post('/api/respuestas-trivia').send({
+    jugador: socio.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+
+  const tercero = await miembroDe(jefe, 'tercero');
+  const ajena = await tercero.agente
+    .get(`/api/respuestas-trivia/${socio.datos.username}/J1`);
+  assert.equal(ajena.body[0].respuesta, null);
+
+  // Un administrador sí lo ve: es quien tiene que poder revisar.
+  const comoAdmin = await jefe.agente
+    .get(`/api/respuestas-trivia/${socio.datos.username}/J1`);
+  assert.equal(comoAdmin.body[0].respuesta, 'Sí');
+});
+
+/* ---------- Resolver ---------- */
+
+test('resolver reparte los puntos desde el evento guardado en la caché', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  const [trivia] = await conTrivias(jefe, { tipos: ['ambos_anotan'] });
+
+  /*
+   * Se responde por el API con la trivia abierta, que es como pasa de verdad.
+   * Escribir las respuestas a mano en la tabla no vale: `jugadores` sólo tiene
+   * fila de quien ya ha actuado —la crea `jugadores.asegurar` al vuelo— así que
+   * un INSERT … SELECT sobre un propietario recién llegado inserta cero filas y
+   * la prueba pasa sin probar nada.
+   */
+  await jefe.agente.post('/api/respuestas-trivia').send({
+    jugador: jefe.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+  await socio.agente.post('/api/respuestas-trivia').send({
+    jugador: socio.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'No' }]
+  });
+
+  // Llega la hora de cierre.
+  await jefe.agente.put('/api/admin/trivias/J1').send({
+    fechaCierre: CIERRE_PASADO,
+    configuracion: [{ partidoIndex: 0, tipos: ['ambos_anotan'] }]
+  });
+
+  // El partido termina y su evento entra en la caché compartida.
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 1 }] });
+
+  const fixtures = require('../src/fixtures');
+  await fixtures.guardar(
+    { clave: 'fx-1', apiFixtureId: 'fx-1', apiDate: '2099-01-01 15:00', busqueda: {} },
+    { evento: {
+      match_hometeam_name: 'Alfa', match_awayteam_name: 'Beta',
+      match_status: 'Finished',
+      goalscorer: [
+        { time: '20', home_scorer: 'uno', score: '1 - 0' },
+        { time: '70', away_scorer: 'dos', score: '1 - 1' }
+      ]
+    } });
+
+  const res = await jefe.agente.post('/api/admin/trivias/resolver').send({});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.resueltas, 1);
+
+  const lista = await jefe.agente.get('/api/admin/trivias/J1');
+  assert.equal(lista.body[0].resuelta, true);
+  assert.equal(lista.body[0].respuestaCorrecta, 'Sí', 'los dos anotaron');
+
+  const tabla = await jefe.agente.get('/api/resultados-totales');
+  assert.equal(tabla.body[jefe.datos.username].Trivias, 1, 'acertó');
+  assert.equal(tabla.body[socio.datos.username].Trivias, 0, 'falló');
+});
+
+test('sin evento en la caché la trivia queda pendiente, no resuelta en falso', async () => {
+  const jefe = await admin('jefe');
+  await conTrivias(jefe, { fechaCierre: CIERRE_PASADO });
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 1 }] });
+
+  const res = await jefe.agente.post('/api/admin/trivias/resolver').send({});
+
+  assert.equal(res.body.resueltas, 0);
+  assert.equal((await jefe.agente.get('/api/admin/trivias/J1')).body[0].resuelta, false);
+});
+
+/* ---------- Resultados de trivias ---------- */
+
+test('⚠️ los resultados de trivias no se publican antes del cierre', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await conTrivias(jefe);
+
+  const comoOtro = await socio.agente.get('/api/resultados-trivias/J1');
+  assert.equal(comoOtro.status, 403, 'publicarlos abiertos sería regalar las respuestas');
+
+  const comoAdmin = await jefe.agente.get('/api/resultados-trivias/J1');
+  assert.equal(comoAdmin.status, 200);
+});
+
+test('cerrada la jornada, los resultados de trivias los ve todo el mundo', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  const [trivia] = await conTrivias(jefe, { fechaCierre: CIERRE_PASADO });
+
+  await db.enQuiniela(jefe.quiniela.id, c => c.query(
+    `INSERT INTO respuestas_trivia (quiniela_id, trivia_id, jugador_id, respuesta)
+     SELECT $1, $2, id, 'Sí' FROM jugadores WHERE nombre = $3`,
+    [jefe.quiniela.id, trivia.id, socio.datos.username]));
+
+  const res = await socio.agente.get('/api/resultados-trivias/J1');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.cerrada, true);
+  assert.equal(res.body.trivias[0].respuestas.length, 1);
+  assert.equal(res.body.trivias[0].respuestaCorrecta, 'Pendiente de calcular');
+});
+
+test('una jornada sin trivias responde vacía en vez de 403', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await jefe.agente.get('/api/resultados-trivias/J1');
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.trivias, []);
+});
+
+/* ---------- Aislamiento ---------- */
+
+test('las trivias de una quiniela no se ven ni se responden desde otra', async () => {
+  const a = await admin('tra');
+  const b = await admin('trb');
+
+  const [trivia] = await conTrivias(a);
+  await b.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  assert.equal((await b.agente.get('/api/trivias/J1')).body.length, 0);
+
+  const intento = await b.agente.post('/api/respuestas-trivia').send({
+    jugador: b.datos.username, respuestas: [{ triviaId: trivia.id, respuesta: 'Sí' }]
+  });
+  assert.equal(intento.body.desconocidas, 1, 'la trivia de A no existe para B');
+  assert.equal(intento.body.guardadas, 0);
+});

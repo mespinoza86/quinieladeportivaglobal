@@ -23,15 +23,15 @@
 git branch --show-current   # debe decir: postgres
 git log --oneline -3        # debe empezar por f947039
 git status                  # debe estar limpio
-npm test                    # 333/333
-npm run test:postgres       # 204, en ~25 s
+npm test                    # 358/358
+npm run test:postgres       # 229, en ~30 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 333 y añade una capa de
+sigue hablando con MongoDB. La rama `postgres` tiene 358 y añade una capa de
 datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
@@ -41,25 +41,25 @@ datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
 después de un sondeo que la midió en vez de opinarla. Van **6 tajadas de 7**, y
-de la séptima, **4 pasos de 7**.
+de la séptima, **5 pasos de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **333** (129 de Mongo + 204 nuevas) |
-| Sólo las de PostgreSQL | **204**, ~25 s |
+| Pruebas en `postgres` | **358** (129 de Mongo + 229 nuevas) |
+| Sólo las de PostgreSQL | **229**, ~30 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
 | `server.js` | **4.873 líneas**, intacto y verde. Sigue sobre Mongo **a propósito**: el servidor nuevo crece a su lado |
-| Rutas ya sobre PostgreSQL | **52 de 81**, en `src/servidor.js` y `src/rutas/` |
+| Rutas ya sobre PostgreSQL | **66 de 81**, en `src/servidor.js` y `src/rutas/` |
 | `src/` | 21 módulos + `src/rutas/` (2). Todo lo que era `server.js` menos las rutas que faltan |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Todas las reglas están portadas, con 204 pruebas contando las de las rutas.
-  **Lo que falta son 29 rutas y el cambio.**
+- Todas las reglas están portadas, con 229 pruebas contando las de las rutas.
+  **Lo que falta son 15 rutas y el cambio.**
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
@@ -181,9 +181,13 @@ Seis cosas de ese día que **no se deducen leyendo el código**:
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es el paso 7.5 — las rutas de trivias**: 12 rutas, más el
-`_id → id` de los 3 archivos del frontend. Los módulos `src/trivias.js` y
-`src/respuestas-trivia.js` ya están probados con 27 pruebas.
+**Lo siguiente es el paso 7.6 — sincronizador y admin**: 15 rutas —`/api/admin/*`,
+`/api/football/*`, `/api/debug/*` y `/api/sync-resultados-oficiales`— más
+`src/proveedor.js`, que es **lo único que queda por sacar de `server.js`**: ir a
+pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota. Y el
+planificador que llama al `tick`.
+
+Después sólo queda **7.7, el cambio**.
 
 ⚠️ **La regla que no hay que olvidar al escribirlas**, y que ya mordió una vez:
 el middleware NO abre transacción; cada ruta envuelve su cuerpo en
@@ -211,6 +215,8 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
+  (última) Tajada 7, paso 5: las rutas de trivias
+  0190378 Bitacora del paso 7.4, y finales de linea normalizados
   66bbc94 Tajada 7, paso 4: las rutas de puntuacion
   ff13833 Anotar el commit de los pasos 7.1 a 7.3 en el estado de Git
   8cb7fe5 Tajada 7, pasos 1 a 3: el servidor nuevo
@@ -281,9 +287,9 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 333, ~25 s
-npm run test:postgres      # solo las 204 de PostgreSQL, ~25 s (solo en la rama)
-npm run test:rutas         # solo las 66 del servidor nuevo
+                           #   en postgres: 358, ~30 s
+npm run test:postgres      # solo las 229 de PostgreSQL, ~30 s (solo en la rama)
+npm run test:rutas         # solo las 91 del servidor nuevo
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -346,8 +352,8 @@ punto sin retorno es el 7.7**; hasta entonces `server.js` sigue vivo y verde.
 | **7.2** | Plataforma: `quinielas`, `quiniela-actual`, `admin-mode`, miembros, configuración | 19 | ✅ Entrada 047 |
 | **7.3** | Dominio: `jornadas`, `jugadores`, `equipos`, `jornada-actual` | 16 | ✅ Entrada 047 |
 | **7.4** | Puntuación: `resultados`, `resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos`, `clasificacion-jornada` | 10 | ✅ Entrada 048 |
-| **7.5** | **Trivias**, más el `_id → id` de los 3 archivos del frontend | 12 | ⬜ **el siguiente** |
-| **7.6** | Sincronizador y admin: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 17 | ⬜ |
+| **7.5** | Trivias, más el `_id → id` de los 3 archivos del frontend | 14 | ✅ Entrada 049 |
+| **7.6** | **Sincronizador y admin**: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 15 | ⬜ **el siguiente** |
 | **7.7** | ⚠️ **El cambio.** `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ⬜ |
 
 ⚠️ **Antes de desplegar hacen falta tres cosas que no son programar**, y están en
@@ -8089,6 +8095,102 @@ probados con 27 pruebas.
 
 Luego **7.6 sincronizador y admin** (17 rutas y `src/proveedor.js`) y **7.7 el
 cambio**.
+
+---
+
+### 📌 Entrada 049 — 21 de agosto de 2026 — Tajada 7, paso 5: las rutas de trivias
+
+**Objetivo:** las catorce rutas de trivias, y el `_id → id` del frontend. Con
+éstas van **66 de las 81 rutas** sobre PostgreSQL.
+
+**La decisión de este paso: de dónde sale el evento para resolver.**
+
+⚠️ **De la caché compartida de partidos, no del proveedor.** Resolver diez
+trivias del mismo partido no puede costar diez llamadas al API: el ciclo de
+sincronización ya guardó el evento crudo en `fixtures.evento`, y de ahí se lee.
+Es exactamente para lo que existe esa caché (C-01).
+
+Y tiene un efecto de rebote bueno: `/api/admin/trivias/resolver` **no sale a la
+red**, así que se prueba entera con un evento escrito a mano. Si el partido nunca
+se sincronizó no hay evento y la trivia se queda pendiente para el pase
+siguiente, en vez de resolverse en falso.
+
+**El `_id → id`, y por qué con respaldo.**
+
+El frontend leía `trivia._id` en 4 sitios de 3 archivos. Ahora lee
+`trivia.id ?? trivia._id`, y el respaldo **no es indecisión**: mientras
+`server.js` siga vivo, las MISMAS pantallas se sirven desde los dos servidores
+—el viejo devuelve documentos de Mongoose con `_id`, el nuevo devuelve `id`— y
+las 62 pruebas de navegador corren contra el viejo hasta el paso 7.7. Cambiarlo
+del todo ahora las rompería. El respaldo se retira en el 7.7.
+
+**Qué se hizo:**
+
+1. **`src/rutas/trivias.js`** — las catorce rutas.
+2. **`src/trivias.js`** — `abiertas()` y `ultima()`.
+3. **`src/respuestas-trivia.js`** — `deJornada()`: los resultados de todos.
+4. **`private/js/`** — el `_id → id` con respaldo, en 3 archivos.
+5. **`test/rutas.test.js`** — 25 pruebas nuevas (91 en total).
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/rutas/trivias.js` | **Nuevo.** 14 rutas |
+| `src/trivias.js` | `abiertas()`, `ultima()` |
+| `src/respuestas-trivia.js` | `deJornada()` |
+| `src/servidor.js` | Engancha el grupo nuevo |
+| `private/js/llenar_trivia.js` | `trivia.id ?? trivia._id`, 2 sitios |
+| `private/js/enviarresultadostrivias.js` | Ídem |
+| `private/js/enviarresultadostriviaspartidos.js` | Ídem |
+| `test/rutas.test.js` | 25 pruebas más |
+| `avance_proyecto.md` | Esta entrada y el estado |
+
+**Verificación:**
+
+```
+node --test test/rutas.test.js → 91/91
+npm run test:postgres          → 229 pruebas
+npm test                       → 358/358
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **`/api/trivias/activas` tenía que declararse ANTES que
+   `/api/trivias/:jornadaNombre`.** Si no, Express toma «activas» por el nombre
+   de una jornada y la ruta nunca se ejecuta. Igual con `/latest`. Hay una prueba
+   que lo fija, porque el síntoma sería una lista vacía —no un error— y nadie lo
+   miraría dos veces.
+2. ⚠️ **Un `JOIN` sin su columna en el `SELECT` da un `undefined` silencioso.**
+   `abiertas()` unía con `resultados_oficiales_partidos` para saber si el partido
+   había empezado, pero la consulta base no seleccionaba `rop.estado`: la
+   comprobación leía `undefined` y **dejaba abiertas trivias de partidos ya
+   jugados**. Se detectó al releer la consulta, no al probarla, y por eso la
+   consulta se escribe ahora entera en vez de apilarse sobre la base.
+3. ⚠️ **`jugadores` sólo tiene fila de quien ya ha actuado.** Una prueba escribía
+   respuestas con un `INSERT … SELECT … FROM jugadores WHERE nombre = …` para un
+   propietario recién creado: insertaba **cero filas** y la prueba pasaba sin
+   probar nada. Quedó reescrita usando sólo el API, que es como pasa de verdad.
+   La lección es de las pruebas, no del código: **un `INSERT` que no inserta no
+   falla**.
+4. **Las trivias se comprueban en los dos extremos.**
+   `triviasHabilitadas` se mira al crearlas **y** al responderlas. Apagarlas con
+   preguntas ya publicadas dejaría a la gente respondiendo a algo que nadie va a
+   puntuar.
+5. **`/api/trivias-jornadas` y `/api/resultados-trivias` bajaron de N consultas a
+   dos.** En Mongo, los resultados de una jornada pedían las respuestas de cada
+   trivia por separado: con ocho preguntas eran ocho viajes. Ahora son las
+   trivias con su partido, y todas las respuestas, en dos.
+
+**Pendiente / siguiente paso:**
+
+**Paso 7.6 — sincronizador y admin**: 15 rutas —`/api/admin/*`,
+`/api/football/*`, `/api/debug/*` y `/api/sync-resultados-oficiales`— más
+`src/proveedor.js`, que es lo único que queda por sacar de `server.js`: ir a
+pedirle datos a APIFootball, con su plazo de espera, su clave y su cuota. Y el
+planificador que llama al `tick`.
+
+Después sólo queda **7.7, el cambio**.
 
 ---
 
