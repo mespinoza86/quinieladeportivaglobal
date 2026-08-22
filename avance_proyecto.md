@@ -215,7 +215,7 @@ propósito construyendo antes, a un lado, todo lo que se puede probar sin Expres
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  (última) Tajada 7, paso 5: las rutas de trivias
+  4ad4e65 Tajada 7, paso 5: las rutas de trivias
   0190378 Bitacora del paso 7.4, y finales de linea normalizados
   66bbc94 Tajada 7, paso 4: las rutas de puntuacion
   ff13833 Anotar el commit de los pasos 7.1 a 7.3 en el estado de Git
