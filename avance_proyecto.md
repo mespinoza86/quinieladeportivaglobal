@@ -20,7 +20,7 @@
 ### ⚠️ Lo primero, en un minuto
 
 ```bash
-git branch --show-current   # debe decir: postgres
+git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 npm test                    # 295/295
 npm run test:e2e            # 62/62, ~2,5 min
@@ -30,10 +30,12 @@ npm run test:e2e            # 62/62, ~2,5 min
 la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
 `src/servidor.js`, `src/rutas/` y 22 módulos de `src/`.
 
-⚠️ **El trabajo está en la rama `postgres`, no en `main`.** `main` sigue teniendo
-la versión de MongoDB, con 129 pruebas. **Aún no se ha fundido.**
+✅ **Fundida en `main` el 22 de agosto**, y el esquema de Neon está al día:
+`npm start` conecta, arranca y responde. Se comprobó de punta a punta contra la
+base de verdad —registro, sesión que sobrevive y creación de quiniela— y se
+borraron los datos de prueba.
 
-⛔ **Y queda UN paso manual antes de desplegar** — ver «Lo siguiente».
+⛔ **Lo único que queda es el despliegue** — ver «Lo siguiente».
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
@@ -67,8 +69,9 @@ entradas de bitácora (040 a 052).
 - **Ocho hallazgos viejos quedan cerrados** por el modelo nuevo, más tres que
   aparecieron al portar (M-34, M-35 y el hueco de los dos relojes). Ver §A.2.
 
-**Lo que NO está hecho**: aplicar el esquema al día en Neon, fundir `postgres` en
-`main`, y desplegar.
+**Lo que NO está hecho**: desplegar. Y ⚠️ **Render no aplica `render.yaml` solo a
+un servicio que ya existe**: hay que conectarlo como Blueprint o copiar los
+valores a mano. Ver «Lo siguiente».
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -268,74 +271,61 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
   una cuenta. Nada del frontend usaba la lista.
 
 
-### 🌅 Lo siguiente: poner Neon al día, fundir y desplegar
+### 🌅 Lo siguiente: desplegar
 
-**Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
+**Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### ⛔ 1. El paso manual: el esquema de Neon
+✅ **La migración está cerrada.** Neon tiene el esquema al día, la aplicación
+arranca contra ella y `main` es PostgreSQL. Lo que queda es sacarlo a producción.
 
-Es lo único que queda de la migración y **no se puede hacer desde aquí**: crear
-tablas y políticas exige el rol **dueño**, y `.env` tiene a propósito el rol
-`app_quiniela`, que no puede.
+#### ⚠️ 1. Render no aplica `render.yaml` solo
 
-La base se montó el 20 de agosto con el Anexo C y el esquema ha cambiado desde
-entonces. Le falta:
+Es lo que más puede sorprender. `render.yaml` está versionado y dice cuál es la
+configuración correcta, pero **Render no lo aplica por su cuenta a un servicio
+que ya existe**: hay que conectarlo como *Blueprint*, o copiar los valores a mano
+en el panel.
 
-- la tabla **`sesiones`** (`connect-pg-simple`);
-- la columna **`jornadas.secuencia`**;
-- dos índices únicos: el de `jugadores` y el parcial de `trivias`.
+Lo que no puede faltar, o el despliegue arrancará buscando una base que no tiene:
 
-Y le sobra `verif_resultados`, del banco de pruebas del sondeo.
+| Variable | Valor |
+|---|---|
+| `DATABASE_URL` | ⛔ rol **`app_quiniela`** y cadena **con `-pooler`** |
+| `NODE_ENV` | `production` |
+| `SESSION_SECRET` | uno generado, no el de desarrollo |
+| `APIFOOTBALL_COM_KEY` | la de verdad |
+| `ALLOWED_ORIGINS` | `https://quinieladeportivaglobal.onrender.com` |
+| `DEBUG_ENDPOINTS` | `false` |
 
-⚠️ **Sin `sesiones`, la aplicación arranca, deja entrar a la gente y nadie sigue
-dentro en la petición siguiente** — y no hay ningún error que lo explique.
+Y el *health check* debe apuntar a **`/readyz`**, no a `/healthz`: el primero
+dice «puedo atender tráfico», el segundo sólo «el proceso responde». Con la base
+dormida —Neon suspende el cómputo por inactividad— el proceso vive pero no puede
+servir nada útil.
 
-**Cómo se hace**, en el editor SQL de Neon y **con el rol dueño**:
+#### 2. Lo que hay que mirar el primer día
 
-1. Abrir **`db/poner-al-dia.sql`** y copiarlo entero al editor.
-2. Donde dice `<<<<<< PEGA AQUI db/esquema.sql >>>>>>`, pegar el contenido
-   completo de **`db/esquema.sql`**.
-3. Ejecutar. El guion **se planta solo si encuentra datos** (comprobado el 21 de
-   agosto: 0 usuarios, 0 quinielas) y al final avisa si algo quedó sin poner.
+⚠️ **La latencia entre Render y Neon.** Desde este portátil un viaje son ~116 ms;
+entre ellos, en la misma región, deben ser 1–5 ms. Si no lo son, la aplicación
+parecerá lenta **y parecerá culpa de PostgreSQL**.
 
-#### 2. Comprobar contra Neon de verdad
+Y las tres métricas de §B.4, en `/api/admin/sync-metricas`:
 
-```bash
-npm start     # debe decir: Conectado a PostgreSQL como "app_quiniela".
-```
+- **`consultasAhorradasPorDeduplicacion`** debe crecer en cuanto haya dos
+  quinielas siguiendo los mismos partidos. Si se queda en cero, la deduplicación
+  no está funcionando y la cuota se gasta de más sin que nada falle.
+- **`syncsSinCambioDePuntos`** debe crecer mucho más deprisa que
+  `jornadasReescritas` el primer domingo con partidos en vivo.
+- **`ciclosAbandonadosPorTiempo`**: si sube, el proveedor está tardando.
 
-Si dice otra cosa, o aborta, el mensaje explica qué falta. `comprobarRol()` se
-planta a propósito: es preferible un proceso que no arranca a uno que sirve
-datos cruzados.
+#### 3. Y después, lo que queda del proyecto
 
-#### 3. Fundir y desplegar
+Lo pendiente es **§B**, que no ha cambiado en toda la semana:
 
-```bash
-git checkout main
-git merge postgres
-git push
-```
-
-`render.yaml` deja escrita la configuración del servicio. ⚠️ **Render no lo
-aplica solo a un servicio que ya existe**: hay que conectarlo como Blueprint o
-copiar los valores a mano. Lo que sí hace desde ya es dejar por escrito cuál es
-la configuración correcta.
-
-⚠️ **Y lo que hay que mirar el primer día con tráfico** está en §B.4. Lo más
-importante: **la latencia entre Render y Neon**. Desde este portátil un viaje son
-~116 ms; entre ellos, en la misma región, deben ser 1–5 ms. Si no lo son, están
-en regiones distintas y la aplicación parecerá lenta — y parecerá culpa de
-PostgreSQL.
-
-#### Y después, lo que queda del proyecto
-
-Con la migración cerrada, lo pendiente es **§B**, que no ha cambiado en todo
-este tiempo:
-
-- **Fase E — verificación de correo.** Le faltan **dos decisiones de producto**:
-  qué proveedor de envío y qué se le impide a una cuenta sin verificar.
-- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas.
+- **Fase E — verificación de correo.** Le faltan **dos decisiones tuyas**: qué
+  proveedor de envío, y qué se le impide a una cuenta sin verificar.
+- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas: qué
+  cuenta como «igualados» y qué es un «clásico». Necesita la tabla de posiciones
+  de cada liga, que hoy no se consulta.
 
 #### Las cuatro reglas del código, que siguen valiendo
 
@@ -352,64 +342,36 @@ el 21 de agosto y ya mordió una vez.
 
 ### Estado de Git
 
-**Hay dos ramas vivas y cada una está en un mundo distinto.** No mezclarlas.
+✅ **`postgres` se fundió en `main` el 22 de agosto.** Ya no hay dos mundos: las
+dos ramas apuntan al mismo sitio y `main` es PostgreSQL.
 
 ```
-postgres  ← AQUÍ SE TRABAJA. La migración.
-  9d75210 Tajada 7, paso 7: el cambio. La migracion esta terminada   ← cabeza, 22-ago
-  a3929d6 Anotar el commit del paso 7.6 en el estado de Git
-  ff74c99 Tajada 7, paso 6: el sincronizador, el proveedor y las ultimas rutas
-  38e14d5 Anotar el commit del punto de control en el estado de Git
-  c123468 Punto de control: el dia entero por escrito, y que queda
-  540d157 Anotar el commit del paso 7.5 en el estado de Git
-  4ad4e65 Tajada 7, paso 5: las rutas de trivias
-  0190378 Bitacora del paso 7.4, y finales de linea normalizados
-  66bbc94 Tajada 7, paso 4: las rutas de puntuacion
-  ff13833 Anotar el commit de los pasos 7.1 a 7.3 en el estado de Git
-  8cb7fe5 Tajada 7, pasos 1 a 3: el servidor nuevo
-  826a1aa Anotar el commit de la tajada 6 en el estado de Git
-  d44bb4d Migracion, tajada 6: el sincronizador
-  81937cb Anotar el commit de la tajada 5 en el estado de Git
-  53fd287 Migracion, tajada 5: las trivias
-  da4905b Anotar el commit de la tajada 4 en el estado de Git
-  53f3ff8 Migracion, tajada 4: la puntuacion
-  f947039 Punto de control: dejar por escrito donde queda todo   ← hasta aquí, 20-ago
-  99bac51 Migracion, tajada 3: jornadas, partidos, jugadores y equipos
-  04ec8af Migracion, tajada 2: la plataforma
+main  ← AQUI SE TRABAJA
+  7613974 Migracion a PostgreSQL: MongoDB queda fuera del proyecto   ← la fusion
+  796e0ff Anotar el commit del cambio en el estado de Git
+  9d75210 Tajada 7, paso 7: el cambio. La migracion esta terminada
+  ...
   9a52f01 Migracion, tajada 1: los cimientos de la capa de datos
-       │
-main    ← intacta, desplegable, CI en verde. Sigue sobre MongoDB.
-  8c07e07 La puerta esta pasada, y un numero que hay que saber leer
-  3695776 Ocho de ocho en Neon, y el guardian que faltaba en la puerta
-  d7243b9 En Neon, crear un rol no da derecho a asumirlo
-  26f82e4 La limpieza que se comio el resultado
-  e94752a Dejar de adivinar: que el guion diga que fallo
-  d6e0c07 El ensayo que no ensayaba: corria como superusuario
-  f2b6110 Anotar el commit del procedimiento de Neon en el estado de Git
-  2132163 El procedimiento de Neon, probado antes de entregarlo
-  b23f4f1 Sondeo SQL: medir en vez de opinar, y un agujero de rebote (M-33)
-  e583e37 Dejar por escrito el dia de hoy, lo que queda y lo de manana
+  8c07e07 La puerta esta pasada, y un numero que hay que saber leer   ← aqui estaba main
 ```
 
 > ⚠️ Esta lista es una foto y envejece. **Comprueba con `git log --oneline` y
 > `git status -sb` dónde estás de verdad** antes de fiarte de ella.
 
-**`postgres` se funde en `main` cuando las 184 pruebas rápidas y las 62 de
-navegador pasen contra PostgreSQL**, es decir, al terminar la tajada 7. Hasta
-entonces `main` no recibe nada de la migración.
-
-Las ocho ramas de trabajo antiguas están contenidas en `main` y se pueden borrar
-cuando se quiera:
+La rama `postgres` se puede borrar cuando se quiera: su contenido está entero en
+`main`.
 
 ```bash
-git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright \
-              fase-4-sincronizador fase-6-endurecimiento s04-xss transacciones
+git branch -d postgres
+git push origin --delete postgres
 ```
 
-> ⚠️ **Al cambiar de rama entre `main` y cualquier commit anterior a `04f6de0`,
-> `node_modules` desaparece.** Estuvo versionado hasta ese commit, así que git lo
-> borra del árbol al retroceder. El síntoma es `Cannot find module 'mongoose'`.
-> La cura es `npm install`.
+Las ocho ramas de trabajo antiguas también están contenidas en `main`:
+
+```bash
+git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright               fase-4-sincronizador fase-6-endurecimiento s04-xss transacciones
+```
+
 
 ### ⚠️ Antes de arrancar la aplicación, lee esto
 
@@ -475,11 +437,11 @@ está hecha y sólo deja un paso manual, y **lo que ya estaba pendiente antes**
 
 ---
 
-## A. ✅ La migración a PostgreSQL — TERMINADA
+## A. ✅ La migración a PostgreSQL — TERMINADA Y FUNDIDA
 
-⛔ **Salvo UN paso manual**: aplicar `db/poner-al-dia.sql` en el editor SQL de
-Neon, con el rol dueño. La base sigue con el esquema del 20 de agosto y le falta
-la tabla `sesiones`. El cómo está en «Lo siguiente».
+Siete tajadas, la séptima en siete pasos, trece entradas de bitácora (040 a 052)
+y tres días. El esquema de Neon está al día, la aplicación arranca contra ella y
+`main` es PostgreSQL. **No queda nada de la migración por hacer.**
 
 El plan completo, con sus decisiones de alcance y sus reglas, está en **§21**.
 Esto es sólo el estado.
@@ -592,55 +554,51 @@ ahora significaría escribirla dos veces.
 
 ### B.2 Deuda técnica que sigue abierta
 
-0. ⚠️ **M-02, M-34 y M-35 siguen vivos en `main`.** Los tres se encontraron el 21
-   de agosto al portar la puntuación y las trivias (Entradas 044 y 045), y los
-   tres dan números equivocados **sin fallar**: borrar un partido descoloca los
-   pronósticos de todos (M-02) **y las trivias de los partidos siguientes**
-   (M-35), y marcar un comodín después de que el partido terminó no mueve nada
-   (M-34). **La migración los cierra.** Si se fuera a enseñar la aplicación con
-   datos que importen **antes de fundir `postgres` en `main`**, M-02 y M-35
-   merecen un parche aparte: son los que pueden ensuciar datos, y **los dos salen
-   del mismo `splice`**. En la rama `postgres` ya están cerrados los tres; en
-   `main` siguen vivos **hasta la fusión**.
-1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
-   `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres,
-   pero la primera agregación que alguien escriba **saldrá sin filtro de quiniela
-   y en silencio**. Es la forma exacta que tenía C-02. **La migración lo cierra;
-   si se abandonara, hay que arreglarlo aparte.**
-2. **`style-src` conserva `unsafe-inline`.** Se cerraron `script-src` y
-   `script-src-attr` (Entrada 024); los estilos no.
-3. **Paginación del resto de listados (M-26).** La tabla general sí está
+✅ **Cuatro puntos de esta lista murieron con la migración** y ya no están aquí:
+M-33 (el `tenantPlugin` que no enganchaba `aggregate`), M-02, M-34 y M-35. Los
+cuatro daban números equivocados o abrían huecos **sin fallar nunca**, que es lo
+que hay que saber reconocer la próxima vez. Están contados en §A.2 y en las
+Entradas 044, 045 y 052.
+
+Lo que sigue abierto:
+
+1. **`style-src` conserva `unsafe-inline`.** Se cerraron `script-src` y
+   `script-src-attr` (Entrada 024); los estilos no. Quedan 19 `style=` en línea
+   en el frontend.
+2. **Paginación del resto de listados (M-26).** La tabla general sí está
    paginada, y tres endpoints aceptan acotarse; el resto es deuda transversal.
-4. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
+3. **Medios de la Entrada 015 sin resolver:** una jornada aplazada o cancelada
    queda provisional para siempre, y no hay política escrita sobre los miembros
    que entran a mitad de temporada.
-5. **Los resultados de trivias no se han mirado con datos de verdad** desde la
+4. **Los resultados de trivias no se han mirado con datos de verdad** desde la
    Entrada 024. Las pruebas cubren que los datos llegan a la pantalla, no que se
    vean bien. Es una revisión de diez minutos con la aplicación levantada.
+5. **La aplicación nunca ha corrido con varias quinielas y datos reales a la
+   vez.** El aislamiento está probado —RLS, 240 peticiones concurrentes, y
+   pruebas en cada módulo— pero eso es distinto de haberlo visto funcionando con
+   gente dentro. Es lo primero que dirá si algo se pasó por alto.
 
-*(«`Jornada` es el único esquema sin `timestamps`» deja de aplicar: en el modelo
-nuevo la tabla lleva `creada_en` y `secuencia`.)*
 
 ### B.3 Decisiones del usuario — cómo quedaron
 
 | # | Decisión | Estado |
 |---|---|---|
-| **SQL** | ¿Migrar a PostgreSQL? | ✅ **Sí, decidido el 20-ago.** En marcha, 3 tajadas de 7 |
+| **SQL** | ¿Migrar a PostgreSQL? | ✅ **Hecha.** Decidida el 20-ago, cerrada y fundida en `main` el 22 |
 | **Dominio** | ¿Cuál es el definitivo? | ✅ **`quinieladeportivaglobal.onrender.com`** |
 | **C-06** | ¿Se paga un clúster que no se pause? | ✅ **No hace falta pagarlo**: Neon se despierta solo. Quedó resuelto de paso |
 | **M-30** | ¿La base sigue llamándose `test`? | ✅ **Resuelto**: la nueva se llama `quiniela` |
-| **Render** | Variables y health check | 🟡 **Decidido el cómo** (un `render.yaml` versionado), **pendiente el cuándo**: va en la tajada 7, cuando ya se sepa que la variable es `DATABASE_URL` |
+| **Render** | Variables y health check | ✅ **Escrito en `render.yaml`** (22-ago). ⚠️ **Render no lo aplica solo** a un servicio que ya existe: hay que conectarlo como Blueprint o copiar los valores a mano |
 | **Correo** | Proveedor de envío para la Fase E | 🔴 **Abierta.** Es la única dependencia externa que queda |
 | **Bloqueo** | Qué se le impide a una cuenta sin verificar | 🔴 **Abierta.** Es producto, no técnica |
 
-⚠️ **Dos cabos que nadie ha comprobado y no se pueden mirar desde esta máquina:**
+✅ **Los dos cabos que no se podían mirar desde esta máquina los cerró el usuario**
+el 22 de agosto: lo que hay puesto en Render, y si seguía viva la aplicación
+anterior apuntando a la misma base.
 
-1. **Qué hay puesto de verdad en Render** (`NODE_ENV`, `ALLOWED_ORIGINS`,
-   `DEBUG_ENDPOINTS`, health check). El `.env` local tiene
-   `NODE_ENV=development` y no define los otros dos.
-2. **Si sigue viva la aplicación anterior** (`quinieladeportivamundialista.onrender.com`)
-   **y si apunta a la misma base.** Dos servicios escribiendo en la misma base
-   sería un problema mayor que cualquiera de los de arriba.
+⚠️ **Pero conviene volver a mirarlos justo después de desplegar**, porque el
+despliegue nuevo cambia el primero: las variables que hoy haya puestas son las de
+la versión de Mongo. La lista de las que hacen falta está en `render.yaml` y en
+«Lo siguiente».
 
 ### B.4 Cosas que vigilar cuando haya tráfico real
 
