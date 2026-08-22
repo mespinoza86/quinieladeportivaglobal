@@ -21,7 +21,7 @@
 
 ```bash
 git branch --show-current   # debe decir: postgres
-git log --oneline -3        # debe empezar por 540d157
+git log --oneline -3        # debe empezar por c123468
 git status                  # debe estar limpio
 npm test                    # 358/358
 npm run test:postgres       # 229, en ~30 s
@@ -278,7 +278,8 @@ con sus pruebas— todo lo que se puede probar sin Express y sin apagar nada.
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  540d157 Anotar el commit del paso 7.5 en el estado de Git   ← cabeza, 21-ago
+  c123468 Punto de control: el dia entero por escrito, y que queda   ← cabeza, 21-ago
+  540d157 Anotar el commit del paso 7.5 en el estado de Git
   4ad4e65 Tajada 7, paso 5: las rutas de trivias
   0190378 Bitacora del paso 7.4, y finales de linea normalizados
   66bbc94 Tajada 7, paso 4: las rutas de puntuacion
