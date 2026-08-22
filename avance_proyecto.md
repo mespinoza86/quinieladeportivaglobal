@@ -356,7 +356,7 @@ el 21 de agosto y ya mordió una vez.
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  (última) Tajada 7, paso 7: el cambio. La migracion esta terminada   ← cabeza, 22-ago
+  9d75210 Tajada 7, paso 7: el cambio. La migracion esta terminada   ← cabeza, 22-ago
   a3929d6 Anotar el commit del paso 7.6 en el estado de Git
   ff74c99 Tajada 7, paso 6: el sincronizador, el proveedor y las ultimas rutas
   38e14d5 Anotar el commit del punto de control en el estado de Git
