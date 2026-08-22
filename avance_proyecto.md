@@ -35,7 +35,11 @@ la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
 base de verdad —registro, sesión que sobrevive y creación de quiniela— y se
 borraron los datos de prueba.
 
-⛔ **Lo único que queda es el despliegue** — ver «Lo siguiente».
+✅ **Y desplegado**: `https://quinieladeportivaglobal.onrender.com` responde,
+habla con Neon y mantiene la sesión. El viaje Render → Neon son **3 ms**.
+
+**No queda nada de la migración por hacer.** Lo pendiente es §B: la Fase E y la
+Fase F, las dos de producto.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
@@ -69,9 +73,8 @@ entradas de bitácora (040 a 052).
 - **Ocho hallazgos viejos quedan cerrados** por el modelo nuevo, más tres que
   aparecieron al portar (M-34, M-35 y el hueco de los dos relojes). Ver §A.2.
 
-**Lo que NO está hecho**: desplegar. Y ⚠️ **Render no aplica `render.yaml` solo a
-un servicio que ya existe**: hay que conectarlo como Blueprint o copiar los
-valores a mano. Ver «Lo siguiente».
+**Lo que NO está hecho**: nada de la migración. Queda §B —la Fase E y la Fase F—
+y dos cabos de limpieza que no corren prisa, en «Lo siguiente».
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -269,63 +272,65 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
 - **El único cambio de API visible de toda la migración lo cazaron las pruebas de
   navegador**: crear trivias devolvía la lista de las creadas y ahora devuelve
   una cuenta. Nada del frontend usaba la lista.
+- ⚠️ **Y al desplegar, la base estaba en la otra costa.** Neon en Ohio, Render en
+  Oregón: **47 ms por consulta** en vez de 3, así que una ruta con cinco pagaba
+  ~235 ms sólo en viajes —y habría parecido culpa de PostgreSQL—. Se midió desde
+  fuera con las dos sondas y se arregló recreando la base en Oregón, que salió
+  gratis porque estaba vacía. Entrada 053.
 
 
-### 🌅 Lo siguiente: desplegar
+### 🌅 Lo siguiente: la Fase E, y dos cabos de limpieza
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-✅ **La migración está cerrada.** Neon tiene el esquema al día, la aplicación
-arranca contra ella y `main` es PostgreSQL. Lo que queda es sacarlo a producción.
+✅ **La migración y el despliegue están cerrados.** La aplicación corre sobre
+PostgreSQL en `https://quinieladeportivaglobal.onrender.com`, con la base en
+Neon (Oregón) y **3 ms** de viaje entre las dos.
 
-#### ⚠️ 1. Render no aplica `render.yaml` solo
+#### Dos cabos de limpieza, que no corren prisa
 
-Es lo que más puede sorprender. `render.yaml` está versionado y dice cuál es la
-configuración correcta, pero **Render no lo aplica por su cuenta a un servicio
-que ya existe**: hay que conectarlo como *Blueprint*, o copiar los valores a mano
-en el panel.
+1. **Borrar el proyecto de Neon en Ohio.** Ya no lo usa nadie. Un proyecto que
+   nadie mira pero al que alguien podría apuntar por error es peor que no
+   tenerlo. Neon → proyecto de Ohio → *Settings* → *Delete project*.
+2. **Borrar `verif_resultados` en Oregón.** Es la tabla que deja la prueba de
+   aceptación del Anexo C. ⚠️ **Hay que hacerlo con el rol dueño**: `app_quiniela`
+   no puede, y está bien que no pueda (regla 3 de §21.2).
 
-Lo que no puede faltar, o el despliegue arrancará buscando una base que no tiene:
+   ```sql
+   DROP TABLE IF EXISTS verif_resultados;
+   ```
 
-| Variable | Valor |
-|---|---|
-| `DATABASE_URL` | ⛔ rol **`app_quiniela`** y cadena **con `-pooler`** |
-| `NODE_ENV` | `production` |
-| `SESSION_SECRET` | uno generado, no el de desarrollo |
-| `APIFOOTBALL_COM_KEY` | la de verdad |
-| `ALLOWED_ORIGINS` | `https://quinieladeportivaglobal.onrender.com` |
-| `DEBUG_ENDPOINTS` | `false` |
+#### Lo que queda del proyecto: §B
 
-Y el *health check* debe apuntar a **`/readyz`**, no a `/healthz`: el primero
-dice «puedo atender tráfico», el segundo sólo «el proceso responde». Con la base
-dormida —Neon suspende el cómputo por inactividad— el proceso vive pero no puede
-servir nada útil.
+- **Fase E — verificación de correo.** Media parte ya está hecha: la tabla
+  `usuarios` tiene `email_verificado`, `token_verificacion` y su expiración.
+  ⚠️ Le faltan **dos decisiones que son tuyas**:
+  - **Qué proveedor de envío.** Tiene coste y configuración en Render. Es la
+    única dependencia externa nueva de todo lo que queda.
+  - **Qué se le impide a una cuenta sin verificar.** ¿Puede entrar y no
+    pronosticar? ¿No puede ni entrar? ¿Puede todo durante unos días? Es producto,
+    no técnica, y cambia bastante el trabajo.
+- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas: qué
+  cuenta como «igualados» y qué es un «clásico». Necesita la tabla de posiciones
+  de cada liga, que hoy no se consulta.
 
-#### 2. Lo que hay que mirar el primer día
+#### ⚠️ Y lo primero que hay que mirar con tráfico real
 
-⚠️ **La latencia entre Render y Neon.** Desde este portátil un viaje son ~116 ms;
-entre ellos, en la misma región, deben ser 1–5 ms. Si no lo son, la aplicación
-parecerá lenta **y parecerá culpa de PostgreSQL**.
+Ahora ya se puede, y está en §B.4. En `/api/admin/sync-metricas`:
 
-Y las tres métricas de §B.4, en `/api/admin/sync-metricas`:
-
-- **`consultasAhorradasPorDeduplicacion`** debe crecer en cuanto haya dos
-  quinielas siguiendo los mismos partidos. Si se queda en cero, la deduplicación
-  no está funcionando y la cuota se gasta de más sin que nada falle.
+- **`consultasAhorradasPorDeduplicacion`** debe crecer en cuanto haya **dos
+  quinielas siguiendo los mismos partidos**. Si se queda en cero, la
+  deduplicación no está funcionando y la cuota del proveedor se gasta de más
+  **sin que nada falle**. Es la promesa de C-01, y es la única que todavía no se
+  ha visto cumplirse con datos de verdad.
 - **`syncsSinCambioDePuntos`** debe crecer mucho más deprisa que
   `jornadasReescritas` el primer domingo con partidos en vivo.
 - **`ciclosAbandonadosPorTiempo`**: si sube, el proveedor está tardando.
 
-#### 3. Y después, lo que queda del proyecto
-
-Lo pendiente es **§B**, que no ha cambiado en toda la semana:
-
-- **Fase E — verificación de correo.** Le faltan **dos decisiones tuyas**: qué
-  proveedor de envío, y qué se le impide a una cuenta sin verificar.
-- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas: qué
-  cuenta como «igualados» y qué es un «clásico». Necesita la tabla de posiciones
-  de cada liga, que hoy no se consulta.
+Y lo que sigue sin haberse visto nunca: **la aplicación con varias quinielas y
+gente dentro a la vez**. El aislamiento está probado por todos lados, pero eso es
+distinto de haberlo visto funcionando.
 
 #### Las cuatro reglas del código, que siguen valiendo
 
@@ -587,7 +592,8 @@ Lo que sigue abierto:
 | **Dominio** | ¿Cuál es el definitivo? | ✅ **`quinieladeportivaglobal.onrender.com`** |
 | **C-06** | ¿Se paga un clúster que no se pause? | ✅ **No hace falta pagarlo**: Neon se despierta solo. Quedó resuelto de paso |
 | **M-30** | ¿La base sigue llamándose `test`? | ✅ **Resuelto**: la nueva se llama `quiniela` |
-| **Render** | Variables y health check | ✅ **Escrito en `render.yaml`** (22-ago). ⚠️ **Render no lo aplica solo** a un servicio que ya existe: hay que conectarlo como Blueprint o copiar los valores a mano |
+| **Render** | Variables y health check | ✅ **Puesto y desplegado** (22-ago). ⚠️ Render **no** aplica `render.yaml` solo: hubo que poner a mano las variables, el *health check* **y el Start Command**, que fue el que tumbó el primer intento |
+| **Región** | ¿Dónde va la base? | ✅ **Oregón, la misma que Render** (22-ago). Estuvo en Ohio y costaba 47 ms por consulta |
 | **Correo** | Proveedor de envío para la Fase E | 🔴 **Abierta.** Es la única dependencia externa que queda |
 | **Bloqueo** | Qué se le impide a una cuenta sin verificar | 🔴 **Abierta.** Es producto, no técnica |
 
@@ -3164,9 +3170,19 @@ con un *pool* de conexiones de verdad, no se sigue.
 ### Antes de empezar
 
 Ten a mano **la región de tu servicio de Render** (Oregon, Ohio, Frankfurt,
-Singapur…). No es un detalle: si la base queda en otro continente que la
-aplicación, cada consulta paga el viaje de ida y vuelta, y la aplicación hace
-muchas por petición.
+Singapur…). No es un detalle: si la base queda lejos de la aplicación, cada
+consulta paga el viaje de ida y vuelta, y la aplicación hace muchas por petición.
+
+> ⚠️ **Esto no es teórico: pasó.** La base se montó en Ohio y el servicio estaba
+> en Oregón. Cada consulta costaba **47 ms** en vez de 3, así que una ruta con
+> cinco consultas pagaba ~235 ms sólo en viajes — y habría parecido culpa de
+> PostgreSQL. Se descubrió midiendo desde fuera el mismo día del despliegue, y se
+> arregló creando el proyecto de nuevo en Oregón (Entrada 053).
+
+> **Cómo se mide sin entrar a ningún panel:** `/healthz` no toca la base y
+> `/readyz` hace un `SELECT 1`. La diferencia entre las dos, tomando el **mínimo**
+> de varias llamadas, es el viaje de ida y vuelta a la base: la latencia propia
+> hasta el servidor se cancela porque está en las dos.
 
 ---
 
@@ -3199,8 +3215,15 @@ con el rol dueño que Neon ya te dio.
 En la pestaña **SQL Editor**, arriba a la derecha, **elige la base `quiniela`**
 (si te deja en `neondb` crearás las tablas en el sitio equivocado).
 
-Pega el contenido entero de **`sondeo-sql/esquema.sql`** y ejecútalo. Crea 16
-tablas y activa RLS en las 12 de dominio.
+Pega el contenido entero de **`db/esquema.sql`** y ejecútalo. Crea **18 tablas** y
+activa RLS en las 12 de dominio.
+
+> ⛔ **`db/esquema.sql`, NO `sondeo-sql/esquema.sql`.** Este anexo decía el segundo
+> hasta el 22 de agosto, y para entonces ya era el viejo: le faltan la tabla
+> `sesiones` y la columna `jornadas.secuencia`. Seguirlo al pie de la letra monta
+> una base en la que **nadie sigue dentro en la petición siguiente**, sin ningún
+> error que lo explique. `sondeo-sql/esquema.sql` se queda como estaba porque es
+> el registro de lo que se sondeó; **el que vale es el de `db/`.**
 
 ### Paso 4 — Crear el rol de la aplicación
 
@@ -8628,6 +8651,138 @@ Después: fundir `postgres` en `main` y desplegar.
 Y con la migración cerrada, lo que queda es **§B**: la Fase E (verificación de
 correo, con sus dos decisiones de producto abiertas) y la Fase F (sugerencias de
 partidos destacados).
+
+---
+
+### 📌 Entrada 053 — 22 de agosto de 2026 — Desplegado, y la base cruzó el país
+
+**Objetivo:** desplegar en Render y comprobar que lo desplegado funciona de
+verdad, no que el proceso arranca.
+
+## ✅ La aplicación está en producción sobre PostgreSQL
+
+`https://quinieladeportivaglobal.onrender.com` responde, habla con Neon, registra
+cuentas y **mantiene la sesión entre peticiones**, que es lo que probaba la tabla
+`sesiones`.
+
+**Dos cosas fallaron, y las dos eran configuración de Render que `render.yaml` no
+aplica solo.**
+
+⚠️ **La primera tumbó el despliegue: el Start Command.** El servicio tenía
+guardado `node server.js` de la versión anterior, y ese archivo se borró ayer. El
+*build* pasó —`Build successful 🎉`— y el arranque murió con
+`Cannot find module '/opt/render/project/src/server.js'`.
+
+Es la misma trampa que ya estaba anotada —«Render no aplica `render.yaml` solo a
+un servicio que ya existe»— pero **el aviso listaba las variables de entorno y el
+*health check*, y se dejaba fuera el comando de arranque**, que es justo el que
+rompe primero. El aviso era correcto y estaba incompleto, que para el caso es lo
+mismo.
+
+## ⚠️ La segunda no tumbó nada, y era peor: 47 ms por consulta
+
+Con la aplicación ya en pie, se midió la latencia entre Render y Neon desde
+fuera. Salieron **47 ms**. Debían ser 1–5.
+
+La causa, mirando el nombre del servidor de Neon y la configuración de Render:
+
+| | Región |
+|---|---|
+| Neon | `us-east-2` — Ohio |
+| Render | Oregón |
+
+**Costas opuestas.** Una ruta con cinco consultas pagaba ~235 ms sólo en viajes,
+y la aplicación se habría sentido lenta **pareciendo culpa de PostgreSQL**.
+
+**Cómo se midió, que es lo que conviene recordar.** Sin entrar a ningún panel y
+sin instrumentar nada: `/healthz` no toca la base y `/readyz` hace un `SELECT 1`.
+La diferencia entre las dos, **tomando el mínimo de treinta llamadas**, es el
+viaje de ida y vuelta: la latencia propia hasta el servidor se cancela porque
+está en las dos sondas. El mínimo y no la mediana, porque el mínimo es la medida
+limpia — la mediana arrastra el ruido de la red y de los vecinos del plan
+gratuito.
+
+**El arreglo.** Ni Render ni Neon dejan cambiar la región de algo que ya existe.
+Se recreó **la base**, no el servicio, por dos razones: estaba **vacía**, y
+recrear el servicio habría costado el subdominio ya decidido. El usuario montó un
+proyecto nuevo en Oregón siguiendo el Anexo C, con 8/8 en la prueba de
+aceptación.
+
+**Resultado: de 47 ms a 3 ms.**
+
+Hay un detalle que lo confirma mejor que el número: la mediana de `/readyz`
+(187 ms) quedó **por debajo** de la de `/healthz` (198 ms). Eso sólo puede pasar
+si el viaje a la base se volvió insignificante frente al ruido; antes había 35 ms
+de separación constante.
+
+**Qué se hizo:**
+
+1. Diagnóstico del arranque fallido y corrección del **Start Command**.
+2. Medición de la latencia desde fuera, y diagnóstico de las regiones.
+3. Proyecto nuevo de Neon en Oregón, esquema, rol y 8/8 (lo ejecutó el usuario).
+4. `DATABASE_URL` nueva en Render y en el `.env` local.
+5. Prueba de humo contra producción, y borrado de los datos de prueba.
+6. **Corrección del Anexo C**, que tenía una trampa.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Anexo C corregido: el esquema y la lección de la región. Esta entrada |
+| `.env` | `DATABASE_URL` apuntando a Oregón (no versionado) |
+
+**Verificación:**
+
+```
+/readyz en producción → {"estado":"listo","base":"conectada"}
+viaje Render → Neon   → ~3 ms  (eran ~47)
+registro + sesión     → funciona contra la base nueva
+esquema en Oregón     → 18 tablas, 12 con RLS, sesiones y secuencia puestas
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **El Anexo C tenía una trampa que habría recreado el problema de ayer.**
+   Mandaba pegar `sondeo-sql/esquema.sql`, que el 20 de agosto era el bueno y
+   para el 22 ya era el viejo: le faltan `sesiones` y `jornadas.secuencia`.
+   Seguirlo al pie de la letra monta una base en la que **nadie sigue dentro en
+   la petición siguiente**. Ahora dice `db/esquema.sql`, con el aviso en negrita.
+   **Un procedimiento probado envejece igual que un comentario**, y éste llevaba
+   dos días caducado sin que nada lo delatara.
+2. ⚠️ **Un aviso incompleto engaña igual que uno equivocado.** «Render no aplica
+   `render.yaml` solo» estaba escrito, y aun así el despliegue murió: la lista
+   que lo acompañaba tenía las variables y el *health check*, y no el comando de
+   arranque. Quien lee un aviso con lista se fía de la lista.
+3. **La región se puede medir desde fuera, con dos sondas y sin permisos.** No
+   hacía falta entrar al panel de Neon ni instrumentar la aplicación. Que
+   `/healthz` NO toque la base —que parecía sólo una regla de higiene para que la
+   sonda no se cuelgue— resultó ser lo que hace posible la medición.
+4. **`app_quiniela` no pudo borrar `verif_resultados`**, la tabla que deja la
+   prueba de aceptación. `must be owner of table` — y está bien que así sea: es
+   la regla 3 de §21.2 funcionando. Se queda hasta que alguien la borre con el
+   rol dueño; no estorba.
+5. **Recrear la base salió gratis porque estaba vacía, y eso no dura.** La
+   decisión de recrear la base en vez del servicio se tomó por eso y por el
+   subdominio. Con datos dentro habría hecho falta un volcado y una restauración,
+   y la ventana de indisponibilidad deja de ser cero.
+
+**Pendiente / siguiente paso:**
+
+Queda un cabo menor: **borrar el proyecto de Neon en Ohio** —ya no lo usa nadie—
+y, si se quiere, la tabla `verif_resultados` de Oregón, con el rol dueño:
+
+```sql
+DROP TABLE IF EXISTS verif_resultados;
+```
+
+Y con eso, **la migración y el despliegue están cerrados**. Lo que queda del
+proyecto es §B: la **Fase E** (verificación de correo), que espera dos decisiones
+de producto, y la **Fase F** (sugerencias de partidos destacados).
+
+⚠️ Lo primero que conviene vigilar con tráfico real está en §B.4, y ahora se
+puede mirar de verdad: `consultasAhorradasPorDeduplicacion` en
+`/api/admin/sync-metricas` debe crecer en cuanto haya dos quinielas siguiendo los
+mismos partidos.
 
 ---
 
