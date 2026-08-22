@@ -9,18 +9,22 @@
 -- POR QUE HACE FALTA
 -- ---------------------------------------------------------------------
 --
--- La base se monto el 20 de agosto con el Anexo C, y el esquema ha cambiado
--- desde entonces:
+-- Este guion se usa CADA VEZ que `db/esquema.sql` cambia y la base todavia
+-- esta vacia. Recrea el esquema entero desde cero.
 --
---   * falta la tabla `sesiones` (connect-pg-simple). Sin ella la aplicacion
---     arranca y deja entrar a la gente, pero NADIE SIGUE DENTRO en la
---     peticion siguiente, y no hay ningun error que lo explique;
---   * falta la columna `jornadas.secuencia`, que es lo que hace que "la
---     jornada actual" sea la ultima CREADA. Sin ella el orden es arbitrario
---     y la ruta sigue devolviendo una jornada, solo que la que no es;
---   * faltan los dos indices unicos nuevos: el de `jugadores` y el parcial de
---     `trivias`, que cierran carreras reales;
---   * sobra `verif_resultados`, que era del banco de pruebas del sondeo.
+-- Ultima vez que hizo falta: 22 de agosto, al escribir la Fase E. Los cambios
+-- de esa tanda:
+--
+--   * entra la tabla `auth_tokens`, para los enlaces de confirmacion. Del
+--     token solo se guarda el HASH;
+--   * salen de `usuarios` las columnas `token_verificacion` y
+--     `expiracion_token_verificacion`, que lo guardaban EN CLARO;
+--   * sobra `verif_resultados`, que la deja la prueba de aceptacion del
+--     Anexo C y que `app_quiniela` no puede borrar por si sola.
+--
+-- (La tanda anterior, del 21, traia `sesiones`, `jornadas.secuencia` y dos
+--  indices unicos. Sin `sesiones` la aplicacion arranca, deja entrar a la
+--  gente y NADIE SIGUE DENTRO en la peticion siguiente.)
 --
 -- ---------------------------------------------------------------------
 -- SE RECREA ENTERA, Y ES SEGURO PORQUE ESTA VACIA
@@ -126,14 +130,29 @@ BEGIN
     faltan := faltan || 'indice jugadores_quiniela_usuario; ';
   END IF;
 
+  IF to_regclass('public.auth_tokens') IS NULL THEN
+    faltan := faltan || 'tabla auth_tokens; ';
+  END IF;
+
+  -- El token en claro NO puede volver: solo se guarda su hash (Fase E).
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'usuarios' AND column_name = 'token_verificacion') THEN
+    faltan := faltan || 'quitar usuarios.token_verificacion (guardaba el token en claro); ';
+  END IF;
+
   IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity) <> 12 THEN
     faltan := faltan || 'las 12 tablas con RLS; ';
+  END IF;
+
+  -- Ni la del banco de pruebas del Anexo C, que app_quiniela no puede borrar.
+  IF to_regclass('public.verif_resultados') IS NOT NULL THEN
+    faltan := faltan || 'borrar verif_resultados; ';
   END IF;
 
   IF faltan <> '' THEN
     RAISE EXCEPTION 'INCOMPLETO. Falta: %', faltan;
   END IF;
 
-  RAISE NOTICE 'OK: esquema al dia, 12 tablas con RLS y los permisos puestos.';
+  RAISE NOTICE 'OK: 19 tablas, 12 con RLS, auth_tokens puesta y los permisos dados.';
 END
 $verifica$;
