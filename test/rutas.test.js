@@ -651,3 +651,353 @@ test('los equipos tampoco cruzan de una quiniela a otra', async () => {
 
   assert.deepEqual((await b.agente.get('/api/equipos')).body, []);
 });
+
+/* ==================== 7.4 — Puntuación ==================== */
+
+/** Deja una jornada con dos partidos, uno ya empezado y otro por jugar. */
+async function jornadaMixta(jefe, nombre = 'J1') {
+  await jefe.agente.post('/api/jornadas').send({
+    nombre,
+    partidos: [
+      partido('Alfa', 'Beta', { apiDate: '2020-01-01 15:00' }),   // ya empezó
+      partido('Gamma', 'Delta', { apiDate: '2099-01-01 15:00' })  // por jugar
+    ]
+  });
+}
+
+/** Mete a una segunda persona en la quiniela del jefe, ya aprobada. */
+async function miembroDe(jefe, prefijo = 'socio') {
+  const socio = await cuentaNueva(prefijo);
+  await socio.agente.post('/api/quinielas/unirse')
+    .send({ codigoIngreso: jefe.quiniela.codigoIngreso });
+
+  const miembros = await jefe.agente.get('/api/quiniela-actual/miembros');
+  const pendiente = miembros.body.find(m => m.username === socio.datos.username);
+  await jefe.agente.patch(`/api/quiniela-actual/miembros/${pendiente.id}/aprobar`).send({});
+
+  await socio.agente.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+  return socio;
+}
+
+test('un pronóstico se guarda, y sólo en los partidos que siguen abiertos', async () => {
+  const jefe = await admin('jefe');
+  await jornadaMixta(jefe);
+
+  const res = await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username,
+    jornada: 'J1',
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 2 }]
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.guardados, 1, 'el partido ya empezado no se guarda');
+  assert.equal(res.body.bloqueados, 1);
+
+  const mios = await jefe.agente.get(`/api/resultados/${jefe.datos.username}/J1`);
+  assert.deepEqual(mios.body.map(p => p.marcador1), [null, 2]);
+});
+
+test('nadie guarda pronósticos en nombre de otro', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jornadaMixta(jefe);
+
+  const res = await socio.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{}, { marcador1: 1, marcador2: 1 }]
+  });
+
+  assert.equal(res.status, 403);
+});
+
+test('⚠️ de otro participante sólo se ve lo de los partidos que ya empezaron', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jornadaMixta(jefe);
+
+  await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1',
+    pronosticos: [{}, { marcador1: 3, marcador2: 3 }]
+  });
+
+  // El jefe es administrador: lo ve todo.
+  const comoAdmin = await jefe.agente.get(`/api/resultados/${socio.datos.username}/J1`);
+  assert.equal(comoAdmin.body[1].marcador1, 3);
+
+  // Otro participante normal, no.
+  const tercero = await miembroDe(jefe, 'tercero');
+  const comoOtro = await tercero.agente.get(`/api/resultados/${socio.datos.username}/J1`);
+
+  assert.equal(comoOtro.status, 200, 'no es un 403: la fila viaja, sin el marcador');
+  assert.equal(comoOtro.body[1].oculto, true, 'el partido por jugar sigue tapado');
+  assert.equal(comoOtro.body[1].marcador1, null);
+  assert.equal(comoOtro.body[0].oculto, undefined, 'el que ya empezó sí se ve');
+});
+
+test('la tabla de todos contra todos tapa lo ajeno partido a partido', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jornadaMixta(jefe);
+
+  await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1', pronosticos: [{}, { marcador1: 4, marcador2: 4 }]
+  });
+
+  const tercero = await miembroDe(jefe, 'tercero');
+  const res = await tercero.agente.get('/api/resultados');
+
+  const fila = res.body.find(([clave]) => clave === `${socio.datos.username}_J1`);
+  assert.ok(fila, 'la fila viaja aunque la jornada no haya cerrado');
+  assert.equal(fila[1][0].oculto, true, 'sólo se guardó el partido abierto, y está tapado');
+});
+
+test('resultados-con-equipos y resultados-seguros aplican la MISMA regla', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jornadaMixta(jefe);
+
+  await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1', pronosticos: [{}, { marcador1: 5, marcador2: 5 }]
+  });
+
+  const tercero = await miembroDe(jefe, 'tercero');
+
+  const conEquipos = await tercero.agente
+    .get(`/api/resultados-con-equipos/${socio.datos.username}/J1`);
+  assert.equal(conEquipos.body[1].oculto, true);
+  assert.equal(conEquipos.body[1].marcador1, '');
+
+  const seguros = await tercero.agente
+    .post(`/api/resultados-seguros/${socio.datos.username}/J1`).send({});
+  assert.equal(seguros.body.success, true, 'para lo ajeno ya no se pide contraseña');
+  assert.equal(seguros.body.partidos[1].oculto, true);
+});
+
+test('⚠️ lo PROPIO en resultados-seguros sigue pidiendo la contraseña', async () => {
+  const jefe = await admin('jefe');
+  await jornadaMixta(jefe);
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{}, { marcador1: 2, marcador2: 1 }]
+  });
+
+  const ruta = `/api/resultados-seguros/${jefe.datos.username}/J1`;
+
+  const sin = await jefe.agente.post(ruta).send({});
+  assert.equal(sin.body.success, false);
+  assert.match(sin.body.error, /Contraseña requerida/);
+
+  const mala = await jefe.agente.post(ruta).send({ password: 'no-es-esta-larga' });
+  assert.equal(mala.status, 401);
+
+  const buena = await jefe.agente.post(ruta).send({ password: jefe.datos.password });
+  assert.equal(buena.body.success, true);
+  assert.equal(buena.body.partidos[1].marcador1, 2);
+});
+
+/* ---------- Resultados oficiales ---------- */
+
+test('la carga manual bloquea los partidos y congela la jornada', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta')]
+  });
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 2, marcador2: 1 }]
+  });
+
+  const res = await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 2, marcador2: 1 }] });
+  assert.equal(res.status, 200);
+
+  const tabla = await jefe.agente.get('/api/clasificacion-jornada?jornada=J1');
+  assert.equal(tabla.body.estado, 'confirmada');
+  assert.equal(tabla.body.clasificacion.find(f => f.jugador === jefe.datos.username).puntos, 5);
+});
+
+test('⚠️ el comodín que sale del API es el del PARTIDO, no el del formulario', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('Alfa', 'Beta', { comodin: true })]
+  });
+
+  // El formulario manda `comodin: false`, que es justo lo que NO debe ganar.
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0, comodin: false }] });
+
+  const res = await jefe.agente.get('/api/resultados-oficiales/J1');
+  assert.equal(res.body.partidos[0].comodin, true);
+});
+
+test('un marcador oficial inválido no guarda ninguno', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('A', 'B'), partido('C', 'D')]
+  });
+
+  const res = await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }, { marcador1: -5, marcador2: 0 }] });
+
+  assert.equal(res.status, 400);
+
+  const guardados = await jefe.agente.get('/api/resultados-oficiales/J1');
+  assert.equal(guardados.body.partidos[0].marcador1, '', 'la transacción entera se deshace');
+});
+
+test('un miembro normal no puede cargar resultados oficiales', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await socio.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 9, marcador2: 9 }] });
+
+  assert.equal(res.status, 403);
+});
+
+test('los resultados oficiales se pueden acotar a una jornada', async () => {
+  const jefe = await admin('jefe');
+  for (const nombre of ['J1', 'J2']) {
+    await jefe.agente.post('/api/jornadas').send({ nombre, partidos: [partido('A', 'B')] });
+    await jefe.agente.post('/api/resultados-oficiales')
+      .send({ jornada: nombre, resultados: [{ marcador1: 1, marcador2: 1 }] });
+  }
+
+  assert.equal((await jefe.agente.get('/api/resultados-oficiales')).body.length, 2);
+  assert.equal((await jefe.agente.get('/api/resultados-oficiales?jornada=J1')).body.length, 1,
+    'es M-26: quien mira una jornada no debe traerse las cuarenta');
+});
+
+/* ---------- Las dos tablas ---------- */
+
+test('sin jornadas, la clasificación responde vacía en vez de fallar', async () => {
+  const jefe = await admin('jefe');
+  const res = await jefe.agente.get('/api/clasificacion-jornada');
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { jornadas: [], jornada: null, estado: null, clasificacion: [] });
+});
+
+test('la clasificación por defecto es la de la jornada actual', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J2', partidos: [partido('C', 'D')] });
+
+  const res = await jefe.agente.get('/api/clasificacion-jornada');
+  assert.equal(res.body.jornada, 'J2', 'la última creada');
+  assert.equal(res.body.estado, 'provisional');
+});
+
+test('una jornada que no existe en la clasificación responde 404', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const res = await jefe.agente.get('/api/clasificacion-jornada?jornada=No%20existe');
+  assert.equal(res.status, 404);
+});
+
+test('los empatados comparten puesto en la clasificación', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  for (const quien of [jefe, socio]) {
+    await quien.agente.post('/api/resultados').send({
+      jugador: quien.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+    });
+  }
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }] });
+
+  const res = await jefe.agente.get('/api/clasificacion-jornada?jornada=J1');
+  const conPuntos = res.body.clasificacion.filter(f => f.puntos > 0);
+
+  assert.equal(conPuntos.length, 2);
+  assert.deepEqual(conPuntos.map(f => f.puesto), [1, 1]);
+  assert.deepEqual(conPuntos.map(f => f.empate), [true, true]);
+});
+
+test('la tabla general suma las jornadas y da el total', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }] });
+
+  const res = await jefe.agente.get('/api/resultados-totales');
+  const fila = res.body[jefe.datos.username];
+
+  assert.equal(fila.J1, 5);
+  assert.equal(fila.Trivias, 0);
+  assert.equal(fila.total, 5);
+});
+
+test('la tabla general se pagina si se pide, y no si no', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const entera = await jefe.agente.get('/api/resultados-totales');
+  assert.ok(entera.body[jefe.datos.username], 'sin parámetros responde el objeto de siempre');
+
+  const paginada = await jefe.agente.get('/api/resultados-totales?pagina=1&limite=10');
+  assert.ok(Array.isArray(paginada.body.jugadores));
+  assert.equal(paginada.body.pagina, 1);
+  assert.equal(paginada.body.totalPaginas, 1);
+});
+
+test('⚠️ cargar resultados oficiales tira la caché de la tabla', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+  await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+
+  // Se llena la caché: todavía no hay resultado oficial, así que van cero puntos.
+  const antes = await jefe.agente.get('/api/resultados-totales');
+  assert.equal(antes.body[jefe.datos.username].total, 0);
+
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }] });
+
+  const despues = await jefe.agente.get('/api/resultados-totales');
+  assert.equal(despues.body[jefe.datos.username].total, 5,
+    'servir la tabla vieja tras una escritura es para lo que existe la invalidación');
+});
+
+test('cargar el resultado oficial CIERRA el partido: ya no admite pronósticos', async () => {
+  const jefe = await admin('jefe');
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  /*
+   * El partido se juega en 2099, pero un administrador acaba de escribir su
+   * marcador: eso lo da por terminado. Manda el resultado oficial sobre el
+   * calendario, y por eso ya no se puede pronosticar.
+   */
+  await jefe.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }] });
+
+  const res = await jefe.agente.post('/api/resultados').send({
+    jugador: jefe.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+
+  assert.equal(res.body.guardados, 0);
+  assert.equal(res.body.bloqueados, 1, 'acertar después de saber el resultado no es acertar');
+});
+
+test('⚠️ la caché de la tabla no cruza entre quinielas', async () => {
+  const a = await admin('caa');
+  const b = await admin('cab');
+
+  await a.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+  await a.agente.post('/api/resultados').send({
+    jugador: a.datos.username, jornada: 'J1', pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+  await a.agente.post('/api/resultados-oficiales')
+    .send({ jornada: 'J1', resultados: [{ marcador1: 1, marcador2: 0 }] });
+
+  await a.agente.get('/api/resultados-totales');           // llena la caché de A
+  const tablaB = await b.agente.get('/api/resultados-totales');
+
+  assert.equal(tablaB.body[a.datos.username], undefined,
+    'una caché global sería C-02 otra vez, y en memoria, donde RLS no llega');
+});

@@ -149,6 +149,60 @@ async function porJugadorDeJornada(cliente, jornadaId) {
   return porJugador;
 }
 
+/**
+ * TODOS los pronósticos de la quiniela, o los de una jornada, en UNA consulta.
+ *
+ * Es la tabla de todos contra todos. Hacerlo con una consulta por jugador y
+ * jornada —lo natural al escribirlo— serían, con veinte jugadores y cuarenta
+ * jornadas, **ochocientos viajes a la base para pintar una pantalla**. Es el
+ * mismo N+1 que la Fase 5 quitó de la tabla general.
+ *
+ * Devuelve `[{ jugador, jornada, filas }]`, con `filas` en orden de partido y
+ * `bloqueado` ya resuelto, para que la privacidad se decida igual que en el
+ * resto: partido a partido.
+ */
+async function tabla(quinielaId, jornadaNombre = null, ahora = new Date()) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows } = await c.query(`
+      SELECT jug.nombre AS jugador, jor.nombre AS jornada,
+             p.orden, p.equipo1, p.equipo2, p.logo_equipo1, p.logo_equipo2,
+             p.comodin, p.api_date,
+             pr.marcador1, pr.marcador2,
+             rop.estado AS oficial_estado
+        FROM pronosticos pr
+        JOIN resultados r   ON r.id  = pr.resultado_id
+        JOIN jugadores  jug ON jug.id = r.jugador_id
+        JOIN jornadas   jor ON jor.id = r.jornada_id
+        JOIN partidos   p   ON p.id  = pr.partido_id
+        LEFT JOIN resultados_oficiales_partidos rop ON rop.partido_id = p.id
+       WHERE ($1::text IS NULL OR jor.nombre = $1)
+       ORDER BY jor.secuencia, jug.nombre, p.orden`,
+      [jornadaNombre]);
+
+    const porClave = new Map();
+
+    for (const f of rows) {
+      const clave = `${f.jugador}_${f.jornada}`;
+      if (!porClave.has(clave)) {
+        porClave.set(clave, { jugador: f.jugador, jornada: f.jornada, filas: [] });
+      }
+      porClave.get(clave).filas.push({
+        equipo1: f.equipo1,
+        equipo2: f.equipo2,
+        logoEquipo1: f.logo_equipo1,
+        logoEquipo2: f.logo_equipo2,
+        comodin: f.comodin,
+        marcador1: f.marcador1,
+        marcador2: f.marcador2,
+        bloqueado: partidoYaInicio(
+          f, f.oficial_estado ? { estado: f.oficial_estado } : null, ahora)
+      });
+    }
+
+    return [...porClave.values()];
+  });
+}
+
 /* ==================== Escritura ==================== */
 
 /**
@@ -228,6 +282,6 @@ async function borrarDePartidos(cliente, partidoIds) {
 module.exports = {
   partidoYaInicio,
   partidosDe, oficialesDe, jornadaIdDe,
-  deJugador, porJugadorDeJornada,
+  deJugador, porJugadorDeJornada, tabla,
   guardar, borrarDePartidos
 };
