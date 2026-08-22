@@ -270,8 +270,13 @@ test('los goles anulados por VAR se detectan por palabra completa', () => {
    * info.includes('var') anulaba los goles de Varela, Varane, Álvarez o
    * Navarro: gol legítimo, jugador sin sus puntos, y ningún error visible.
    */
-  assert.doesNotMatch(serverSinComentarios, /info\.includes\('var'\)/);
-  assert.match(serverSinComentarios, /\/\\bvar\\b\/\.test\(info\)/);
+  /*
+   * Se mira el conjunto, no solo server.js: `esGolApiFootball` vive en
+   * src/eventos.js desde la tajada 6, y buscarla aqui daria cero. Es la regla
+   * de la cabecera de este archivo: las DEFINICIONES se buscan en `fuente`.
+   */
+  assert.doesNotMatch(fuenteSinComentarios, /info\.includes\('var'\)/);
+  assert.match(fuenteSinComentarios, /\/\\bvar\\b\/\.test\(info\)/);
 });
 
 test('el sincronizador no se dispara desde el tráfico de los usuarios', () => {

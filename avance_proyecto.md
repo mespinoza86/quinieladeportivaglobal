@@ -23,15 +23,15 @@
 git branch --show-current   # debe decir: postgres
 git log --oneline -3        # debe empezar por f947039
 git status                  # debe estar limpio
-npm test                    # 238/238
-npm run test:postgres       # 109, en ~11 s
+npm test                    # 267/267
+npm run test:postgres       # 138, en ~15 s
 ```
 
 ⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
 aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
 
 **`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB. La rama `postgres` tiene 238 y añade una capa de
+sigue hablando con MongoDB. La rama `postgres` tiene 267 y añade una capa de
 datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
@@ -40,24 +40,24 @@ datos sobre PostgreSQL que **todavía no usa ninguna ruta**.
 ### Dónde estamos
 
 **En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
-después de un sondeo que la midió en vez de opinarla. Van **5 tajadas de 7**.
+después de un sondeo que la midió en vez de opinarla. Van **6 tajadas de 7**.
 
 | Qué | Estado |
 |---|---|
 | Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **238** (129 de Mongo + 109 nuevas) |
-| Sólo las de PostgreSQL | **109**, ~11 s |
+| Pruebas en `postgres` | **267** (129 de Mongo + 138 nuevas) |
+| Sólo las de PostgreSQL | **138**, ~15 s |
 | Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
 | Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
-| `server.js` | 5.262 líneas. Sólo se le movió `partidoYaInicio` a `src/fechas.js`: **ninguna ruta habla con PostgreSQL** |
-| `src/` | 16 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores`, `puntuacion`, `pronosticos`, `oficiales`, `ranking`, `trivias`, `respuestas-trivia` |
+| `server.js` | **4.873 líneas** (eran 5.270). Sólo ha perdido funciones puras hacia `src/`: **ninguna ruta habla con PostgreSQL** |
+| `src/` | 20 módulos: los 4 de antes + `db`, `usuarios`, `quinielas`, `membresias`, `jornadas`, `jugadores`, `puntuacion`, `pronosticos`, `oficiales`, `ranking`, `trivias`, `respuestas-trivia`, `eventos`, `cerrojos`, `fixtures`, `sincronizador` |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- Las reglas de plataforma, de dominio, de puntuación y de trivias están
-  portadas, con 109 pruebas.
+- Todas las reglas están portadas —plataforma, dominio, puntuación, trivias y
+  sincronizador—, con 138 pruebas. **Lo que falta son las rutas.**
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
 
@@ -138,13 +138,14 @@ Cinco cosas de ese día que **no se deducen leyendo el código**:
   administradores a la vez podía dejar la quiniela **sin ninguno**, porque la
   cuenta y el guardado iban en dos pasos.
 
-### Lo que se hizo el 21 de agosto — las tajadas 4 y 5
+### Lo que se hizo el 21 de agosto — las tajadas 4, 5 y 6
 
-Dos entradas, la **044** y la **045**: la puntuación entera —pronósticos,
-resultados oficiales, motor de puntos y ranking congelado— y las trivias, con
-**54 pruebas nuevas**. Sigue sin haber ninguna ruta hablando con PostgreSQL.
+Tres entradas, de la **044** a la **046**: la puntuación, las trivias y el
+sincronizador, con **83 pruebas nuevas**. Al terminar el día **todas las reglas
+están portadas y ninguna ruta habla todavía con PostgreSQL**: lo que queda es
+la tajada 7, que es el cambio.
 
-Cinco cosas de ese día que **no se deducen leyendo el código**:
+Seis cosas de ese día que **no se deducen leyendo el código**:
 
 - ⚠️ **Se encontraron DOS errores activos en `main`**, los dos dando números
   creíbles y equivocados sin fallar nunca. **M-02** no era deuda de modelo sino
@@ -168,6 +169,10 @@ Cinco cosas de ese día que **no se deducen leyendo el código**:
   responder por el inicio del partido, pero la privacidad se decidía por la fecha
   de cierre. Con el partido empezado y la fecha por llegar, nadie podía responder
   **y aun así las respuestas seguían ocultas**. Ahora es un solo reloj.
+- **El cerrojo distribuido deja de necesitar un `catch`.** En Mongo había que
+  atrapar el código 11000 porque el choque contra el índice único ERA la
+  respuesta «lo tiene otro». En PostgreSQL es una sentencia: si no devuelve
+  fila, no es tuyo.
 
 ### 🌅 Lo siguiente: la sesión de mañana
 
@@ -268,8 +273,8 @@ documentadas en detalle en las bitácoras 004 y 005.
 npm start                  # arranca la aplicación (sigue sobre MongoDB)
 npm test                   # TODAS las pruebas rápidas
                            #   en main:     129, ~12 s
-                           #   en postgres: 238, ~18 s
-npm run test:postgres      # solo las 109 de PostgreSQL, ~11 s (solo en la rama)
+                           #   en postgres: 267, ~18 s
+npm run test:postgres      # solo las 138 de PostgreSQL, ~15 s (solo en la rama)
 npm run test:arquitectura  # solo las 46 de arquitectura
 npm run test:integracion   # solo las 83 de integración contra Mongo
 npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
@@ -318,16 +323,10 @@ Esto es sólo el estado.
 | **3** | Dominio básico | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ `99bac51` — Entrada 042 |
 | **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | Trivias | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
-| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ⬜ **la siguiente** |
-| **7** | **El cambio y la limpieza** | `server.js` pasa a PostgreSQL; sesiones a `connect-pg-simple`; fuera `mongoose`; `render.yaml`; documentación | ⬜ |
+| **6** | Sincronizador | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
+| **7** | **El cambio y la limpieza** | `server.js` pasa a PostgreSQL; sesiones a `connect-pg-simple`; fuera `mongoose`; `render.yaml`; documentación | ⬜ **la siguiente, y la última** |
 
 ### A.1 Lo que hay que saber de cada tajada que falta
-
-**Tajada 6 — sincronizador.** `fixtures` y `job_locks` **no llevan `quiniela_id`
-y eso es a propósito**: son justo la parte que todas las quinielas comparten, y
-es lo que cerró C-01 y C-05. El cerrojo distribuido cabe en un
-`INSERT … ON CONFLICT DO UPDATE … WHERE expira_en <= now()`, más simple y más
-correcto que la versión de Mongo (comprobado en el sondeo).
 
 **Tajada 7 — el cambio.** ⚠️ **Es donde la aplicación se apaga y vuelve.** Incluye
 las sesiones (`connect-mongo` → `connect-pg-simple`, con su tabla), quitar
@@ -2645,7 +2644,7 @@ anterior cerrada.
 | **3** | **Dominio básico** | `jugadores`, `jornadas`, `partidos`, `equipos` | ✅ Entrada 042 |
 | **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
-| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | |
+| **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
 | **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | |
 
 ### 21.4 Lo que hay que acordarse de mirar
@@ -7753,6 +7752,117 @@ hoy siguen en `server.js`.
 ⚠️ Recordar que `fixtures` y `job_locks` **no llevan `quiniela_id` y es a
 propósito**: son justo la parte que todas las quinielas comparten, y es lo que
 cerró C-01 y C-05.
+
+---
+
+### 📌 Entrada 046 — 21 de agosto de 2026 — Migración, tajada 6: el sincronizador
+
+**Objetivo:** portar la caché compartida de partidos, el cerrojo distribuido, el
+ciclo de sincronización y las métricas. Es la última tajada antes del apagado.
+
+**Lo primero que se hizo no fue portar, sino separar.**
+
+`server.js` tenía quince funciones que **no hacen otra cosa que leer el JSON del
+proveedor**: quién anotó primero, cuántas amarillas, si el minuto es un número o
+`"45+"`, si un gol lo anuló el VAR. Son puras —no tocan la base, no conocen
+Express, no dependen del reloj— y estaban repartidas por cuatro sitios del
+archivo, a mil líneas unas de otras.
+
+Se sacaron todas a **`src/eventos.js`**, y `server.js` las importa. Tres razones,
+por orden de peso:
+
+1. **La tajada 5 dejó un cabo colgando a propósito:** `trivias.resolverPendientes`
+   recibe el intérprete como argumento, y ese intérprete tenía que vivir en algún
+   sitio que no fuera `server.js`.
+2. **Son la frontera con APIFootball**, y las fronteras conviene tenerlas juntas.
+   El JSON del proveedor tiene rarezas que no se adivinan, y cada una está
+   resuelta ahí con su comentario. Quien vaya a cambiar una debería poder verlas
+   todas a la vez.
+3. `server.js` pierde **388 líneas** y no gana ninguna.
+
+⚠️ Y una separación más, dentro de la frontera: **leer la respuesta del proveedor
+e ir a pedírsela son dos cosas distintas.** `src/eventos.js` sólo interpreta. Ir a
+buscarla —con su plazo, su clave y su cuota— se queda en `server.js` hasta la
+tajada 7. Es lo que permite que las 29 pruebas nuevas **no salgan a la red ni una
+vez**.
+
+**Qué se hizo:**
+
+1. **`src/eventos.js`** — las quince funciones puras que leen el JSON.
+2. **`src/cerrojos.js`** — el cerrojo distribuido.
+3. **`src/fixtures.js`** — la caché compartida: identidad de un partido, ventanas
+   de consulta, y guardar sin perder lo bueno.
+4. **`src/sincronizador.js`** — el censo, el refresco, el ciclo, el vigilante, el
+   limitador de concurrencia, las métricas y el volcado de la caché a una
+   quiniela.
+5. **`test/sincronizador.test.js`** — 29 pruebas.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/eventos.js` | **Nuevo.** La lectura del JSON del proveedor, en un solo sitio |
+| `src/cerrojos.js` | **Nuevo.** El cerrojo distribuido |
+| `src/fixtures.js` | **Nuevo.** La caché compartida y sus ventanas |
+| `src/sincronizador.js` | **Nuevo.** El ciclo entero |
+| `test/sincronizador.test.js` | **Nuevo.** 29 pruebas |
+| `server.js` | **−388 líneas**: importa de `src/eventos.js` lo que antes definía. Ninguna ruta habla todavía con PostgreSQL |
+| `test/architecture.test.js` | El centinela del VAR mira el conjunto, no sólo `server.js` |
+| `package.json` | La suite nueva entra en `npm test` y en `test:postgres` |
+| `avance_proyecto.md` | Esta entrada y el estado |
+
+**Verificación:**
+
+```
+node --test test/sincronizador.test.js → 29/29 a la primera
+npm run test:postgres                  → 138 pruebas
+npm test                               → 267/267
+```
+
+**Hallazgos nuevos:**
+
+1. **El cerrojo pasa de «un error que no es un error» a una sentencia.** En Mongo
+   había que hacer un `upsert` con filtro por caducado y **atrapar el código
+   11000**, porque el choque contra el índice único *era* la respuesta «lo tiene
+   otro». Funcionaba, pero para leerlo había que saber que un error concreto no
+   era un error. Aquí es un `INSERT … ON CONFLICT DO UPDATE … WHERE expira_en <=
+   $ahora`: si no devuelve fila, no es tuyo. Sin excepciones que interpretar.
+2. ⚠️ **El centinela del VAR se rompió al mover el código, y tenía razón en
+   romperse.** Buscaba `/\bvar\b/.test(info)` en `server.js`, y la función se
+   había ido a `src/`. La cabecera del propio arnés ya decía la regla —las
+   DEFINICIONES se buscan en todo el conjunto, los USOS en `server.js`— y este
+   centinela no la seguía. **Es el segundo guardián de la Fase 6 que paga solo
+   durante la migración**, después de `partidoYaInicio` en la tajada 4.
+3. **`consultasAhorradasPorDeduplicacion` no existía como métrica, sólo como
+   idea.** El ciclo viejo deduplicaba de verdad, pero no contaba cuánto ahorraba,
+   así que la promesa de C-01 no se podía comprobar con un número. Ahora es la
+   diferencia entre partidos seguidos y claves únicas, y hay una prueba que la
+   fija: dos quinielas con los mismos dos partidos hacen **dos** consultas, no
+   cuatro.
+4. **La ventana tenía un tope que parece un detalle y no lo es**, y ahora tiene su
+   propia prueba: un partido que empieza en tres horas cae en la ventana «lejano»
+   de seis, así que sin el tope **se consultaría por primera vez tres horas
+   después de haber empezado**. La prueba comprueba la hora exacta.
+5. **Que `reescribirJornada` sea un argumento del ciclo no es abstracción por
+   gusto:** el ciclo es lo único del sincronizador que entra en el contexto de una
+   quiniela, y aislarlo es lo que permite probar el censo, la deduplicación y el
+   cerrojo **sin escribir en ninguna quiniela**.
+6. **El comodín ya no se copia al reescribir los resultados oficiales.** Era la
+   fuga de la Entrada 044, y aquí es donde se copiaba. Ya no hay dónde.
+
+**Pendiente / siguiente paso:**
+
+**Tajada 7 — el cambio y la limpieza.** ⚠️ Es donde la aplicación se apaga y
+vuelve. Entra: las 81 rutas de `server.js` pasando a los módulos de `src/`, las
+sesiones (`connect-mongo` → `connect-pg-simple`, con su tabla), quitar
+`mongoose`, `connect-mongo` y `mongodb-memory-server`, retirar
+`src/transacciones.js` —se queda sin trabajo—, portar las 83 pruebas de
+integración y las 62 de navegador, y escribir el `render.yaml`.
+
+Lo que queda de `server.js` por mover a `src/` antes o durante: **ir a pedirle
+datos al proveedor** (`buscarEventoPorId`, `buscarEventoPorFallback`,
+`buscarEventosPorRango`, `obtenerEventoTrivia`) y el planificador que llama al
+`tick`.
 
 ---
 
