@@ -6,31 +6,57 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
-const migrator = fs.readFileSync(path.join(root, 'scripts', 'migrate-legacy.js'), 'utf8');
 
 /*
- * Versión sin comentarios, para las comprobaciones de tipo "esto ya no está en
- * el código". Los comentarios explican a menudo qué había antes y por qué se
- * cambió —"antes era info.includes('var')"—, y esas menciones hacían fallar a
- * las pruebas contra su propia documentación.
+ * ============================================================================
+ * DE DONDE SALE EL CODIGO QUE VIGILAN ESTOS GUARDIANES (paso 7.7)
+ * ============================================================================
  *
- * Solo se eliminan bloques /* *\/ y líneas que son íntegramente comentario, de
- * modo que nunca se descarta código real y las comprobaciones no se ablandan.
+ * Hasta el 21 de agosto todo vivia en `server.js` y este arnes lo leia entero.
+ * Ese archivo ya no existe: la aplicacion son `arrancar.js`, `src/servidor.js`,
+ * `src/rutas/` y los modulos de `src/`.
+ *
+ * Se conservan las dos vistas que ya habia, con el mismo criterio:
+ *
+ *   - `servidor`  donde viven las RUTAS y el armado de Express. Lo miran las
+ *                 comprobaciones de USO: "esta ruta existe", "esta guardia se
+ *                 aplica", "esto ya no se llama desde aqui".
+ *   - `fuente`    todo el codigo. Lo miran las comprobaciones de DEFINICION:
+ *                 "esta funcion existe una sola vez", "este valor se calcula
+ *                 asi".
+ *
+ * Confundirlas cuesta un guardian roto por una mudanza en vez de por un
+ * problema, y durante la migracion paso TRES veces: con `partidoYaInicio`, con
+ * el del VAR y con el plazo de espera del proveedor.
  */
-/*
- * Fase 6: parte del codigo vive ya en src/. Para las comprobaciones que buscan
- * DEFINICIONES hay que mirar todo el conjunto; las que comprueban USO siguen
- * mirando server.js, que es donde estan las rutas.
- */
-const modulos = fs.existsSync(path.join(root, 'src'))
-  ? fs.readdirSync(path.join(root, 'src'))
+
+const leer = p => fs.readFileSync(path.join(root, p), 'utf8');
+
+const listar = carpeta => fs.existsSync(path.join(root, carpeta))
+  ? fs.readdirSync(path.join(root, carpeta))
       .filter(f => f.endsWith('.js'))
-      .map(f => fs.readFileSync(path.join(root, 'src', f), 'utf8'))
+      .map(f => leer(path.join(carpeta, f)))
   : [];
+
+const modulos = listar('src');
+const rutas = listar(path.join('src', 'rutas'));
+
+/* Las rutas y el armado de Express: lo que antes era la mitad de server.js. */
+const server = [leer('arrancar.js'), leer(path.join('src', 'servidor.js')), ...rutas].join('\n');
+
+const migrator = leer(path.join('scripts', 'migrate-legacy.js'));
 
 const fuente = [server, ...modulos].join('\n');
 
+/*
+ * Version sin comentarios, para las comprobaciones de tipo "esto ya no esta en
+ * el codigo". Los comentarios explican a menudo que habia antes y por que se
+ * cambio, y esas menciones hacian fallar a las pruebas contra su propia
+ * documentacion.
+ *
+ * Solo se eliminan bloques y lineas que son integramente comentario, de modo
+ * que nunca se descarta codigo real y las comprobaciones no se ablandan.
+ */
 function quitarComentarios(texto) {
   return texto
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -39,35 +65,61 @@ function quitarComentarios(texto) {
     .join('\n');
 }
 
-/*
- * Las comprobaciones de DEFINICION miran server.js y src/ juntos: desde la
- * Fase 6 una funcion puede haberse mudado sin dejar de existir, y buscarla solo
- * en server.js haria fallar el guardian por la mudanza en vez de por el
- * problema que vigila.
- */
 const fuenteSinComentarios = quitarComentarios(fuente);
+const serverSinComentarios = quitarComentarios(server);
 
-const serverSinComentarios = server
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .split(/\r?\n/)
-  .filter(linea => !/^\s*(\/\/|\*)/.test(linea))
-  .join('\n');
 
-test('el servidor solo acepta la URI multi-quiniela', () => {
-  assert.match(server, /process\.env\.MONGO_URI_MULTIQUINIELA/);
-  assert.doesNotMatch(server, /mongoose\.connect\(process\.env\.MONGO_URI\)/);
-  assert.match(server, /Por seguridad no se utilizará MONGO_URI/);
+test('la aplicacion exige DATABASE_URL y no arranca con un rol peligroso', () => {
+  /*
+   * Antes esto vigilaba que solo se aceptara la URI multi-quiniela de Mongo. El
+   * riesgo equivalente hoy es otro y es peor: conectarse con el rol DUENO de
+   * las tablas, que puede APAGAR RLS con un ALTER TABLE. Si eso pasara, el
+   * aislamiento entre quinielas dejaria de existir sin que nada fallara.
+   *
+   * Por eso `comprobarRol()` no avisa: se planta. Un aviso al arrancar no lo
+   * lee nadie.
+   */
+  assert.match(server, /process\.env\.DATABASE_URL/);
+  assert.match(server, /db\.comprobarRol\(\)/);
+  assert.match(server, /ARRANQUE ABORTADO/);
+  assert.match(server, /process\.exit\(1\)/);
+
+  // Y nada de Mongo debe quedar en pie.
+  assert.doesNotMatch(fuenteSinComentarios, /require\('mongoose'\)/);
+  assert.doesNotMatch(fuenteSinComentarios, /MONGO_URI/);
 });
 
-test('los modelos deportivos reciben aislamiento por quiniela', () => {
-  for (const schema of [
-    'JugadorSchema', 'JornadaSchema', 'ResultadoSchema', 'ResultadoOficialSchema',
-    'triviaSchema', 'respuestaTriviaSchema', 'EquipoSchema', 'PuntosJornadaSchema'
+test('las tablas de dominio llevan RLS, y la base lo impone', () => {
+  /*
+   * El equivalente del `tenantPlugin` de Mongoose, pero aplicado por la base.
+   * La diferencia que importa: el plugin enganchaba find*, update* y delete*,
+   * pero NO aggregate, insertMany ni bulkWrite. Eso era M-33, y una consulta
+   * escrita con cualquiera de los tres salia sin filtro y en silencio.
+   *
+   * Con RLS no hay hueco: la politica la aplica PostgreSQL a toda sentencia.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+
+  const bloque = esquema.slice(esquema.indexOf('FOREACH t IN ARRAY ARRAY['), esquema.indexOf('END LOOP;'));
+  assert.ok(bloque.length > 0, 'no se encontro el bloque que aplica RLS');
+
+  for (const tabla of [
+    'jugadores', 'jornadas', 'partidos', 'resultados', 'pronosticos',
+    'resultados_oficiales', 'resultados_oficiales_partidos', 'trivias',
+    'respuestas_trivia', 'equipos', 'puntos_jornada', 'puntos_jornada_jugador'
   ]) {
-    assert.match(server, new RegExp(`\\b${schema}\\b`));
+    assert.ok(bloque.includes(`'${tabla}'`), `${tabla} se quedo fuera del aislamiento`);
   }
-  assert.match(server, /\.forEach\(tenantPlugin\)/);
-  assert.match(server, /this\.where\(\{ quinielaId: store\.quinielaId \}\)/);
+
+  assert.match(bloque, /ENABLE ROW LEVEL SECURITY/);
+  /*
+   * FORCE ademas de ENABLE: sin el, el DUENO de la tabla se salta su propia
+   * politica, y las migraciones y los arreglos a mano irian sin filtro.
+   */
+  assert.match(bloque, /FORCE ROW LEVEL SECURITY/);
+  assert.match(bloque, /quiniela_id = quiniela_actual\(\)/);
+  // WITH CHECK ademas de USING: sin el se podria INSERTAR en otra quiniela.
+  assert.match(bloque, /WITH CHECK \(quiniela_id = quiniela_actual\(\)\)/);
 });
 
 test('existen las rutas principales de cuenta y membresía', () => {
@@ -80,9 +132,11 @@ test('existen las rutas principales de cuenta y membresía', () => {
 
 test('el modo administrador exige rol y confirmación de contraseña', () => {
   assert.match(server, /app\.post\('\/api\/admin-mode\/activar'/);
-  assert.match(server, /bcrypt\.compare\(password, usuario\.password\)/);
+  assert.match(server, /bcrypt\.compare\(password, fila\.password\)/);
   assert.match(server, /requiereAdminMode: true/);
-  assert.match(server, /acceso\.quinielaId === req\.quiniela\?\._id\.toString\(\)/);
+  // Atado a UNA quiniela: arrastrarlo daria permisos en otra sin confirmar nada.
+  assert.match(server, /acceso\.quinielaId === String\(req\.quiniela\?\.id\)/);
+  assert.match(server, /delete req\.session\.adminMode/);
 });
 
 test('las cabeceras de seguridad están activas y la CSP declara sus orígenes', () => {
@@ -152,14 +206,22 @@ test('el registro regenera la sesión igual que el login', () => {
 });
 
 test('las trivias tienen los índices que evitan puntos duplicados', () => {
-  assert.match(
-    server,
-    /respuestaTriviaSchema\.index\(\{ quinielaId: 1, jugador: 1, triviaId: 1 \}, \{ unique: true \}\)/
-  );
-  assert.match(
-    server,
-    /triviaSchema\.index\(\{ quinielaId: 1, jornadaNombre: 1, partidoIndex: 1, tipo: 1 \}\)/
-  );
+  const esquema = leer(path.join('db', 'esquema.sql'));
+
+  /*
+   * S-10: sin el unico, dos envios simultaneos de la misma respuesta insertaban
+   * los dos y al resolverse la trivia las dos filas cobraban.
+   */
+  assert.match(esquema, /UNIQUE \(quiniela_id, jugador_id, trivia_id\)/);
+
+  // M-25: el indice de busqueda que en Mongo seguia pendiente.
+  assert.match(esquema, /CREATE INDEX ON trivias \(quiniela_id, jornada_id, partido_id, tipo\)/);
+
+  /*
+   * Y el unico parcial que cierra la carrera de la reconciliacion: mirar si
+   * existe y luego crearla dejaba hueco para dos preguntas identicas.
+   */
+  assert.match(esquema, /CREATE UNIQUE INDEX trivias_partido_tipo_activa/);
 });
 
 test('los endpoints de depuración dependen de una bandera de entorno', () => {
@@ -179,15 +241,27 @@ test('los endpoints de depuración dependen de una bandera de entorno', () => {
   }
 });
 
-test('la conexión a MongoDB reintenta en vez de matar el proceso', () => {
-  assert.match(server, /async function conectarMongoConReintentos/);
-  assert.match(server, /function diagnosticarErrorMongo/);
-  // Retroceso exponencial con techo.
-  assert.match(server, /Math\.min\(2 \*\* \(intento - 1\) \* 1000, MONGO_ESPERA_MAXIMA_MS\)/);
-  // El único exit(1) que queda es el de la URI ausente, que sí es irrecuperable.
-  const salidas = server.match(/process\.exit\(1\)/g) || [];
-  assert.equal(salidas.length, 1, `Se esperaba un solo process.exit(1), hay ${salidas.length}`);
-  assert.match(server, /Por seguridad no se utilizará MONGO_URI/);
+test('el servidor escucha sin esperar a la base', () => {
+  /*
+   * Antes moria si la base no respondia, con dos consecuencias malas: un
+   * despliegue fallaba entero por una base momentaneamente indispuesta, y las
+   * sondas de salud nunca llegaban a responder, que es justo cuando mas se
+   * necesitan.
+   *
+   * Con Neon importa mas que con Atlas: el plan gratuito suspende el computo
+   * por inactividad, asi que la primera conexion tras un rato tarda unos
+   * segundos. No es un fallo, es el plan.
+   */
+  const arranque = leer('arrancar.js');
+
+  assert.ok(
+    arranque.indexOf('app.listen') < arranque.indexOf('db.comprobarRol'),
+    'el puerto se abre antes de comprobar el rol'
+  );
+
+  // Y se cierra ordenadamente: Render manda SIGTERM antes de reemplazar.
+  assert.match(arranque, /SIGTERM/);
+  assert.match(arranque, /servidor\.close\(/);
 });
 
 test('existen las sondas de salud y no dependen de la sesión', () => {
@@ -208,24 +282,20 @@ test('existen las sondas de salud y no dependen de la sesión', () => {
 
 test('la resolución de trivias no cruza entre quinielas', () => {
   /*
-   * El barrido periódico corría sin contexto de inquilino, así que la consulta
-   * de ResultadoOficial por nombre de jornada devolvía el documento de
-   * cualquier quiniela. Como los nombres se repiten ("Jornada1"), la trivia de
-   * una quiniela se resolvía con el partido de otra.
+   * El barrido corria sin contexto de inquilino, asi que la consulta por nombre
+   * de jornada devolvia el documento de cualquier quiniela. Como los nombres se
+   * repiten ("Jornada 1"), la trivia de una se resolvia con el partido de otra.
    */
-  assert.match(server, /async function resolverTriviasDeTodasLasQuinielas/);
-  assert.match(server, /tenantContext\.run\(\s*\{ quinielaId: quiniela\._id \}/);
-  // El barrido solo recorre quinielas activas.
-  assert.match(server, /Quiniela\.find\(\{ estado: 'activa' \}\)/);
+  const planificador = leer(path.join('src', 'planificador.js'));
 
-  // La función por quiniela debe rechazar ser invocada sin contexto.
-  assert.match(server, /resolverTriviasPendientes\(\) requiere contexto de quiniela/);
-
-  // El setInterval debe llamar al barrido global, nunca a la función por quiniela.
-  assert.match(
-    serverSinComentarios,
-    /setInterval\(\(\) => \{\s*resolverTriviasDeTodasLasQuinielas\(\)/
-  );
+  assert.match(planificador, /async function resolverTriviasDeTodas/);
+  // Quiniela por quiniela, cada una en su propio contexto.
+  assert.match(planificador, /for \(const quiniela of quinielas\)/);
+  assert.match(planificador, /trivias\.resolverPendientes\(quiniela\.id/);
+  // Solo las activas: nadie va a puntuar en una archivada.
+  assert.match(planificador, /WHERE estado = 'activa'/);
+  // El fallo de una no interrumpe el barrido de las demas.
+  assert.match(planificador, /catch \(error\)/);
 });
 
 test('no hay funciones ni rutas duplicadas que se pisen entre sí', () => {
@@ -280,171 +350,195 @@ test('los goles anulados por VAR se detectan por palabra completa', () => {
 });
 
 test('el sincronizador no se dispara desde el tráfico de los usuarios', () => {
-  // El middleware por petición y su estado en variables de módulo ya no están.
-  assert.doesNotMatch(serverSinComentarios, /CINCO_MINUTOS/);
-  assert.doesNotMatch(serverSinComentarios, /INTERVALO_MINIMO_ENTRE_SYNCS_MS/);
-  assert.doesNotMatch(serverSinComentarios, /syncEnProceso/);
-  assert.doesNotMatch(serverSinComentarios, /sincronizarTodasLasJornadasDesdeApi/);
+  // El middleware por peticion y su estado en variables de modulo ya no estan.
+  for (const muerto of [/CINCO_MINUTOS/, /INTERVALO_MINIMO_ENTRE_SYNCS_MS/, /syncEnProceso/, /sincronizarTodasLasJornadasDesdeApi/]) {
+    assert.doesNotMatch(fuenteSinComentarios, muerto);
+  }
 
-  // Ahora el ritmo lo marca un planificador propio.
-  assert.match(serverSinComentarios, /const INTERVALO_CICLO_SYNC_MS/);
-  assert.match(serverSinComentarios, /setInterval\(\(\) => \{\s*tickDeSincronizacion\(\);/);
+  // Ahora el ritmo lo marca un planificador propio, con su reloj.
+  const planificador = quitarComentarios(leer(path.join('src', 'planificador.js')));
+  assert.match(planificador, /const INTERVALO_CICLO_SYNC_MS/);
+  assert.match(planificador, /setInterval\(/);
+  assert.match(planificador, /unCiclo\(\)/);
 });
 
 test('el sincronizador no se autollama por HTTP ni conserva la puerta interna', () => {
   /*
-   * La autollamada obligaba a existir un token que concedía permisos de
-   * administrador sin sesión. Al pasar a llamada de función directa, la puerta
-   * dejó de hacer falta, y una puerta que no hace falta no debe seguir abierta.
+   * Habia un token interno que dejaba entrar como administrador a quien lo
+   * presentara en una cabecera. Existia solo porque el sincronizador se llamaba
+   * a si mismo por HTTP. Desde la Fase 4 invoca la funcion directamente, asi que
+   * la puerta sobraba: un camino que concede permisos sin sesion es superficie
+   * de ataque que no hace falta mantener.
    */
-  assert.doesNotMatch(serverSinComentarios, /INTERNAL_SYNC_TOKEN/);
-  assert.doesNotMatch(serverSinComentarios, /x-internal-sync-token/);
-  assert.doesNotMatch(serverSinComentarios, /membership\?\.internal/);
-  assert.doesNotMatch(serverSinComentarios, /axios\.post\(\s*`http:\/\/localhost/);
-
-  // La ruta manual y el planificador comparten la misma función de dominio.
-  assert.match(serverSinComentarios, /async function sincronizarJornadaDesdeApi/);
-  assert.match(serverSinComentarios, /await sincronizarJornadaDesdeApi\(item\.jornada\)/);
+  for (const muerto of [/INTERNAL_SYNC_TOKEN/, /x-internal-token/i, /axios\.post\(/]) {
+    assert.doesNotMatch(fuenteSinComentarios, muerto);
+  }
 });
 
-test('la caché de partidos y el cerrojo son globales, sin quinielaId', () => {
-  assert.match(server, /const FixtureSchema/);
-  assert.match(server, /const JobLockSchema/);
-
+test('la caché de partidos y el cerrojo son globales, sin quiniela_id', () => {
   /*
-   * Si alguien los pasara por tenantPlugin dejarían de compartirse entre
-   * quinielas y volvería C-01 por la puerta de atrás: cada quiniela tendría su
-   * propia caché y consultaría el mismo partido por separado.
+   * Son justo la parte que TODAS las quinielas comparten. Meterlas en el
+   * aislamiento devolveria C-01 por la puerta de atras: cada quiniela con su
+   * propia cache, consultando el mismo partido por separado.
    */
-  // Solo la lista de identificadores, no cualquier corchete que haya antes.
-  const listaConAislamiento = serverSinComentarios.match(
-    /\[\s*((?:[A-Za-z_$][\w$]*\s*,\s*)*[A-Za-z_$][\w$]*)\s*,?\s*\]\.forEach\(tenantPlugin\)/
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  const bloque = esquema.slice(esquema.indexOf('FOREACH t IN ARRAY ARRAY['), esquema.indexOf('END LOOP;'));
+
+  for (const tabla of ['fixtures', 'job_locks', 'usuarios', 'quinielas', 'membresias', 'sesiones']) {
+    assert.ok(!bloque.includes(`'${tabla}'`), `${tabla} no deberia llevar RLS`);
+  }
+
+  // Y `fixtures` no lleva quiniela_id, que es lo que la hace compartida.
+  const fixtures = esquema.slice(
+    esquema.indexOf('CREATE TABLE fixtures ('),
+    esquema.indexOf('CREATE TABLE job_locks')
   );
-  assert.ok(listaConAislamiento, 'no se encontró la lista de esquemas con aislamiento');
-  assert.doesNotMatch(listaConAislamiento[1], /FixtureSchema|JobLockSchema/);
+  assert.ok(fixtures.length > 0, 'no se encontro la tabla fixtures');
+  assert.doesNotMatch(fixtures, /quiniela_id/);
 });
 
 test('cada partido tiene ventana de consulta según su estado real', () => {
-  assert.match(serverSinComentarios, /function calcularProximaConsulta/);
-  // Terminado es terminado: no se vuelve a gastar una llamada en él.
-  assert.match(serverSinComentarios, /if \(estado === 'TC'\) return null;/);
-  assert.match(serverSinComentarios, /enVivo: 60 \* 1000/);
-  assert.match(serverSinComentarios, /inminente: 15 \* 60 \* 1000/);
-  assert.match(serverSinComentarios, /lejano: 6 \* 60 \* 60 \* 1000/);
+  const mod = quitarComentarios(leer(path.join('src', 'fixtures.js')));
+
+  assert.match(mod, /function calcularProximaConsulta/);
+  // Terminado es terminado: no se vuelve a gastar una llamada en el.
+  assert.match(mod, /if \(estado === 'TC'\) return null;/);
+  assert.match(mod, /enVivo: 60 \* 1000/);
+  assert.match(mod, /inminente: 15 \* 60 \* 1000/);
+  assert.match(mod, /lejano: 6 \* 60 \* 60 \* 1000/);
+
+  /*
+   * Y el tope que no es obvio: la proxima consulta nunca se pospone mas alla
+   * del pitido inicial. Un partido que empieza en tres horas cae en la ventana
+   * "lejano" de seis, y sin esto se consultaria por primera vez tres horas
+   * DESPUES de haber empezado.
+   */
+  assert.match(mod, /Math\.min\(proxima, inicio\.getTime\(\)\)/);
 });
 
-test('el cerrojo de sincronización caduca solo', () => {
+test('el cerrojo de sincronización caduca solo, y solo lo suelta su dueño', () => {
   /*
    * Sin caducidad, una instancia que muere a mitad de ciclo deja el cerrojo
-   * tomado para siempre y la sincronización no vuelve a correr nunca.
+   * tomado para siempre y la sincronizacion no vuelve a correr nunca.
    */
-  assert.match(serverSinComentarios, /const TTL_CERROJO_SYNC_MS/);
-  assert.match(serverSinComentarios, /expiraEn: \{ \$lte: ahora \}/);
-  assert.match(serverSinComentarios, /if \(error\?\.code === 11000\) return false;/);
+  const mod = quitarComentarios(leer(path.join('src', 'cerrojos.js')));
+
+  assert.match(mod, /expira_en/);
+  assert.match(mod, /WHERE job_locks\.expira_en <= \$3/);
+
+  /*
+   * Y al soltarlo se comprueba el titular. "Nuestro" es el testigo del CICLO,
+   * no el del proceso: un ciclo abandonado que termina tarde no debe soltar el
+   * cerrojo que ya tiene el ciclo siguiente del mismo proceso.
+   */
+  assert.match(mod, /WHERE nombre = \$1 AND instancia = \$2/);
+
+  // En PostgreSQL esto es una sentencia, no un error que haya que interpretar.
+  assert.doesNotMatch(fuenteSinComentarios, /code === 11000/);
 });
 
 test('una jornada terminada congela sus puntos con su propia configuración', () => {
-  assert.match(server, /const PuntosJornadaSchema/);
-  assert.match(serverSinComentarios, /function jornadaEstaFinalizada/);
+  const motor = quitarComentarios(leer(path.join('src', 'puntuacion.js')));
+  const ranking = quitarComentarios(leer(path.join('src', 'ranking.js')));
 
-  // Qué cuenta como terminado, que es la regla que decide si se congela.
-  assert.match(
-    serverSinComentarios,
-    /oficial\.bloqueadoFinal === true \|\| oficial\.estado === 'TC'/
-  );
+  assert.match(motor, /function jornadaEstaFinalizada/);
+
+  // Que cuenta como terminado, que es la regla que decide si se congela.
+  assert.match(motor, /oficial\.bloqueadoFinal === true \|\| oficial\.estado === 'TC'/);
 
   /*
-   * Lo que impide que corregir un marcador equivocado arrastre todos los
-   * cambios de puntuación ocurridos desde que la jornada cerró: al recalcular
-   * se usa la configuración guardada, y solo se cae a la actual si la jornada
-   * no estaba congelada todavía.
+   * M-03: si ya estaba congelada se recalcula con SU foto, no con la de hoy. De
+   * lo contrario, corregir un marcador equivocado colaria de tapadillo todos los
+   * cambios de puntuacion ocurridos desde que la jornada termino.
    */
-  assert.match(
-    serverSinComentarios,
-    /const puntuacion = existente\?\.puntuacion \|\| puntuacionActual;/
-  );
+  assert.match(ranking, /const puntuacion = existente\?\.puntuacion \|\| puntuacionActual;/);
 
-  // La tabla ya no recalcula el histórico: lo lee.
-  assert.match(serverSinComentarios, /jornadasCongeladas\.has\(jornada\.nombre\)/);
+  /*
+   * Y la foto se SUSTITUYE, no se funde: es una fotografia, no un ajuste.
+   * Fundirla dejaria sobrevivir una clave del congelado anterior.
+   */
+  assert.match(ranking, /puntuacion   = EXCLUDED\.puntuacion/);
+  assert.doesNotMatch(ranking, /puntuacion = puntos_jornada\.puntuacion \|\|/);
+
+  // La tabla ya no recalcula el historico: lo lee.
+  assert.match(ranking, /congeladas\.get\(jornada\.id\)/);
 });
 
 test('toda escritura de resultados oficiales actualiza los puntos', () => {
   /*
-   * Tripwire deliberado. Si alguien añade una ruta que escribe
-   * `ResultadoOficial` y olvida actualizar los puntos, una jornada congelada se
-   * quedaría enseñando el número viejo para siempre, sin que nada falle a la
-   * vista. Esta prueba no puede comprobar la correspondencia una a una, así que
-   * cuenta: al cambiar el número, hay que mirar el sitio nuevo y decidir.
+   * Escribir un resultado oficial puede mover la clasificacion. Si alguna via
+   * se olvidara de avisar, la tabla seguiria respondiendo con un numero viejo y
+   * nada fallaria.
+   *
+   * Se cuentan los sitios que llaman a `oficiales.escribir` o a
+   * `guardarManual`, y se exige que cada uno recalcule.
    */
-  const escrituras = serverSinComentarios.match(
-    /ResultadoOficial\.(findOneAndUpdate|deleteMany|updateOne|updateMany)\(/g
-  ) || [];
+  const escrituras = (fuenteSinComentarios.match(/oficialesMod\.escribir\(|oficiales\.guardarManual\(|oficialesMod\.guardarManual\(/g) || []).length;
+  assert.ok(escrituras >= 2, `Esperaba al menos 2 vias de escritura, hay ${escrituras}`);
 
-  assert.equal(escrituras.length, 3,
-    'Cambió el número de sitios que escriben resultados oficiales (eran 3: sync, ' +
-    'carga manual y borrado de jornada). Comprueba que el nuevo llame a ' +
-    'actualizarPuntosDeJornada o borre PuntosJornada.');
+  const recalculos = (fuenteSinComentarios.match(/rankingMod\.actualizar\(|ranking\.actualizar\(/g) || []).length;
+  assert.ok(recalculos >= 5,
+    `Cada escritura que mueve puntos debe recalcular; solo hay ${recalculos} llamadas`);
 
-  const actualizaciones = serverSinComentarios.match(/await actualizarPuntosDeJornada\(/g) || [];
-  assert.ok(actualizaciones.length >= 3,
-    'Faltan llamadas a actualizarPuntosDeJornada tras las escrituras');
-
-  // Desde la Entrada 022 el borrado lleva sesión: la ruta entera es atómica.
-  assert.match(
-    serverSinComentarios,
-    /await PuntosJornada\.deleteMany\(\{ jornada: nombreJornada \}, \{ session: sesion \}\)/
+  /*
+   * Y borrar una jornada se lleva sus puntos congelados. Antes eran cuatro
+   * borrados en una transaccion; ahora lo hace la clave ajena en cascada, que
+   * no puede quedarse a medias.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  const puntos = esquema.slice(
+    esquema.indexOf('CREATE TABLE puntos_jornada ('),
+    esquema.indexOf('CREATE TABLE puntos_jornada_jugador')
   );
+  assert.match(puntos, /REFERENCES jornadas\(id\) ON DELETE CASCADE/);
 });
 
 test('toda edición de una jornada invalida o recalcula sus puntos materializados', () => {
   /*
-   * La puntuación depende de la composición y el orden de `partidos`. Una
-   * jornada congelada no puede conservar su número viejo si se importa de nuevo,
-   * se añade/elimina un partido o se cambia el comodín.
+   * Guardar, agregar un partido, borrar partidos o cambiar un comodin pueden
+   * cambiar la clasificacion. Olvidarlo en UNA sola de las cuatro no romperia
+   * nada visible: la tabla seguiria respondiendo, con un numero viejo.
    */
-  const escrituras = serverSinComentarios.match(
-    /\bJornada\.(findOneAndUpdate|findOneAndDelete)\(/g
-  ) || [];
+  const dominio = quitarComentarios(leer(path.join('src', 'rutas', 'dominio.js')));
+
+  for (const ruta of [
+    "app.post('/api/jornadas'",
+    "app.post('/api/jornadas/agregar-partido'",
+    "app.post('/api/jornadas/eliminar-partidos'",
+    "app.post('/api/jornadas/comodin'"
+  ]) {
+    assert.ok(dominio.includes(ruta), `Falta ${ruta}`);
+  }
+
+  const recalculos = (dominio.match(/rankingMod\.actualizar\(/g) || []).length;
+  assert.equal(recalculos, 4,
+    'Las cuatro escrituras de jornada deben recalcular sus puntos');
 
   /*
-   * Dos: POST /api/jornadas y el borrado. Eran tres hasta la Fase D, cuando se
-   * retiró /api/jornadas/importar-api -que era la primera con una traducción de
-   * nombres delante, y esa traducción bajó a `normalizarPartido`-.
+   * Y borrar la jornada entera se lleva pronosticos, resultados oficiales y
+   * puntos congelados por clave ajena. A medias quedaban puntos de una jornada
+   * que ya no existe, sumando al total sin columna a la que pertenecer.
    */
-  assert.equal(escrituras.length, 2,
-    'Cambió el número de escrituras directas de Jornada; comprueba su invalidación');
-
-  const edicionesPorDocumento = serverSinComentarios.match(/await doc\.save\(\);/g) || [];
-  assert.equal(edicionesPorDocumento.length, 3,
-    'Cambió el número de ediciones de Jornada por documento; comprueba su invalidación');
-
-  const actualizaciones = serverSinComentarios.match(/await actualizarPuntosDeJornada\(/g) || [];
-  assert.ok(actualizaciones.length >= 8,
-    'Cada edición de Jornada y Resultado debe actualizar PuntosJornada');
-
-  /*
-   * Antes se exigía que el borrado y la invalidación fueran líneas contiguas.
-   * Desde la Entrada 022 el borrado ocurre DENTRO de la transacción y la
-   * invalidación después de confirmarla —invalidar antes sería mentir si la
-   * transacción se revierte—, así que se comprueba la intención, que la ruta
-   * haga ambas cosas, y no su adyacencia.
-   */
-  const rutaBorrado = serverSinComentarios.slice(
-    serverSinComentarios.indexOf("app.delete('/api/jornadas/:nombre'"),
-    serverSinComentarios.indexOf('/* ================= Puntos por jornada')
-  );
-
-  assert.ok(rutaBorrado.length > 0, 'No se localizó la ruta de borrado de jornada');
-  assert.match(rutaBorrado, /await PuntosJornada\.deleteMany\(/);
-  assert.match(rutaBorrado, /invalidarCacheRanking\(req\.quiniela\._id\)/);
+  assert.match(dominio, /app\.delete\('\/api\/jornadas\/:nombre'/);
 });
 
 test('el ranking tiene caché por quiniela y paginación opcional compatible', () => {
-  assert.match(serverSinComentarios, /const cacheRanking = new Map\(\)/);
-  assert.match(serverSinComentarios, /function invalidarCacheRanking/);
-  assert.match(serverSinComentarios, /function responderRanking/);
-  assert.match(serverSinComentarios, /req\.query\.pagina !== undefined \|\| req\.query\.limite !== undefined/);
-  assert.match(serverSinComentarios, /Math\.min\(100, Math\.max\(1,/);
+  const mod = quitarComentarios(leer(path.join('src', 'rutas', 'puntuacion.js')));
+
+  assert.match(mod, /const cacheRanking = new Map\(\)/);
+  assert.match(mod, /function invalidarCacheRanking/);
+  assert.match(mod, /function responderRanking/);
+
+  /*
+   * Por QUINIELA. Una cache global seria C-02 otra vez, y esta vez en memoria,
+   * donde RLS no llega: la base no puede salvarnos de un Map mal indexado.
+   */
+  assert.match(mod, /cacheRanking\.get\(String\(quinielaId\)\)/);
+  assert.match(mod, /cacheRanking\.delete\(String\(quinielaId\)\)/);
+
+  // Sin ?pagina ni ?limite responde el objeto de siempre.
+  assert.match(mod, /req\.query\.pagina === undefined && req\.query\.limite === undefined/);
+  assert.match(mod, /Math\.min\(100, Math\.max\(1,/);
 });
 
 test('la migración es simulación por defecto y separa origen de destino', () => {
@@ -494,49 +588,56 @@ test('el proveedor externo tiene un plazo máximo de espera', () => {
 });
 
 test('un ciclo de sincronización que no termina no bloquea al planificador', () => {
-  // El vigilante libera `cicloEnCurso` aunque el ciclo no llegue a resolverse.
-  assert.match(serverSinComentarios, /const TIMEOUT_CICLO_SYNC_MS = Number\(process\.env\.SYNC_TIMEOUT_CICLO_MS/);
-  assert.match(serverSinComentarios, /await conVigilante\(\s*ejecutarCicloDeSincronizacion\(\)/);
-  assert.match(serverSinComentarios, /metricasSync\.ciclosAbandonadosPorTiempo \+= 1/);
+  /*
+   * El vigilante libera `cicloEnCurso` aunque el ciclo no llegue a resolverse.
+   * Sin el, una peticion colgada al proveedor apagaba la sincronizacion del
+   * proceso hasta el siguiente reinicio, y nadie veia un error.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'sincronizador.js')));
+
+  assert.match(mod, /const TIMEOUT_CICLO_SYNC_MS = Number\(process\.env\.SYNC_TIMEOUT_CICLO_MS/);
+  assert.match(mod, /conVigilante\(\s*ejecutarCiclo\(opciones\)/);
+  assert.match(mod, /metricas\.ciclosAbandonadosPorTiempo \+= 1/);
 
   /*
-   * El cerrojo se suelta por el testigo del ciclo, no por el del proceso. Con
-   * el del proceso, un ciclo abandonado que terminara tarde soltaría el
-   * cerrojo del ciclo siguiente y dejaría dos sincronizando a la vez.
+   * Y el cerrojo se suelta con el testigo del CICLO, no con el del proceso: un
+   * ciclo abandonado que termina tarde no debe soltar el cerrojo que ya tiene
+   * el ciclo siguiente del mismo proceso.
    */
-  assert.match(serverSinComentarios, /async function soltarCerrojo\(nombre, titular = ID_INSTANCIA\)/);
-  assert.match(serverSinComentarios, /\{ nombre, instancia: titular \}/);
-  assert.match(serverSinComentarios, /await soltarCerrojo\(CERROJO_SYNC, titular\)/);
+  assert.match(mod, /const titular = `\$\{cerrojos\.ID_INSTANCIA\}#\$\{\+\+contadorDeCiclos\}`/);
+  assert.match(mod, /cerrojos\.soltar\(CERROJO_SYNC, titular\)/);
+
+  // El `finally` es lo que garantiza que se suelte aunque el ciclo reviente.
+  assert.match(mod, /\} finally \{\s*await cerrojos\.soltar/);
 });
 
 test('la clasificación por jornada no lee la temporada entera para elegir una', () => {
   /*
-   * Elegir jornada no necesita ni un partido: solo los nombres. Traérselos
-   * enteros sería volver a los cuatrocientos subdocumentos por pantalla que
-   * quitó la Fase 5.
+   * Antes se traia la temporada entera -cada jornada con todos sus partidos-
+   * para dos cosas que no lo necesitan: llenar el desplegable y localizar una
+   * jornada. Con cuarenta jornadas de diez partidos son cuatrocientos de mas en
+   * cada carga de pantalla.
    */
-  assert.match(
-    serverSinComentarios,
-    /Jornada\.find\(\{\}\)\.select\('nombre'\)\.sort\(\{ _id: -1 \}\)/
-  );
+  const jornadas = quitarComentarios(leer(path.join('src', 'jornadas.js')));
+  const rutas = quitarComentarios(leer(path.join('src', 'rutas', 'puntuacion.js')));
+
+  // `actual` trae SOLO los nombres.
+  assert.match(jornadas, /SELECT nombre FROM jornadas ORDER BY secuencia DESC/);
 
   /*
-   * Y se ordena por `_id`, NO por `createdAt`. El esquema de Jornada nunca
-   * declaró `timestamps`, así que sus documentos no tienen `createdAt` y el
-   * sort que había aquí ordenaba por un campo ausente: no ordenaba nada. El
-   * `_id` de Mongo lleva dentro la marca de creación y sirve para las jornadas
-   * que ya existen, sin migración.
+   * Y ordena por `secuencia`, no por `id`. Un ObjectId llevaba la fecha dentro,
+   * asi que `sort({_id:-1})` era "la ultima creada"; un uuid es aleatorio y
+   * ordenar por el daria un orden arbitrario SIN FALLAR: seguiria devolviendo
+   * una jornada, solo que la que no es.
    */
-  assert.doesNotMatch(serverSinComentarios, /sort\(\{ createdAt: -1 \}\)/);
+  assert.doesNotMatch(jornadas, /ORDER BY id DESC/);
 
-  // La regla vieja ya no decide: la sugerida va delante del primer elemento.
-  assert.match(serverSinComentarios, /req\.query\.jornada \|\| sugerida \|\| jornadas\[0\]\.nombre/);
+  // La sugerida va delante del primer elemento.
+  assert.match(rutas, /req\.query\.jornada \|\| sugerida \|\| jornadas\[0\]\.nombre/);
 
   // Y congelar dentro de un GET es una red de seguridad: no puede tumbar la consulta.
-  assert.match(
-    serverSinComentarios,
-    /try \{\s*await actualizarPuntosDeJornada\(jornadaNombre, req\.quiniela\.configuracion\.puntuacion\);\s*\} catch/
-  );
+  const ranking = quitarComentarios(leer(path.join('src', 'ranking.js')));
+  assert.match(ranking, /try \{\s*await congelar\(/);
 });
 
 test('la portada pide solo el podio, no la tabla completa', () => {
@@ -556,56 +657,69 @@ test('las escrituras de dominio pasan por los validadores', () => {
   }
 
   /*
-   * `Number()` a secas era el agujero: acepta '-3', '2.5' y '1e999', que no da
-   * NaN sino Infinity. Ninguna ruta de marcadores debe volver a usarlo.
+   * `Number()` a secas no bastaba, y ahi estaba el agujero: acepta '-3', acepta
+   * '2.5' y acepta '1e999', que no da NaN sino Infinity. Ninguno rompe nada
+   * visible; los tres corrompen el motor de puntuacion en silencio.
    */
-  assert.doesNotMatch(serverSinComentarios, /Number\(nuevo\.marcador[12]\)/);
-  assert.doesNotMatch(serverSinComentarios, /Marcador inválido en partido/);
+  assert.doesNotMatch(fuenteSinComentarios, /Number\(nuevo\.marcador[12]\)/);
+  assert.doesNotMatch(fuenteSinComentarios, /Marcador inválido en partido/);
 
   // Y las rutas que escriben jornadas normalizan antes de tocar la base.
-  assert.match(serverSinComentarios, /const nombre = normalizarNombreDeJornada\(req\.body\?\.nombre\)/);
-  assert.match(serverSinComentarios, /const partidos = normalizarPartidos\(req\.body\?\.partidos\)/);
-  assert.match(serverSinComentarios, /normalizarIndicesDePartido\(req\.body\?\.indices, doc\.partidos\.length\)/);
+  const dominio = quitarComentarios(leer(path.join('src', 'rutas', 'dominio.js')));
+  assert.match(dominio, /normalizarNombreDeJornada\(req\.body\?\.nombre\)/);
+  assert.match(dominio, /normalizarPartidos\(req\.body\?\.partidos\)/);
+  assert.match(dominio, /normalizarIndicesDePartido\(req\.body\?\.indices, jornada\.partidos\.length\)/);
+
+  // Y los marcadores, vengan por donde vengan.
+  assert.match(fuenteSinComentarios, /normalizarMarcador\(enviado\.marcador1/);
 });
 
 test('la privacidad de los pronósticos se decide partido a partido', () => {
-  assert.match(serverSinComentarios, /function partidosDestapados/);
-  assert.match(serverSinComentarios, /function taparPronosticosNoDestapados/);
-
   /*
-   * La jornada ya no tiene fecha de cierre: el cierre es de cada partido.
-   */
-  assert.doesNotMatch(serverSinComentarios, /fechaCierre: \{ type: Date/);
-  assert.doesNotMatch(serverSinComentarios, /normalizarFechaDeCierre/);
-  assert.doesNotMatch(serverSinComentarios, /jornadaEstaCerradaParaPronosticos/);
-
-  /*
-   * Esta es la comprobación que faltaba y por la que /api/resultados-con-equipos
-   * se quedó fuera del cambio anterior: llamaba `jornadaAcceso` a lo que las
-   * demás llamaban `jornadaDoc`, así que buscar el patrón con un nombre de
-   * variable concreto no lo encontró. Ahora se busca la FORMA del patrón, sea
-   * cual sea el nombre de la variable.
+   * Cuatro rutas entregan pronosticos ajenos y las cuatro aplican la MISMA
+   * regla: de otro participante solo se ve lo de los partidos que ya empezaron.
    *
-   * Las trivias quedan fuera a propósito: ellas SÍ conservan una fecha de
-   * cierre propia, que es un campo distinto y una regla que no ha cambiado.
+   * Es una regla compartida y no una expresion copiada en cada sitio, y eso
+   * tiene una historia: /api/resultados-con-equipos se quedo fuera del repaso
+   * de privacidad porque llamaba `jornadaAcceso` a lo que las otras llamaban
+   * `jornadaDoc`, y la prueba que buscaba el patron viejo no la vio.
+   *
+   * Lo que se vigila NO es que las cuatro llamen a la misma funcion -dos
+   * devuelven '' y dos null, asi que no pueden- sino que las cuatro decidan por
+   * el mismo dato: el `bloqueado` que calcula `partidoYaInicio`.
    */
-  const tratanFaltaDeFechaComoCierre = serverSinComentarios
-    .split('\n')
-    .filter(linea => /!\s*\w+\??\.fechaCierre\s*\|\|\s*new Date\(/.test(linea))
-    .filter(linea => !/trivia/i.test(linea));
+  const rutas = quitarComentarios(leer(path.join('src', 'rutas', 'puntuacion.js')));
 
-  assert.deepEqual(
-    tratanFaltaDeFechaComoCierre,
-    [],
-    'Queda una vía de jornada que trata "sin fecha de cierre" como cerrada'
+  assert.match(rutas, /function taparAjenos/);
+
+  /*
+   * Cuatro rutas, TRES sitios donde se decide: `taparAjenos` sirve a dos de
+   * ellas, y las otras dos lo hacen en linea porque devuelven '' en vez de null
+   * -sus pantallas escriben el valor directo en una casilla-.
+   *
+   * Si aparece un cuarto sitio, o desaparece uno, alguien ha tocado la regla.
+   */
+  const decisiones = (rutas.match(/\.bloqueado\b/g) || []).length;
+  assert.equal(decisiones, 3,
+    `Cambio el numero de sitios que deciden la visibilidad (eran 3): hay ${decisiones}`);
+
+  // Y las dos rutas que no pasan por `taparAjenos` siguen siendo esas dos.
+  assert.match(rutas, /app\.get\('\/api\/resultados-con-equipos\/:jugador\/:jornada'/);
+  assert.match(rutas, /app\.post\('\/api\/resultados-seguros\/:jugador\/:jornada'/);
+
+  /*
+   * Y el cierre lo calcula `partidoYaInicio`, que vive en UN solo sitio. Dos
+   * copias de esa regla serian dos respuestas distintas a "puedo cambiar mi
+   * pronostico?", y ya paso una vez.
+   */
+  assert.equal(
+    (fuenteSinComentarios.match(/function partidoYaInicio/g) || []).length, 1,
+    'partidoYaInicio debe existir una sola vez'
   );
 
-  /*
-   * Y las cuatro vías que entregan pronósticos ajenos usan la misma función.
-   * Si alguien añade una quinta y se le olvida, este número no cuadra.
-   */
-  const usos = serverSinComentarios.match(/partidosDestapados\(/g) || [];
-  assert.ok(usos.length >= 5, `Se esperaban la definición y sus cuatro usos, hubo ${usos.length}`);
+  // Y nada de tratar "sin fecha de cierre" como cerrada: eso abrio una puerta.
+  assert.doesNotMatch(fuenteSinComentarios, /jornadaSinFecha/);
+  assert.doesNotMatch(fuenteSinComentarios, /jornadaEstaCerradaParaPronosticos/);
 });
 
 test('toda pantalla con campo de contraseña carga el ojo para mostrarla', () => {
@@ -647,27 +761,36 @@ test('el ojo no usa innerHTML ni manejadores en atributo', () => {
 });
 
 test('el sincronizador no tira la caché del ranking por el minuto en vivo', () => {
-  assert.match(serverSinComentarios, /const CAMPOS_QUE_MUEVEN_PUNTOS = \[/);
-  assert.match(serverSinComentarios, /function puntosPuedenHaberCambiado/);
-
   /*
-   * El minuto cambia en cada ciclo de un partido en vivo y no mueve la
-   * puntuación de nadie. Si entrara en la lista, la caché se vaciaría cada
-   * minuto durante los noventa del partido, que es el rato de más tráfico.
+   * `minuto` cambia en cada ciclo de un partido en vivo y no mueve la
+   * puntuacion de nadie. Incluirlo significaba invalidar la cache del ranking
+   * cada minuto durante los noventa del partido: el rato de mas trafico de la
+   * semana y el peor momento para recalcular la tabla entera.
    */
-  const lista = serverSinComentarios.match(/const CAMPOS_QUE_MUEVEN_PUNTOS = \[([^\]]*)\]/);
-  assert.ok(lista, 'No se encontró la lista de campos');
+  const mod = quitarComentarios(leer(path.join('src', 'oficiales.js')));
+
+  assert.match(mod, /const CAMPOS_QUE_MUEVEN_PUNTOS = \[/);
+  assert.match(mod, /function puntosPuedenHaberCambiado/);
+
+  const lista = mod.match(/const CAMPOS_QUE_MUEVEN_PUNTOS = \[([^\]]*)\]/);
+  assert.ok(lista, 'No se encontro la lista de campos');
   assert.doesNotMatch(lista[1], /'minuto'/);
+
+  // `estado` si cuenta: el paso a TC es lo que congela la jornada.
   for (const campo of ['marcador1', 'marcador2', 'estado']) {
     assert.match(lista[1], new RegExp(`'${campo}'`), `Falta ${campo} en la lista`);
   }
 
-  // Y el congelamiento tras el sync pasa por esa comprobación.
-  assert.match(
-    serverSinComentarios,
-    /if \(puntosPuedenHaberCambiado\(resultadosExistentes, resultadosActualizados\)\)/
-  );
-  assert.match(serverSinComentarios, /metricasSync\.syncsSinCambioDePuntos \+= 1/);
+  /*
+   * `comodin` ya NO esta: dejo de copiarse dentro del resultado oficial. Era la
+   * fuga por la que marcar un comodin tarde no movia los puntos (M-34).
+   */
+  assert.doesNotMatch(lista[1], /'comodin'/);
+
+  // Y el recalculo tras el sync pasa por esa comprobacion.
+  const sinc = quitarComentarios(leer(path.join('src', 'sincronizador.js')));
+  assert.match(sinc, /oficialesMod\.puntosPuedenHaberCambiado\(anteriores, nuevos\)/);
+  assert.match(sinc, /metricas\.syncsSinCambioDePuntos \+= 1/);
 });
 
 /* ================================================================
@@ -814,49 +937,61 @@ test('toda pantalla que use la etiqueta html carga el ayudante antes', () => {
 });
 
 test('las secuencias de varias escrituras son atómicas', () => {
-  // Definiciones: viven en src/transacciones.js desde la Fase 6.
-  assert.match(fuente, /async function enTransaccion/);
-  assert.match(fuente, /sesion\.withTransaction\(/);
-  assert.match(fuente, /function esFaltaDeSoporteDeTransacciones/);
+  /*
+   * En PostgreSQL las transacciones son de serie y sin condiciones: se acabo el
+   * baile de "MongoDB solo hace transacciones sobre un conjunto de replicas" y
+   * su rama de respaldo sin atomicidad, que era la que corria en desarrollo.
+   */
+  const db = quitarComentarios(leer(path.join('src', 'db.js')));
+
+  assert.match(db, /async function enTransaccion/);
+  assert.match(db, /async function enQuiniela/);
+  assert.match(db, /await cliente\.query\('COMMIT'\)/);
+  assert.match(db, /await cliente\.query\('ROLLBACK'\)/);
 
   /*
-   * Las cuatro secuencias que lo necesitan pasan por el ayudante. Se cuentan en
-   * server.js, donde están las rutas: desde la Fase 6 la definición ya no vive
-   * aquí, así que estos cuatro son usos de verdad y no la declaración colada en
-   * la cuenta.
+   * REGLA 2 de §21.2: el contexto se fija con SET LOCAL -aqui, `set_config`
+   * con el tercer argumento en `true`-, DENTRO de la transaccion. Es TODA la
+   * defensa: el pooler de Neon trabaja en modo transaccion y un SET de sesion
+   * se colaria en la peticion siguiente que reutilice la conexion.
    */
-  const usos = serverSinComentarios.match(/await enTransaccion\(/g) || [];
-  assert.ok(usos.length >= 4, `Se esperaban las cuatro secuencias, hubo ${usos.length}`);
+  assert.match(db, /set_config\('app\.quiniela_id', '\$\{id\}', true\)/);
 
-  /*
-   * Una sesión no admite operaciones en paralelo, así que dentro de una
-   * transacción no puede haber `Promise.all` de escrituras. La transferencia de
-   * propiedad lo hacía y por eso se convirtió en secuencia.
-   */
-  assert.doesNotMatch(
-    serverSinComentarios,
-    /await Promise\.all\(\[destino\.save\(\)/,
-    'La transferencia de propiedad no puede volver a guardar en paralelo'
-  );
+  // Y la vieja capa de transacciones de Mongo ya no existe.
+  assert.equal(fs.existsSync(path.join(root, 'src', 'transacciones.js')), false);
+  assert.doesNotMatch(fuenteSinComentarios, /withTransaction\(/);
 
-  /*
-   * `Model.create` con sesión EXIGE un arreglo: con un documento suelto,
-   * Mongoose toma el segundo argumento por otro documento y la sesión se pierde
-   * sin avisar, de modo que esa escritura quedaría fuera de la transacción.
-   */
-  assert.match(serverSinComentarios, /Quiniela\.create\(\[\{/);
-  assert.match(serverSinComentarios, /Membresia\.create\(\[\{/);
+  // La transferencia de propiedad no puede volver a guardar en paralelo.
+  assert.doesNotMatch(fuenteSinComentarios, /Promise\.all\(\[destino\.save\(\)/);
 });
 
-test('las pruebas de integración corren sobre un conjunto de réplicas', () => {
+test('el arnés de pruebas corre con los MISMOS permisos que producción', () => {
   /*
-   * MongoDB solo admite transacciones sobre un conjunto de réplicas. Con un
-   * mongod suelto, las pruebas de atomicidad se ejercitarían contra la rama de
-   * respaldo de enTransaccion() y pasarían sin comprobar nada.
+   * Antes esto vigilaba que las pruebas usaran un conjunto de replicas, porque
+   * MongoDB solo admite transacciones sobre uno. El riesgo equivalente hoy es
+   * otro y es peor.
+   *
+   * PGlite conecta como `postgres`, que es SUPERUSUARIO, y los superusuarios se
+   * saltan RLS entero. Sin ponerse en la piel de `app_quiniela`, las pruebas de
+   * aislamiento pasan siempre: ven todas las quinielas y no se quejan, porque
+   * no hay politica que aplicar.
+   *
+   * Es el mismo error que costo cuatro vueltas montando el Anexo C: un banco de
+   * pruebas con mas privilegios que el entorno real no prueba lo que dice.
    */
-  const integracion = fs.readFileSync(path.join(root, 'test', 'integracion.test.js'), 'utf8');
-  assert.match(integracion, /MongoMemoryReplSet/);
-  assert.doesNotMatch(integracion, /MongoMemoryServer\.create\(/);
+  const arnes = fs.readFileSync(path.join(root, 'test', 'postgres-en-memoria.js'), 'utf8');
+
+  assert.match(arnes, /CREATE ROLE app_quiniela NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS/);
+  assert.match(arnes, /SET ROLE app_quiniela/);
+
+  // Y se NIEGA a arrancar si detecta privilegios de mas.
+  assert.match(arnes, /se saltaría RLS/);
+  assert.match(arnes, /throw new Error/);
+
+  // El de produccion hace lo mismo: se planta, no avisa.
+  const db = fs.readFileSync(path.join(root, 'src', 'db.js'), 'utf8');
+  assert.match(db, /async function comprobarRol/);
+  assert.match(db, /r\.superusuario \|\| r\.bypassrls \|\| r\.propias > 0/);
 });
 
 test('componer HTML dentro de una plantilla no pierde la marca de crudo', () => {
@@ -925,37 +1060,24 @@ test('la integración continua ejecuta lo que hay que ejecutar', () => {
   assert.match(flujo, /playwright install --with-deps chromium/);
 });
 
-test('la Fase 6 avanza: el código sale de server.js sin perder su superficie', () => {
+test('server.js ya no existe: la aplicación es src/ y arrancar.js', () => {
   /*
-   * Primera tajada: las piezas que no tocan Express ni los modelos. La prueba
-   * no persigue un número de líneas —eso envejece— sino dos invariantes que sí
-   * importan al seguir troceando.
+   * El monolito era C-04. Al cerrar el paso 7.7 desaparece: lo que hacia esta
+   * repartido en modulos que se prueban por separado.
+   *
+   * Este guardian existe para que nadie lo resucite "temporalmente".
    */
-  assert.ok(fs.existsSync(path.join(root, 'src', 'transacciones.js')));
-  assert.ok(fs.existsSync(path.join(root, 'src', 'validacion.js')));
+  assert.equal(fs.existsSync(path.join(root, 'server.js')), false, 'server.js volvio');
 
-  /*
-   * 1. Lo extraído se reexporta desde server.js. Las pruebas y el resto del
-   *    código lo piden por ahí, así que mover algo no puede cambiar la
-   *    superficie pública.
-   */
-  const exportado = server.slice(server.indexOf('module.exports = {'));
-  for (const simbolo of ['enTransaccion', 'normalizarMarcador', 'normalizarPartidos']) {
-    assert.match(exportado, new RegExp(`\\b${simbolo}\\b`), `server.js debe reexportar ${simbolo}`);
-  }
+  const paquete = JSON.parse(leer('package.json'));
+  assert.equal(paquete.main, 'arrancar.js');
+  assert.match(paquete.scripts.start, /arrancar\.js/);
 
-  /*
-   * 2. Los módulos extraídos no pueden depender de server.js. Si lo hicieran
-   *    tendríamos un ciclo, y el troceado dejaría de servir para nada.
-   */
-  for (const archivo of fs.readdirSync(path.join(root, 'src')).filter(f => f.endsWith('.js'))) {
-    const modulo = fs.readFileSync(path.join(root, 'src', archivo), 'utf8');
-    assert.doesNotMatch(
-      modulo,
-      /require\(['"][^'"]*server(\.js)?['"]\)/,
-      `${archivo} no puede depender de server.js: sería un ciclo`
-    );
+  // Y las dependencias de Mongo se fueron con el.
+  for (const muerta of ['mongoose', 'connect-mongo']) {
+    assert.ok(!paquete.dependencies[muerta], `${muerta} sigue en dependencies`);
   }
+  assert.ok(!paquete.devDependencies['mongodb-memory-server'], 'mongodb-memory-server sigue ahi');
 });
 
 test('no queda el código muerto ya identificado', () => {

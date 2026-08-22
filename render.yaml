@@ -1,0 +1,68 @@
+# Configuracion del servicio en Render, versionada.
+#
+# Esta aqui y no solo en el panel de Render por una razon concreta: hasta el 21
+# de agosto de 2026 nadie sabia con certeza que variables tenia puestas el
+# servicio de verdad, y comprobarlo exigia entrar a mirar. Un archivo en el
+# repositorio se revisa en un vistazo y se versiona con el codigo que lo usa.
+#
+# ⚠️ Render NO aplica este archivo solo a un servicio que ya existe: hay que
+# conectarlo como Blueprint, o copiar los valores a mano. Lo que si hace, desde
+# el momento en que existe, es dejar por escrito cual es la configuracion
+# correcta.
+
+services:
+  - type: web
+    name: quinieladeportivaglobal
+    runtime: node
+    plan: free
+
+    # ⚠️ MISMA REGION QUE NEON. Desde un portatil un viaje a Neon son ~116 ms;
+    # entre Render y Neon en la misma region deben ser 1-5 ms. Si no lo son, la
+    # aplicacion parecera lenta y parecera culpa de PostgreSQL.
+    region: oregon
+
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+
+    # /healthz dice "el proceso responde"; /readyz dice "puede atender trafico".
+    # Render necesita la SEGUNDA: con la base dormida -Neon suspende el computo
+    # por inactividad- el proceso vive pero no puede servir nada util.
+    healthCheckPath: /readyz
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # ⚠️ Con el rol app_quiniela y la cadena CON -pooler.
+      #
+      # El rol dueño puede APAGAR RLS con un ALTER TABLE, y entonces el
+      # aislamiento entre quinielas dejaria de existir. `comprobarRol()` se
+      # planta al arrancar si detecta que puede: es preferible un proceso que no
+      # arranca a uno que sirve datos cruzados.
+      #
+      # El -pooler importa por separado: sin el, cada instancia abriria
+      # conexiones directas y el plan gratuito de Neon tiene un limite bajo.
+      - key: DATABASE_URL
+        sync: false
+
+      - key: SESSION_SECRET
+        generateValue: true
+
+      - key: APIFOOTBALL_COM_KEY
+        sync: false
+
+      - key: ALLOWED_ORIGINS
+        value: https://quinieladeportivaglobal.onrender.com
+
+      # Los endpoints /api/debug/* exponen respuestas crudas del proveedor y
+      # volcados de jornadas. En produccion responden 404 con esto apagado.
+      - key: DEBUG_ENDPOINTS
+        value: 'false'
+
+      # Los trabajos periodicos corren dentro del proceso web y el cerrojo
+      # distribuido evita que varias instancias los dupliquen. Se pone en
+      # 'false' el dia que convenga moverlos a un proceso aparte: se despliega
+      # el MISMO codigo con la bandera apagada en las instancias que solo
+      # atienden peticiones, y encendida en la que hace de trabajador.
+      - key: JOBS_HABILITADOS
+        value: 'true'

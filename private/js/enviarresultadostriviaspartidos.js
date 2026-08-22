@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         textoResultado += `-------------------------------\n`;
 
         triviasPartido.forEach((trivia, index) => {
-          const respuesta = respuestaDeJugador(respuestasCache, jugador, trivia.id ?? trivia._id);
+          const respuesta = respuestaDeJugador(respuestasCache, jugador, trivia.id);
 
           textoResultado += `${index + 1}. ${trivia.pregunta}\n`;
           textoResultado += `   Respuesta: ${respuesta}\n`;

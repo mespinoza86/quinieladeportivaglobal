@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 21 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 22 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -21,59 +21,54 @@
 
 ```bash
 git branch --show-current   # debe decir: postgres
-git log --oneline -3        # debe empezar por ff74c99
 git status                  # debe estar limpio
-npm test                    # 378/378
-npm run test:postgres       # 249, en ~36 s
+npm test                    # 295/295
+npm run test:e2e            # 62/62, ~2,5 min
 ```
 
-⚠️ **El trabajo está en la rama `postgres`, no en `main`.** Si al retomar
-aparece `main`, es que alguien cambió de rama: `git checkout postgres`.
+✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
+la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
+`src/servidor.js`, `src/rutas/` y 22 módulos de `src/`.
 
-**`main` está intacto, desplegable y con el CI en verde.** Tiene 129 pruebas y
-sigue hablando con MongoDB.
+⚠️ **El trabajo está en la rama `postgres`, no en `main`.** `main` sigue teniendo
+la versión de MongoDB, con 129 pruebas. **Aún no se ha fundido.**
 
-⚠️ **En la rama `postgres` hay DOS servidores a la vez, y es a propósito**:
-`server.js` sobre Mongo —que es el que arranca `npm start` y el que se despliega—
-y `src/servidor.js` sobre PostgreSQL, con **las 81 rutas** ya portadas y sus
-propias pruebas. Se cambia el uno por el otro en el paso 7.7. El detalle de esta
-convivencia y de cómo se deshace está en **§A.4**.
+⛔ **Y queda UN paso manual antes de desplegar** — ver «Lo siguiente».
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
 
 ### Dónde estamos
 
-**En mitad de la migración de MongoDB a PostgreSQL**, decidida el 20 de agosto
-después de un sondeo que la midió en vez de opinarla. Van **6 tajadas de 7**, y
-de la séptima, **6 pasos de 7**.
+**La migración de MongoDB a PostgreSQL está hecha**, decidida el 20 de agosto
+después de un sondeo que la midió en vez de opinarla, y cerrada el 22 en trece
+entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas en `main` | **129**, ~12 s |
-| Pruebas en `postgres` | **378** (129 de Mongo + 249 nuevas) |
-| Sólo las de PostgreSQL | **249**, ~36 s |
-| Pruebas de navegador | **62**, sin tocar (siguen contra Mongo) |
-| Base en Neon | Montada y verificada: **8/8** en aceptación, **4/4** en el *pool* |
-| `server.js` | **4.733 líneas**, verde y desplegable. Sigue sobre Mongo **a propósito**: el servidor nuevo crece a su lado |
-| Rutas ya sobre PostgreSQL | ✅ **81 de 81**, en `src/servidor.js` y `src/rutas/` (4) |
-| `src/` | 23 módulos + `src/rutas/` (4). **Todo lo que era `server.js`** |
+| Pruebas rápidas | **295**, ~45 s |
+| Pruebas de navegador | **62**, ~2,5 min, contra el servidor de verdad |
+| Rutas sobre PostgreSQL | **81 de 81** |
+| `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
+| `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
+| `src/` | 22 módulos + `src/rutas/` (4) |
+| Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
+| Base en Neon | Montada, **pero con el esquema del 20 de agosto**. Ver «Lo siguiente» |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
-  no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce.
-- **Las 81 rutas están portadas**, con 249 pruebas. `src/servidor.js` responde a
-  todo lo que responde `server.js`.
-- Ninguna prueba sale a la red: quien lee el JSON del proveedor se prueba con un
-  JSON escrito a mano, y quien lo pide se sustituye con `proveedor.usarFuente()`.
+  no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce, y
+  cierra **M-33**, que en Mongo era un agujero real.
+- **Ninguna prueba sale a la red ni necesita base real.** Las 295 rápidas usan
+  PGlite; el proveedor se sustituye con `proveedor.usarFuente()`.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
+- **Ocho hallazgos viejos quedan cerrados** por el modelo nuevo, más tres que
+  aparecieron al portar (M-34, M-35 y el hueco de los dos relojes). Ver §A.2.
 
-**Lo que NO está hecho**: el **cambio** (paso 7.7), que es lo único irreversible
-de toda la migración y **no añade funcionalidad**: apaga el servidor viejo y
-enciende el nuevo. Lo que hoy se despliega sigue siendo `server.js` sobre
-Mongoose.
+**Lo que NO está hecho**: aplicar el esquema al día en Neon, fundir `postgres` en
+`main`, y desplegar.
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -234,35 +229,118 @@ escribir el servidor nuevo y lo cazó una prueba el mismo día.
   **Un `INSERT` que no inserta no falla.**
 
 
-### 🌅 Lo siguiente: la sesión de mañana
+### Lo que se hizo el 22 de agosto — el cambio
+
+Una entrada, la **052**, y es la que cierra la migración: **`server.js` ya no
+existe**. Empezó el 14 de agosto con 5.270 líneas y catorce esquemas de Mongoose
+dentro; hoy son `arrancar.js` (90 líneas), `src/servidor.js`, cuatro módulos de
+rutas y 22 de dominio, cada uno con sus pruebas. Era **C-04**.
+
+**El orden importó más que ninguna otra cosa.** Se hizo todo lo verificable
+ANTES de borrar nada:
+
+1. `arrancar.js` y `npm start` apuntando al servidor nuevo.
+2. **Las 62 pruebas de navegador pasadas a PGlite y corridas contra él.** Ésa fue
+   la prueba de fondo: la aplicación real, en escritorio y en móvil.
+3. Los 46 centinelas de arquitectura, portados uno a uno.
+4. **Y sólo entonces** se borró `server.js`.
+
+Si algo hubiera estado mal, se habría sabido en el paso 2, con el viejo en pie.
+
+Cuatro cosas de ese día que **no se deducen leyendo el código**:
+
+- ⚠️ **La base de Neon está en el esquema del 20 de agosto, no en el de hoy.** Le
+  falta la tabla `sesiones`, y **sin ella la aplicación arranca, deja entrar a la
+  gente y nadie sigue dentro en la petición siguiente** — sin ningún error que lo
+  explique. Es el paso manual que queda pendiente.
+- ⚠️ **Veintidós de los 46 centinelas se rompieron al borrar `server.js`**, y
+  casi ninguno por el motivo que vigilaba: buscaban patrones de Mongoose que
+  dejaron de existir. Portarlos no fue mecánico, pero **la lección de cada uno
+  sobrevivió**: «la URI multi-quiniela» pasó a ser «el rol no puede apagar RLS»,
+  y «las pruebas usan un conjunto de réplicas» pasó a ser «el arnés corre con los
+  mismos permisos que producción».
+- **Un centinela contaba mal y decía la verdad.** El de privacidad esperaba
+  cuatro sitios donde se decide la visibilidad y hay tres: `taparAjenos` sirve a
+  dos rutas. Se ajustó a 3 **con igualdad, no con «al menos»**, para que también
+  avise si aparece un cuarto.
+- **El único cambio de API visible de toda la migración lo cazaron las pruebas de
+  navegador**: crear trivias devolvía la lista de las creadas y ahora devuelve
+  una cuenta. Nada del frontend usaba la lista.
+
+
+### 🌅 Lo siguiente: poner Neon al día, fundir y desplegar
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `postgres`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-**Lo siguiente es el paso 7.7 — el cambio.** Es el último, y ⚠️ **el único sin
-retorno de toda la migración**. No añade funcionalidad: apaga el servidor viejo
-y enciende el nuevo.
+#### ⛔ 1. El paso manual: el esquema de Neon
 
-Lo que entra, en orden:
+Es lo único que queda de la migración y **no se puede hacer desde aquí**: crear
+tablas y políticas exige el rol **dueño**, y `.env` tiene a propósito el rol
+`app_quiniela`, que no puede.
 
-1. **`npm start` apunta a `src/servidor.js`**, con su arranque propio: abre el
-   puerto de inmediato y deja que `/readyz` diga si la base ya responde.
-2. **Las 62 pruebas de navegador** pasan a arrancar PGlite en vez de Mongo
-   (`test/e2e/arrancar.js`).
-3. **Se borra `server.js`** y con él `test/integracion.test.js`.
-4. **Se quita el respaldo `trivia.id ?? trivia._id`** de los 3 archivos del
-   frontend, y `src/transacciones.js`.
-5. **Fuera del `package.json`**: `mongoose`, `connect-mongo` y
-   `mongodb-memory-server`.
-6. **`render.yaml`** versionado, y la documentación al día.
+La base se montó el 20 de agosto con el Anexo C y el esquema ha cambiado desde
+entonces. Le falta:
 
-La lista completa de lo que hay que deshacer está en **§A.4**.
+- la tabla **`sesiones`** (`connect-pg-simple`);
+- la columna **`jornadas.secuencia`**;
+- dos índices únicos: el de `jugadores` y el parcial de `trivias`.
 
-#### Las cuatro reglas del código nuevo, que siguen valiendo
+Y le sobra `verif_resultados`, del banco de pruebas del sondeo.
+
+⚠️ **Sin `sesiones`, la aplicación arranca, deja entrar a la gente y nadie sigue
+dentro en la petición siguiente** — y no hay ningún error que lo explique.
+
+**Cómo se hace**, en el editor SQL de Neon y **con el rol dueño**:
+
+1. Abrir **`db/poner-al-dia.sql`** y copiarlo entero al editor.
+2. Donde dice `<<<<<< PEGA AQUI db/esquema.sql >>>>>>`, pegar el contenido
+   completo de **`db/esquema.sql`**.
+3. Ejecutar. El guion **se planta solo si encuentra datos** (comprobado el 21 de
+   agosto: 0 usuarios, 0 quinielas) y al final avisa si algo quedó sin poner.
+
+#### 2. Comprobar contra Neon de verdad
+
+```bash
+npm start     # debe decir: Conectado a PostgreSQL como "app_quiniela".
+```
+
+Si dice otra cosa, o aborta, el mensaje explica qué falta. `comprobarRol()` se
+planta a propósito: es preferible un proceso que no arranca a uno que sirve
+datos cruzados.
+
+#### 3. Fundir y desplegar
+
+```bash
+git checkout main
+git merge postgres
+git push
+```
+
+`render.yaml` deja escrita la configuración del servicio. ⚠️ **Render no lo
+aplica solo a un servicio que ya existe**: hay que conectarlo como Blueprint o
+copiar los valores a mano. Lo que sí hace desde ya es dejar por escrito cuál es
+la configuración correcta.
+
+⚠️ **Y lo que hay que mirar el primer día con tráfico** está en §B.4. Lo más
+importante: **la latencia entre Render y Neon**. Desde este portátil un viaje son
+~116 ms; entre ellos, en la misma región, deben ser 1–5 ms. Si no lo son, están
+en regiones distintas y la aplicación parecerá lenta — y parecerá culpa de
+PostgreSQL.
+
+#### Y después, lo que queda del proyecto
+
+Con la migración cerrada, lo pendiente es **§B**, que no ha cambiado en todo
+este tiempo:
+
+- **Fase E — verificación de correo.** Le faltan **dos decisiones de producto**:
+  qué proveedor de envío y qué se le impide a una cuenta sin verificar.
+- **Fase F — sugerencias de partidos destacados.** Le faltan las heurísticas.
+
+#### Las cuatro reglas del código, que siguen valiendo
 
 Las tres primeras son de §21.2 y sostienen el aislamiento. La cuarta se aprendió
-el 21 de agosto y ya mordió una vez. No quedan rutas por escribir, pero sí por
-tocar.
+el 21 de agosto y ya mordió una vez.
 
 1. La transacción es **por petición**; `enQuiniela` es reentrante.
 2. El contexto se fija con `SET LOCAL`, dentro de la transacción.
@@ -272,24 +350,15 @@ tocar.
    async termine, así que abrirla en el middleware haría COMMIT con la ruta
    todavía corriendo.
 
-#### ⚠️ Y lo que pasa en el 7.7, para que no sorprenda
-
-**Es el único punto sin retorno de toda la migración**, y hasta llegar a él
-`server.js` sigue vivo, verde y desplegable. El límite entre Mongo y PostgreSQL
-no se puede partir por la mitad: en cuanto la aplicación cambie de base, lo que
-quede en Mongo deja de poder apuntar a lo que ya está en PostgreSQL.
-
-Por eso el 7.7 se ha ido retrasando a propósito, construyendo antes —a un lado y
-con sus pruebas— todo lo que se puede probar sin Express y sin apagar nada.
-
-
 ### Estado de Git
 
 **Hay dos ramas vivas y cada una está en un mundo distinto.** No mezclarlas.
 
 ```
 postgres  ← AQUÍ SE TRABAJA. La migración.
-  ff74c99 Tajada 7, paso 6: el sincronizador, el proveedor y las ultimas rutas   ← cabeza
+  (última) Tajada 7, paso 7: el cambio. La migracion esta terminada   ← cabeza, 22-ago
+  a3929d6 Anotar el commit del paso 7.6 en el estado de Git
+  ff74c99 Tajada 7, paso 6: el sincronizador, el proveedor y las ultimas rutas
   38e14d5 Anotar el commit del punto de control en el estado de Git
   c123468 Punto de control: el dia entero por escrito, y que queda
   540d157 Anotar el commit del paso 7.5 en el estado de Git
@@ -344,67 +413,73 @@ git branch -d arreglo-ci cache-ranking cinco-puntos e2e-playwright \
 
 ### ⚠️ Antes de arrancar la aplicación, lee esto
 
-Dos peculiaridades de este entorno que ya costaron una tarde. Ambas están
-documentadas en detalle en las bitácoras 004 y 005.
+**Las dos trampas de MongoDB ya no aplican.** El clúster de Atlas que se
+auto-pausaba (**C-06**) y el DNS de esta máquina que no resuelve SRV eran las dos
+peculiaridades que costaron una tarde el 16 de agosto (bitácoras 004 y 005). Con
+PostgreSQL no hay ninguna de las dos: **Neon se suspende por inactividad pero se
+despierta solo** al llegar una conexión, y la cadena no usa SRV.
 
-1. **El clúster de Atlas es M0 gratuito y se auto-pausa.** Si la aplicación no
-   conecta, lo primero es mirar en [cloud.mongodb.com](https://cloud.mongodb.com) si
-   dice *Paused*, y pulsar **Resume**. Atlas **retira los registros DNS** al pausar,
-   así que el síntoma es `querySrv ECONNREFUSED`, que parece un problema de red y no
-   lo es. Es el hallazgo **C-06** y sigue abierto.
-2. **Node no resuelve consultas SRV en esta máquina.** c-ares no consigue leer la
-   configuración DNS de este Windows y cae a `127.0.0.1`, donde no hay nada
-   escuchando. Por eso `.env` usa la **URI sin SRV**, con los tres nodos nombrados
-   directamente. La original quedó comentada en el mismo archivo.
-   **En Render (Linux) el SRV funciona bien: el despliegue debe usar
-   `mongodb+srv://`.**
+Lo que sí conviene saber:
+
+1. **La primera petición después de un rato tarda unos segundos.** Neon suspende
+   el cómputo en el plan gratuito. No es un fallo, es el plan. Por eso el
+   servidor abre el puerto sin esperar a la base y `/readyz` devuelve 503 hasta
+   que responde.
+2. ⛔ **`DATABASE_URL` tiene que llevar el rol `app_quiniela` y la cadena con
+   `-pooler`.** El rol dueño puede **apagar RLS** con un `ALTER TABLE`, y
+   entonces el aislamiento entre quinielas dejaría de existir sin que nada
+   fallara. `comprobarRol()` se planta al arrancar si detecta que puede.
 
 ### Comandos habituales
 
 ```bash
-npm start                  # arranca la aplicación (sigue sobre MongoDB)
-npm test                   # TODAS las pruebas rápidas
-                           #   en main:     129, ~12 s
-                           #   en postgres: 378, ~36 s
-npm run test:postgres      # solo las 249 de PostgreSQL, ~36 s (solo en la rama)
-npm run test:rutas         # solo las 111 del servidor nuevo
-npm run test:arquitectura  # solo las 46 de arquitectura
-npm run test:integracion   # solo las 83 de integración contra Mongo
-npm run test:e2e           # las 62 de navegador (~2 min, escritorio y móvil)
+npm start                  # arranca la aplicación. Exige DATABASE_URL
+npm test                   # las 295 pruebas rápidas, ~45 s
+npm run test:postgres      # las 249 de los módulos, sin los centinelas
+npm run test:rutas         # solo las 111 del servidor
+npm run test:arquitectura  # solo los 46 centinelas
+npm run test:e2e           # las 62 de navegador (~2,5 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
 ```
 
-**Ninguna prueba necesita red ni base real.** Las de Mongo levantan
-`MongoMemoryReplSet`; las de PostgreSQL levantan **PGlite**, que es PostgreSQL 18
-compilado a WebAssembly y va como paquete de npm. Las de navegador necesitan
+**Ninguna prueba necesita red ni base real.** Levantan **PGlite**, que es
+PostgreSQL 18 compilado a WebAssembly y va como paquete de npm; el proveedor
+externo se sustituye con `proveedor.usarFuente()`. Las de navegador necesitan
 `npx playwright install chromium` una vez por máquina.
 
-**Para tocar la base de Neon** —y sólo si hace falta comprobar algo contra ella:
+**Para tocar la base de Neon:**
 
 ```bash
+# Poner el esquema al día: db/poner-al-dia.sql, en el editor SQL de Neon,
+# CON EL ROL DUEÑO. Ver "Lo siguiente".
+
 cd sondeo-sql && npm install
-node probar-neon-sql.js    # ensaya los .sql del Anexo C contra un Postgres local
-npm run pool               # LA PUERTA: aislamiento con pool real, exige DATABASE_URL
+npm run pool               # LA PUERTA: aislamiento con pool real, 240 peticiones
 ```
 
 ⚠️ `npm run pool` necesita `DATABASE_URL` en el `.env` de la raíz, con **el rol
 `app_quiniela`** (no el dueño) y **la cadena con `-pooler`**. Se planta si
 detecta cualquiera de las dos cosas mal, en vez de dar un verde sin valor.
 
+
 ---
 
 ## 🎯 LO QUE QUEDA PENDIENTE
 
-**Puesto al día el 21 de agosto de 2026 por la noche**, al cerrar el paso 7.5 de
-la migración. Está dividido en dos mundos que conviene no mezclar: **lo que falta
-de la migración** (§A) y **lo que ya estaba pendiente antes y sigue estándolo**
-(§B).
+**Puesto al día el 22 de agosto de 2026**, al cerrar la migración. Sigue
+dividido en dos mundos que conviene no mezclar: **la migración** (§A), que ya
+está hecha y sólo deja un paso manual, y **lo que ya estaba pendiente antes**
+(§B), que no ha cambiado en toda la semana.
 
 ---
 
-## A. La migración a PostgreSQL — 6 tajadas de 7, y 5 pasos de 7 de la séptima
+## A. ✅ La migración a PostgreSQL — TERMINADA
+
+⛔ **Salvo UN paso manual**: aplicar `db/poner-al-dia.sql` en el editor SQL de
+Neon, con el rol dueño. La base sigue con el esquema del 20 de agosto y le falta
+la tabla `sesiones`. El cómo está en «Lo siguiente».
 
 El plan completo, con sus decisiones de alcance y sus reglas, está en **§21**.
 Esto es sólo el estado.
@@ -417,7 +492,7 @@ Esto es sólo el estado.
 | **4** | Puntuación | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | Trivias | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
 | **6** | Sincronizador | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
-| **7** | **El cambio y la limpieza** | Ver el desglose de abajo | 🟡 **en curso: 6 pasos de 7** |
+| **7** | El cambio y la limpieza | Ver el desglose de abajo | ✅ **7 de 7** — Entrada 052 |
 
 ### A.0 La tajada 7, paso a paso
 
@@ -432,12 +507,13 @@ punto sin retorno es el 7.7**; hasta entonces `server.js` sigue vivo y verde.
 | **7.4** | Puntuación: `resultados`, `resultados-oficiales`, `-totales`, `-seguros`, `-con-equipos`, `clasificacion-jornada` | 10 | ✅ Entrada 048 |
 | **7.5** | Trivias, más el `_id → id` de los 3 archivos del frontend | 14 | ✅ Entrada 049 |
 | **7.6** | Sincronizador y admin: `admin`, `football`, `debug`, el planificador y `src/proveedor.js` | 15 | ✅ Entrada 051 |
-| **7.7** | ⚠️ **El cambio, y lo único sin retorno.** `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ⬜ |
+| **7.7** | El cambio, y lo único sin retorno. `npm start` apunta al nuevo, se borra `server.js`, fuera `mongoose`/`connect-mongo`/`mongodb-memory-server`/`src/transacciones.js`, se portan las 62 de navegador, `render.yaml` y la documentación | — | ✅ Entrada 052 |
 
-⚠️ **Antes de desplegar hacen falta tres cosas que no son programar**, y están en
-§B.3: `DATABASE_URL` en Render con el rol `app_quiniela` y la cadena con
-`-pooler`; comprobar que Render y Neon están en la misma región; y saber si sigue
-viva la aplicación anterior apuntando a la misma base.
+✅ **Las tres cosas que no eran programar quedaron resueltas el 22 de agosto**:
+`DATABASE_URL` está puesta con el rol `app_quiniela` y la cadena con `-pooler`
+—comprobado desde aquí—, y el usuario confirmó lo de la región y lo de la
+aplicación anterior. `render.yaml` las deja escritas para que no se vuelvan a
+perder de vista.
 
 ### A.1 Lo que hay que saber de cada tajada que falta
 
@@ -474,24 +550,24 @@ del código que hoy corre.
 - **Las reglas de producto.** El cierre por partido, la jornada actual, los
   partidos sólo del API: todo eso sigue igual.
 
-### A.4 ⚠️ Deuda temporal, creada a propósito, que MUERE en el paso 7.7
+### A.4 ✅ La deuda temporal del método, ya pagada
 
-Trabajar con un servidor nuevo al lado del viejo tiene un precio, y conviene
-tenerlo escrito para que nadie lo confunda con un descuido. Nada de esto es
-opcional: **son las cinco cosas que hay que deshacer al hacer el cambio.**
+Trabajar con un servidor nuevo al lado del viejo tuvo un precio, y se pago entero
+el 22 de agosto. Queda escrito porque el metodo funciono y merece repetirse: **lo
+verificable se hizo antes de borrar nada**.
 
-| Qué hay hoy | Por qué está así | Qué se hace en el 7.7 |
+| Lo que hubo, del 21 al 22 | Por que | Como quedo |
 |---|---|---|
-| **Dos servidores en el repositorio**: `server.js` (Mongo) y `src/servidor.js` + `src/rutas/` (PostgreSQL) | Portar 81 rutas en sitio habría dejado las 83 pruebas de integración en rojo durante días | `npm start` pasa a apuntar al nuevo y **`server.js` se borra** |
-| **Dos suites de rutas**: `test/integracion.test.js` (83, contra Mongo) y `test/rutas.test.js` (91, contra PostgreSQL) | La vieja es la red de seguridad mientras la nueva crece | Se borra la vieja; la nueva se queda |
-| **`trivia.id ?? trivia._id`** en 3 archivos del frontend | Las MISMAS pantallas se sirven desde los dos servidores, y el viejo devuelve `_id` | Se quita el respaldo: sólo `trivia.id` |
-| **Las 62 pruebas de navegador arrancan Mongo** (`test/e2e/arrancar.js`) | Corren contra el servidor viejo, que es el que hoy se despliega | El arranque pasa a PGlite y las pruebas al servidor nuevo |
-| **`src/transacciones.js` sigue ahí** | Lo usa `server.js` | Se retira: en PostgreSQL las transacciones son de serie y se queda sin trabajo |
+| **Dos servidores**: `server.js` y `src/servidor.js` | Portar 81 rutas en sitio habria dejado 83 pruebas en rojo durante dias | `server.js` **borrado** |
+| **Dos suites de rutas**: 83 contra Mongo y 91 contra PostgreSQL | La vieja era la red de seguridad mientras la nueva crecia | `test/integracion.test.js` **borrado**; quedan 111 en `test/rutas.test.js` |
+| **`trivia.id ?? trivia._id`** en 3 archivos | Las mismas pantallas se servian desde los dos servidores | Solo `trivia.id` |
+| **Las 62 de navegador arrancaban Mongo** | Corrian contra el servidor viejo, que era el que se desplegaba | PGlite, y **62/62 contra el nuevo** |
+| **`src/transacciones.js`** | Lo usaba `server.js` | **Borrado**: en PostgreSQL las transacciones son de serie |
 
-Además, en el 7.7 salen del `package.json`: **`mongoose`**, **`connect-mongo`** y
-**`mongodb-memory-server`**.
+Y del `package.json` salieron **`mongoose`**, **`connect-mongo`** y
+**`mongodb-memory-server`**. Hay dos centinelas que vigilan que no vuelvan:
+borrar un archivo es facil, y resucitarlo "temporalmente" tambien.
 
----
 
 ## B. Lo que ya estaba pendiente antes de la migración
 
@@ -522,9 +598,10 @@ ahora significaría escribirla dos veces.
    pronósticos de todos (M-02) **y las trivias de los partidos siguientes**
    (M-35), y marcar un comodín después de que el partido terminó no mueve nada
    (M-34). **La migración los cierra.** Si se fuera a enseñar la aplicación con
-   datos que importen antes del paso 7.7, M-02 y M-35 merecen un parche aparte:
-   son los que pueden ensuciar datos, y **los dos salen del mismo `splice`**
-   (`server.js:1592`).
+   datos que importen **antes de fundir `postgres` en `main`**, M-02 y M-35
+   merecen un parche aparte: son los que pueden ensuciar datos, y **los dos salen
+   del mismo `splice`**. En la rama `postgres` ya están cerrados los tres; en
+   `main` siguen vivos **hasta la fusión**.
 1. ⚠️ **M-33 — el `tenantPlugin` no engancha `aggregate`, `insertMany` ni
    `bulkWrite`.** Hoy no hay fuga porque el código no usa ninguno de los tres,
    pero la primera agregación que alguien escriba **saldrá sin filtro de quiniela
@@ -2771,7 +2848,7 @@ anterior cerrada.
 | **4** | **Puntuación** | `resultados`/`pronosticos`, `resultados_oficiales`, motor de puntos, ranking materializado | ✅ Entrada 044 |
 | **5** | **Trivias** | `trivias`, `respuestas_trivia`, autorresolución y reconciliación | ✅ Entrada 045 |
 | **6** | **Sincronizador** | `fixtures`, `job_locks`, APIFootball, métricas | ✅ Entrada 046 |
-| **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | |
+| **7** | **Limpieza** | Fuera `mongoose`, `connect-mongo` y `mongodb-memory-server`; `render.yaml`; documentación | ✅ Entrada 052 |
 
 ### 21.4 Lo que hay que acordarse de mirar
 
@@ -8479,6 +8556,120 @@ las pruebas de navegador arrancando Mongo, y `src/transacciones.js`. Más el
 el rol `app_quiniela` y la cadena con `-pooler`; comprobar que Render y Neon
 están en la misma región; y saber si sigue viva la aplicación anterior apuntando
 a la misma base.
+
+---
+
+### 📌 Entrada 052 — 22 de agosto de 2026 — Tajada 7, paso 7: el cambio. La migración está terminada
+
+**Objetivo:** apagar el servidor viejo y encender el nuevo. Es el único paso sin
+retorno de toda la migración, y el único que **no añade funcionalidad**.
+
+## ✅ `server.js` ya no existe
+
+Empezó el 14 de agosto con **5.270 líneas** y catorce esquemas de Mongoose
+dentro. Hoy son `arrancar.js` (90 líneas), `src/servidor.js`, cuatro módulos de
+rutas y 22 módulos de dominio, cada uno con sus pruebas. Era **C-04**, y se cierra.
+
+**Cómo se hizo sin trabajar a ciegas.**
+
+El orden importó más que ninguna otra cosa. Se hizo lo verificable ANTES de
+borrar nada:
+
+1. **`arrancar.js`** y `npm start` apuntando al servidor nuevo.
+2. **Las 62 pruebas de navegador** pasadas a PGlite y **corridas contra el
+   servidor nuevo**. Ésa fue la prueba de fondo: 62/62 con la aplicación real,
+   en escritorio y en móvil.
+3. **Los 46 centinelas de arquitectura**, portados uno a uno.
+4. **Y sólo entonces** se borró `server.js`.
+
+Si algo hubiera estado mal, se habría sabido en el paso 2, con el viejo todavía
+en pie.
+
+**Qué se hizo:**
+
+1. **`arrancar.js`** — abre el puerto, comprueba el rol, arranca los trabajos
+   periódicos y cierra ordenadamente con `SIGTERM`.
+2. **`test/e2e/arrancar.js`** — PGlite en vez de Mongo, y el proveedor falso
+   pasa por `proveedor.usarFuente()`.
+3. **`test/architecture.test.js`** — los 46 centinelas apuntando al código nuevo.
+4. **`render.yaml`** — la configuración del servicio, versionada.
+5. **`db/poner-al-dia.sql`** — el guion para dejar Neon al día.
+6. **Borrados**: `server.js`, `test/integracion.test.js`, `src/transacciones.js`,
+   el respaldo `?? trivia._id` del frontend, y `mongoose`, `connect-mongo` y
+   `mongodb-memory-server` del `package.json`.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `server.js` | **BORRADO.** 4.733 líneas que ya no hacían falta |
+| `test/integracion.test.js` | **BORRADO.** Sus 83 pruebas las releva `test/rutas.test.js` |
+| `src/transacciones.js` | **BORRADO.** En PostgreSQL las transacciones son de serie |
+| `arrancar.js` | **Nuevo.** El punto de entrada |
+| `render.yaml` | **Nuevo.** La configuración del servicio |
+| `db/poner-al-dia.sql` | **Nuevo.** Recrear el esquema en Neon, con seguro |
+| `test/architecture.test.js` | Los 46 centinelas, portados |
+| `test/e2e/arrancar.js` | PGlite en vez de Mongo |
+| `test/e2e/resultados.spec.js` | `creadas` es un número, no una lista |
+| `private/js/` (3) | Fuera el respaldo `?? trivia._id` |
+| `package.json` | `main`, `start`, `check`, suites; fuera las tres dependencias de Mongo |
+
+**Verificación:**
+
+```
+npm test              → 295/295
+npm run test:e2e      →  62/62  (escritorio y móvil, contra el servidor nuevo)
+node_modules/mongoose → no existe
+server.js             → no existe
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **La base de Neon estaba en el esquema del 20 de agosto**, no en el de hoy.
+   Le faltan la tabla `sesiones`, la columna `jornadas.secuencia` y dos índices
+   únicos, y le sobra una tabla del banco de pruebas. **Sin `sesiones`, la
+   aplicación arranca, deja entrar a la gente y nadie sigue dentro en la petición
+   siguiente** — y no hay ningún error que lo explique. Es el tipo de fallo que
+   se descubre en producción a los treinta segundos.
+2. **`db/poner-al-dia.sql` se planta si encuentra datos.** Recrea el esquema
+   entero porque la base está vacía —comprobado: 0 usuarios, 0 quinielas— y eso
+   es más simple y más fiable que ir aplicando diferencias. Pero el día que haya
+   datos ese guion sería una catástrofe, así que **comprueba antes de borrar** y
+   aborta con el recuento en el mensaje.
+3. ⚠️ **Veintidós de los 46 centinelas se rompieron al borrar `server.js`**, y
+   casi ninguno por el motivo que vigilaba: buscaban patrones de Mongoose que
+   habían dejado de existir. Portarlos no fue mecánico —cada uno hubo que
+   traducirlo a su equivalente en PostgreSQL— pero **la lección de cada uno
+   sobrevivió**. Los que vigilaban cosas que murieron con Mongo se sustituyeron
+   por el riesgo equivalente de hoy: «la URI multi-quiniela» pasó a ser «el rol
+   no puede apagar RLS», y «las pruebas usan un conjunto de réplicas» pasó a ser
+   «el arnés corre con los mismos permisos que producción».
+4. **Un centinela contaba mal y decía la verdad.** El de privacidad esperaba
+   cuatro sitios que decidieran la visibilidad y hay **tres**: `taparAjenos`
+   sirve a dos rutas, y las otras dos deciden en línea porque devuelven `''` en
+   vez de `null`. Se ajustó a 3 **con igualdad, no con «al menos»**: así también
+   avisa si alguien añade un cuarto.
+5. **La respuesta de crear trivias cambió de forma, y lo cazaron las pruebas de
+   navegador.** Devolvía la lista de trivias creadas y ahora devuelve una cuenta.
+   Nada del frontend usaba la lista, y la cuenta la deja igual que su ruta
+   hermana. Es el único cambio de API de toda la migración que no era invisible.
+6. **`npm prune` no basta para saber que Mongo se fue.** Hay un centinela que
+   comprueba el `package.json` y otro que comprueba que `server.js` no vuelva:
+   borrar un archivo es fácil, y resucitarlo «temporalmente» también.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Un paso manual antes de desplegar, y es el único que queda de la
+migración**: ejecutar **`db/poner-al-dia.sql`** en el editor SQL de Neon **con
+el rol dueño** —no con `app_quiniela`—, pegando dentro el contenido de
+`db/esquema.sql`. El guion se planta solo si encuentra datos, y comprueba al
+final que todo quedó puesto.
+
+Después: fundir `postgres` en `main` y desplegar.
+
+Y con la migración cerrada, lo que queda es **§B**: la Fase E (verificación de
+correo, con sus dos decisiones de producto abiertas) y la Fase F (sugerencias de
+partidos destacados).
 
 ---
 
