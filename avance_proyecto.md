@@ -824,204 +824,248 @@ otros dos son las Fases 6 y 5.
 
 ## 2. Inventario del repositorio
 
-> **Puesto al día el 18 de agosto de 2026 (noche).** El resto de este documento a
-> partir de §3 es el análisis original del 14 de agosto y describe el sistema tal
-> como estaba entonces; los cambios posteriores viven en la bitácora (§19). Este
-> inventario sí se mantiene al día, porque es lo primero que se consulta al
-> retomar.
+> **Puesto al día el 22 de agosto de 2026**, después de la migración a
+> PostgreSQL. **De §3 en adelante este documento es el análisis original del 14
+> de agosto** y describe el sistema tal como estaba entonces —con MongoDB,
+> `server.js` y otra suite de pruebas—; se conserva como registro de lo que se
+> encontró, no como descripción de lo que hay. Lo vigente es esta sección, el
+> 🔖 PUNTO DE PARTIDA del principio y la bitácora (§19).
 
 ### 2.1 Raíz
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `server.js` | 5.162 | El monolito: middleware, esquemas, rutas, integraciones y jobs. La Fase 6 lo está troceando hacia `src/` |
+| `arrancar.js` | 88 | **El punto de entrada.** Abre el puerto, comprueba el rol de la base y arranca los relojes |
 | `avance_proyecto.md` | — | Este documento |
-| `package.json` | 41 | Dependencias y scripts |
+| `package.json` | 42 | Dependencias y scripts |
 | `package-lock.json` | — | Necesario para `npm ci`, que es lo que usa el CI |
-| `playwright.config.js` | 62 | Pruebas de navegador: dos proyectos —escritorio y móvil—, en serie y con un solo trabajador |
-| `README.md` | 55 | Instrucciones de instalación, modelo de acceso y migración |
-| `HANDOFF.md` | 65 | Acta del 9 de julio de 2026. **Superado**: su contenido íntegro vive en el Anexo A. Se conserva como histórico congelado |
-| `.env` | — | Secretos locales (ignorado por Git). Usa la URI **sin SRV**; ver el punto de partida |
-| `.env.example` | — | Plantilla de configuración con todas las variables |
-| `.gitignore` | 6 | Ignora `.env`, `node_modules/`, `test-results/`, informes de Playwright |
+| `playwright.config.js` | 63 | Pruebas de navegador: dos proyectos —escritorio y móvil—, en serie y con un solo trabajador |
+| `render.yaml` | 100 | Descriptor del despliegue. ⚠️ **Render NO lo aplica a un servicio que ya existe**: sirve de documentación, y cada variable hay que ponerla a mano (Entrada 055) |
+| `README.md` | 55 | Instalación, modelo de acceso y migración |
+| `HANDOFF.md` | 65 | Acta del 9 de julio de 2026. **Superada**: su contenido íntegro vive en el Anexo A |
+| `.env` | — | Secretos locales (ignorado por Git) |
+| `.env.example` | — | Plantilla con todas las variables |
+| `.gitignore` | 9 | Ignora `.env`, `node_modules/`, `test-results/`, informes de Playwright |
 
-**Directorios:** `src/` (módulos extraídos), `public/` (32 pantallas HTML),
-`private/` (CSS y JS servidos), `test/`, `scripts/`, `legacy-data/`,
-`.github/workflows/`.
+⛔ **`server.js` ya no existe.** Empezó con 5.270 líneas el 14 de agosto y se
+borró el 22 al cerrar la tajada 7.7 (Entrada 052).
 
-> Los cinco volcados `.json` de la versión anterior a MongoDB **se movieron a
-> `legacy-data/` en la Fase 0**. Ninguno se lee desde el código actual: son datos
-> históricos, no configuración.
+**Directorios:** `src/` (la aplicación), `db/` (el esquema SQL), `public/` (34
+pantallas), `private/` (CSS y JS servidos), `test/`, `scripts/`,
+`legacy-data/`, `.github/workflows/`.
 
-### 2.2 `src/` — lo extraído del monolito (Fase 6)
+### 2.2 `src/` — la aplicación
 
-| Archivo | Líneas | Rol |
-|---|---:|---|
-| `validacion.js` | 143 | Validadores de dominio: marcadores, nombres de jornada, partidos, índices |
-| `transacciones.js` | 89 | `enTransaccion` y la detección de bases sin soporte de transacciones |
-| `fechas.js` | 59 | `parseFechaPartidoCostaRica` y `extraerFechaApi`. Costa Rica es UTC−6 todo el año |
-| `ligas.js` | 160 | Fase C: rango de búsqueda, tope de días, competiciones bloqueadas y agrupado por país |
-
-**Dos invariantes para las tajadas siguientes:** lo extraído **se reexporta**
-desde `server.js` —que es la superficie pública que piden las pruebas—, y los
-módulos de `src/` **no pueden depender de `server.js`**: sería un ciclo y el
-troceado dejaría de servir.
-
-### 2.3 `scripts/`
+**24 módulos y 5 archivos de rutas.** La regla que los ordena: `src/db.js` es el
+**único** sitio que abre transacciones y fija el contexto de quiniela; todo lo
+demás recibe la conexión ya preparada.
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `migrate-legacy.js` | 101 | Migrador de la base anterior a la nueva. Simulación por defecto |
+| `servidor.js` | 764 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
+| `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
+| `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
+| `eventos.js` | 445 | Bitácora de eventos del dominio |
+| `sincronizador.js` | 440 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
+| `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
+| `jornadas.js` | 307 | Jornadas y sus partidos |
+| `pronosticos.js` | 287 | Pronósticos, y la tabla comparativa en **una sola consulta** |
+| `membresias.js` | 248 | Quién pertenece a qué quiniela y con qué papel |
+| `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
+| `oficiales.js` | 238 | Resultados oficiales |
+| `respuestas-trivia.js` | 223 | Respuestas de los participantes |
+| `proveedor.js` | 221 | Cliente de APIFootball, con tiempo de espera propio |
+| `correo.js` | 215 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria |
+| `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
+| `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
+| `ligas.js` | 171 | Rango de búsqueda, competiciones bloqueadas y agrupado por país |
+| `quinielas.js` | 161 | Alta, archivado y configuración |
+| `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
+| `jugadores.js` | 128 | Participantes |
+| `planificador.js` | 116 | Los relojes: cada cuánto corre el sincronizador |
+| `tokens.js` | 101 | Tokens de un solo uso, **guardados sólo en SHA-256** |
+| `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
+| `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
 
-### 2.4 `test/` — 129 pruebas rápidas y 62 de navegador
+**`src/rutas/` — las 81 rutas, repartidas por tema:**
+
+| Archivo | Líneas | Rutas |
+|---|---:|---|
+| `puntuacion.js` | 377 | 10 — resultados, totales, clasificación por jornada |
+| `plataforma.js` | 317 | 19 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
+| `admin.js` | 309 | 15 — administración y sincronizador |
+| `dominio.js` | 268 | 16 — jornadas, partidos, pronósticos |
+| `trivias.js` | 235 | 14 — trivias y sus respuestas |
+
+### 2.3 `db/` — el esquema
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `architecture.test.js` | 981 | **46 pruebas** que inspeccionan el TEXTO del código: invariantes que una prueba de comportamiento no ve —que no haya funciones duplicadas, que las rutas retiradas no vuelvan, que las pantallas no lleven manejadores en atributo— |
-| `integracion.test.js` | 2.372 | **73 pruebas** que ejecutan el servidor de verdad contra MongoDB en memoria |
-| `plantillas.js` | 87 | Utilidades compartidas de plantillas para las pruebas |
+| `esquema.sql` | 351 | **19 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
+| `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055) |
 
-**`test/e2e/` — navegador, con Playwright.** Se lanzan aparte con
-`npm run test:e2e` porque necesitan navegador y tardan más; la suite rápida debe
-seguir siendo rápida.
+### 2.4 `scripts/`
+
+| Archivo | Líneas | Rol |
+|---|---:|---|
+| `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
+
+### 2.5 `test/` — 325 pruebas rápidas y 68 de navegador
+
+`npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
+por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
+PostgreSQL de verdad y no una imitación.
+
+| Archivo | Líneas | Pruebas | Qué comprueba |
+|---|---:|---:|---|
+| `rutas.test.js` | 2.236 | **141** | El servidor en marcha: HTTP real con `supertest` |
+| `architecture.test.js` | 1.157 | **46** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `puntuacion.test.js` | 560 | 27 | El motor de puntos, comodines incluidos |
+| `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
+| `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
+| `plataforma.test.js` | 335 | 24 | Quinielas, membresías y aislamiento |
+| `dominio.test.js` | 296 | 18 | Jornadas, partidos y pronósticos |
+| `db.test.js` | 192 | 13 | Transacciones y contexto de quiniela |
+| `postgres-en-memoria.js` | 167 | — | El arnés de PGlite |
+| `plantillas.js` | 87 | — | Utilidades compartidas |
+
+> Las suites van **nombradas una a una** en `package.json`, no con un comodín:
+> `test/*.test.js` funciona en Windows y falla en el CI de Linux, porque quien
+> expande el comodín es el shell (Entrada 025).
+
+**`test/e2e/` — 68 de navegador, con Playwright.** Aparte, porque tardan ~2,5
+minutos y la suite rápida tiene que seguir siendo rápida.
 
 | Archivo | Líneas | Qué cubre |
 |---|---:|---|
-| `arrancar.js` | 59 | Levanta la aplicación con base en memoria. Lo llama Playwright, no al revés |
-| `ayudas.js` | 83 | Registro, creación de quiniela y Admin Mode. Cada prueba crea su propia cuenta |
-| `csp.spec.js` | 76 | Recorre **las 32 pantallas** registrando violaciones de CSP. Necesario porque una violación **no da error visible**: el botón carga, se pulsa y no hace nada |
-| `cuenta.spec.js` | 94 | Registro, sesión, creación de quiniela, ojo de la contraseña |
-| `inyeccion.spec.js` | 95 | El marcado en nombres se muestra como texto y no se ejecuta (S-04) |
-| `jornadas.spec.js` | 161 | Administración de jornadas y privacidad partido a partido |
-| `jornada-actual.spec.js` | 202 | Fase B: las tres pantallas abren en la misma jornada |
-| `jornadas-buscador.spec.js` | 110 | Fase C: el desplegable dinámico, las exclusiones y el proveedor caído |
-| `navegacion.spec.js` | 133 | Pulsa **los 23 botones** `data-ir-a` de todas las pantallas y comprueba que ninguna pinta tarjetas de aviso vacías (Entrada 029) |
-| `portada.spec.js` | 83 | Fase A: la tarjeta nueva y que ninguna se estire |
-| `resultados.spec.js` | 237 | Resultados oficiales, tabla general paginada y trivias |
+| `resultados.spec.js` | 243 | Resultados oficiales, tabla general paginada y trivias |
+| `jornadas.spec.js` | 238 | Administración de jornadas y privacidad partido a partido |
+| `jornada-actual.spec.js` | 202 | Las tres pantallas abren en la misma jornada |
+| `navegacion.spec.js` | 154 | Pulsa **todos los botones `data-ir-a`** y comprueba que ninguna pantalla pinta tarjetas de aviso vacías |
+| `arrancar.js` | 116 | Levanta la aplicación sobre PGlite. ⚠️ Aquí vive `/e2e/ultimo-correo`, **que nunca se declara en `crearApp`** |
+| `ayudas.js` | 111 | Registro, quiniela y Admin Mode. Cada prueba crea su cuenta |
+| `jornadas-buscador.spec.js` | 109 | El desplegable dinámico, las exclusiones y el proveedor caído |
+| `inyeccion.spec.js` | 95 | El marcado en los nombres se muestra como texto (S-04) |
+| `cuenta.spec.js` | 94 | Registro, sesión, quiniela, ojo de la contraseña |
+| `password.spec.js` | 90 | Recuperar la contraseña de punta a punta |
+| `portada.spec.js` | 83 | La tarjeta nueva y que ninguna se estire |
+| `csp.spec.js` | 76 | Recorre las pantallas buscando violaciones de CSP. Hace falta porque una violación **no da error visible**: el botón carga, se pulsa y no pasa nada |
 
-### 2.5 `public/` — 31 páginas HTML
+### 2.6 `public/` — 34 pantallas HTML
 
-Servidas estáticamente desde `express.static`.
+Servidas con `express.static`.
 
-**Públicas / de cuenta:** `login.html`, `registro.html`, `quinielas.html`, `index.html`,
-`reglamento_quiniela.html`
+**Públicas / de cuenta:** `login.html`, `registro.html`, `quinielas.html`,
+`index.html`, `reglamento_quiniela.html`, `verificar-correo.html`,
+`olvide-password.html`, `restablecer-password.html`
 
-**De participante:** `llenar_jornada_user.html`, `llenar_trivia.html`,
-`ver_jornadas.html`, `ver_jugadores.html`,
+**De participante:** `llenar_jornada.html`, `llenar_jornada_user.html`,
+`llenar_trivia.html`, `ver_jornadas.html`, `ver_jugadores.html`,
 `verResultados.html`, `verResultados_puntos.html`, `resultados-totales.html`,
-`clasificacion-jornada.html`,
-`ver-resultados-oficiales.html`, `ver_resultados_trivias.html`,
-`ver_resultados_totales_de_jugadores.html`
+`clasificacion-jornada.html`, `ver-resultados-oficiales.html`,
+`ver_resultados_trivias.html`, `ver_resultados_totales_de_jugadores.html`
 
-**De administración (listadas en `paginasAdmin`):** `adminmode.html`, `jugadores.html`,
-`jornadas.html`, `importar_partidos.html`, `resultados.html`,
-`agregar-resultados-oficiales.html`, `generar_reporte.html`, `enviarresultados.html`,
-`copiarresultadojugador.html`, `admin_trivias.html`, `enviarresultadostrivias.html`,
-`enviarresultadospartido.html`, `enviarresultadostriviaspartido.html`,
-`miembros.html`, `configuracion-quiniela.html`
+**De administración (las 13 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
+`jugadores.html`, `jornadas.html`, `resultados.html`,
+`agregar-resultados-oficiales.html`, `generar_reporte.html`,
+`enviarresultados.html`, `copiarresultadojugador.html`, `admin_trivias.html`,
+`enviarresultadostrivias.html`, `enviarresultadospartido.html`,
+`enviarresultadostriviaspartido.html`, `miembros.html`,
+`configuracion-quiniela.html`
 
-### 2.6 `private/js/` — 39 scripts
+⚠️ **La guardia compara `req.path` contra esa lista.** Una pantalla nueva de
+administración que no se añada ahí **se sirve a cualquiera con sesión**. No es
+fuga de datos —las APIs sí exigen `requireAdmin`— pero sí de superficie.
 
-Servidos por la ruta `GET /js/:filename`, que lee de `private/js/`. Es un pseudo-ocultamiento:
-el navegador los descarga igual. **No hay ningún secreto ahí, pero tampoco hay ninguna
-protección real** — la ruta no verifica sesión.
+⛔ **`importar_partidos.html` ya no existe:** su buscador se integró en
+`jornadas.html` en la Fase D, y los partidos salen sólo del API.
+
+### 2.7 `private/js/` — 42 scripts
+
+Servidos por `GET /js/:filename`. Es un pseudo-ocultamiento: el navegador los
+descarga igual. **No hay ningún secreto ahí, pero tampoco protección real** — la
+ruta no comprueba sesión.
 
 Los más grandes:
 
 | Script | Líneas | Función |
 |---|---:|---|
-| `jornadas.js` | 1.252 | Panel de administración de jornadas y partidos |
-| `importar_partidos.js` | 752 | Buscador e importador de partidos desde APIFootball |
-| `llenar_jornada_user.js` | 619 | Formulario de pronósticos del participante |
-| `llenar_trivia.js` | 450 | Formulario de respuestas de trivia |
-| `ver-resultados_puntos.js` | 446 | Vista de puntos por jornada |
+| `jornadas.js` | 659 | Administración de jornadas, partidos y el buscador |
+| `llenar_jornada_user.js` | 619 | Formulario de pronósticos |
+| `llenar_trivia.js` | 450 | Formulario de trivias |
+| `ver-resultados_puntos.js` | 446 | Puntos por jornada |
 | `ver_resultados_totales_de_jugadores.js` | 386 | Tabla comparativa completa |
 | `ver-resultados.js` | 374 | Vista de pronósticos |
 | `admin_trivias.js` | 301 | Configuración de trivias por jornada |
 
-### 2.7 `private/css/`
+### 2.8 `private/css/`
 
-Un único `styles.css` con el sistema visual "mobile shell" (tarjetas, navegación
-inferior, paneles de aplicación).
+Un único `styles.css` con el sistema visual "mobile shell". ⚠️ Desde la Entrada
+057 tiene una **regla general para `a`**: antes no había ninguna, y cualquier
+enlace fuera de `.bottom-nav` o `.action-card` salía con el azul del navegador.
 
-### 2.8 Dependencias
-
-Estado **después de la Fase 1** (16 de agosto de 2026):
+### 2.9 Dependencias
 
 ```
-axios 1.19.0             → cliente HTTP hacia APIFootball
+axios ^1.11.0            → cliente HTTP hacia APIFootball
 bcrypt ^6.0.0            → hash de contraseñas (SALT_ROUNDS = 10)
-connect-mongo ^5.1.0     → almacén de sesiones en MongoDB
+connect-pg-simple ^10    → almacén de sesiones, en la tabla `sesiones`
 cors ^2.8.5              → CORS con lista blanca configurable
 dotenv ^17.0.1           → variables de entorno
 express ^4.21.2          → framework HTTP
-express-async-errors     → captura de errores en handlers async
-express-rate-limit ^8.6  → limitación de intentos (añadida en Fase 1)
+express-async-errors     → captura de errores en manejadores async
+express-rate-limit ^8.6  → limitación de intentos
 express-session ^1.18.0  → sesiones
-helmet ^8.3.0            → cabeceras de seguridad (añadida en Fase 1)
-mongoose ^8.16.1         → ODM de MongoDB
+helmet ^8.3.0            → cabeceras de seguridad
+pg ^8.23.0               → cliente de PostgreSQL
+
+--- solo para desarrollo ---
+@electric-sql/pglite     → PostgreSQL 18 en WebAssembly, para las pruebas
+@playwright/test ^1.62   → pruebas de navegador
+supertest ^7.2.2         → HTTP contra la app sin abrir puerto
 ```
 
-✅ **`npm audit --omit=dev` → 0 vulnerabilidades** (16 de agosto de 2026, tras la
-Fase 1). `axios` subió de 1.11.0 a 1.19.0 dentro del mismo rango semver, sin cambios
-de ruptura.
+⛔ **Fuera en la tajada 7.7:** `mongoose`, `connect-mongo` y
+`mongodb-memory-server`.
 
-✅ **Eliminadas en la Fase 0** (63 paquetes menos): `canvas` (no se usaba en ningún
-archivo, arrastraba compilación nativa), `fs` (paquete basura que suplanta al módulo
-nativo homónimo, que se sigue usando sin dependencia) y `body-parser` (redundante
-desde Express 4.16).
+### 2.10 Scripts de npm
 
-> **Histórico:** el 16 de agosto, antes de la Fase 1, `npm audit` reportaba 11
-> vulnerabilidades (3 bajas, 3 moderadas, 5 altas); en julio eran 0. Casi todas
-> provenían de `axios@1.11.0`, que acumuló ~29 advisories (SSRF, prototype
-> pollution, DoS, fuga de `Proxy-Authorization` en redirecciones). Se resolvieron
-> con `npm audit fix` en la Fase 1.
-
-### 2.9 Scripts de npm
-
-```json
-"start":              "node server.js"
-"check":              "node --check server.js"
-"test":               "node --test test/architecture.test.js test/integracion.test.js"
-"test:arquitectura":  "node --test test/architecture.test.js"
-"test:integracion":   "node --test test/integracion.test.js"
-"test:e2e":           "playwright test"
-"test:e2e:ui":        "playwright test --ui"
-"migrate:legacy:dry": "node scripts/migrate-legacy.js"
-"migrate:legacy":     "node scripts/migrate-legacy.js --execute"
+```
+"start"             → node arrancar.js
+"check"             → node --check arrancar.js
+"test"              → las 8 suites nombradas una a una   (325)
+"test:arquitectura" → node --test test/architecture.test.js
+"test:postgres"     → las 7 que necesitan base           (279)
+"test:rutas"        → node --test test/rutas.test.js
+"test:e2e"          → playwright test
+"test:e2e:ui"       → playwright test --ui
+"migrate:legacy:dry" / "migrate:legacy"
 ```
 
-> Los dos archivos de `test` van **nombrados uno a uno** y no con un comodín.
-> `node --test test/*.test.js` funciona en la máquina de siempre y falla en el
-> CI: el comodín lo expande el shell, y el de Windows no lo expande igual que
-> el de Linux. Se descubrió al estrenar la integración continua (Entrada 025).
-
-### 2.10 Variables de entorno
-
-Presentes en `.env`:
+### 2.11 Variables de entorno
 
 | Variable | Obligatoria | Notas |
 |---|---|---|
-| `MONGO_URI_MULTIQUINIELA` | Sí | Sin ella el proceso termina con `exit(1)` |
+| `DATABASE_URL` | **Sí** | Sin ella el proceso termina con `exit(1)`. ⚠️ Rol `app_quiniela`, **nunca el dueño** —el dueño se salta la RLS y el aislamiento entre quinielas desaparece—, cadena del `-pooler` y `sslmode=verify-full` explícito |
 | `SESSION_SECRET` | Sí en producción | En desarrollo usa `'solo-desarrollo-cambiar'` |
 | `APIFOOTBALL_COM_KEY` | Sí para sincronizar | Sin ella las rutas de fútbol devuelven 500 |
+| `MAIL_TRANSPORT` | Sí en producción | `consola`, `brevo` o `resend`. ⚠️ Si se queda en `consola`, **nadie confirma su correo y nadie entra**. `/readyz` lo avisa (Entrada 055) |
+| `MAIL_API_KEY`, `MAIL_FROM`, `MAIL_FROM_NAME` | Con `brevo` o `resend` | `MAIL_FROM` tiene que ser la dirección verificada en el proveedor |
+| `APP_ORIGIN` | Sí en producción | De dónde cuelga el enlace del correo. Sin esto apunta a `localhost` y no le sirve a nadie |
+| `VERIFY_TOKEN_HOURS` | No | Vida del enlace de confirmación. Por defecto 24 |
+| `RESET_TOKEN_HOURS` | No | Vida del de restablecer. Por defecto **1**, corto a propósito: ese enlace abre la cuenta a quien lo tenga |
+| `DB_MAX_CONEXIONES` | No | Tamaño del pool. Por defecto 10 |
 | `PORT` | No | Por defecto 3000 |
-| `NODE_EN` | — | ⚠️ **ERRATA** corregida en la Fase 0. Hoy es `NODE_ENV` (hallazgo S-01) |
-| `ALLOWED_ORIGINS` | No | Añadida en la Fase 0. Orígenes CORS separados por comas |
-| `DEBUG_ENDPOINTS` | No | Añadida en la Fase 1. Con cualquier valor distinto de `true`, los `/debug/*` responden 404 |
-| `SYNC_INTERVALO_MS` | No | **Fase 4.** Cada cuánto corre un ciclo del planificador. Por defecto 60.000 |
-| `SYNC_CONCURRENCIA` | No | **Fase 4.** Consultas simultáneas al proveedor. Por defecto 4 |
-| `JOBS_HABILITADOS` | No | **Fase 4.** Si esta instancia ejecuta los trabajos periódicos. Por defecto `true` |
-| `RANKING_CACHE_TTL_MS` | No | **Fase 5.** Vida máxima de la caché de ranking por quiniela; por defecto 60.000. Las escrituras relevantes la invalidan antes |
+| `NODE_ENV` | — | `development` o `production`. En producción activa `trust proxy`, cookie `secure` y `SESSION_SECRET` obligatorio |
+| `ALLOWED_ORIGINS` | No | Orígenes CORS separados por comas |
+| `DEBUG_ENDPOINTS` | No | Con cualquier valor distinto de `true`, los `/debug/*` responden 404 |
+| `SYNC_INTERVALO_MS`, `SYNC_CONCURRENCIA`, `SYNC_TIMEOUT_CICLO_MS`, `JOBS_HABILITADOS` | No | El sincronizador |
+| `APIFOOTBALL_TIMEOUT_MS` | No | Tiempo de espera del proveedor |
+| `RANKING_CACHE_TTL_MS` | No | Vida de la caché de ranking; por defecto 60.000. Las escrituras la invalidan antes |
 
-Variables que el código espera pero no están en `.env` (solo se usan al migrar):
+Sólo para `scripts/migrate-legacy.js`: `MONGO_URI_MULTIQUINIELA`,
 `MONGO_URI_LEGACY_READONLY`, `LEGACY_DB_NAME`, `TARGET_DB_NAME`,
 `MIGRATION_OWNER_EMAIL`, `MIGRATION_POOL_NAME`.
-
-> **Nota histórica:** cuando se escribió este inventario, `.env.example` estaba
-> eliminado del árbol de trabajo pese a que el README manda copiarlo. Se restauró
-> y amplió en la Fase 0 (hallazgo M-22), y desde la Fase 4 documenta también las
-> tres variables del sincronizador.
 
 ---
 
@@ -2010,9 +2054,13 @@ conectada ni modificada.
 
 ## 13. Pruebas y verificación
 
-### 13.1 Suite actual — 75 pruebas
+### 13.1 La suite del 17 de agosto — 75 pruebas *(histórico)*
 
-Estado tras añadir la clasificación por jornada (17 de agosto de 2026). Corren en **~14 segundos, sin red y
+> ⚠️ **Esto es la foto del 17 de agosto, no lo de hoy.** Aquella suite corría
+> contra MongoDB en memoria y ya no existe. **Hoy son 325 rápidas y 68 de
+> navegador, sobre PostgreSQL**; el inventario al día está en §2.5.
+
+Estado tras añadir la clasificación por jornada (17 de agosto de 2026). Corrían en **~14 segundos, sin red y
 sin tocar la base real**. La primera corrida en una máquina nueva tarda más:
 `mongodb-memory-server` descarga su binario una sola vez.
 
@@ -2401,9 +2449,13 @@ worker.js         → solo jobs
 
 ## 20. Plan de producto — las diez peticiones del 18 de agosto
 
-> **Estado: analizado y ordenado. Las Fases A y B están completadas** (Entradas
-> 026 y 027, 18 de agosto de 2026); el resto sigue sin empezar. Se aborda una
-> fase a la vez.
+> **Estado al 22 de agosto de 2026: completadas las fases A, B, C, D y E.**
+> Queda **sólo la F** —sugerencias de partidos destacados—, que está parada a la
+> espera de dos decisiones tuyas: qué cuenta como «igualados» y qué es un
+> «clásico». Se aborda una fase a la vez.
+>
+> Fuera de plan y ya hechas: la **recuperación de contraseña** (Entrada 056),
+> que salió de ver funcionar el correo.
 
 Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
 para agrupar no es el tema sino la **dependencia**: cosas que comparten una
@@ -2418,8 +2470,8 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | ✅ **2.º** | **B — Qué es "la jornada actual"** | 1, 2, 5 | Las tres dependen de la MISMA decisión sin tomar. Hacerlas juntas la resuelve una sola vez. **Completada el 18-ago-2026** |
 | ✅ **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual. **Completada el 19-ago-2026** |
 | ✅ **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Completada el 19-ago-2026: los partidos salen solo del API** |
-| **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás; se puede adelantar o retrasar sin coste |
-| **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C |
+| ✅ **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás. **Completada el 22-ago-2026** (Entradas 053 a 055), con Brevo y la política «sin confirmar no se entra» |
+| ⏳ **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C. **Lo único que queda**, y necesita dos decisiones antes de empezar |
 | — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
 | — | **Aparte 2** | — | Terminar la Fase 6 y cerrar `style-src`, cuando convenga |
 
@@ -2776,6 +2828,10 @@ nombrarlo: casi seguro tiene solución mucho más barata dentro de MongoDB.
 
 ## 21. Plan de migración a PostgreSQL
 
+> ✅ **EJECUTADO Y TERMINADO el 22 de agosto de 2026.** Lo que sigue es el plan
+> tal como se escribió, en futuro; se conserva porque explica **por qué** se hizo
+> así. Cómo quedó de verdad está en §A y en las Entradas 040 a 052.
+>
 > **Decidido el 20 de agosto de 2026**, después de que el sondeo (Entradas 032 a
 > 039) pasara la puerta: 8 de 8 en la prueba de aceptación y 4 de 4 en la del
 > *pool*, con 240 peticiones concurrentes y ni un cruce.
@@ -9180,6 +9236,108 @@ las 14 de navegador que tocan el login    → verde
 de la Entrada 056. No hace falta tocar el esquema ni ninguna variable.
 
 Y queda la **Fase F** —sugerencias de partidos destacados—, lo último de §20.
+
+---
+
+### 📌 Entrada 058 — 22 de agosto de 2026 — Auditar el propio documento, y lo que apareció debajo
+
+**Objetivo:** el usuario preguntó si de verdad estaba todo documentado, tal que
+abrir este archivo otro día bastara para saber dónde está el proyecto. En vez de
+contestar de memoria, **se comprobó con un guion**. Menos mal.
+
+## Lo que se midió, y lo que salió bien
+
+Cuatro comprobaciones sobre el texto:
+
+| Qué se comprobó | Resultado |
+|---|---|
+| Numeración de las entradas, de la 001 a la 057 | ✅ sin huecos |
+| Las 199 referencias «Entrada NNN» apuntan a una que existe | ✅ ninguna rota |
+| Los 88 commits tienen entrada | ✅ los 24 que marcó el guion eran falsos positivos: comparaba títulos, y muchas entradas titulan distinto que el commit |
+| Las rutas de archivo citadas siguen existiendo | ⚠️ **aquí saltó** |
+
+## ⛔ Lo que estaba mal: §2 prometía estar al día y era de la era Mongo
+
+El inventario del repositorio lleva desde el 18 de agosto una nota que dice
+*«este inventario sí se mantiene al día, porque es lo primero que se consulta al
+retomar»*. **No se mantuvo.** Describía:
+
+- `server.js` con 5.162 líneas — borrado hace tres entradas;
+- `src/transacciones.js` — borrado;
+- `test/integracion.test.js` con 73 pruebas contra MongoDB en memoria — borrado;
+- 4 módulos en `src/` — hay **29**;
+- `MONGO_URI_MULTIQUINIELA` como la variable obligatoria — hoy es `DATABASE_URL`;
+- `connect-mongo` y `mongoose` entre las dependencias — fuera desde la 7.7.
+
+⚠️ **Ésa es exactamente la sección que alguien lee primero al volver.** Una foto
+vieja rotulada «al día» es peor que no tener foto: la de §13.1 decía «Suite
+actual — 75 pruebas» y también era de la era Mongo, pero al menos §2 advertía de
+que de §3 en adelante todo es el análisis original del 14 de agosto — de sí
+misma, no.
+
+Se reescribió entera contra el árbol, con las cifras **medidas, no recordadas**:
+29 archivos de `src/`, 8 suites que suman 325, 12 de navegador que suman 68, 34
+pantallas, 42 scripts. Y §13.1 pasa a llamarse «La suite del 17 de agosto
+*(histórico)*», con un aviso que remite a §2.5.
+
+## ⛔ Y debajo había un fallo de verdad: `.env.example` no traía `DATABASE_URL`
+
+Al cotejar las variables que declara la plantilla contra las que el código lee
+apareció que **`DATABASE_URL` no estaba en `.env.example`**. Es *la* variable
+obligatoria: sin ella `arrancar.js` termina con `exit(1)`.
+
+⚠️ Esto no es documentación: **quien siga el README —«copia `.env.example` a
+`.env`»— obtiene una configuración que no arranca**, y el único rastro es un
+proceso que se muere. Faltaba también `DB_MAX_CONEXIONES`.
+
+Se añadieron las dos, con las condiciones que no son opcionales escritas al lado:
+rol `app_quiniela` y nunca el dueño —el dueño se salta la RLS, que es lo único
+que separa una quiniela de otra—, cadena del `-pooler` y `sslmode=verify-full`
+explícito. `MONGO_URI_MULTIQUINIELA` baja al bloque del migrador, que es el
+único que aún la lee.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `.env.example` | **`DATABASE_URL` y `DB_MAX_CONEXIONES`**, que faltaban; la de Mongo baja al migrador |
+| `avance_proyecto.md` | §2 reescrito entero; §13.1 rotulado como histórico; §20 al día (E completada, F lo único que queda) |
+
+**Verificación:**
+
+```
+npm test  → 325/325
+numeración, referencias, commits y rutas → sin hallazgos tras el arreglo
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una sección que se declara «al día» y no lo está miente más que una sin
+   fecha.** §2 llevaba la nota puesta desde el 18 y cuatro días de cambios
+   encima. El resto del análisis envejeció igual, pero eso estaba **declarado**,
+   así que no engaña a nadie. **El rótulo es lo que hace el daño**, no la
+   antigüedad.
+2. ⚠️ **Contestar de memoria habría sido contestar que sí.** La bitácora estaba
+   impecable —57 entradas, sin huecos, sin referencias rotas— y esa parte era la
+   que se recordaba. Lo que se había podrido era otra cosa. **La pregunta «¿está
+   todo documentado?» sólo se puede responder mirando.**
+3. ⚠️ **Un guion tosco con falsos positivos sirve igual, si se revisan.** Los 24
+   commits «sin entrada» eran todos falsos, pero comprobarlos uno a uno costó dos
+   comandos y confirmó de paso que la bitácora está completa. **Un filtro que
+   sobra-marca es útil; uno que sub-marca no.**
+4. **La comprobación de rutas fue la que encontró todo.** Numeración,
+   referencias y commits miran el texto contra sí mismo, y por eso salieron
+   limpios: un documento coherente puede estar coherentemente desfasado. **Sólo
+   la que cotejó contra el árbol de verdad encontró algo.** Vale la pena
+   repetirla antes de cada punto de control.
+
+**Pendiente / siguiente paso:**
+
+⚠️ Sigue pendiente **redesplegar en Render**, que arrastra la recuperación de
+contraseña (Entrada 056) y el enlace (057). No hace falta tocar el esquema ni
+ninguna variable.
+
+Y queda la **Fase F**, con sus dos decisiones sin tomar.
 
 ---
 
