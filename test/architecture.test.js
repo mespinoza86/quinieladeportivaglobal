@@ -444,6 +444,37 @@ test('cada partido tiene ventana de consulta según su estado real', () => {
   assert.match(mod, /Math\.min\(proxima, inicio\.getTime\(\)\)/);
 });
 
+test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', () => {
+  /*
+   * La hoja de estilos tiene una regla global que alcanza a TODOS los input:
+   *
+   *     input, select, button, textarea { width: 100%; padding: 13px 14px; }
+   *
+   * Una casilla de verificacion no debe medir el ancho de la fila. Cuando lo
+   * mide, en el movil ocupa la linea entera y empuja el texto abajo, y en el
+   * escritorio se estira hasta dejar el rotulo lejos de su propia casilla. Se
+   * marca la que no era, y no da ningun error: la pantalla simplemente miente
+   * sobre que va con que.
+   *
+   * `.checkbox-card` (una suelta) y `.checkbox-fila` (listas largas) deshacen
+   * esa regla. Una casilla sin ninguna de las dos vuelve al problema.
+   */
+  const paginas = fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'));
+
+  for (const pagina of paginas) {
+    const html = leer(path.join('public', pagina));
+    for (const etiqueta of html.match(/<label[^>]*>\s*<input type="checkbox"/g) || []) {
+      assert.match(etiqueta, /checkbox-(card|fila)/,
+        `${pagina}: una casilla sin clase mide el ancho de la fila y despega el texto de su casilla`);
+    }
+  }
+
+  // Y la regla que lo deshace tiene que seguir ahi.
+  const css = leer(path.join('private', 'css', 'styles.css'));
+  assert.match(css, /\.checkbox-fila input\[type="checkbox"\]\s*\{[^}]*width:\s*auto/);
+  assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
+});
+
 test('lo que se guarda en la cache de ligas es lo del proveedor, sin favoritas', () => {
   /*
    * La cache de ligas tiene por clave el rango de fechas y NADA MAS, para que

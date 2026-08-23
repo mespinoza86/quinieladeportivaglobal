@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 343/343
+npm test                    # 344/344
 npm run test:e2e            # 76/76, ~2,7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **343**, ~50 s |
+| Pruebas rápidas | **344**, ~50 s |
 | Pruebas de navegador | **76**, ~2,7 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -918,7 +918,7 @@ demás recibe la conexión ya preparada.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 343 pruebas rápidas y 76 de navegador
+### 2.5 `test/` — 344 pruebas rápidas y 76 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -927,7 +927,7 @@ PostgreSQL de verdad y no una imitación.
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
 | `rutas.test.js` | 2.367 | **149** | El servidor en marcha: HTTP real con `supertest` |
-| `architecture.test.js` | 1.186 | **47** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `architecture.test.js` | 1.216 | **48** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
 | `puntuacion.test.js` | 560 | 27 | El motor de puntos, comodines incluidos |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
@@ -1009,9 +1009,16 @@ Los más grandes:
 
 ### 2.8 `private/css/`
 
-Un único `styles.css` con el sistema visual "mobile shell". ⚠️ Desde la Entrada
-057 tiene una **regla general para `a`**: antes no había ninguna, y cualquier
-enlace fuera de `.bottom-nav` o `.action-card` salía con el azul del navegador.
+Un único `styles.css` con el sistema visual "mobile shell".
+
+⚠️ **Dos reglas que existen por un fallo ya pagado**, y que conviene no "limpiar":
+
+- La **regla general para `a`** (Entrada 057): antes no había ninguna, y cualquier
+  enlace fuera de `.bottom-nav` o `.action-card` salía con el azul del navegador.
+- **`.checkbox-fila` y `.checkbox-card`** (Entrada 060): deshacen el
+  `width: 100%` que la regla global de `input` aplica también a las casillas de
+  verificación. Sin ellas la casilla mide el ancho de la fila y **el texto deja
+  de estar junto a su casilla**.
 
 ### 2.9 Dependencias
 
@@ -9473,6 +9480,100 @@ el centinela, con el código roto a propósito → falla (comprobado)
 variable: `ligasFavoritas` entra en el `jsonb` que ya existía.
 
 La **Fase F** queda en el backlog de §20.
+
+---
+
+### 📌 Entrada 060 — 23 de agosto de 2026 — La casilla que medía el ancho de la fila
+
+**Objetivo:** el usuario avisó de que al escoger las ligas favoritas **costaba
+saber qué casilla iba con qué nombre**: desalineadas en la computadora, y en el
+celular la casilla arriba y el texto abajo. En las dos era fácil marcar la que
+no era.
+
+## La causa, y no era de las favoritas
+
+Hay una regla global en la hoja de estilos que alcanza a **todos** los `input`:
+
+```css
+input, select, button, textarea { width: 100%; padding: 13px 14px; margin: 8px 0; }
+```
+
+Una casilla de verificación **no debe medir el ancho de la fila**. Cuando lo
+mide: en el móvil ocupa la línea entera y empuja el texto abajo; en el
+escritorio se estira hasta dejar el rótulo lejos de su propia casilla.
+
+Y encima se había usado `class="field-label"`, que es `display: block` y está
+pensada para el rótulo que va **encima** de un campo, no para una fila.
+
+⚠️ **Lo interesante: el fallo no era nuevo.** Las dos casillas que ya llevaban
+meses en esa pantalla —«Habilitar trivias» y «Conservar expulsados en el
+ranking»— tenían exactamente el mismo problema. Eran **las dos únicas casillas
+de todo el proyecto sin clase**, y se comprobó archivo por archivo. Nadie lo
+había reportado porque con dos casillas sueltas se adivina cuál es cuál; con una
+lista de treinta, no.
+
+## Lo que se hizo
+
+**No se inventó un componente: ya existía `.checkbox-card`**, que deshace la
+regla global y se usa para el comodín en jornadas. Pero a una **lista larga** le
+faltaban dos cosas, que son justo las que hacían marcar la equivocada:
+
+1. **La fila entera clicable.** `.checkbox-card` lleva `width: fit-content`, así
+   que el área que responde termina donde termina el texto. En una lista, una
+   fila a todo el ancho es un blanco mucho mayor.
+2. **La casilla alineada con la PRIMERA LÍNEA del nombre** (`flex-start`). Los
+   nombres largos se parten en dos, y centrarla contra el bloque entero la
+   despega de lo que rotula.
+
+Más un fondo al pasar el cursor, para ver cuál se va a marcar **antes** de
+pulsar, y `.grupo-titulo` para los países, que salían con el tamaño por defecto
+del navegador.
+
+**Se descartó poner dos columnas en pantalla grande**: cabría más lista sin
+bajar, pero columnas juntas es justo lo que hace confundir la fila.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | `.checkbox-fila` y `.grupo-titulo` |
+| `private/js/configuracion-quiniela.js` | La clase correcta, y el texto en su propio `<span>` |
+| `public/configuracion-quiniela.html` | Las dos casillas de siempre, con el mismo arreglo |
+| `test/architecture.test.js` | 1 centinela |
+
+**Verificación:**
+
+```
+npm test         → 344/344
+npm run test:e2e →  76/76
+capturas en escritorio y móvil → miradas las dos
+el centinela, con una casilla sin clase → falla (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Una regla global que dice `input` incluye las casillas de verificación,
+   y casi nunca es lo que se quiere.** `width`, `padding` y `margin` pensados
+   para una caja de texto rompen una casilla. El proyecto ya lo sabía —de ahí
+   `.checkbox-card`— pero la lección vivía en una clase, no en una prueba. Ahora
+   hay centinela.
+2. **El fallo llevaba meses ahí y sólo se notó al crecer la lista.** Con dos
+   casillas se adivina cuál es cuál; con treinta, no. **Una interfaz que se
+   entiende por costumbre no está bien, está siendo tolerada** — y deja de
+   tolerarse en cuanto crece.
+3. **Reusar el componente que ya existía obligó a mirar por qué no servía tal
+   cual.** De ahí salieron las dos diferencias reales entre una casilla suelta y
+   una lista —el blanco y la alineación—, que es exactamente lo que había que
+   arreglar. Inventar una clase nueva las habría escondido.
+4. **Las capturas volvieron a valer la pena.** El móvil enseñó el caso que
+   importaba —«Conservar expulsados en el ranking» partido en dos líneas, con la
+   casilla pegada a la primera— y eso no se comprueba con una aserción.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Redesplegar en Render**, que ahora arrastra también esto.
+
+Y sigue en §B.2 lo de `miembros.html`, que abre tres documentos HTML.
 
 ---
 

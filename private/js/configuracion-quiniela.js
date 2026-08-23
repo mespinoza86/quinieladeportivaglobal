@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function casillaDeLiga(liga, marcada) {
     const fila = document.createElement('label');
-    fila.className = 'field-label';
+    fila.className = 'checkbox-fila';
 
     const casilla = document.createElement('input');
     casilla.type = 'checkbox';
@@ -43,8 +43,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       ? liga.nombre + ' (' + liga.partidos + ')'
       : liga.nombre + ' — sin partidos esta semana';
 
+    const rotulo = document.createElement('span');
+    rotulo.textContent = texto;
+
     fila.appendChild(casilla);
-    fila.appendChild(document.createTextNode(' ' + texto));
+    fila.appendChild(rotulo);
     return fila;
   }
 
@@ -56,6 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (favoritas.length) {
       const titulo = document.createElement('h3');
+      titulo.className = 'grupo-titulo';
       titulo.textContent = 'Tus favoritas';
       listaFavoritas.appendChild(titulo);
       favoritas.forEach(liga => listaFavoritas.appendChild(casillaDeLiga(liga, true)));
@@ -70,6 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     grupos.forEach(grupo => {
       const titulo = document.createElement('h3');
+      titulo.className = 'grupo-titulo';
       titulo.textContent = grupo.pais;
       listaFavoritas.appendChild(titulo);
       grupo.ligas.forEach(liga => {

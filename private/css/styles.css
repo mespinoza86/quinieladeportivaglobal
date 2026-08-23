@@ -637,6 +637,61 @@ th,
   margin: 0;
 }
 
+/*
+ * Fila de casilla para listas largas.
+ *
+ * `.checkbox-card` vale para una casilla suelta. En una lista de treinta ligas
+ * hacen falta dos cosas mas, y son justo las que hacian marcar la equivocada:
+ *
+ *   1. Que la fila ENTERA responda al clic, no solo el ancho del texto.
+ *   2. Que la casilla quede alineada con la PRIMERA LINEA del nombre, porque
+ *      los nombres largos se parten en dos y centrarla contra el bloque entero
+ *      la despega de lo que rotula.
+ */
+.checkbox-fila {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* Para saber cual se va a marcar ANTES de pulsar. */
+.checkbox-fila:hover,
+.checkbox-fila:focus-within {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/*
+ * ⚠️ Sin esto la casilla mide el ancho de la fila: la regla global de `input`
+ * lleva `width: 100%` y alcanza tambien a las de verificacion. Eso era lo que
+ * ponia el texto debajo de la casilla en el movil y lejos de ella en el
+ * escritorio. `flex-shrink` la protege de encogerse con nombres largos.
+ */
+.checkbox-fila input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  margin: 3px 0 0;
+  flex-shrink: 0;
+}
+
+/* El pais que encabeza cada grupo de la lista. */
+.grupo-titulo {
+  margin: 18px 0 6px;
+  font-size: 0.95rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.grupo-titulo:first-child {
+  margin-top: 4px;
+}
+
 #jugadoresList li,
 #partidosList li,
 #partidosJornadaList li,
