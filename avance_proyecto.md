@@ -35,12 +35,12 @@ la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
 base de verdad —registro, sesión que sobrevive y creación de quiniela— y se
 borraron los datos de prueba.
 
-✅ **Y desplegado**: `https://quinieladeportivaglobal.onrender.com` responde,
+✅ **Desplegado**: `https://quinieladeportivaglobal.onrender.com` responde,
 habla con Neon y mantiene la sesión. El viaje Render → Neon son **3 ms**.
 
-**La migración no deja nada pendiente.** La **Fase E** (verificación de correo)
-está escrita y probada pero ⛔ **NO desplegada**: necesita una cuenta de Brevo y
-cinco variables. Ver «Lo siguiente». Después queda la Fase F.
+**La migración no deja nada pendiente**, y la **Fase E** (verificación de correo)
+y la **recuperación de contraseña** ya funcionan. ⚠️ Lo último está escrito pero
+sin desplegar: ver «Lo siguiente».
 
 > El `gh` CLI **no está instalado** en esta máquina, así que el resultado del CI
 > hay que mirarlo en GitHub a mano.
@@ -74,8 +74,8 @@ entradas de bitácora (040 a 052).
 - **Ocho hallazgos viejos quedan cerrados** por el modelo nuevo, más tres que
   aparecieron al portar (M-34, M-35 y el hueco de los dos relojes). Ver §A.2.
 
-**Lo que NO está hecho**: poner el correo en pie para desplegar la Fase E, y la
-Fase F entera. Los dos, en «Lo siguiente».
+**Lo que NO está hecho**: redesplegar lo último, la **Fase F** entera, y probar
+la aplicación con varias quinielas y gente de verdad. Los tres, en «Lo siguiente».
 
 ### Lo que se hizo antes (fases 0 a 6, del 14 al 18 de agosto)
 
@@ -280,80 +280,64 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
   gratis porque estaba vacía. Entrada 053.
 
 
-### 🌅 Lo siguiente: poner el correo en pie y desplegar la Fase E
+### 🌅 Lo siguiente
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-⛔ **La Fase E está escrita y probada, pero NO desplegada. Y desplegarla sin lo
-de abajo dejaría la aplicación sin admitir cuentas nuevas**: se crearían, pero
-sin correo nadie recibiría el enlace y **sin confirmar no se entra**.
+#### ⚠️ 1. Redesplegar en Render
 
-Son tres cosas, en este orden.
+Es lo único que separa lo escrito de lo que ve la gente. Arrastra la
+**recuperación de contraseña** (Entrada 056) y el **arreglo del enlace azul**
+(Entrada 057).
 
-#### 1. El esquema de Neon, otra vez
+*Manual Deploy* → *Deploy latest commit*. **No hace falta tocar el esquema ni
+ninguna variable.**
 
-El esquema cambió: entra la tabla `auth_tokens` y salen dos columnas de
-`usuarios`. La base sigue vacía, así que vale el mismo procedimiento:
+#### 2. Fase F — sugerencias de partidos destacados
 
-Editor SQL de Neon, **con el rol dueño** → `db/poner-al-dia.sql`, pegando dentro
-el contenido actual de `db/esquema.sql`. Se planta solo si encuentra datos.
+Es **lo último de §20**, y no se puede empezar sin dos decisiones tuyas:
 
-Al terminar deben ser **19 tablas** (18 más `auth_tokens`).
+- **Qué cuenta como «igualados».** ¿Diferencia de puntos en la tabla? ¿De
+  posición? ¿Cuánta?
+- **Qué es un «clásico».** ¿Una lista escrita a mano por quiniela? ¿Por país?
+  ¿Los dos primeros de la tabla?
 
-#### 2. Una cuenta de Brevo
+⚠️ Y una dependencia técnica: necesita **la tabla de posiciones de cada liga**,
+que hoy no se consulta al proveedor. Es una llamada nueva a APIFootball, con su
+cuota y su caché.
 
-1. Crear cuenta en [brevo.com](https://www.brevo.com) (el plan gratuito da 300
-   correos al día, de sobra).
-2. **Verificar una dirección de remitente**: *Senders & IP* → *Senders* → añadir
-   la tuya y confirmar el correo que te mandan. ⚠️ **Sin esto los envíos fallan**,
-   y el error del proveedor lo dice con esas palabras.
-3. **Crear una clave de API**: *SMTP & API* → *API Keys* → *Generate a new API
-   key*. Se enseña **una sola vez**.
+#### 3. Probar con gente de verdad
 
-#### 3. Cinco variables en Render
+Nada de esto es programar, y es lo que más va a enseñar:
 
-Servicio → *Environment*. Están todas en `render.yaml`, pero recuerda que
-**Render no lo aplica solo**:
+- ⚠️ **La aplicación nunca ha corrido con varias quinielas a la vez.** El
+  aislamiento está probado por todos lados —RLS, 240 peticiones concurrentes,
+  pruebas en cada módulo— pero **eso es distinto de haberlo visto funcionando
+  con gente dentro**.
+- **Los resultados de trivias no se han mirado con datos reales** desde la
+  Entrada 024. Las pruebas cubren que los datos llegan a la pantalla, no que se
+  vean bien. Diez minutos con la aplicación levantada.
 
-| Variable | Valor |
-|---|---|
-| `MAIL_TRANSPORT` | `brevo` |
-| `MAIL_API_KEY` | la clave del paso 2 |
-| `MAIL_FROM` | ⚠️ **la dirección verificada en Brevo**, no otra |
-| `MAIL_FROM_NAME` | `Quiniela Deportiva Global` |
-| `APP_ORIGIN` | `https://quinieladeportivaglobal.onrender.com` |
+#### 4. Y lo que hay que mirar cuando haya tráfico
 
-`APP_ORIGIN` es de dónde cuelga el enlace del correo. Sin ella apuntaría a
-`localhost` y no le serviría a nadie.
+En `/api/admin/sync-metricas`:
 
-> ⚠️ Si `MAIL_TRANSPORT` se queda sin poner, el correo se **escribe en el
-> registro** en vez de enviarse. La aplicación arranca y avisa fuerte, pero
-> nadie podría entrar. Es el fallo más silencioso de esta fase.
+- ⚠️ **`consultasAhorradasPorDeduplicacion`** debe crecer en cuanto haya **dos
+  quinielas siguiendo los mismos partidos**. Si se queda en cero, la
+  deduplicación no funciona y la cuota del proveedor se gasta de más **sin que
+  nada falle**. Es la promesa de C-01 y **la única que todavía no se ha visto
+  cumplirse con datos de verdad**.
+- **`syncsSinCambioDePuntos`** debe crecer mucho más deprisa que
+  `jornadasReescritas` el primer domingo con partidos en vivo.
+- **`ciclosAbandonadosPorTiempo`**: si sube, el proveedor está tardando.
 
-#### Cómo comprobar que quedó
+#### Dos cabos de limpieza, sin prisa
 
-Crea una cuenta en producción y mira que llegue el correo. Si no llega, los
-registros de Render traen el error del proveedor tal cual — dice si falta
-verificar el remitente o si se agotó la cuota del día, que son los dos fallos
-habituales del plan gratuito.
-
-#### Y después: la Fase F
-
-Es lo último de §20. **Sugerencias de partidos destacados**, y le faltan las
-heurísticas: qué cuenta como «igualados» y qué es un «clásico». Necesita la
-tabla de posiciones de cada liga, que hoy no se consulta.
-
-#### ⚠️ Lo primero que hay que mirar con tráfico real
-
-En `/api/admin/sync-metricas`: **`consultasAhorradasPorDeduplicacion`** debe
-crecer en cuanto haya **dos quinielas siguiendo los mismos partidos**. Si se
-queda en cero, la deduplicación no funciona y la cuota del proveedor se gasta de
-más **sin que nada falle**. Es la promesa de C-01, y la única que todavía no se
-ha visto cumplirse con datos de verdad.
-
-Y lo que sigue sin haberse visto nunca: **la aplicación con varias quinielas y
-gente dentro a la vez**.
+1. **Borrar el proyecto de Neon en Ohio**, si sigue ahí. Ya no lo usa nadie, y
+   un proyecto al que alguien podría apuntar por error es peor que no tenerlo.
+2. **Las ramas viejas**: `postgres` y las ocho de trabajo están contenidas en
+   `main` y se pueden borrar.
 
 #### Las cuatro reglas del código, que siguen valiendo
 
@@ -367,6 +351,7 @@ el 21 de agosto y ya mordió una vez.
    `enQuiniela(req, …)`. `next()` de Express retorna antes de que el manejador
    async termine, así que abrirla en el middleware haría COMMIT con la ruta
    todavía corriendo.
+
 
 ### Estado de Git
 
@@ -8933,6 +8918,113 @@ definir las heurísticas.
 
 ---
 
+### 📌 Entrada 055 — 22 de agosto de 2026 — Lo que salió al poner la Fase E en producción
+
+**Objetivo:** desplegar la verificación de correo. Salieron **tres cosas**, y las
+tres son del mismo tipo: **fallos que no rompen nada visible**.
+
+## 1. ⚠️ El registro no era atómico, y dejaba a la gente atrapada
+
+Lo destapó **el seguro de `db/poner-al-dia.sql`**. Al ir a aplicar el esquema, el
+guion se negó: *«la base tiene datos (1 usuarios)»*. Ese usuario lo había dejado
+una prueba de registro contra producción que falló a mitad, porque la base
+todavía no tenía `auth_tokens`.
+
+El fallo de fondo: `crear` confirmaba la cuenta y **sólo después** se emitía el
+token. Si eso fallaba, la persona quedaba **atrapada**:
+
+- no puede entrar, porque no está confirmada;
+- no puede volver a registrarse, porque su nombre y su correo ya están cogidos;
+- y ningún mensaje lo explica.
+
+Ahora las dos escrituras van en una transacción. ⚠️ **El envío del correo se
+queda FUERA a propósito**: es una llamada de red que puede tardar segundos, y
+retener una conexión de la base mientras tanto agotaría el *pool*. Que el correo
+no salga sigue sin tumbar el registro.
+
+La prueba que lo fija rompe la emisión del token, comprueba que la cuenta no
+queda creada, **y que se puede volver a registrar con los mismos datos** — ésa
+es la parte que demuestra que ya no hay trampa.
+
+## 2. El reenvío compartía contador con el registro, y la pantalla mentía
+
+Un **429** al pedir el enlace destapó dos cosas.
+
+La primera: el reenvío usaba **el limitador del registro**. Registrarte dos veces
+y pedir el enlace tres te dejaba bloqueado sin relación aparente, y el mensaje
+hablaba de *«cuentas creadas»* cuando lo que habías pedido era un correo. Ahora
+tiene el suyo, con ventana de 15 minutos en vez de una hora: quien no recibe el
+correo lo pide dos o tres veces seguidas y luego se va, y una hora de castigo por
+eso es desproporcionado. Sigue siendo estricto porque **cada llamada manda un
+correo de verdad**.
+
+⚠️ **La segunda es peor: la pantalla no miraba el código de estado.** Pintaba el
+mensaje del cuerpo o, si no venía, *«le enviamos el enlace»* — y en un 429 el
+cuerpo trae `error`, no `mensaje`. Así que **decía que el correo había salido
+cuando no era verdad**. Un mensaje de éxito falso es peor que un error: quien lo
+lee se queda esperando algo que no va a llegar.
+
+## 3. ⛔ Y el correo no se estaba enviando, con `correoEnviado: true`
+
+Los registros de Render mostraban `transporte de consola, NO se envió`:
+`MAIL_TRANSPORT` no estaba llegando como `brevo`. Nadie confirmaba su dirección
+y —como sin confirmar no se entra— **nadie podía usar la aplicación**.
+
+⚠️ **Lo que hizo el diagnóstico lento fue un error mío.** Al probar el registro
+contra producción vi `correoEnviado: true` y **di el envío por bueno**. No lo
+era: `intentar()` devuelve `true` si el envío no lanzó, y **el transporte de
+consola nunca lanza** — escribe en el registro y termina bien.
+
+El arreglo es que `/readyz` informe del transporte: `correo: { transporte,
+envia }`, con un aviso explícito en producción si está en `consola`. Se ve desde
+fuera, sin entrar a los registros del servidor.
+
+No devuelve 503, y es deliberado: la aplicación **sí** puede atender tráfico
+—quien ya confirmó sigue entrando— y tumbarla por esto sería peor que el
+problema.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/servidor.js` | Registro atómico; `limiteReenvio` propio; `/readyz` informa del correo |
+| `private/js/verificar-correo.js` | Mira el estado antes de dar el envío por bueno |
+| `db/poner-al-dia.sql` | Comprueba `auth_tokens` y que el token en claro no vuelva |
+| `test/rutas.test.js` | 5 pruebas |
+
+**Verificación:**
+
+```
+npm test → 315/315
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **`correoEnviado: true` NO prueba que el correo saliera.** Sólo prueba que
+   la función no lanzó. Es la trampa que costó el diagnóstico, y por eso hay
+   ahora una prueba que la deja escrita: lo que hay que mirar para saber si los
+   correos salen es `/readyz`, no la respuesta del registro.
+2. **Un seguro puesto para otra cosa encontró el fallo.** El `ABORTADO: la base
+   tiene datos` de `poner-al-dia.sql` existía para no borrar datos de verdad, y
+   acabó delatando un registro a medias. Los seguros que cuentan lo que ven
+   valen más que los que sólo dicen «no».
+3. **Una prueba se dejó engañar por su propio comentario.** La que comprueba el
+   orden del `if (!respuesta.ok)` citaba el mensaje viejo dentro del comentario
+   que explicaba el arreglo, y el texto aparecía antes. Es **la misma lección
+   que `architecture.test.js` ya tenía aprendida** —quitar comentarios antes de
+   buscar— y volvió a morder por escribir la prueba sin acordarse.
+4. ⚠️ **`render.yaml` no basta, y ya van tres veces.** Primero el Start Command,
+   luego el health check, ahora `MAIL_TRANSPORT`. **Render no aplica ese archivo
+   a un servicio que ya existe**, y cada vez que se añade una variable hay que
+   ponerla a mano.
+
+**Pendiente / siguiente paso:**
+
+Con esto la Fase E queda funcionando en producción. Lo siguiente fue la
+recuperación de contraseña (Entrada 056).
+
+---
+
 ### 📌 Entrada 056 — 22 de agosto de 2026 — Recuperar la contraseña
 
 **Objetivo:** que quien olvide su contraseña pueda elegir una nueva. No estaba
@@ -9027,6 +9119,65 @@ npm run test:e2e →  68/68
 ⚠️ **Hay que redesplegar en Render** para que esté disponible. No hace falta
 tocar el esquema —`auth_tokens` ya estaba— ni ninguna variable, aunque se puede
 poner `RESET_TOKEN_HOURS` si se quiere otro plazo que la hora por defecto.
+
+Y queda la **Fase F** —sugerencias de partidos destacados—, lo último de §20.
+
+---
+
+### 📌 Entrada 057 — 22 de agosto de 2026 — Un enlace azul, y la regla que faltaba
+
+**Objetivo:** el usuario avisó de que «¿Olvidaste tu contraseña?» salía en azul y
+no se veía bien. Un arreglo de dos líneas que resultó tener una causa más
+general.
+
+**La causa: la hoja de estilos no tenía NINGUNA regla para `<a>`.**
+
+Cualquier enlace suelto salía con el azul por defecto del navegador, que sobre
+este fondo oscuro se lee mal y desentona con todo lo demás.
+
+No se había notado nunca porque **hasta ahora todos los enlaces vivían dentro de
+`.bottom-nav` o `.action-card`**, que sí fijan su color. El primero que se puso
+fuera —éste— lo destapó.
+
+Así que en vez de pintar sólo ése, se añadió la regla general con `--primary`.
+Los contenedores que ya tenían el suyo siguen ganando por especificidad, y el
+próximo enlace suelto ya saldrá bien.
+
+**Y de paso, el sitio.** Estaba pegado a «¿No tienes cuenta?», así que los dos
+parecían una lista siendo cosas distintas: **recuperar la tuya** frente a **crear
+una nueva**. Pasa a ir dentro del formulario, centrado bajo el botón, que es
+donde se busca cuando no te acuerdas.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | Regla general para `a`, y `.enlace-bajo-boton` |
+| `public/login.html` | El enlace entra en el formulario, bajo el botón |
+
+**Verificación:**
+
+```
+npm test                                  → 325/325
+las 14 de navegador que tocan el login    → verde
+```
+
+**Hallazgos nuevos:**
+
+1. **Se comprobó con una captura de pantalla, no suponiéndolo.** Y valió la pena:
+   el color quedó bien al primer intento, pero **la captura enseñó el problema de
+   colocación**, que no era lo que se había reportado y que sólo se ve mirando.
+   Un cambio de interfaz que no se mira no está comprobado.
+2. **Un hueco en una hoja de estilos se esconde detrás de las convenciones del
+   HTML.** No había regla para `a` desde el primer día, y el proyecto llevaba
+   semanas sin enterarse porque todos los enlaces caían dentro de un contenedor
+   que la suplía. **La ausencia no se nota hasta que alguien sale del camino
+   trillado.**
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Redesplegar en Render**, que arrastra también la recuperación de contraseña
+de la Entrada 056. No hace falta tocar el esquema ni ninguna variable.
 
 Y queda la **Fase F** —sugerencias de partidos destacados—, lo último de §20.
 
