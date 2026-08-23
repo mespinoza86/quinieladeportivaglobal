@@ -2040,3 +2040,40 @@ test('⚠️ la pantalla de confirmación mira el ESTADO, no sólo el cuerpo', (
     'el estado se comprueba ANTES de dar por bueno el envio'
   );
 });
+
+test('⚠️ /readyz dice qué transporte de correo está en uso', async () => {
+  /*
+   * Con `consola` los correos se escriben en el registro en vez de enviarse, y
+   * -como sin confirmar no se entra- nadie puede usar la aplicacion. Pero todo
+   * responde con normalidad: el unico sintoma es que no llega ningun correo.
+   *
+   * Paso de verdad al desplegar la Fase E, y costo dos vueltas: `correoEnviado:
+   * true` NO prueba que el correo saliera, solo que la funcion no fallo, y con
+   * el transporte de consola nunca falla. Sin esto habia que entrar a los
+   * registros del servidor para saberlo.
+   */
+  const res = await request(app).get('/readyz');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.correo.transporte, 'consola');
+  assert.equal(res.body.correo.envia, false,
+    'el de consola NO envia, y la sonda tiene que decirlo');
+});
+
+test('⚠️ correoEnviado true NO significa que el correo saliera', async () => {
+  /*
+   * Se deja escrito porque es la trampa que costo el diagnostico. `intentar()`
+   * devuelve true si el envio no lanzo, y el transporte de consola nunca lanza:
+   * escribe en el registro y termina bien.
+   *
+   * Lo que hay que mirar para saber si los correos salen de verdad es
+   * `/readyz`, no la respuesta del registro.
+   */
+  const agente = request.agent(app);
+  const res = await agente.post('/api/auth/registro').send(credenciales('trampa'));
+
+  assert.equal(res.body.correoEnviado, true);
+  assert.equal(correo.TRANSPORTE, 'consola', 'y sin embargo no salio ningun correo');
+  assert.equal(correo.bandeja.at(-1).para, res.body.usuario.email,
+    'se quedo en la bandeja en memoria, que es donde acaba lo que no se envia');
+});

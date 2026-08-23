@@ -179,11 +179,41 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   });
 
   app.get('/readyz', async (req, res) => {
+    /*
+     * ⚠️ El transporte de correo se informa AQUÍ, y no es un adorno.
+     *
+     * Con `consola` los correos se escriben en el registro en vez de enviarse,
+     * así que nadie confirma su dirección y —como sin confirmar no se entra—
+     * nadie puede usar la aplicación. Pero la aplicación responde a todo con
+     * normalidad: el único síntoma es que no llega ningún correo.
+     *
+     * Pasó de verdad, y costó dos vueltas: `correoEnviado: true` no prueba que
+     * el correo saliera, sólo que la función no falló, y con el transporte de
+     * consola nunca falla. Sin esto había que entrar a los registros de Render
+     * para saberlo. Ahora se ve desde fuera.
+     */
+    const correo = {
+      transporte: correoMod.TRANSPORTE,
+      envia: correoMod.TRANSPORTE !== 'consola'
+    };
+
+    if (esProduccion && !correo.envia) {
+      correo.aviso = 'MAIL_TRANSPORT no está configurado: no se envía ningún correo, ' +
+        'y sin confirmar la dirección nadie puede entrar.';
+    }
+
     try {
       await db.consulta('SELECT 1');
-      res.json({ estado: 'listo', base: 'conectada', tiempoActivoSegundos: Math.round(process.uptime()) });
+      res.json({
+        estado: 'listo',
+        base: 'conectada',
+        correo,
+        tiempoActivoSegundos: Math.round(process.uptime())
+      });
     } catch (error) {
-      res.status(503).json({ estado: 'no-listo', base: 'sin conexión', detalle: error.message });
+      res.status(503).json({
+        estado: 'no-listo', base: 'sin conexión', correo, detalle: error.message
+      });
     }
   });
 
