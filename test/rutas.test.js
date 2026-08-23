@@ -2365,3 +2365,247 @@ test('el correo de restablecer dice que ignorarlo no cambia nada', async () => {
    */
   assert.match(mensaje.texto, /tu contraseña seguirá siendo la misma/);
 });
+
+
+/* ==================== Cobros ==================== */
+
+const COBRA = { torneo: { activo: true, precio: 10000 },
+                jornada: { activo: true, precio: 2000 } };
+
+/** Enciende los cobros y devuelve al socio, que ya es jugador. */
+async function conCobros(prefijo, config = COBRA) {
+  const jefe = await admin(prefijo);
+  const socio = await miembroDe(jefe, prefijo + 'socio');
+  await jefe.agente.patch('/api/quiniela-actual/configuracion').send({ cobros: config });
+  return { jefe, socio };
+}
+
+/** El id del jugador del socio, visto desde la cuenta del administrador. */
+async function jugadorDe(jefe, username) {
+  const res = await jefe.agente.get('/api/cobros/cuentas');
+  return res.body.cuentas.find(c => c.nombre === username);
+}
+
+const crearJornada = (agente, nombre) => agente.post('/api/jornadas')
+  .send({ nombre, partidos: [partido('Alfa', 'Beta')] });
+
+test('⚠️ el precio se congela en la jornada: subirlo NO recalcula las viejas', async () => {
+  /*
+   * Es la decisión que sostiene todo lo demás. "Esta jornada vale 5000 porque
+   * el premio está grande" no puede encarecer hacia atrás lo que la gente ya
+   * debía por las anteriores.
+   */
+  const { jefe, socio } = await conCobros('congela');
+
+  await crearJornada(jefe.agente, 'J1');            // a 2000
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ cobros: { ...COBRA, jornada: { activo: true, precio: 5000 } } });
+  await crearJornada(jefe.agente, 'J2');            // a 5000
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 7000, '2000 la primera y 5000 la segunda');
+});
+
+test('⚠️ editar los partidos de una jornada no cambia lo que costó', async () => {
+  const { jefe, socio } = await conCobros('editar');
+
+  await crearJornada(jefe.agente, 'J1');
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ cobros: { ...COBRA, jornada: { activo: true, precio: 9000 } } });
+
+  // Volver a guardar la MISMA jornada, ya con otro precio configurado.
+  await jefe.agente.post('/api/jornadas')
+    .send({ nombre: 'J1', partidos: [partido('Alfa', 'Beta'), partido('Ceta', 'Delta')] });
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 2000, 'guardar partidos no es cambiar el precio');
+});
+
+test('un abono deja saldo a favor, y se estima cuántas jornadas cubre', async () => {
+  const { jefe, socio } = await conCobros('saldo');
+  await crearJornada(jefe.agente, 'J1');
+
+  const antes = await jugadorDe(jefe, socio.datos.username);
+
+  const abono = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: antes.jugadorId, concepto: 'jornada', monto: 10000, nota: 'cinco de un golpe' });
+  assert.equal(abono.status, 200, JSON.stringify(abono.body));
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 2000);
+  assert.equal(cuenta.jornada.saldo, 8000);
+  assert.equal(cuenta.jornada.jornadasQueCubre, 4, 'al precio de hoy');
+});
+
+test('⚠️ lo del torneo no paga jornadas', async () => {
+  const { jefe, socio } = await conCobros('bolsas');
+  await crearJornada(jefe.agente, 'J1');
+
+  const j = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'torneo', monto: 10000 });
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.torneo.pendiente, 0);
+  assert.equal(cuenta.jornada.saldo, -2000, 'la jornada sigue debiéndose');
+});
+
+test('⚠️ quien entra después no debe las jornadas que no jugó', async () => {
+  const jefe = await admin('tarde');
+  await jefe.agente.patch('/api/quiniela-actual/configuracion').send({ cobros: COBRA });
+
+  await crearJornada(jefe.agente, 'J1');
+  await crearJornada(jefe.agente, 'J2');
+
+  // Entra ahora, con dos jornadas ya jugadas.
+  const socio = await miembroDe(jefe, 'tardesocio');
+  await crearJornada(jefe.agente, 'J3');
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 2000, 'sólo la tercera: no estaba en las dos primeras');
+});
+
+test('⚠️ un abono se corrige con su inverso, y no se puede anular dos veces', async () => {
+  const { jefe, socio } = await conCobros('anula');
+  const j = await jugadorDe(jefe, socio.datos.username);
+
+  const abono = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 10000 });
+
+  const primera = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`).send({});
+  assert.equal(primera.status, 200);
+
+  const segunda = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`).send({});
+  assert.equal(segunda.status, 409, 'anular dos veces restaría el doble EN SILENCIO');
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.abonado, 0);
+
+  // Y los dos asientos quedan a la vista: el bueno y el que lo anula.
+  const historial = await jefe.agente.get('/api/cobros/abonos');
+  assert.equal(historial.body.length, 2, 'no se borra nada: se corrige');
+});
+
+test('por la ruta de abonos no entran montos negativos sueltos', async () => {
+  /*
+   * Un negativo es una corrección, y las correcciones van atadas al asiento que
+   * anulan. Colar uno suelto daría un historial en el que no se sabe qué
+   * corrige a qué.
+   */
+  const { jefe, socio } = await conCobros('negativo');
+  const j = await jugadorDe(jefe, socio.datos.username);
+
+  const res = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: -5000 });
+
+  assert.equal(res.status, 400);
+});
+
+test('el concepto tiene que ser uno de los dos', async () => {
+  const { jefe, socio } = await conCobros('concepto');
+  const j = await jugadorDe(jefe, socio.datos.username);
+
+  const res = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'propina', monto: 500 });
+
+  assert.equal(res.status, 400);
+});
+
+test('quien no juega el torneo no arrastra su cuota', async () => {
+  const { jefe, socio } = await conCobros('sintorneo');
+  const j = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(j.torneo.debe, 10000);
+
+  const cambio = await jefe.agente.patch(`/api/cobros/jugadores/${j.jugadorId}`)
+    .send({ juegaTorneo: false });
+  assert.equal(cambio.status, 200);
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.torneo.debe, 0);
+});
+
+test('se puede cambiar el precio de UNA jornada', async () => {
+  const { jefe, socio } = await conCobros('finales');
+  await crearJornada(jefe.agente, 'Final');
+
+  const res = await jefe.agente.patch('/api/cobros/jornadas/Final/precio').send({ precio: 5000 });
+  assert.equal(res.status, 200);
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 5000);
+});
+
+/* ---------- Lo que ve el jugador ---------- */
+
+test('si la quiniela no cobra, no hay cuenta que enseñar', async () => {
+  const jefe = await admin('nocobra');
+  const socio = await miembroDe(jefe, 'nocobrasocio');
+
+  const res = await socio.agente.get('/api/quiniela-actual/mi-cuenta');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.cobra, false);
+});
+
+test('el jugador ve su saldo y qué jornadas le quedaron pagadas', async () => {
+  const { jefe, socio } = await conCobros('mia');
+  await crearJornada(jefe.agente, 'J1');
+  await crearJornada(jefe.agente, 'J2');
+
+  const j = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const res = await socio.agente.get('/api/quiniela-actual/mi-cuenta');
+
+  assert.equal(res.body.cobra, true);
+  assert.equal(res.body.juega, true);
+  assert.deepEqual(res.body.jornadas.map(x => x.pagada), [true, false],
+    'el abono cubre la primera, y eso SÍ es exacto');
+});
+
+test('⛔ cada quien ve SU cuenta en mi-cuenta, no la del de al lado', async () => {
+  /*
+   * El jugador se resuelve desde la sesión y no desde un id que venga por la
+   * URL, así que no hay forma de pedir la de otro. Se comprueba con dos socios
+   * de verdad y saldos distintos: si se cruzaran, los números se notarían.
+   */
+  const { jefe, socio } = await conCobros('ajena');
+  const otro = await miembroDe(jefe, 'ajenaotro');
+
+  const unoJ = await jugadorDe(jefe, socio.datos.username);
+  const otroJ = await jugadorDe(jefe, otro.datos.username);
+
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: unoJ.jugadorId, concepto: 'jornada', monto: 6000 });
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: otroJ.jugadorId, concepto: 'jornada', monto: 1000 });
+
+  const suya = await socio.agente.get('/api/quiniela-actual/mi-cuenta');
+  const ajena = await otro.agente.get('/api/quiniela-actual/mi-cuenta');
+
+  assert.equal(suya.body.nombre, socio.datos.username);
+  assert.equal(suya.body.jornada.saldo, 6000);
+
+  assert.equal(ajena.body.nombre, otro.datos.username);
+  assert.equal(ajena.body.jornada.saldo, 1000, 'no puede ver el saldo del otro');
+});
+
+test('un miembro normal no puede ver las cuentas de todos ni anotar abonos', async () => {
+  const { jefe, socio } = await conCobros('permiso');
+
+  assert.equal((await socio.agente.get('/api/cobros/cuentas')).status, 403);
+  assert.equal((await socio.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: 'x', concepto: 'jornada', monto: 1000 })).status, 403);
+});
+
+test('⛔ los pagos de una quiniela no se ven desde otra', async () => {
+  const uno = await conCobros('aisla1');
+  const otro = await conCobros('aisla2');
+
+  const j = await jugadorDe(uno.jefe, uno.socio.datos.username);
+  await uno.jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 7000 });
+
+  const ajenos = await otro.jefe.agente.get('/api/cobros/abonos');
+  assert.deepEqual(ajenos.body, [], 'la RLS de `pagos` tiene que aguantar esto');
+});

@@ -183,10 +183,53 @@ test('un quinielaId que no es UUID se rechaza antes de tocar la base', async () 
   assert.equal(rows[0].t, 'jugadores');
 });
 
-test('el esquema deja las 12 tablas de dominio con RLS activo y forzado', async () => {
+test('el esquema deja las 13 tablas de dominio con RLS activo y forzado', async () => {
   const { rows } = await db.consulta(`
     SELECT count(*)::int AS n
       FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
      WHERE ns.nspname = 'public' AND c.relrowsecurity AND c.relforcerowsecurity`);
-  assert.equal(rows[0].n, 12);
+
+  /*
+   * ⚠️ Si esta cuenta baja, alguien dejó una tabla sin aislamiento y NO va a
+   * fallar nada: devolverá filas de otra quiniela, en silencio.
+   *
+   * Y si sube sin que se haya añadido una tabla a propósito, tampoco está
+   * bien: significa que hay una tabla nueva que nadie declaró aquí.
+   *
+   * La 13.ª es `pagos`, de la migración 001. Una tabla de pagos sin RLS sería
+   * una fuga de quién pagó cuánto en otra quiniela.
+   */
+  assert.equal(rows[0].n, 13);
+});
+
+test('⚠️ ninguna tabla con quiniela_id se queda sin aislamiento, salvo la excepción declarada', async () => {
+  /*
+   * La comprobación de arriba cuenta; ésta dice CUÁL falta, que es lo que hace
+   * falta saber cuando falla. Toda tabla que lleve `quiniela_id` guarda datos
+   * de una quiniela concreta, así que en principio todas necesitan políticas.
+   *
+   * ⚠️ `membresias` es la ÚNICA excepción, y es deliberada: `quinielas.deUsuario`
+   * la consulta SIN contexto de quiniela para armar «mis quinielas» —hay que
+   * saber a cuáles perteneces antes de poder elegir una—. Con RLS esa consulta
+   * devolvería cero filas y nadie podría entrar a ninguna quiniela.
+   *
+   * A cambio, cada consulta sobre `membresias` filtra por `quiniela_id` a mano;
+   * son seis y están todas en `src/membresias.js`.
+   *
+   * Si alguien añade otra tabla a esta lista, que sea con una razón igual de
+   * concreta escrita al lado.
+   */
+  const EXCEPCIONES = ['membresias'];
+
+  const { rows } = await db.consulta(`
+    SELECT c.relname AS tabla
+      FROM pg_class c
+      JOIN pg_namespace ns ON ns.oid = c.relnamespace
+      JOIN pg_attribute a  ON a.attrelid = c.oid AND a.attname = 'quiniela_id'
+     WHERE ns.nspname = 'public' AND c.relkind = 'r'
+       AND NOT (c.relrowsecurity AND c.relforcerowsecurity)
+     ORDER BY c.relname`);
+
+  assert.deepEqual(rows.map(r => r.tabla), EXCEPCIONES,
+    'una tabla con quiniela_id y sin RLS devuelve filas de otra quiniela EN SILENCIO');
 });

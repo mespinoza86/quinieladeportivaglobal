@@ -149,13 +149,22 @@ async function idDe(cliente, nombre) {
  * ⚠️ **Reconcilia por posición**, no borra y reinserta. Ver la cabecera del
  * módulo: reinsertar se llevaría los pronósticos por delante en cascada.
  */
-async function guardar(quinielaId, nombre, partidos) {
+async function guardar(quinielaId, nombre, partidos, precio = 0) {
   return db.enQuiniela(quinielaId, async c => {
+    /*
+     * ⚠️ `precio` sólo entra en el INSERT: el `DO UPDATE` no lo toca a
+     * propósito. Editar los partidos de una jornada NO puede cambiar lo que
+     * costó, ni aunque el precio de la configuración haya subido desde que se
+     * creó. Lo pasado ya quedó; el precio nuevo es para las que vengan.
+     *
+     * Para cambiar el de una jornada concreta está `cambiarPrecio`, que es una
+     * decisión explícita del administrador y no un efecto de guardar.
+     */
     const { rows: [j] } = await c.query(
-      `INSERT INTO jornadas (quiniela_id, nombre) VALUES ($1, $2)
+      `INSERT INTO jornadas (quiniela_id, nombre, precio) VALUES ($1, $2, $3)
        ON CONFLICT (quiniela_id, nombre) DO UPDATE SET nombre = EXCLUDED.nombre
        RETURNING id`,
-      [quinielaId, nombre]);
+      [quinielaId, nombre, precio]);
 
     const { rows: existentes } = await c.query(
       'SELECT id, orden, api_fixture_id FROM partidos WHERE jornada_id = $1 ORDER BY orden',
@@ -300,8 +309,26 @@ async function eliminar(quinielaId, nombre) {
   });
 }
 
+/**
+ * Cambia lo que cuesta UNA jornada.
+ *
+ * Es el caso de «esta vale 5000 porque el premio está grande». Va aparte de
+ * `guardar` a propósito: cambiar un precio es una decisión del administrador
+ * sobre el dinero, no algo que deba pasar de rebote al editar los partidos.
+ */
+async function cambiarPrecio(quinielaId, nombre, precio) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: [j] } = await c.query(
+      `UPDATE jornadas SET precio = $2 WHERE nombre = $1
+       RETURNING id, nombre, precio`,
+      [nombre, precio]);
+    return j || null;
+  });
+}
+
 module.exports = {
   partidoPublico,
   actual, resumen, listar, porNombre, idDe,
-  guardar, agregarPartido, eliminarPartidos, fijarComodines, eliminar
+  guardar, agregarPartido, eliminarPartidos, fijarComodines, eliminar,
+  cambiarPrecio
 };

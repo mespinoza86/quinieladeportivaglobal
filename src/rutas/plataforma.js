@@ -31,6 +31,9 @@ const usuariosMod = require('../usuarios');
 const quinielasMod = require('../quinielas');
 const membresiasMod = require('../membresias');
 const ligas = require('../ligas');
+const cobros = require('../cobros');
+const pagosMod = require('../pagos');
+const jugadoresMod = require('../jugadores');
 
 /** De motivo de negocio a código HTTP. Un solo sitio donde mirarlo. */
 const CODIGOS = {
@@ -311,8 +314,49 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
       parcial.ligasFavoritas = limpias;
     }
 
+    /*
+     * Los cobros: la cuota del torneo y la de por jornada, cada una con su
+     * precio. Se sustituye el bloque entero porque son dos ramas pequeñas y
+     * fundirlas por partes no aporta nada.
+     *
+     * ⚠️ Cambiar el precio de la jornada NO toca las jornadas ya creadas: cada
+     * una guarda lo que costó. Esto es el precio de las que vengan.
+     */
+    if (req.body.cobros !== undefined) {
+      parcial.cobros = cobros.normalizarCobros({ cobros: req.body.cobros });
+    }
+
     const quiniela = await quinielasMod.actualizarConfiguracion(req.quiniela.id, parcial);
     res.json({ success: true, configuracion: quiniela.configuracion });
+  });
+
+  /**
+   * Lo que ve el propio jugador de su cuenta.
+   *
+   * ⚠️ Sólo la SUYA, y no hace falta comprobar de quién es: el jugador se
+   * resuelve desde la sesión, no desde un id que venga por la URL. Así no hay
+   * forma de pedir la de otro.
+   */
+  app.get('/api/quiniela-actual/mi-cuenta', async (req, res) => {
+    const config = cobros.normalizarCobros(req.quiniela.configuracion);
+
+    // Si la quiniela no cobra nada, no hay cuenta que enseñar.
+    if (!config.torneo.activo && !config.jornada.activo) {
+      return res.json({ cobra: false });
+    }
+
+    const jugador = await jugadoresMod.deUsuario(req.quiniela.id, req.session.usuarioId);
+
+    /*
+     * Todavía no es jugador: el dueño de una quiniela no tiene fila en
+     * `jugadores` hasta que actúa. No es un error, es que no debe nada.
+     */
+    if (!jugador) return res.json({ cobra: true, juega: false });
+
+    const cuenta = await pagosMod.cuentaDetallada(
+      req.quiniela.id, jugador.id, req.quiniela.configuracion);
+
+    res.json({ cobra: true, juega: true, ...cuenta });
   });
 
   app.patch('/api/quiniela-actual/archivar', requireAdmin, async (req, res) => {

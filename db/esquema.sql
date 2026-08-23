@@ -141,10 +141,23 @@ CREATE INDEX ON sesiones (expire);
 -- ---------------------------------------------------------------------
 
 CREATE TABLE jugadores (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  quiniela_id uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
-  nombre      text NOT NULL,
-  usuario_id  uuid REFERENCES usuarios(id),
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiniela_id  uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
+  nombre       text NOT NULL,
+  usuario_id   uuid REFERENCES usuarios(id),
+
+  -- Cobros (migracion 001). Secuencia de la primera jornada que se le cobra:
+  -- quien entra en la jornada 7 no debe las seis anteriores, no estaba. NULL
+  -- es "desde siempre". Se guarda la SECUENCIA porque ya es el orden real de
+  -- las jornadas; un uuid es aleatorio y `creada_en` empata dentro de una
+  -- misma transaccion.
+  cobrar_desde bigint,
+
+  -- Si juega el torneo completo, y por tanto debe su cuota. No todo el mundo
+  -- lo juega: quien entra a mitad de temporada entra a jugar por jornada, y
+  -- sin esta marca apareceria como deudor eterno de algo que nunca quiso.
+  juega_torneo boolean NOT NULL DEFAULT true,
+
   UNIQUE (quiniela_id, nombre)
 );
 
@@ -175,6 +188,20 @@ CREATE TABLE jornadas (
    * Esta secuencia es estrictamente creciente y es la que manda al ordenar.
    */
   secuencia   bigint GENERATED ALWAYS AS IDENTITY,
+
+  /*
+   * ⚠️ Lo que costo ESTA jornada (migracion 001), copiado de la configuracion
+   * al crearla. El administrador puede subir el precio -"esta vale 5000 porque
+   * el premio esta grande"- y eso debe afectar SOLO A LO QUE VIENE: si el
+   * precio se leyera de `quinielas.configuracion` al calcular, subirlo
+   * recalcularia hacia atras lo que todos debian por las jornadas viejas.
+   *
+   * Mismo patron que `puntos_jornada.puntuacion`, que guarda las reglas con
+   * las que se congelo para que cambiar la puntuacion en enero no reescriba la
+   * clasificacion de marzo.
+   */
+  precio      numeric(12,2) NOT NULL DEFAULT 0 CHECK (precio >= 0),
+
   UNIQUE (quiniela_id, nombre)
 );
 CREATE INDEX ON jornadas (quiniela_id, secuencia DESC);
@@ -320,6 +347,46 @@ CREATE TABLE puntos_jornada_jugador (
   UNIQUE (puntos_jornada_id, jugador_id)
 );
 
+-- Los abonos (migracion 001). Una fila por abono.
+--
+-- Cuelga de `jugadores` y NO de `membresias` a proposito: `usuario_id` es
+-- nulable, asi que hay jugadores sin cuenta -los que migraron de la base
+-- anterior, y los que el administrador da de alta porque mandan su quiniela
+-- por otro medio-. Colgandolo de las membresias esa gente no se podria
+-- controlar, y son justo los que pagan en efectivo.
+--
+-- ⚠️ DOS CUENTAS SEPARADAS, NO UNA BOLSA COMUN. Con un solo saldo, los 10000
+-- de la cuota del torneo se los irian comiendo las jornadas.
+CREATE TABLE pagos (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiniela_id    uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
+  jugador_id     uuid NOT NULL REFERENCES jugadores(id) ON DELETE CASCADE,
+  concepto       text NOT NULL CHECK (concepto IN ('torneo','jornada')),
+
+  -- Puede ser NEGATIVO: asi se corrige un abono mal anotado. Cero no, porque
+  -- un asiento de cero no dice nada y ensucia el historial.
+  monto          numeric(12,2) NOT NULL CHECK (monto <> 0),
+
+  nota           text NOT NULL DEFAULT '',
+
+  -- Quien lo anoto. Un historial de dinero al que se le borran los autores
+  -- deja de servir para lo unico que sirve: resolver un "yo si pague".
+  registrado_por uuid REFERENCES usuarios(id) ON DELETE SET NULL,
+
+  -- ⚠️ LOS ABONOS NO SE EDITAN NI SE BORRAN: se corrigen con un asiento
+  -- inverso que apunta al original.
+  anula_a        uuid REFERENCES pagos(id) ON DELETE RESTRICT,
+
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON pagos (quiniela_id, jugador_id, concepto);
+
+-- Un abono solo se puede anular UNA vez. Sin esto, dos anulaciones del mismo
+-- asiento restarian el doble y la cuenta quedaria mal sin que nada avise.
+CREATE UNIQUE INDEX pagos_una_anulacion_por_abono
+  ON pagos (anula_a) WHERE anula_a IS NOT NULL;
+
 -- =====================================================================
 -- RLS - el equivalente del tenantPlugin, pero aplicado por la base.
 --
@@ -341,7 +408,8 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'jugadores','jornadas','partidos','resultados','pronosticos',
     'resultados_oficiales','resultados_oficiales_partidos','trivias',
-    'respuestas_trivia','equipos','puntos_jornada','puntos_jornada_jugador'
+    'respuestas_trivia','equipos','puntos_jornada','puntos_jornada_jugador',
+    'pagos'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);

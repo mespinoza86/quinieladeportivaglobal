@@ -28,6 +28,7 @@
 const bcrypt = require('bcrypt');
 const db = require('../db');
 const jornadasMod = require('../jornadas');
+const cobros = require('../cobros');
 const jugadoresMod = require('../jugadores');
 const rankingMod = require('../ranking');
 const usuariosMod = require('../usuarios');
@@ -152,8 +153,16 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
      * sus puntos. A medias, la jornada tendría partidos nuevos y una
      * clasificación calculada con los viejos.
      */
+    /*
+     * ⚠️ El precio se copia de la configuración AL CREAR, y se queda con la
+     * jornada. Si después se sube —"esta vale 5000 porque el premio está
+     * grande"—, las que ya existen no se enteran: lo pasado ya quedó.
+     */
+    const precio = cobros.normalizarCobros(req.quiniela.configuracion).jornada;
+
     await enQuiniela(req, async () => {
-      await jornadasMod.guardar(req.quiniela.id, nombre, partidos);
+      await jornadasMod.guardar(req.quiniela.id, nombre, partidos,
+        precio.activo ? precio.precio : 0);
       await rankingMod.actualizar(req.quiniela.id, nombre, req.puntuacion);
     });
 

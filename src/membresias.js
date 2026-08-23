@@ -100,12 +100,24 @@ async function aprobarIngreso(quinielaId, membresiaId) {
     const { rows: [u] } = await cliente.query(
       'SELECT username FROM usuarios WHERE id = $1', [m.usuario_id]);
 
-    await db.enQuiniela(quinielaId, c => c.query(
-      `INSERT INTO jugadores (quiniela_id, nombre, usuario_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (quiniela_id, usuario_id) WHERE usuario_id IS NOT NULL
-       DO UPDATE SET nombre = EXCLUDED.nombre`,
-      [quinielaId, u.username, m.usuario_id]));
+    /*
+     * ⚠️ Se le cobra de la PRÓXIMA jornada en adelante, no de las que ya se
+     * jugaron: quien entra en la séptima no estaba en las seis anteriores.
+     *
+     * El `DO UPDATE` no toca `cobrar_desde`: quien ya era jugador conserva su
+     * punto de partida aunque vuelva a aprobarse su ingreso.
+     */
+    await db.enQuiniela(quinielaId, async c => {
+      const { rows: [fila] } = await c.query(
+        'SELECT COALESCE(MAX(secuencia), 0) + 1 AS siguiente FROM jornadas');
+
+      await c.query(
+        `INSERT INTO jugadores (quiniela_id, nombre, usuario_id, cobrar_desde)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (quiniela_id, usuario_id) WHERE usuario_id IS NOT NULL
+         DO UPDATE SET nombre = EXCLUDED.nombre`,
+        [quinielaId, u.username, m.usuario_id, Number(fila.siguiente)]);
+    });
 
     return { ok: true, membresia: m };
   });

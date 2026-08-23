@@ -65,6 +65,21 @@ async function listar(quinielaId) {
 }
 
 /**
+ * El jugador que es una persona dentro de esta quiniela.
+ *
+ * Devuelve `null` si todavía no lo es: el dueño de una quiniela no tiene fila
+ * en `jugadores` hasta que actúa —hasta entonces administra, no juega—, y
+ * quien tiene cuenta pero nunca mandó nada, tampoco.
+ */
+async function deUsuario(quinielaId, usuarioId) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: [j] } = await c.query(
+      'SELECT id, nombre FROM jugadores WHERE usuario_id = $1', [usuarioId]);
+    return j || null;
+  });
+}
+
+/**
  * El id del jugador de esta quiniela que se llama así. `null` si no hay.
  *
  * Es la pieza que permite que el API siga hablando por nombre mientras la base
@@ -85,12 +100,23 @@ async function idPorNombre(cliente, nombre) {
  * evita que un pronóstico se caiga por un jugador que "debería" estar.
  */
 async function asegurar(cliente, quinielaId, nombre, usuarioId = null) {
+  /*
+   * ⚠️ A quien entra ahora se le cobra de la PRÓXIMA jornada en adelante, no
+   * de las que ya se jugaron: no estaba. Se calcula al darlo de alta porque
+   * después no hay forma de saber cuándo llegó —`jugadores` no guarda fecha—.
+   *
+   * El `DO UPDATE` no lo toca: si el jugador ya existía, su punto de partida
+   * es el que tenía, y volver a nombrarlo no puede moverlo.
+   */
+  const { rows: [fila] } = await cliente.query(
+    'SELECT COALESCE(MAX(secuencia), 0) + 1 AS siguiente FROM jornadas');
+
   const { rows: [j] } = await cliente.query(
-    `INSERT INTO jugadores (quiniela_id, nombre, usuario_id)
-     VALUES ($1, $2, $3)
+    `INSERT INTO jugadores (quiniela_id, nombre, usuario_id, cobrar_desde)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (quiniela_id, nombre) DO UPDATE SET nombre = EXCLUDED.nombre
      RETURNING id`,
-    [quinielaId, nombre, usuarioId]);
+    [quinielaId, nombre, usuarioId, Number(fila.siguiente)]);
   return j.id;
 }
 
@@ -123,6 +149,6 @@ async function eliminarEquipo(quinielaId, nombre) {
 }
 
 module.exports = {
-  nombres, listar, idPorNombre, asegurar,
+  nombres, listar, deUsuario, idPorNombre, asegurar,
   equipos, agregarEquipo, eliminarEquipo
 };

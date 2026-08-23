@@ -33,6 +33,8 @@ const rankingMod = require('../ranking');
 const cerrojos = require('../cerrojos');
 const { normalizarMarcador } = require('../validacion');
 const ligas = require('../ligas');
+const pagosMod = require('../pagos');
+const cobros = require('../cobros');
 const { invalidarCacheRanking } = require('./puntuacion');
 
 /*
@@ -314,6 +316,114 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
         score: `${evento.match_hometeam_score}-${evento.match_awayteam_score}`
       }
     });
+  });
+
+  /* ==================== Cobros ==================== */
+
+  /*
+   * ⚠️ TODO ESTO SÓLO INFORMA. Deber dinero no impide jugar, ni saca del
+   * ranking, ni cierra ninguna pantalla. Bloquear es un cambio mucho mayor y
+   * el día que se equivoque deja a alguien fuera a mitad de temporada por un
+   * error de dedo. Si algún día se quiere, se añade encima de esto.
+   */
+
+  /** La cuenta de cada jugador: lo que debe del torneo y lo de las jornadas. */
+  app.get('/api/cobros/cuentas', requireAdmin, async (req, res) => {
+    res.json({
+      cobros: cobros.normalizarCobros(req.quiniela.configuracion),
+      cuentas: await pagosMod.cuentas(req.quiniela.id, req.quiniela.configuracion)
+    });
+  });
+
+  /** El historial completo de abonos, para cuando hay que revisar una cuenta. */
+  app.get('/api/cobros/abonos', requireAdmin, async (req, res) => {
+    res.json(req.query.jugador
+      ? await pagosMod.deJugador(req.quiniela.id, req.query.jugador)
+      : await pagosMod.deQuiniela(req.quiniela.id));
+  });
+
+  /** Anota un abono. */
+  app.post('/api/cobros/abonos', requireAdmin, async (req, res) => {
+    const { jugadorId, concepto, monto, nota } = req.body || {};
+
+    if (!jugadorId) return res.status(400).json({ error: 'Falta el jugador.' });
+    if (!cobros.CONCEPTOS.includes(concepto)) {
+      return res.status(400).json({ error: 'El concepto debe ser "torneo" o "jornada".' });
+    }
+
+    const cantidad = cobros.aMonto(monto);
+
+    /*
+     * ⚠️ Por aquí sólo entran abonos POSITIVOS. Un monto negativo es una
+     * corrección, y las correcciones tienen su propia ruta para que queden
+     * atadas al asiento que anulan. Dejar colar un negativo suelto daría un
+     * historial en el que no se sabe qué corrige a qué.
+     */
+    if (!(cantidad > 0)) {
+      return res.status(400).json({ error: 'El monto tiene que ser mayor que cero.' });
+    }
+
+    const jugador = await pagosMod.cuentaDetallada(
+      req.quiniela.id, jugadorId, req.quiniela.configuracion);
+    if (!jugador) return res.status(404).json({ error: 'Jugador no encontrado.' });
+
+    const pago = await pagosMod.registrar(req.quiniela.id, {
+      jugadorId, concepto, monto: cantidad, nota,
+      registradoPor: req.session.usuarioId
+    });
+
+    res.json({ success: true, pago });
+  });
+
+  /**
+   * Corrige un abono mal anotado, con un asiento inverso.
+   *
+   * ⚠️ No se borra ni se edita. El día que alguien diga «yo sí pagué», la
+   * discusión se resuelve mirando el historial, no la palabra de quien pudo
+   * reescribirlo.
+   */
+  app.post('/api/cobros/abonos/:pagoId/anular', requireAdmin, async (req, res) => {
+    const r = await pagosMod.anular(req.quiniela.id, req.params.pagoId, {
+      registradoPor: req.session.usuarioId,
+      nota: req.body?.nota
+    });
+
+    if (r.motivo === 'no-existe') return res.status(404).json({ error: 'Abono no encontrado.' });
+    if (r.motivo === 'ya-anulado') {
+      return res.status(409).json({ error: 'Ese abono ya estaba anulado.' });
+    }
+    if (r.motivo === 'es-una-anulacion') {
+      return res.status(400).json({ error: 'Una corrección no se corrige: anota otro abono.' });
+    }
+
+    res.json({ success: true, inverso: r.inverso });
+  });
+
+  /** Si un jugador entra al torneo completo, y desde qué jornada se le cobra. */
+  app.patch('/api/cobros/jugadores/:jugadorId', requireAdmin, async (req, res) => {
+    const { juegaTorneo, cobrarDesde } = req.body || {};
+
+    if (cobrarDesde !== undefined && cobrarDesde !== null && !(Number(cobrarDesde) >= 1)) {
+      return res.status(400).json({ error: 'La jornada desde la que se cobra no es válida.' });
+    }
+
+    const j = await pagosMod.ajustarJugador(req.quiniela.id, req.params.jugadorId,
+      { juegaTorneo, cobrarDesde });
+
+    if (!j) return res.status(404).json({ error: 'Jugador no encontrado.' });
+    res.json({ success: true, jugador: j });
+  });
+
+  /** Cambia lo que cuesta UNA jornada: la de finales vale más. */
+  app.patch('/api/cobros/jornadas/:nombre/precio', requireAdmin, async (req, res) => {
+    const precio = cobros.aMonto(req.body?.precio);
+    if (!(precio >= 0)) return res.status(400).json({ error: 'El precio no puede ser negativo.' });
+
+    const j = await require('../jornadas').cambiarPrecio(
+      req.quiniela.id, req.params.nombre, precio);
+
+    if (!j) return res.status(404).json({ error: 'Jornada no encontrada.' });
+    res.json({ success: true, jornada: j });
   });
 };
 
