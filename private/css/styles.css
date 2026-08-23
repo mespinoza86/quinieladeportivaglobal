@@ -18,6 +18,31 @@
   box-sizing: border-box;
 }
 
+/*
+ * Enlaces.
+ *
+ * La hoja no tenia NINGUNA regla para <a>, asi que cualquier enlace suelto
+ * salia con el azul por defecto del navegador: sobre este fondo oscuro se lee
+ * mal y desentona con todo lo demas.
+ *
+ * No se notaba porque hasta ahora los unicos enlaces vivian dentro de
+ * .bottom-nav y .action-card, que si tienen su color. El primero que se puso
+ * fuera -el "olvidaste tu contrasena?" del login- lo destapo.
+ *
+ * Los contenedores que ya fijan su propio color siguen ganando por
+ * especificidad: esto solo alcanza a los que no tenian ninguno.
+ */
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus-visible {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -384,6 +409,17 @@ th,
 .helper-text {
   margin: 6px 0 0;
   color: var(--muted);
+  font-size: 0.92rem;
+}
+
+/*
+ * El enlace que va colgado de un boton -"olvidaste tu contrasena?"-. Centrado
+ * bajo el, y con aire por arriba para que no se pegue al boton ni a lo que
+ * venga despues: sin ese aire parecia parte de otra lista.
+ */
+.enlace-bajo-boton {
+  margin: 14px 0 4px;
+  text-align: center;
   font-size: 0.92rem;
 }
 
