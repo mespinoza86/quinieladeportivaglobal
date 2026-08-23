@@ -124,4 +124,55 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+
+  /* ==================== Cobros ==================== */
+
+  /*
+   * Los dos cobros son independientes: una quiniela puede cobrar 10.000 por el
+   * torneo completo —para el premio final— Y ADEMÁS algo por cada jornada.
+   *
+   * ⚠️ Cambiar el precio de la jornada NO toca las que ya existen: cada una
+   * guarda lo que costó. Esto es el precio de las que vengan.
+   */
+  const cobrosPanel = document.getElementById('cobrosPanel');
+  const cobrosMensaje = document.getElementById('cobrosMensaje');
+
+  function pintarCobros(config) {
+    const c = config?.cobros || {};
+    document.getElementById('torneoActivo').checked = Boolean(c.torneo?.activo);
+    document.getElementById('torneoPrecio').value = Number(c.torneo?.precio || 0);
+    document.getElementById('jornadaActivo').checked = Boolean(c.jornada?.activo);
+    document.getElementById('jornadaPrecio').value = Number(c.jornada?.precio || 0);
+  }
+
+  if (['propietario', 'admin'].includes(quiniela?.rol)) {
+    cobrosPanel.hidden = false;
+    pintarCobros(quiniela.configuracion);
+  }
+
+  document.getElementById('guardarCobros')?.addEventListener('click', async () => {
+    const cobros = {
+      torneo: {
+        activo: document.getElementById('torneoActivo').checked,
+        precio: Number(document.getElementById('torneoPrecio').value) || 0
+      },
+      jornada: {
+        activo: document.getElementById('jornadaActivo').checked,
+        precio: Number(document.getElementById('jornadaPrecio').value) || 0
+      }
+    };
+
+    try {
+      const r = await api('/api/quiniela-actual/configuracion', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cobros })
+      });
+      pintarCobros(r.configuracion);
+      cobrosMensaje.textContent = 'Cobros guardados.';
+    } catch (error) {
+      cobrosMensaje.textContent = error.message;
+    }
+  });
+
 });

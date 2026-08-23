@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 344/344
-npm run test:e2e            # 76/76, ~2,7 min
+npm test                    # 381/381
+npm run test:e2e            # 84/84, ~3,2 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,8 +53,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **344**, ~50 s |
-| Pruebas de navegador | **76**, ~2,7 min, contra el servidor de verdad |
+| Pruebas rápidas | **381**, ~50 s |
+| Pruebas de navegador | **84**, ~3,2 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -287,12 +287,23 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
 
 #### ⚠️ 1. Redesplegar en Render
 
-Es lo único que separa lo escrito de lo que ve la gente. Arrastra las **ligas
-favoritas** (Entrada 059), la **recuperación de contraseña** (Entrada 056) y el
-**arreglo del enlace azul** (Entrada 057).
+Es lo único que separa lo escrito de lo que ve la gente. Arrastra los **cobros**
+(Entrada 061), las **ligas favoritas** (Entrada 059), la **recuperación de
+contraseña** (Entrada 056) y el **arreglo del enlace azul** (Entrada 057).
 
-*Manual Deploy* → *Deploy latest commit*. **No hace falta tocar el esquema ni
-ninguna variable.**
+⛔ **ESTA VEZ SÍ HAY QUE TOCAR LA BASE, Y VA PRIMERO.** Los cobros traen la
+primera migración incremental del proyecto:
+
+1. En el **editor SQL de Neon**, **con el rol dueño** (no `app_quiniela`), pegar
+   y ejecutar `db/migraciones/001-cobros.sql` entero.
+2. Comprobar con las tres consultas que trae al final —sobre todo la del RLS de
+   `pagos`: si `relrowsecurity` o `relforcerowsecurity` salen en falso, **los
+   pagos de una quiniela se verían desde otra**.
+3. Y entonces sí: *Manual Deploy* → *Deploy latest commit*.
+
+La migración es aditiva y se puede correr dos veces sin romper nada. **No hace
+falta ninguna variable de entorno nueva**, y las quinielas que ya existen no
+cambian: los dos cobros nacen apagados.
 
 #### 2. 📥 Fase F — sugerencias de partidos destacados *(en el backlog)*
 
@@ -858,9 +869,9 @@ otros dos son las Fases 6 y 5.
 ⛔ **`server.js` ya no existe.** Empezó con 5.270 líneas el 14 de agosto y se
 borró el 22 al cerrar la tajada 7.7 (Entrada 052).
 
-**Directorios:** `src/` (la aplicación), `db/` (el esquema SQL), `public/` (34
-pantallas), `private/` (CSS y JS servidos), `test/`, `scripts/`,
-`legacy-data/`, `.github/workflows/`.
+**Directorios:** `src/` (la aplicación), `db/` (el esquema SQL **y las
+migraciones**), `public/` (35 pantallas), `private/` (CSS y JS servidos),
+`test/`, `scripts/`, `legacy-data/`, `.github/workflows/`.
 
 ### 2.2 `src/` — la aplicación
 
@@ -876,7 +887,7 @@ demás recibe la conexión ya preparada.
 | `eventos.js` | 445 | Bitácora de eventos del dominio |
 | `sincronizador.js` | 440 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
-| `jornadas.js` | 307 | Jornadas y sus partidos |
+| `jornadas.js` | 334 | Jornadas, sus partidos y **lo que costó cada una** |
 | `pronosticos.js` | 287 | Pronósticos, y la tabla comparativa en **una sola consulta** |
 | `membresias.js` | 248 | Quién pertenece a qué quiniela y con qué papel |
 | `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
@@ -887,6 +898,8 @@ demás recibe la conexión ya preparada.
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
 | `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
+| `pagos.js` | 238 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
+| `cobros.js` | 234 | **La aritmética del dinero, sin efectos.** Las dos cuentas, el saldo y la estimación |
 | `quinielas.js` | 161 | Alta, archivado y configuración (puntuación y **ligas favoritas**) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
 | `jugadores.js` | 128 | Participantes |
@@ -900,8 +913,8 @@ demás recibe la conexión ya preparada.
 | Archivo | Líneas | Rutas |
 |---|---:|---|
 | `puntuacion.js` | 377 | 10 — resultados, totales, clasificación por jornada |
-| `plataforma.js` | 343 | 19 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
-| `admin.js` | 320 | 15 — administración y sincronizador |
+| `plataforma.js` | 387 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
+| `admin.js` | 430 | 20 — administración, sincronizador y **cobros** |
 | `dominio.js` | 268 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 235 | 14 — trivias y sus respuestas |
 
@@ -910,7 +923,21 @@ demás recibe la conexión ya preparada.
 | Archivo | Líneas | Rol |
 |---|---:|---|
 | `esquema.sql` | 351 | **19 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
-| `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055) |
+| `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055). **Desde que hay datos en Neon ya no sirve**: los cambios van por `migraciones/` |
+
+**`db/migraciones/` — los cambios de esquema, uno por archivo numerado.** Nació
+con los cobros (Entrada 061), que fue el primer cambio con datos de verdad
+delante. Sus tres reglas están escritas en la cabecera de la primera:
+
+1. **Aditiva.** Crea; no borra ni reescribe.
+2. **Idempotente.** Correrla dos veces no puede fallar. Nadie se acuerda de si
+   ya la corrió.
+3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
+   instalación nueva y una al día dejan de ser la misma cosa.
+
+| Archivo | Líneas | Qué trae |
+|---|---:|---|
+| `001-cobros.sql` | 220 | `jornadas.precio`, `jugadores.cobrar_desde` y `juega_torneo`, la tabla `pagos` con su RLS |
 
 ### 2.4 `scripts/`
 
@@ -918,7 +945,7 @@ demás recibe la conexión ya preparada.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 344 pruebas rápidas y 76 de navegador
+### 2.5 `test/` — 381 pruebas rápidas y 84 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -926,14 +953,15 @@ PostgreSQL de verdad y no una imitación.
 
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
-| `rutas.test.js` | 2.367 | **149** | El servidor en marcha: HTTP real con `supertest` |
-| `architecture.test.js` | 1.216 | **48** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `rutas.test.js` | 2.611 | **164** | El servidor en marcha: HTTP real con `supertest` |
+| `architecture.test.js` | 1.253 | **50** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
 | `puntuacion.test.js` | 560 | 27 | El motor de puntos, comodines incluidos |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
 | `plataforma.test.js` | 335 | 24 | Quinielas, membresías y aislamiento |
 | `dominio.test.js` | 416 | 27 | Jornadas, partidos y pronósticos, más las ligas favoritas (puras) |
-| `db.test.js` | 192 | 13 | Transacciones y contexto de quiniela |
+| `cobros.test.js` | 252 | 19 | **La aritmética del dinero.** Pura: no toca base ni red |
+| `db.test.js` | 235 | 14 | Transacciones, contexto de quiniela y que ninguna tabla se quede sin RLS |
 | `postgres-en-memoria.js` | 167 | — | El arnés de PGlite |
 | `plantillas.js` | 87 | — | Utilidades compartidas |
 
@@ -952,6 +980,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `navegacion.spec.js` | 154 | Pulsa **todos los botones `data-ir-a`** y comprueba que ninguna pantalla pinta tarjetas de aviso vacías |
 | `arrancar.js` | 116 | Levanta la aplicación sobre PGlite. ⚠️ Aquí vive `/e2e/ultimo-correo`, **que nunca se declara en `crearApp`** |
 | `ayudas.js` | 111 | Registro, quiniela y Admin Mode. Cada prueba crea su cuenta |
+| `cobros.spec.js` | 138 | Encender los cobros, anotar un abono y que el jugador lo vea |
 | `ligas-favoritas.spec.js` | 114 | Marcar favoritas y verlas de primeras al armar la jornada |
 | `jornadas-buscador.spec.js` | 109 | El desplegable dinámico, las exclusiones y el proveedor caído |
 | `inyeccion.spec.js` | 95 | El marcado en los nombres se muestra como texto (S-04) |
@@ -960,7 +989,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `portada.spec.js` | 83 | La tarjeta nueva y que ninguna se estire |
 | `csp.spec.js` | 76 | Recorre las pantallas buscando violaciones de CSP. Hace falta porque una violación **no da error visible**: el botón carga, se pulsa y no pasa nada |
 
-### 2.6 `public/` — 34 pantallas HTML
+### 2.6 `public/` — 35 pantallas HTML
 
 Servidas con `express.static`.
 
@@ -974,13 +1003,13 @@ Servidas con `express.static`.
 `clasificacion-jornada.html`, `ver-resultados-oficiales.html`,
 `ver_resultados_trivias.html`, `ver_resultados_totales_de_jugadores.html`
 
-**De administración (las 13 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
+**De administración (las 14 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
 `jugadores.html`, `jornadas.html`, `resultados.html`,
 `agregar-resultados-oficiales.html`, `generar_reporte.html`,
 `enviarresultados.html`, `copiarresultadojugador.html`, `admin_trivias.html`,
 `enviarresultadostrivias.html`, `enviarresultadospartido.html`,
 `enviarresultadostriviaspartido.html`, `miembros.html`,
-`configuracion-quiniela.html`
+`configuracion-quiniela.html`, `cobros.html`
 
 ⚠️ **La guardia compara `req.path` contra esa lista.** Una pantalla nueva de
 administración que no se añada ahí **se sirve a cualquiera con sesión**. No es
@@ -989,7 +1018,7 @@ fuga de datos —las APIs sí exigen `requireAdmin`— pero sí de superficie.
 ⛔ **`importar_partidos.html` ya no existe:** su buscador se integró en
 `jornadas.html` en la Fase D, y los partidos salen sólo del API.
 
-### 2.7 `private/js/` — 42 scripts
+### 2.7 `private/js/` — 44 scripts
 
 Servidos por `GET /js/:filename`. Es un pseudo-ocultamiento: el navegador los
 descarga igual. **No hay ningún secreto ahí, pero tampoco protección real** — la
@@ -2471,8 +2500,9 @@ worker.js         → solo jobs
 > un «clásico», y necesita la tabla de posiciones, que hoy no se consulta.
 >
 > Fuera de las diez peticiones originales y ya hechas: la **recuperación de
-> contraseña** (Entrada 056) y las **ligas favoritas** (Entrada 059). Las dos
-> salieron de ver la aplicación en uso, no de la lista.
+> contraseña** (Entrada 056), las **ligas favoritas** (Entrada 059) y los
+> **cobros** (Entrada 061). Las tres salieron de ver la aplicación en uso, no de
+> la lista.
 
 Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
 para agrupar no es el tema sino la **dependencia**: cosas que comparten una
@@ -2489,6 +2519,7 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | ✅ **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Completada el 19-ago-2026: los partidos salen solo del API** |
 | ✅ **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás. **Completada el 22-ago-2026** (Entradas 053 a 055), con Brevo y la política «sin confirmar no se entra» |
 | ✅ **6.º** | **G — Ligas favoritas de la quiniela** | — | No estaba en las diez: salió al ver el desplegable en uso. **Completada el 23-ago-2026** (Entrada 059) |
+| ✅ **7.º** | **H — Cobros: cuota de torneo y por jornada** | — | Tampoco estaba en las diez. **Completada el 23-ago-2026** (Entrada 061). Lo primero del sistema que cuenta dinero |
 | 📥 **backlog** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. **Aparcada el 23-ago-2026 por decisión del usuario**: sigue necesitando definir qué es «igualados» y qué es un «clásico», y además la tabla de posiciones, que hoy no se consulta |
 | — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
 | — | **Aparte 2** | — | Terminar la Fase 6 y cerrar `style-src`, cuando convenga |
@@ -9574,6 +9605,182 @@ el centinela, con una casilla sin clase → falla (comprobado)
 ⚠️ **Redesplegar en Render**, que ahora arrastra también esto.
 
 Y sigue en §B.2 lo de `miembros.html`, que abre tres documentos HTML.
+
+---
+
+### 📌 Entrada 061 — 23 de agosto de 2026 — Cobros: quién pagó el torneo y quién las jornadas
+
+**Objetivo:** que el administrador lleve el control de lo que paga cada quien, y
+que el jugador vea su situación sin tener que preguntar. Petición del usuario, y
+**lo primero del sistema que cuenta dinero**.
+
+## Lo que se preguntó antes de escribir una línea
+
+Cuatro cosas, y menos mal, porque **dos respuestas cambiaron el diseño entero**:
+
+| Lo que yo había supuesto | Lo que el usuario dijo |
+|---|---|
+| «O torneo o jornada», un modo | ⚠️ **Los dos a la vez.** 10.000 del torneo para el premio final Y ADEMÁS algo por jornada para los premios de jornada. Son dos conceptos, no un interruptor |
+| El saldo se lleva en número de jornadas | ⛔ **No se puede: el precio cambia.** «Esta jornada vale 5000 porque el premio está grande» |
+
+Y dos que confirmaron el rumbo: **sólo informa** (deber no impide jugar), y el
+precio nuevo **afecta sólo a lo que viene**.
+
+## ⛔ Por qué el saldo tiene que ser en dinero
+
+Si la jornada 9 vale 5.000 y la 8 valía 2.000, **«te quedan 3 jornadas» no
+significa nada**: un saldo de 6.000 son tres a 2.000, o una a 5.000 y sobra.
+Cuántas cubra depende de lo que valgan las que vienen, y eso **todavía no se
+sabe**.
+
+Así que el saldo se lleva en colones, y se separan dos afirmaciones que la
+interfaz nunca mezcla:
+
+- **«Jornada 8 — pagada» es EXACTO.** El precio de esa jornada ya está fijado.
+- **«Te alcanza para 3 más» es una ESTIMACIÓN**, y sale siempre con el precio con
+  el que se calculó: *«te alcanza para 3 jornadas más al precio de hoy
+  (₡2.000)»*. Sin esa coletilla es una promesa que una final cara desmiente.
+
+Cuando no hay precio, la función devuelve `null` y no un número: obliga a quien
+pinta a no inventarse una cifra.
+
+## La decisión que sostiene todo: el precio vive en la jornada
+
+`jornadas` gana una columna `precio`, copiada de la configuración **al crear la
+jornada**. Si el precio se leyera de `quinielas.configuracion` al calcular,
+subirlo recalcularía hacia atrás lo que todos debían por las viejas — justo lo
+contrario de lo pedido.
+
+**No es un invento: el proyecto ya resolvía así este problema.**
+`puntos_jornada.puntuacion` guarda las reglas con las que se congeló, para que
+cambiar la puntuación en enero no reescriba la clasificación de marzo. Mismo
+caso, mismo patrón.
+
+⚠️ Y el detalle fino: `precio` entra en el `INSERT` pero **no en el `DO
+UPDATE`**. Volver a guardar los partidos de una jornada vieja no la reprecifica.
+Hay un centinela que lo vigila, porque ese fallo **no rompería nada**: cambiaría
+la cuenta de todo el mundo hacia atrás, en silencio.
+
+## Los abonos no se editan ni se borran
+
+Un abono mal anotado se corrige con un **asiento inverso** que apunta al
+original, y los dos quedan a la vista. El día que alguien diga *«yo sí pagué»*,
+la discusión se resuelve mirando el historial, **no la palabra de quien pudo
+reescribirlo**.
+
+Un índice único sobre `anula_a` impide anular dos veces: sin él, dos pulsaciones
+seguidas restarían el doble y **la cuenta quedaría mal sin que nada avisara**.
+
+## Y las cuentas se calculan, no se guardan
+
+No hay columna «saldo». Se suma lo abonado, se suma lo que costaron sus jornadas
+y se resta. Es la misma decisión que el ranking: **si mañana se borra una jornada
+o se corrige un abono, la cuenta sale bien sola.** Un contador que se va
+descontando se desincroniza en cuanto algo cambia, y cuando se descubre ya nadie
+sabe cuál era el número bueno.
+
+## Tres cosas que salieron por el camino
+
+1. **El pago cuelga de `jugadores`, no de `membresias`.** `jugadores.usuario_id`
+   es nulable: hay gente sin cuenta —la que migró de la base anterior, y la que
+   el administrador da de alta porque manda su quiniela por otro medio—. Colgarlo
+   de las membresías dejaría fuera **justo a los que pagan en efectivo**.
+2. **Quien entra en la jornada 7 no debe las seis anteriores.** Hacía falta saber
+   cuándo llegó cada quien, y `jugadores` **no guardaba fecha**. Se añadió
+   `cobrar_desde`, que se fija al darlo de alta porque después ya no hay forma
+   de averiguarlo.
+3. **No todo el mundo juega el torneo completo.** Quien entra a mitad de
+   temporada juega por jornada; sin la marca `juega_torneo` aparecería como
+   deudor eterno de algo que nunca quiso pagar.
+
+## ⚠️ Y la primera migración incremental del proyecto
+
+Hasta hoy los cambios de esquema se aplicaban recreando la base con
+`db/poner-al-dia.sql`. Ese guion lleva escrito desde el 22 de agosto:
+
+> ⛔ *SI ALGÚN DÍA HAY DATOS DE VERDAD, ESTE GUION NO SIRVE: habría que escribir
+> las migraciones incrementales.*
+
+Ese día llegó. Nace `db/migraciones/` con sus tres reglas —aditiva, idempotente,
+y la misma verdad que `esquema.sql`— escritas en la cabecera de la primera.
+
+Dentro, lo que más cuidado pedía: **`pagos` nace con RLS activada y forzada**.
+Una tabla de pagos sin aislamiento sería una fuga de quién pagó cuánto en otra
+quiniela, y **no fallaría**: devolvería filas de más. La prueba de `db.test.js`
+que contaba tablas con RLS **detectó la nueva sola**, y se aprovechó para añadir
+otra que dice **cuál** falta en vez de sólo cuántas.
+
+Esa segunda encontró de paso que **`membresias` no tiene RLS**, y es deliberado:
+`quinielas.deUsuario` la consulta **sin contexto de quiniela** para armar «mis
+quinielas», y con políticas esa consulta devolvería cero filas y nadie podría
+entrar a ninguna parte. Queda escrito como la única excepción, con su razón.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/001-cobros.sql` | **Nueva.** La primera migración incremental |
+| `db/esquema.sql` | `jornadas.precio`, dos columnas en `jugadores`, la tabla `pagos` y su RLS |
+| `src/cobros.js` | **Nuevo.** La aritmética, pura |
+| `src/pagos.js` | **Nuevo.** Abonos y cuentas. Ni edita ni borra |
+| `src/jornadas.js` | El precio en el alta, y `cambiarPrecio` aparte |
+| `src/jugadores.js` | `cobrar_desde` al dar de alta, y `deUsuario` |
+| `src/membresias.js` | Lo mismo al aprobar un ingreso |
+| `src/rutas/admin.js` | Cinco rutas de cobros |
+| `src/rutas/plataforma.js` | Los cobros en la configuración, y `mi-cuenta` |
+| `src/rutas/dominio.js` | La jornada nace con su precio |
+| `src/servidor.js` | `cobros.html` entra en `PAGINAS_ADMIN` |
+| `public/cobros.html`, `private/js/cobros.js` | **Nuevas.** La pantalla del administrador |
+| `private/js/index-cuenta.js` | **Nueva.** «Mis pagos», en la portada |
+| `public/configuracion-quiniela.html` + su JS | El panel para encender los cobros |
+| `public/adminmode.html`, `public/index.html` | La tarjeta y el guion |
+| `test/cobros.test.js` | **Nueva.** 19 puras |
+| `test/rutas.test.js` | 15 de ruta |
+| `test/db.test.js` | 1 nueva, y la del recuento al día |
+| `test/architecture.test.js` | 2 centinelas |
+| `test/e2e/cobros.spec.js` | **Nueva.** 4 por la interfaz |
+
+**Verificación:**
+
+```
+npm test         → 381/381
+npm run test:e2e →  84/84
+capturas en escritorio y móvil → miradas las dos
+los dos centinelas, con el código roto a propósito → fallan (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Preguntar cuatro cosas antes de escribir cambió el diseño dos veces.** «Los
+   dos cobros a la vez» y «el precio puede subir» tiraron abajo el modelo que yo
+   tenía —un modo, y saldo contado en jornadas—. **Escribirlo primero y
+   preguntar después habría costado rehacerlo entero.**
+2. ⚠️ **Cuando un número es una estimación, decirlo forma parte del número.**
+   «Te quedan 3» a secas es una promesa que una jornada cara desmiente. «Te
+   alcanza para 3 al precio de hoy (₡2.000)» contesta lo mismo sin mentir. Y
+   cuando no se puede estimar, la función devuelve `null` en vez de un cero que
+   parecería una respuesta.
+3. **Una prueba que cuenta debe tener al lado otra que nombre.** La del recuento
+   de tablas con RLS detectó la tabla nueva, pero decía «13 ≠ 12» y nada más. La
+   que se añadió dice **cuál** falta —y de paso destapó la excepción de
+   `membresias`, que llevaba ahí desde siempre sin estar escrita en ningún sitio.
+4. **Dos sesiones a la vez necesitan dos CONTEXTOS de navegador, no dos
+   pestañas.** Las pestañas de un contexto comparten cookies, así que registrar
+   al socio tumbaba la sesión de la administradora y las peticiones siguientes
+   salían con la cuenta equivocada. Los ocho recorridos fallaron por eso.
+5. **El patrón de la foto congelada ya estaba, y valía igual aquí.** No hubo que
+   inventar cómo evitar que subir un precio reescribiera el pasado:
+   `puntos_jornada.puntuacion` resolvía ese mismo problema desde la migración.
+   **Buscar el precedente antes de diseñar ahorró la decisión.**
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/001-cobros.sql` en Neon ANTES de desplegar**, con el
+rol dueño. Es la primera vez que un despliegue necesita tocar la base; los pasos
+exactos están en «Lo siguiente».
+
+Lo que **no** se hizo, y es a propósito: **nada de esto bloquea**. Deber dinero
+no impide jugar ni saca del ranking. Si algún día se quiere, se añade encima.
 
 ---
 

@@ -475,6 +475,42 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⚠️ el precio de una jornada se fija al crearla y guardar no lo cambia', () => {
+  /*
+   * Es la decision que sostiene todos los cobros. El administrador puede subir
+   * el precio -"esta jornada vale 5000 porque el premio esta grande"- y eso
+   * debe afectar SOLO A LO QUE VIENE.
+   *
+   * Si `precio` entrara en el DO UPDATE, volver a guardar los partidos de una
+   * jornada vieja la reprecificaria con la tarifa de hoy, y la cuenta de todo
+   * el mundo cambiaria hacia atras SIN QUE NADA FALLARA.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'jornadas.js')));
+
+  assert.match(mod, /INSERT INTO jornadas \(quiniela_id, nombre, precio\)/);
+  assert.match(mod, /DO UPDATE SET nombre = EXCLUDED\.nombre\s*\n?\s*RETURNING id/,
+    'el DO UPDATE no puede tocar el precio');
+  assert.doesNotMatch(mod, /DO UPDATE SET[^`]*precio/,
+    'reprecificar al guardar cambiaria hacia atras lo que la gente ya debia');
+});
+
+test('⚠️ los abonos no se editan ni se borran: se corrigen con un asiento inverso', () => {
+  /*
+   * Es lo primero del sistema que cuenta dinero. El dia que alguien diga "yo si
+   * pague", la discusion se resuelve mirando el historial, no la palabra de
+   * quien pudo reescribirlo.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'pagos.js')));
+
+  assert.doesNotMatch(mod, /UPDATE pagos/, 'un abono no se edita');
+  assert.doesNotMatch(mod, /DELETE FROM pagos/, 'un abono no se borra');
+  assert.match(mod, /anula_a/);
+
+  // Y el indice que impide anular dos veces, que restaria el doble en silencio.
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  assert.match(esquema, /CREATE UNIQUE INDEX pagos_una_anulacion_por_abono/);
+});
+
 test('lo que se guarda en la cache de ligas es lo del proveedor, sin favoritas', () => {
   /*
    * La cache de ligas tiene por clave el rango de fechas y NADA MAS, para que

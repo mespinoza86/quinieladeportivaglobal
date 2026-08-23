@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cobros</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/html-seguro.js" defer></script>
+  <script src="/js/cobros.js" defer></script>
+</head>
+<body class="app-body">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow">Administración</p><h1>Cobros</h1></div>
+        <div class="app-logo">💰</div>
+      </div>
+      <p id="resumenCobros" class="hero-text"></p>
+    </section>
+
+    <section class="app-panel" id="apagadoPanel" hidden>
+      <p class="helper-text">
+        Esta quiniela no está cobrando nada todavía. Enciende la cuota de torneo,
+        la de jornada, o las dos, en <strong>Configurar quiniela</strong>.
+      </p>
+      <button data-ir-a="/configuracion-quiniela.html">Ir a la configuración</button>
+    </section>
+
+    <section class="app-panel" id="cuentasPanel" hidden>
+      <h2>Quién debe qué</h2>
+      <div id="listaCuentas"></div>
+      <p id="mensajeCobros" class="form-message"></p>
+    </section>
+
+    <section class="app-panel" id="abonoPanel" hidden>
+      <h2>Anotar un abono</h2>
+      <label class="field-label" for="abonoJugador">Jugador</label>
+      <select id="abonoJugador"></select>
+
+      <label class="field-label" for="abonoConcepto">Concepto</label>
+      <select id="abonoConcepto">
+        <option value="jornada">Jornadas</option>
+        <option value="torneo">Cuota del torneo</option>
+      </select>
+
+      <label class="field-label" for="abonoMonto">Monto</label>
+      <input type="number" id="abonoMonto" min="1" step="1" placeholder="2000" />
+
+      <label class="field-label" for="abonoNota">Nota (opcional)</label>
+      <input type="text" id="abonoNota" placeholder="pagó 5 jornadas de un golpe" />
+
+      <button id="guardarAbono" type="button">Anotar abono</button>
+      <p id="abonoMensaje" class="form-message"></p>
+    </section>
+
+    <section class="app-panel" id="historialPanel" hidden>
+      <h2>Historial</h2>
+      <p class="helper-text">
+        Los abonos no se borran: si uno quedó mal anotado se corrige con un
+        asiento inverso, y los dos quedan a la vista.
+      </p>
+      <div id="listaHistorial"></div>
+    </section>
+
+    <button data-ir-a="/adminmode.html" class="ghost-button">Volver</button>
+  </main>
+</body>
+</html>

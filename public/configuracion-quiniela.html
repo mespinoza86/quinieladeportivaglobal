@@ -8,6 +8,14 @@
 <label class="field-label">Puntos predeterminados por trivia</label><input type="number" min="0" id="puntosTriviaDefault" required />
 <label class="checkbox-fila"><input type="checkbox" id="triviasHabilitadas" /><span>Habilitar trivias</span></label><label class="checkbox-fila"><input type="checkbox" id="incluirExpulsadosEnRanking" /><span>Conservar expulsados en el ranking</span></label>
 <button type="submit">Guardar configuración</button></form><p id="configMensaje" class="form-message"></p></section>
+<section class="app-panel" id="cobrosPanel" hidden><h2>Cobros</h2>
+<p class="helper-text">Los dos son independientes: se puede cobrar el torneo completo, la jornada, o las dos cosas.</p>
+<label class="checkbox-fila"><input type="checkbox" id="torneoActivo" /><span>Cobrar cuota de torneo completo</span></label>
+<label class="field-label" for="torneoPrecio">Precio del torneo</label><input type="number" id="torneoPrecio" min="0" step="1" />
+<label class="checkbox-fila"><input type="checkbox" id="jornadaActivo" /><span>Cobrar por jornada</span></label>
+<label class="field-label" for="jornadaPrecio">Precio por jornada</label><input type="number" id="jornadaPrecio" min="0" step="1" />
+<p class="helper-text">⚠️ Cambiar el precio afecta sólo a las jornadas que se creen de ahora en adelante. Las que ya existen conservan lo que costaron.</p>
+<button id="guardarCobros" type="button">Guardar cobros</button><p id="cobrosMensaje" class="form-message"></p></section>
 <section class="app-panel" id="favoritasPanel" hidden><h2>Ligas favoritas</h2>
 <p class="helper-text">Las que marques aquí salen de primero al armar una jornada. Si esa semana no tienen partidos, aparecen igual pero en gris.</p>
 <div id="favoritasLista"><p class="helper-text">Cargando torneos…</p></div>
