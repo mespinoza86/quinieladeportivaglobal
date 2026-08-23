@@ -23,7 +23,7 @@
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 npm test                    # 381/381
-npm run test:e2e            # 84/84, ~3,2 min
+npm run test:e2e            # 92/92, ~3,3 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -54,7 +54,7 @@ entradas de bitácora (040 a 052).
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **381**, ~50 s |
-| Pruebas de navegador | **84**, ~3,2 min, contra el servidor de verdad |
+| Pruebas de navegador | **92**, ~3,3 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -291,8 +291,11 @@ Es lo único que separa lo escrito de lo que ve la gente. Arrastra los **cobros*
 (Entrada 061), las **ligas favoritas** (Entrada 059), la **recuperación de
 contraseña** (Entrada 056) y el **arreglo del enlace azul** (Entrada 057).
 
-⛔ **ESTA VEZ SÍ HAY QUE TOCAR LA BASE, Y VA PRIMERO.** Los cobros traen la
-primera migración incremental del proyecto:
+✅ **La migración de los cobros ya se corrió en Neon el 23 de agosto**, y se
+comprobó: `pagos` con RLS activada y forzada, su política puesta y las cuatro
+concesiones a `app_quiniela`. **No hay que volver a correrla.**
+
+Se deja escrito el procedimiento por si hace falta montar la base otra vez:
 
 1. En el **editor SQL de Neon**, **con el rol dueño** (no `app_quiniela`), pegar
    y ejecutar `db/migraciones/001-cobros.sql` entero.
@@ -945,7 +948,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 381 pruebas rápidas y 84 de navegador
+### 2.5 `test/` — 381 pruebas rápidas y 92 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -969,7 +972,7 @@ PostgreSQL de verdad y no una imitación.
 > `test/*.test.js` funciona en Windows y falla en el CI de Linux, porque quien
 > expande el comodín es el shell (Entrada 025).
 
-**`test/e2e/` — 68 de navegador, con Playwright.** Aparte, porque tardan ~2,5
+**`test/e2e/` — 92 de navegador, con Playwright.** Aparte, porque tardan ~2,5
 minutos y la suite rápida tiene que seguir siendo rápida.
 
 | Archivo | Líneas | Qué cubre |
@@ -981,6 +984,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `arrancar.js` | 116 | Levanta la aplicación sobre PGlite. ⚠️ Aquí vive `/e2e/ultimo-correo`, **que nunca se declara en `crearApp`** |
 | `ayudas.js` | 111 | Registro, quiniela y Admin Mode. Cada prueba crea su cuenta |
 | `cobros.spec.js` | 138 | Encender los cobros, anotar un abono y que el jugador lo vea |
+| `adminmode.spec.js` | 100 | ⚠️ Qué se enseña cuando la comprobación de permisos falla |
 | `ligas-favoritas.spec.js` | 114 | Marcar favoritas y verlas de primeras al armar la jornada |
 | `jornadas-buscador.spec.js` | 109 | El desplegable dinámico, las exclusiones y el proveedor caído |
 | `inyeccion.spec.js` | 95 | El marcado en los nombres se muestra como texto (S-04) |
@@ -9781,6 +9785,128 @@ exactos están en «Lo siguiente».
 
 Lo que **no** se hizo, y es a propósito: **nada de esto bloquea**. Deber dinero
 no impide jugar ni saca del ranking. Si algún día se quiere, se añade encima.
+
+---
+
+### 📌 Entrada 062 — 23 de agosto de 2026 — La pantalla que parecía correcta y no lo era
+
+**Objetivo:** el usuario contó que a veces, al entrar al Modo Administrador,
+la pantalla se quedaba mostrando **el menú público** en vez del panel, y tenía
+que irse a Inicio y volver a entrar. Mandó una captura.
+
+## La captura bastaba para saberlo
+
+`adminmode.html` tiene varias secciones y **sólo una estaba visible por defecto
+en el marcado**: `guest-content`, el menú público. Las otras dos llevaban
+`display: none`.
+
+Y en el guion, la comprobación de permisos iba dentro de un `try` cuyo `catch`
+**sólo escribía en la consola**:
+
+```js
+} catch (error) {
+  console.error('Error al verificar permisos:', error);
+}
+```
+
+Así que si cualquiera de las dos peticiones fallaba, no se llamaba a
+`mostrarEstado`, no se avisaba de nada, y **quedaba puesto el estado de fábrica
+del HTML**: justo el menú público de la captura.
+
+⛔ **La pantalla no parecía rota: parecía correcta.** Un administrador veía un
+menú, sin sus opciones y sin ninguna explicación. Es el mismo patrón que este
+proyecto lleva encontrando toda la semana —un fallo que no falla visiblemente—,
+y aquí en su forma más engañosa.
+
+## Lo que se hizo, y por qué en ese orden
+
+1. **Las cuatro secciones arrancan ocultas.** Es el arreglo de raíz: mientras
+   una venga visible de fábrica, cualquier tropiezo la deja puesta **por
+   accidente**. Ahora no se enseña nada hasta que el servidor contesta.
+2. **Se reintenta una vez, a los dos segundos.** Es exactamente lo que el
+   usuario hacía a mano —irse a Inicio y volver— y la causa más probable es
+   pasajera. Haciéndolo el guion, no se entera nadie. **Sólo un reintento**: si
+   a la segunda tampoco, insistir no lo arregla y lo que toca es decirlo.
+3. **Y si aun así falla, se dice**, con un botón de reintentar.
+
+**El diagnóstico de la CAUSA se dio como hipótesis, no como hecho**, y así se le
+dijo al usuario: lo más probable es el arranque en frío de Render —el plan
+gratuito duerme el servicio y la primera petición puede devolver una página de
+error en HTML donde debería ir JSON, y ahí `response.json()` revienta—. La
+captura prueba **el estado**; el disparador no se puede probar desde una imagen.
+
+Por eso `pedirJson` comprueba ahora el `content-type` antes de interpretar: si
+no viene JSON, el error dice *«el servidor respondió 502 sin datos, puede estar
+arrancando»* en vez de un error de sintaxis que no ayuda a nadie.
+
+## Dos cosas que aparecieron por el camino
+
+**`guest-content` era marcado inalcanzable, y lo había sido siempre.** Quien no
+es administrador no llega a esa página: se le manda a `/index.html` unas líneas
+antes. Lo único que mostraba ese menú era este fallo. Se deja oculto en vez de
+borrarlo —son ~100 líneas y quitarlo es una decisión aparte—, pero ya no puede
+salir por accidente.
+
+⚠️ **Y el envío de la contraseña no recogía sus errores.** Si `fetch` fallaba,
+la promesa quedaba rechazada sin recoger: se pulsaba el botón y **no pasaba
+nada**. Un formulario que no responde parece roto. Ahora avisa.
+
+## ⚠️ Un centinela que se dejó engañar por un comentario. Otra vez.
+
+Al correr las pruebas, la que comprueba que toda pantalla con la etiqueta
+`html` cargue `html-seguro.js` **falló acusando a `adminmode.js`**, que no la
+usa. La culpa era de un comentario nuevo que menciona `\`/index.html\``: entre
+comillas invertidas eso termina en `html\`` y el patrón lo daba por bueno.
+
+⛔ **Es la MISMA trampa de la Entrada 055**, donde una prueba citó dentro de un
+comentario el texto que buscaba. La lección ya estaba aprendida —hay un
+`quitarComentarios` en el archivo desde hace días— pero **ese centinela no lo
+usaba**. Se arregló el centinela en vez de reescribir la frase: la prosa era
+legítima y el que buscaba mal era él.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/adminmode.html` | Las cuatro secciones ocultas, y el aviso de fallo |
+| `private/js/adminmode.js` | Reescrito: `mostrarSolo`, reintento, `pedirJson` y errores recogidos |
+| `test/architecture.test.js` | El centinela de `html` quita comentarios antes de buscar |
+| `test/e2e/adminmode.spec.js` | **Nueva.** 4 pruebas |
+
+**Verificación:**
+
+```
+npm test         → 381/381
+npm run test:e2e →  92/92
+con el comportamiento viejo puesto a propósito → 2 de las 4 nuevas fallan
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un estado por defecto es una decisión, aunque nadie la haya tomado.** El
+   `display` de fábrica de `guest-content` era la respuesta de la página a
+   «¿qué enseño si algo falla?», y nadie la había escrito. **Si hay un camino en
+   el que no se decide nada, lo que se ve es lo que quedó puesto** — y aquí
+   resultó ser lo más engañoso posible.
+2. ⚠️ **`console.error` no es manejar un error, es esconderlo.** Nadie mira la
+   consola. Un `catch` que sólo registra deja al usuario con lo que hubiera en
+   pantalla y le hace creer que es correcto.
+3. **Distinguir el estado de su disparador.** La captura probaba con certeza
+   dónde quedaba la pantalla; la causa era hipótesis. Se dijo así, y el arreglo
+   se hizo de forma que **funcione sea cual sea el disparador** en vez de
+   apostar por uno.
+4. ⚠️ **Una lección aprendida en un archivo no se aplica sola a todo el
+   archivo.** `quitarComentarios` existía desde la Entrada 055 y este centinela
+   seguía buscando sobre el texto crudo. **Vale la pena revisar si los demás lo
+   usan**, porque la trampa ya ha mordido dos veces.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar en Render para que llegue. **No toca la base**: la migración de los
+cobros ya se corrió y se comprobó.
+
+Y si el problema volviera a aparecer, ahora la pantalla dice qué pasó: con eso y
+la consola (F12) se puede confirmar por fin cuál es el disparador.
 
 ---
 

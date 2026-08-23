@@ -1021,9 +1021,16 @@ test('S-04: ninguna plantilla que produzca HTML con datos queda sin etiquetar', 
 test('toda pantalla que use la etiqueta html carga el ayudante antes', () => {
   const dirJs = path.join(root, 'private', 'js');
 
+  /*
+   * ⚠️ SIN COMENTARIOS. Un comentario que mencione `/index.html` entre comillas
+   * invertidas termina en "html`" y hace creer que el script usa la etiqueta.
+   * Pasó de verdad (Entrada 062), y es la MISMA trampa que ya había mordido en
+   * la Entrada 055: buscar sobre el texto crudo encuentra la prosa, no el
+   * código.
+   */
   const usanEtiqueta = fs.readdirSync(dirJs)
     .filter(f => f.endsWith('.js') && f !== 'html-seguro.js')
-    .filter(f => /\bhtml`/.test(fs.readFileSync(path.join(dirJs, f), 'utf8')));
+    .filter(f => /\bhtml`/.test(quitarComentarios(fs.readFileSync(path.join(dirJs, f), 'utf8'))));
 
   assert.ok(usanEtiqueta.length >= 18, `Se esperaban al menos 18 scripts, hay ${usanEtiqueta.length}`);
 

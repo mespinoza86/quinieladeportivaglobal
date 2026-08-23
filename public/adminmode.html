@@ -176,7 +176,19 @@
       </form>
     </section>
 
-    <section id="guest-content" class="app-panel">
+    <!--
+      Aviso de que la comprobacion de permisos no se pudo hacer. Antes no
+      existia: un fallo dejaba el menu publico puesto y nada lo explicaba.
+    -->
+    <section id="admin-error" class="app-panel" style="display: none;">
+      <h2>No se pudo comprobar tus permisos</h2>
+      <p class="helper-text" id="adminErrorDetalle">
+        El servidor no contestó. Suele ser pasajero.
+      </p>
+      <button id="reintentarAdmin" type="button">Reintentar</button>
+    </section>
+
+    <section id="guest-content" class="app-panel" style="display: none;">
       <div class="section-title-row">
         <div>
           <h2>Menú Principal</h2>
