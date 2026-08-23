@@ -59,6 +59,19 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ email: direccion })
       });
       const datos = await respuesta.json();
+
+      /*
+       * ⚠️ Hay que mirar el ESTADO, no sólo el cuerpo. Antes se pintaba el
+       * mensaje del cuerpo o, si no venía, "le enviamos el enlace" — así que
+       * ante un 429 (el limitador) la pantalla decía que el correo había
+       * salido cuando no era verdad. Un mensaje de éxito falso es peor que
+       * un error.
+       */
+      if (!respuesta.ok) {
+        mensaje.textContent = datos.error || 'No se pudo reenviar el enlace. Inténtalo en unos minutos.';
+        return;
+      }
+
       /*
        * El servidor responde lo mismo exista o no la cuenta, para no decir qué
        * direcciones están registradas. La pantalla repite ese mensaje tal cual.

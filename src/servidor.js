@@ -239,6 +239,29 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
     message: { error: 'Se alcanzó el límite de cuentas creadas desde esta conexión. Inténtalo más tarde.' }
   });
 
+  /**
+   * El reenvío del enlace de confirmación, con su PROPIO contador.
+   *
+   * ⚠️ Compartía el del registro, y eso tenía dos problemas: registrarte dos
+   * veces y pedir el enlace tres te dejaba bloqueado sin relación aparente, y
+   * el mensaje hablaba de «cuentas creadas» cuando lo que habías pedido era un
+   * correo.
+   *
+   * Sigue siendo estricto porque **cada llamada manda un correo de verdad**:
+   * sin límite, cualquiera lo usaría de cañón contra una dirección ajena, y de
+   * paso agotaría la cuota diaria del plan gratuito.
+   *
+   * La ventana es de 15 minutos y no de una hora: quien no recibe el correo lo
+   * pide dos o tres veces seguidas y luego se va. Una hora de castigo por eso
+   * es desproporcionado.
+   */
+  const limiteReenvio = rateLimit({
+    ...comunes, windowMs: 15 * 60 * 1000, limit: 5,
+    message: {
+      error: 'Has pedido el enlace demasiadas veces. Espera unos minutos antes de volver a intentarlo.'
+    }
+  });
+
   /*
    * El más estricto de los tres: quien llega aquí ya tiene sesión y rol, y lo
    * único que lo separa de operar la quiniela es la contraseña.
@@ -374,7 +397,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * registradas probando correos. Tampoco reenvía a una cuenta ya confirmada:
    * ni da pistas ni gasta cuota.
    */
-  app.post('/api/auth/reenviar-verificacion', limiteRegistro, async (req, res) => {
+  app.post('/api/auth/reenviar-verificacion', limiteReenvio, async (req, res) => {
     const usuario = await usuariosMod.porEmail(req.body?.email || '');
     if (usuario && !usuario.email_verificado) await enviarConfirmacion(usuario);
 
@@ -629,7 +652,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   return {
     app,
     requireLogin, requireAdmin, enQuiniela,
-    limitadores: { limiteLogin, limiteRegistro, limiteAdminMode }
+    limitadores: { limiteLogin, limiteRegistro, limiteAdminMode, limiteReenvio }
   };
 }
 

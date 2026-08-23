@@ -1985,3 +1985,58 @@ test('⚠️ si el token no se puede emitir, la cuenta NO se crea', async () => 
   const segunda = await request(app).post('/api/auth/registro').send(datos);
   assert.equal(segunda.status, 201);
 });
+
+test('⚠️ el reenvío tiene su PROPIO limitador, con su propio mensaje', () => {
+  /*
+   * Compartia el del registro, y eso tenia dos problemas: registrarte dos veces
+   * y pedir el enlace tres te dejaba bloqueado sin relacion aparente, y el
+   * mensaje hablaba de «cuentas creadas» cuando lo que habias pedido era un
+   * correo.
+   *
+   * Se comprueba leyendo el codigo porque los limitadores estan APAGADOS en
+   * pruebas -si no, las 100 cuentas que crea la suite se bloquearian a la
+   * sexta- asi que no hay forma de provocar el 429 aqui.
+   */
+  const fuente = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'src', 'servidor.js'), 'utf8');
+
+  assert.match(fuente, /const limiteReenvio = rateLimit\(/);
+  assert.match(fuente, /reenviar-verificacion', limiteReenvio/);
+
+  // Y su mensaje habla de lo que se pidio, no de cuentas.
+  const bloque = fuente.slice(
+    fuente.indexOf('const limiteReenvio'),
+    fuente.indexOf('const limiteAdminMode'));
+  assert.match(bloque, /Has pedido el enlace demasiadas veces/);
+  assert.doesNotMatch(bloque, /cuentas creadas/);
+});
+
+test('⚠️ la pantalla de confirmación mira el ESTADO, no sólo el cuerpo', () => {
+  /*
+   * Antes pintaba el mensaje del cuerpo o, si no venia, "le enviamos el
+   * enlace". Ante un 429 el cuerpo trae `error` y no `mensaje`, asi que la
+   * pantalla decia que el correo habia salido CUANDO NO ERA VERDAD.
+   *
+   * Un mensaje de exito falso es peor que un error: quien lo lee se queda
+   * esperando un correo que nunca va a llegar.
+   */
+  /*
+   * ⚠️ Sin comentarios. El comentario que explica el arreglo CITA el mensaje
+   * viejo -"le enviamos el enlace"- y aparece antes del `if`, asi que la
+   * comprobacion de orden fallaba contra su propia documentacion.
+   *
+   * Es la misma leccion que ya tenia aprendida `architecture.test.js`, y aqui
+   * volvio a morder por escribir la prueba sin acordarse.
+   */
+  const script = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'private', 'js', 'verificar-correo.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const reenvio = script.slice(script.indexOf("reenviar.addEventListener"));
+
+  assert.match(reenvio, /if \(!respuesta\.ok\)/);
+  assert.ok(
+    reenvio.indexOf('if (!respuesta.ok)') < reenvio.indexOf('le enviamos el enlace'),
+    'el estado se comprueba ANTES de dar por bueno el envio'
+  );
+});
