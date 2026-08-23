@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 325/325
-npm run test:e2e            # 68/68, ~2,5 min
+npm test                    # 343/343
+npm run test:e2e            # 76/76, ~2,7 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,8 +53,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **325**, ~50 s |
-| Pruebas de navegador | **68**, ~2,5 min, contra el servidor de verdad |
+| Pruebas rápidas | **343**, ~50 s |
+| Pruebas de navegador | **76**, ~2,7 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -287,16 +287,17 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
 
 #### ⚠️ 1. Redesplegar en Render
 
-Es lo único que separa lo escrito de lo que ve la gente. Arrastra la
-**recuperación de contraseña** (Entrada 056) y el **arreglo del enlace azul**
-(Entrada 057).
+Es lo único que separa lo escrito de lo que ve la gente. Arrastra las **ligas
+favoritas** (Entrada 059), la **recuperación de contraseña** (Entrada 056) y el
+**arreglo del enlace azul** (Entrada 057).
 
 *Manual Deploy* → *Deploy latest commit*. **No hace falta tocar el esquema ni
 ninguna variable.**
 
-#### 2. Fase F — sugerencias de partidos destacados
+#### 2. 📥 Fase F — sugerencias de partidos destacados *(en el backlog)*
 
-Es **lo último de §20**, y no se puede empezar sin dos decisiones tuyas:
+**Aparcada el 23 de agosto por decisión tuya**, y en su lugar se hicieron las
+ligas favoritas. Cuando se retome, sigue necesitando dos decisiones:
 
 - **Qué cuenta como «igualados».** ¿Diferencia de puntos en la tabla? ¿De
   posición? ¿Cuánta?
@@ -591,6 +592,13 @@ Lo que sigue abierto:
    vez.** El aislamiento está probado —RLS, 240 peticiones concurrentes, y
    pruebas en cada módulo— pero eso es distinto de haberlo visto funcionando con
    gente dentro. Es lo primero que dirá si algo se pasó por alto.
+6. ⚠️ **`public/miembros.html` abre TRES documentos**: tres `<!DOCTYPE>`, tres
+   `<html>` y tres `<head>`. El navegador lo remienda y la pantalla funciona,
+   por eso lleva ahí desde siempre sin que nadie lo note. El mismo fallo estaba
+   en `configuracion-quiniela.html` y se corrigió en la Entrada 059; éste se
+   dejó por no ser el asunto de aquel día. **Es un arreglo de un minuto**, pero
+   conviene mirar la pantalla después: el marcado remendado puede estar
+   apoyándose en el remiendo.
 
 
 ### B.3 Decisiones del usuario — cómo quedaron
@@ -878,8 +886,8 @@ demás recibe la conexión ya preparada.
 | `correo.js` | 215 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria |
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
-| `ligas.js` | 171 | Rango de búsqueda, competiciones bloqueadas y agrupado por país |
-| `quinielas.js` | 161 | Alta, archivado y configuración |
+| `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
+| `quinielas.js` | 161 | Alta, archivado y configuración (puntuación y **ligas favoritas**) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
 | `jugadores.js` | 128 | Participantes |
 | `planificador.js` | 116 | Los relojes: cada cuánto corre el sincronizador |
@@ -892,8 +900,8 @@ demás recibe la conexión ya preparada.
 | Archivo | Líneas | Rutas |
 |---|---:|---|
 | `puntuacion.js` | 377 | 10 — resultados, totales, clasificación por jornada |
-| `plataforma.js` | 317 | 19 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
-| `admin.js` | 309 | 15 — administración y sincronizador |
+| `plataforma.js` | 343 | 19 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
+| `admin.js` | 320 | 15 — administración y sincronizador |
 | `dominio.js` | 268 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 235 | 14 — trivias y sus respuestas |
 
@@ -910,7 +918,7 @@ demás recibe la conexión ya preparada.
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 325 pruebas rápidas y 68 de navegador
+### 2.5 `test/` — 343 pruebas rápidas y 76 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -918,13 +926,13 @@ PostgreSQL de verdad y no una imitación.
 
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
-| `rutas.test.js` | 2.236 | **141** | El servidor en marcha: HTTP real con `supertest` |
-| `architecture.test.js` | 1.157 | **46** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `rutas.test.js` | 2.367 | **149** | El servidor en marcha: HTTP real con `supertest` |
+| `architecture.test.js` | 1.186 | **47** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
 | `puntuacion.test.js` | 560 | 27 | El motor de puntos, comodines incluidos |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
 | `plataforma.test.js` | 335 | 24 | Quinielas, membresías y aislamiento |
-| `dominio.test.js` | 296 | 18 | Jornadas, partidos y pronósticos |
+| `dominio.test.js` | 416 | 27 | Jornadas, partidos y pronósticos, más las ligas favoritas (puras) |
 | `db.test.js` | 192 | 13 | Transacciones y contexto de quiniela |
 | `postgres-en-memoria.js` | 167 | — | El arnés de PGlite |
 | `plantillas.js` | 87 | — | Utilidades compartidas |
@@ -944,6 +952,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `navegacion.spec.js` | 154 | Pulsa **todos los botones `data-ir-a`** y comprueba que ninguna pantalla pinta tarjetas de aviso vacías |
 | `arrancar.js` | 116 | Levanta la aplicación sobre PGlite. ⚠️ Aquí vive `/e2e/ultimo-correo`, **que nunca se declara en `crearApp`** |
 | `ayudas.js` | 111 | Registro, quiniela y Admin Mode. Cada prueba crea su cuenta |
+| `ligas-favoritas.spec.js` | 114 | Marcar favoritas y verlas de primeras al armar la jornada |
 | `jornadas-buscador.spec.js` | 109 | El desplegable dinámico, las exclusiones y el proveedor caído |
 | `inyeccion.spec.js` | 95 | El marcado en los nombres se muestra como texto (S-04) |
 | `cuenta.spec.js` | 94 | Registro, sesión, quiniela, ojo de la contraseña |
@@ -990,7 +999,7 @@ Los más grandes:
 
 | Script | Líneas | Función |
 |---|---:|---|
-| `jornadas.js` | 659 | Administración de jornadas, partidos y el buscador |
+| `jornadas.js` | 696 | Administración de jornadas, partidos y el buscador |
 | `llenar_jornada_user.js` | 619 | Formulario de pronósticos |
 | `llenar_trivia.js` | 450 | Formulario de trivias |
 | `ver-resultados_puntos.js` | 446 | Puntos por jornada |
@@ -2449,13 +2458,14 @@ worker.js         → solo jobs
 
 ## 20. Plan de producto — las diez peticiones del 18 de agosto
 
-> **Estado al 22 de agosto de 2026: completadas las fases A, B, C, D y E.**
-> Queda **sólo la F** —sugerencias de partidos destacados—, que está parada a la
-> espera de dos decisiones tuyas: qué cuenta como «igualados» y qué es un
-> «clásico». Se aborda una fase a la vez.
+> **Estado al 23 de agosto de 2026: completadas las fases A, B, C, D, E y G.**
+> La **F** —sugerencias de partidos destacados— está **en el backlog**, aparcada
+> a petición del usuario: sigue sin definir qué cuenta como «igualados» y qué es
+> un «clásico», y necesita la tabla de posiciones, que hoy no se consulta.
 >
-> Fuera de plan y ya hechas: la **recuperación de contraseña** (Entrada 056),
-> que salió de ver funcionar el correo.
+> Fuera de las diez peticiones originales y ya hechas: la **recuperación de
+> contraseña** (Entrada 056) y las **ligas favoritas** (Entrada 059). Las dos
+> salieron de ver la aplicación en uso, no de la lista.
 
 Las diez peticiones se agrupan en **cinco fases más dos apartes**. El criterio
 para agrupar no es el tema sino la **dependencia**: cosas que comparten una
@@ -2471,7 +2481,8 @@ resolver esa decisión dos o tres veces y arriesgarse a resolverla distinto.
 | ✅ **3.º** | **C — Buscador de ligas** | 9 | Habilita la fase D. Hacerla después dejaría la pantalla nueva peor que la actual. **Completada el 19-ago-2026** |
 | ✅ **4.º** | **D — Administración de jornadas unificada** | 3 | El cambio estructural grande, y necesita que buscar partidos ya funcione bien. **Completada el 19-ago-2026: los partidos salen solo del API** |
 | ✅ **5.º** | **E — Verificación de correo** | 8 | Independiente de todo lo demás. **Completada el 22-ago-2026** (Entradas 053 a 055), con Brevo y la política «sin confirmar no se entra» |
-| ⏳ **6.º** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. Depende de C. **Lo único que queda**, y necesita dos decisiones antes de empezar |
+| ✅ **6.º** | **G — Ligas favoritas de la quiniela** | — | No estaba en las diez: salió al ver el desplegable en uso. **Completada el 23-ago-2026** (Entrada 059) |
+| 📥 **backlog** | **F — Sugerencias de partidos** | 10 | Lo más especulativo y lo más caro. **Aparcada el 23-ago-2026 por decisión del usuario**: sigue necesitando definir qué es «igualados» y qué es un «clásico», y además la tabla de posiciones, que hoy no se consulta |
 | — | **Aparte 1** | 7 (SQL) | Es una pregunta, no una tarea. Respondida abajo; no bloquea nada |
 | — | **Aparte 2** | — | Terminar la Fase 6 y cerrar `style-src`, cuando convenga |
 
@@ -9338,6 +9349,130 @@ contraseña (Entrada 056) y el enlace (057). No hace falta tocar el esquema ni
 ninguna variable.
 
 Y queda la **Fase F**, con sus dos decisiones sin tomar.
+
+---
+
+### 📌 Entrada 059 — 23 de agosto de 2026 — Ligas favoritas de la quiniela
+
+**Objetivo:** que quien arma una jornada no tenga que bajar hasta la «C» de Costa
+Rica cada vez. El administrador marca sus torneos y salen de primeros.
+
+La **Fase F** —sugerencias de partidos destacados— pasa al backlog por decisión
+del usuario. Esto se hizo en su lugar y **no estaba en las diez peticiones**:
+salió de ver el desplegable de la Fase C en uso.
+
+## Las cuatro decisiones, tomadas antes de escribir nada
+
+Se preguntaron primero porque cada una cambiaba el trabajo:
+
+| Decisión | Qué se eligió |
+|---|---|
+| ¿De la quiniela o de cada administrador? | **De la quiniela.** Una quiniela de fútbol tico lo es mire quien mire, y sobrevive a que cambie el administrador. Entra en `configuracion`, que ya existe: **sin tabla nueva y sin migración** |
+| ¿De dónde se escogen? | **De lo que juega la semana**, la misma lista que alimenta el desplegable. Marcar sobre el catálogo entero del proveedor serían cientos de torneos y un buscador aparte |
+| ¿Y una favorita que esa semana no juega? | **Sale igual, en gris.** Que desaparezca sin explicación se siente como una configuración que se perdió |
+| ¿Se repite abajo en su país? | **No.** Verla dos veces confunde más de lo que ayuda |
+
+## ⛔ La trampa: la caché de ligas se comparte entre quinielas
+
+Es lo único que tenía riesgo de verdad, y no se ve mirando la funcionalidad.
+
+`guardarCacheLigas` tiene por clave **el rango de fechas y nada más**, a
+propósito: dos quinielas que sigan los mismos días comparten la consulta al
+proveedor, y ahí está el ahorro de cuota que prometía C-01.
+
+⚠️ **Ordenar las favoritas antes de guardar habría metido las de una quiniela en
+la respuesta que recibe la siguiente** —y con las ligas ya arrancadas de sus
+países—. No es un fallo cosmético: es una fuga de configuración entre quinielas,
+justo lo que la RLS existe para impedir en la base, colándose por una caché en
+memoria que la RLS no ve.
+
+El arreglo es de una línea de sitio: **se guarda lo que dijo el proveedor y se
+aplican las favoritas al salir**, en las dos ramas de la ruta —la de caché y la
+fresca—. El ahorro sigue en pie y el orden es de cada quiniela.
+
+De ahí salen dos guardas: una prueba de ruta con dos quinielas de verdad que
+comprueba que la segunda lee de caché **y no ve las favoritas de la primera**, y
+un centinela en `architecture.test.js`. **El centinela se comprobó rompiendo el
+código a propósito**: sin eso no se sabe si vigila algo.
+
+Y una tercera, en la función pura: `aplicarFavoritas` **no toca lo que recibe**,
+porque lo que recibe es la propia entrada de la caché. Copia y devuelve.
+
+## Lo demás que hubo que decidir
+
+1. **Se guarda `{ id, nombre }`, no sólo el id.** Parece redundante y no lo es:
+   una favorita que esta semana no juega **no tiene de dónde sacar su rótulo**,
+   porque los nombres llegan con los partidos. Sin el nombre guardado no se
+   podría pintar en gris.
+2. **Pero el rótulo que se muestra es el del proveedor, no el guardado.** Si
+   renombraron el torneo, el nombre viejo es el desfasado. **El id identifica,
+   el nombre sólo rotula** — es la lección de la Fase C, otra vez.
+3. ⚠️ **En la pantalla de configuración, las ya marcadas se pintan SIEMPRE**,
+   jueguen o no. Si sólo se listara lo que juega, una favorita en descanso no
+   aparecería y **no habría manera de quitarla**.
+4. **Hay un tope de 20, y pasarse avisa en vez de recortar en silencio.** Esto
+   vive dentro de un `jsonb` que se lee entero en cada consulta de la quiniela.
+   Quien marcó veinticinco tiene que enterarse de que cinco no se guardaron.
+5. **Mandar la lista vacía es cómo se quitan todas**, así que se distingue «no
+   vino» de «vino vacía». Y la lista **se sustituye entera**, no se funde: fundir
+   listas no significa nada.
+
+## Y un fallo que apareció de paso
+
+`public/configuracion-quiniela.html` **abría dos documentos**: dos `<!DOCTYPE>`,
+dos `<html>` y dos `<head>`. El navegador lo remienda y por eso nadie lo había
+notado, pero `navegacion.js` colgaba de una cabecera que nunca se cerraba.
+Corregido.
+
+⚠️ **`miembros.html` tiene el mismo problema, con tres.** No se tocó porque no
+era el asunto de hoy y no está roto a la vista. Queda anotado en §B.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/ligas.js` | `normalizarFavoritas` y `aplicarFavoritas`, ambas puras |
+| `src/rutas/admin.js` | Las favoritas se aplican **después** de la caché |
+| `src/rutas/plataforma.js` | `ligasFavoritas` en `PATCH /api/quiniela-actual/configuracion` |
+| `private/js/jornadas.js` | El grupo «⭐ Favoritas», y las de gris sin poder elegirse |
+| `public/configuracion-quiniela.html` | Panel nuevo, y el `<!DOCTYPE>` duplicado |
+| `private/js/configuracion-quiniela.js` | Marcar y guardar favoritas |
+| `test/dominio.test.js` | 9 pruebas puras |
+| `test/rutas.test.js` | 8 de ruta |
+| `test/architecture.test.js` | 1 centinela |
+| `test/e2e/ligas-favoritas.spec.js` | **Nueva.** 4 por la interfaz |
+
+**Verificación:**
+
+```
+npm test         → 343/343
+npm run test:e2e →  76/76
+el centinela, con el código roto a propósito → falla (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una caché compartida es una vía de fuga entre quinielas que la RLS no
+   ve.** La seguridad por fila protege la base; no protege un `Map` en memoria.
+   **Todo lo que se cachee con clave que no incluya la quiniela tiene que ser
+   idéntico para todas** — y si no lo es, se personaliza al salir, nunca al
+   guardar.
+2. **Un centinela que no se ha visto fallar no se sabe si vigila.** Se rompió el
+   código a propósito para comprobarlo. Costó dos comandos.
+3. **Guardar el rótulo y no usarlo no es contradictorio.** Se guarda para el caso
+   en que no hay de dónde sacarlo, y se ignora cuando sí lo hay. Escribirlo así
+   en el comentario evita que alguien «limpie» una de las dos mitades.
+4. **Preguntar cuatro cosas antes de escribir ahorró el trabajo.** La segunda
+   respuesta —escoger de lo que juega la semana— **eliminó un buscador sobre el
+   catálogo entero del proveedor**, que era la mitad del trabajo previsto.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Redesplegar en Render**, que arrastra esto, la recuperación de contraseña
+(Entrada 056) y el enlace (057). No hace falta tocar el esquema ni ninguna
+variable: `ligasFavoritas` entra en el `jsonb` que ya existía.
+
+La **Fase F** queda en el backlog de §20.
 
 ---
 

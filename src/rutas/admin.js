@@ -89,8 +89,19 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     const rango = ligas.rangoDeBusqueda({ desde: req.query.desde, dias: req.query.dias });
     const clave = `${rango.desde}|${rango.hasta}`;
 
+    /*
+     * ⚠️ Las favoritas se aplican DESPUÉS de la caché, nunca antes de guardarla.
+     *
+     * La caché tiene por clave el rango de fechas y nada más, a propósito: dos
+     * quinielas que sigan los mismos días comparten la consulta al proveedor, y
+     * ahí está el ahorro de cuota. Guardar la versión ya ordenada le serviría a
+     * la quiniela siguiente los favoritos de la anterior. Lo que se guarda es
+     * lo que el proveedor dijo; el orden es de cada quiniela.
+     */
+    const favoritas = req.quiniela?.configuracion?.ligasFavoritas;
+
     const enCache = proveedor.leerCacheLigas(clave);
-    if (enCache) return res.json({ ...enCache, deCache: true });
+    if (enCache) return res.json({ ...ligas.aplicarFavoritas(enCache, favoritas), deCache: true });
 
     const partidos = await proveedor.porRango({ desde: rango.desde, hasta: rango.hasta });
 
@@ -103,7 +114,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     };
 
     proveedor.guardarCacheLigas(clave, respuesta);
-    res.json({ ...respuesta, deCache: false });
+    res.json({ ...ligas.aplicarFavoritas(respuesta, favoritas), deCache: false });
   });
 
   app.get('/api/football/leagues', async (req, res) => {

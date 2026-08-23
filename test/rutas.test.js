@@ -1468,14 +1468,14 @@ async function conProveedorFalso(respuestas, fn) {
   try { return await fn(); } finally { proveedor.usarFuente(anterior); }
 }
 
-const eventoApi = ({ id = '1', local = 'Alfa', visitante = 'Beta', liga = 'Primera', pais = 'Costa Rica' } = {}) => ({
+const eventoApi = ({ id = '1', local = 'Alfa', visitante = 'Beta', liga = 'Primera', pais = 'Costa Rica', ligaId = '7' } = {}) => ({
   match_id: id,
   match_date: '2099-01-01',
   match_time: '15:00',
   match_status: 'Finished',
   league_name: liga,
   country_name: pais,
-  league_id: '7',
+  league_id: ligaId,
   match_hometeam_name: local,
   match_awayteam_name: visitante,
   team_home_badge: '', team_away_badge: '',
@@ -1556,6 +1556,137 @@ test('el buscador de ligas agrupa por país y se cachea', async () => {
 
   assert.equal(consultas, 1, 'quien arma una jornada abre esa pantalla varias veces seguidas');
   proveedor.vaciarCacheLigas();
+});
+
+/* ---------- Ligas favoritas ---------- */
+
+/** Marca favoritas en la quiniela de `jefe` y devuelve la respuesta. */
+async function marcarFavoritas(jefe, ligasFavoritas) {
+  return jefe.agente.patch('/api/quiniela-actual/configuracion').send({ ligasFavoritas });
+}
+
+const DOS_LIGAS = [
+  eventoApi({ id: '1', liga: 'Primera División', pais: 'Costa Rica', ligaId: '7' }),
+  eventoApi({ id: '2', liga: 'Liga MX', pais: 'México', ligaId: '12' })
+];
+
+test('las ligas favoritas salen de primero y no se repiten abajo', async () => {
+  const jefe = await admin('jefe');
+  proveedor.vaciarCacheLigas();
+
+  assert.equal((await marcarFavoritas(jefe, [{ id: '12', nombre: 'Liga MX' }])).status, 200);
+
+  await conProveedorFalso({ get_events: DOS_LIGAS }, async () => {
+    const res = await jefe.agente.get('/api/football/ligas-disponibles');
+
+    assert.deepEqual(res.body.favoritas.map(l => l.nombre), ['Liga MX']);
+    assert.equal(res.body.favoritas[0].partidos, 1);
+
+    const abajo = res.body.paises.flatMap(g => g.ligas.map(l => l.nombre));
+    assert.ok(!abajo.includes('Liga MX'));
+    assert.ok(abajo.includes('Primera División'));
+  });
+
+  proveedor.vaciarCacheLigas();
+});
+
+test('⛔ la caché compartida NO cuela las favoritas de una quiniela en otra', async () => {
+  /*
+   * La caché tiene por clave el rango de fechas y nada más, para que dos
+   * quinielas que sigan los mismos días compartan la consulta al proveedor. Es
+   * justo por eso que lo guardado tiene que ser lo que dijo el proveedor, sin
+   * ordenar: el orden es de cada quiniela.
+   */
+  const uno = await admin('favuno');
+  const otro = await admin('favotro');
+  proveedor.vaciarCacheLigas();
+
+  await marcarFavoritas(uno, [{ id: '12', nombre: 'Liga MX' }]);
+
+  let consultas = 0;
+  await conProveedorFalso(() => { consultas += 1; return DOS_LIGAS; }, async () => {
+    // La primera llena la caché, ya con las favoritas de `uno` aplicadas.
+    const primera = await uno.agente.get('/api/football/ligas-disponibles');
+    assert.deepEqual(primera.body.favoritas.map(l => l.nombre), ['Liga MX']);
+
+    // La segunda la lee de caché, y no tiene favoritas ningunas.
+    const segunda = await otro.agente.get('/api/football/ligas-disponibles');
+    assert.equal(segunda.body.deCache, true, 'el ahorro de cuota tiene que seguir en pie');
+    assert.deepEqual(segunda.body.favoritas, [], 'no son sus favoritas');
+
+    const abajo = segunda.body.paises.flatMap(g => g.ligas.map(l => l.nombre));
+    assert.ok(abajo.includes('Liga MX'),
+      'y la liga tiene que seguir en su país, no arrancada por la quiniela anterior');
+  });
+
+  assert.equal(consultas, 1);
+  proveedor.vaciarCacheLigas();
+});
+
+test('una favorita sin partidos esta semana llega con partidos en 0', async () => {
+  const jefe = await admin('jefe');
+  proveedor.vaciarCacheLigas();
+
+  await marcarFavoritas(jefe, [{ id: '999', nombre: 'Liga Centroamericana' }]);
+
+  await conProveedorFalso({ get_events: DOS_LIGAS }, async () => {
+    const res = await jefe.agente.get('/api/football/ligas-disponibles');
+    assert.deepEqual(res.body.favoritas, [
+      { id: '999', nombre: 'Liga Centroamericana', partidos: 0, pais: null }
+    ]);
+  });
+
+  proveedor.vaciarCacheLigas();
+});
+
+test('guardar favoritas no se lleva por delante la puntuación', async () => {
+  /*
+   * `configuracion` es un bloque jsonb que se funde por arriba. Escribir la
+   * lista no puede tocar lo demás.
+   */
+  const jefe = await admin('jefe');
+  const antes = (await jefe.agente.get('/api/quiniela-actual')).body.configuracion;
+
+  await marcarFavoritas(jefe, [{ id: '7', nombre: 'Primera División' }]);
+
+  const despues = (await jefe.agente.get('/api/quiniela-actual')).body.configuracion;
+  assert.deepEqual(despues.puntuacion, antes.puntuacion);
+  assert.deepEqual(despues.ligasFavoritas, [{ id: '7', nombre: 'Primera División' }]);
+});
+
+test('mandar una lista vacía quita todas las favoritas', async () => {
+  const jefe = await admin('jefe');
+
+  await marcarFavoritas(jefe, [{ id: '7', nombre: 'Primera División' }]);
+  assert.equal((await marcarFavoritas(jefe, [])).status, 200);
+
+  const config = (await jefe.agente.get('/api/quiniela-actual')).body.configuracion;
+  assert.deepEqual(config.ligasFavoritas, []);
+});
+
+test('⚠️ pasarse del tope avisa, en vez de recortar en silencio', async () => {
+  const jefe = await admin('jefe');
+
+  const muchas = Array.from({ length: 25 }, (_, i) => ({ id: String(i), nombre: 'Liga ' + i }));
+  const res = await marcarFavoritas(jefe, muchas);
+
+  assert.equal(res.status, 400, 'quien marcó veinticinco creería que se guardaron las veinticinco');
+  assert.match(res.body.error, /favoritas/i);
+});
+
+test('las favoritas tienen que venir en una lista', async () => {
+  const jefe = await admin('jefe');
+  assert.equal((await marcarFavoritas(jefe, { id: '7' })).status, 400);
+});
+
+test('un miembro normal no puede cambiar las favoritas de la quiniela', async () => {
+  const jefe = await admin('jefe');
+  const socio = await miembroDe(jefe);
+
+  const res = await socio.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ ligasFavoritas: [{ id: '7', nombre: 'Suya no' }] });
+
+  assert.equal(res.status, 403);
 });
 
 test('un miembro normal no puede consultar las ligas disponibles', async () => {

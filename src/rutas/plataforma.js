@@ -30,6 +30,7 @@ const db = require('../db');
 const usuariosMod = require('../usuarios');
 const quinielasMod = require('../quinielas');
 const membresiasMod = require('../membresias');
+const ligas = require('../ligas');
 
 /** De motivo de negocio a código HTTP. Un solo sitio donde mirarlo. */
 const CODIGOS = {
@@ -283,6 +284,31 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     }
     if (req.body.incluirExpulsadosEnRanking !== undefined) {
       parcial.incluirExpulsadosEnRanking = Boolean(req.body.incluirExpulsadosEnRanking);
+    }
+
+    /*
+     * Las ligas favoritas se sustituyen enteras, no se funden: son una lista, y
+     * fundir listas no significa nada. Mandar `[]` es la forma de no tener
+     * ninguna, y por eso se distingue «no vino» de «vino vacía».
+     */
+    if (req.body.ligasFavoritas !== undefined) {
+      if (!Array.isArray(req.body.ligasFavoritas)) {
+        return res.status(400).json({ error: 'Las ligas favoritas deben venir en una lista.' });
+      }
+
+      const limpias = ligas.normalizarFavoritas(req.body.ligasFavoritas);
+
+      /*
+       * Se avisa en vez de recortar en silencio: quien marcó veinticinco tiene
+       * que enterarse de que cinco no se guardaron, o creerá que sí.
+       */
+      if (req.body.ligasFavoritas.length > ligas.MAXIMO_FAVORITAS) {
+        return res.status(400).json({
+          error: `No se pueden marcar más de ${ligas.MAXIMO_FAVORITAS} ligas favoritas.`
+        });
+      }
+
+      parcial.ligasFavoritas = limpias;
     }
 
     const quiniela = await quinielasMod.actualizarConfiguracion(req.quiniela.id, parcial);

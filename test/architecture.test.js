@@ -444,6 +444,35 @@ test('cada partido tiene ventana de consulta según su estado real', () => {
   assert.match(mod, /Math\.min\(proxima, inicio\.getTime\(\)\)/);
 });
 
+test('lo que se guarda en la cache de ligas es lo del proveedor, sin favoritas', () => {
+  /*
+   * La cache de ligas tiene por clave el rango de fechas y NADA MAS, para que
+   * dos quinielas que sigan los mismos dias compartan la consulta al proveedor:
+   * ahi esta el ahorro de cuota que prometia C-01.
+   *
+   * Por eso lo que se guarda tiene que ser lo que dijo el proveedor. Guardar la
+   * version ya ordenada le serviria a la quiniela siguiente los favoritos de la
+   * anterior, con las ligas arrancadas de sus paises. Se aplica DESPUES de leer
+   * la cache, en las dos salidas de la ruta.
+   */
+  const admin = quitarComentarios(leer(path.join('src', 'rutas', 'admin.js')));
+
+  assert.match(admin, /guardarCacheLigas\(clave, respuesta\)/);
+  assert.doesNotMatch(admin, /guardarCacheLigas\([^)]*aplicarFavoritas/,
+    'guardar lo ya ordenado envenena una cache que se comparte entre quinielas');
+
+  // Y las dos salidas —la de cache y la fresca— tienen que aplicarlas.
+  assert.equal((admin.match(/ligas\.aplicarFavoritas\(/g) || []).length, 2);
+
+  /*
+   * Y la funcion que las aplica no puede modificar lo que recibe, porque lo que
+   * recibe es la propia entrada de la cache.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'ligas.js')));
+  assert.match(mod, /return \{\s*\.\.\.agrupado/);
+  assert.doesNotMatch(mod, /agrupado\.paises\s*=/);
+});
+
 test('el cerrojo de sincronización caduca solo, y solo lo suelta su dueño', () => {
   /*
    * Sin caducidad, una instancia que muere a mitad de ciclo deja el cerrojo

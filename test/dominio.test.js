@@ -21,6 +21,7 @@ const quinielasMod = require('../src/quinielas');
 const membresias = require('../src/membresias');
 const jornadas = require('../src/jornadas');
 const jugadores = require('../src/jugadores');
+const ligas = require('../src/ligas');
 const enMemoria = require('./postgres-en-memoria');
 
 test.before(async () => { await enMemoria.levantar(); });
@@ -293,4 +294,123 @@ test('los equipos de una quiniela no se ven desde otra', async () => {
 
   await jugadores.agregarEquipo(a.quiniela.id, 'Solo de A');
   assert.deepEqual(await jugadores.equipos(b.quiniela.id), []);
+});
+
+
+/* ==================== Ligas favoritas ==================== */
+
+/*
+ * Nada de esto toca la base: son funciones puras. Viven aquí porque las ligas
+ * son de lo que se arma una jornada, que es el tema de esta suite.
+ */
+
+/** Lo que devuelve `agruparLigasPorPais`, escrito a mano para no depender de él. */
+const agrupado = () => ({
+  desde: '2099-01-01',
+  hasta: '2099-01-07',
+  paises: [
+    { pais: 'Costa Rica', ligas: [
+      { id: '7', nombre: 'Primera División', partidos: 6 },
+      { id: '9', nombre: 'Segunda División', partidos: 4 }
+    ] },
+    { pais: 'México', ligas: [{ id: '12', nombre: 'Liga MX', partidos: 9 }] }
+  ]
+});
+
+test('las favoritas suben arriba y NO se repiten en su país', () => {
+  const salida = ligas.aplicarFavoritas(agrupado(), [{ id: '12', nombre: 'Liga MX' }]);
+
+  assert.deepEqual(salida.favoritas.map(l => l.nombre), ['Liga MX']);
+  assert.equal(salida.favoritas[0].partidos, 9);
+
+  const nombresAbajo = salida.paises.flatMap(g => g.ligas.map(l => l.nombre));
+  assert.ok(!nombresAbajo.includes('Liga MX'), 'verla dos veces confunde más de lo que ayuda');
+});
+
+test('un país que se queda sin ligas desaparece de la lista', () => {
+  const salida = ligas.aplicarFavoritas(agrupado(), [{ id: '12', nombre: 'Liga MX' }]);
+  assert.deepEqual(salida.paises.map(g => g.pais), ['Costa Rica'],
+    'un grupo vacío es un rótulo sin nada debajo');
+});
+
+test('⚠️ una favorita que esta semana no juega sale igual, con partidos en 0', () => {
+  /*
+   * Es lo que el navegador pinta en gris. Esconderla haría pensar que la
+   * configuración se perdió.
+   */
+  const salida = ligas.aplicarFavoritas(agrupado(), [{ id: '999', nombre: 'Liga Centroamericana' }]);
+
+  assert.equal(salida.favoritas.length, 1);
+  assert.equal(salida.favoritas[0].nombre, 'Liga Centroamericana');
+  assert.equal(salida.favoritas[0].partidos, 0);
+});
+
+test('las favoritas que juegan van antes que las que no', () => {
+  const salida = ligas.aplicarFavoritas(agrupado(), [
+    { id: '999', nombre: 'AAA sin partidos' },
+    { id: '12', nombre: 'Liga MX' }
+  ]);
+
+  assert.deepEqual(salida.favoritas.map(l => l.partidos), [9, 0],
+    'empezar por lo que no se puede elegir sería empezar por lo inútil');
+});
+
+test('⚠️ el rótulo que se muestra es el del proveedor, no el que se guardó', () => {
+  /*
+   * Si renombraron el torneo, el nombre guardado al marcarlo es el desfasado.
+   * El id es lo que identifica; el nombre sólo rotula. Ésa fue la lección de la
+   * Fase C y aquí vuelve a aplicar.
+   */
+  const salida = ligas.aplicarFavoritas(agrupado(), [{ id: '12', nombre: 'Nombre viejo' }]);
+  assert.equal(salida.favoritas[0].nombre, 'Liga MX');
+});
+
+test('⛔ aplicar favoritas NO TOCA lo que recibe: la caché se comparte entre quinielas', () => {
+  /*
+   * La caché de ligas tiene por clave el rango de fechas y nada más, para que
+   * dos quinielas que sigan los mismos días compartan la consulta. Si esto
+   * mutara el objeto guardado, la quiniela siguiente recibiría los favoritos de
+   * la anterior, con las ligas ya arrancadas de sus países.
+   */
+  const original = agrupado();
+  const copia = JSON.parse(JSON.stringify(original));
+
+  ligas.aplicarFavoritas(original, [{ id: '12', nombre: 'Liga MX' }]);
+
+  assert.deepEqual(original, copia, 'la entrada de la caché tiene que quedar intacta');
+});
+
+test('sin favoritas, la lista de países queda como estaba', () => {
+  const salida = ligas.aplicarFavoritas(agrupado(), []);
+  assert.deepEqual(salida.favoritas, []);
+  assert.deepEqual(salida.paises, agrupado().paises);
+});
+
+test('las favoritas sin id o sin nombre se descartan', () => {
+  /*
+   * El nombre es obligatorio porque una favorita que no juega esta semana no
+   * tiene de dónde sacar su rótulo: los nombres llegan con los partidos.
+   */
+  assert.deepEqual(ligas.normalizarFavoritas([
+    { id: '7', nombre: 'Vale' },
+    { id: '', nombre: 'Sin id' },
+    { id: '8', nombre: '   ' },
+    null,
+    'basura'
+  ]), [{ id: '7', nombre: 'Vale' }]);
+});
+
+test('las favoritas repetidas se quedan en una, y hay un tope', () => {
+  assert.deepEqual(ligas.normalizarFavoritas([
+    { id: '7', nombre: 'Primera' },
+    { id: '7', nombre: 'Primera otra vez' }
+  ]), [{ id: '7', nombre: 'Primera' }]);
+
+  const muchas = Array.from({ length: ligas.MAXIMO_FAVORITAS + 5 },
+    (_, i) => ({ id: String(i), nombre: 'Liga ' + i }));
+
+  assert.equal(ligas.normalizarFavoritas(muchas).length, ligas.MAXIMO_FAVORITAS,
+    'esto vive dentro de un jsonb que se lee entero en cada consulta de la quiniela');
+
+  assert.deepEqual(ligas.normalizarFavoritas('no es una lista'), []);
 });

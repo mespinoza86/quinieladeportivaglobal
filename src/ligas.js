@@ -159,13 +159,123 @@ function agruparLigasPorPais(partidos = []) {
     });
 }
 
+/* ==================== Ligas favoritas ==================== */
+
+/*
+ * Tope de favoritas. No es una limitación del uso —nadie sigue veinte ligas—
+ * sino del almacenamiento: esto vive dentro de `quinielas.configuracion`, que
+ * es un bloque jsonb que se lee y se escribe ENTERO. Una lista sin tope la
+ * engorda sin límite y se paga en cada lectura de la quiniela.
+ */
+const MAXIMO_FAVORITAS = 20;
+
+/**
+ * Deja la lista de favoritas en algo usable, venga como venga.
+ *
+ * Se guarda `{ id, nombre }` y no sólo el id **porque una favorita que esta
+ * semana no juega tiene que poder mostrarse igual**, en gris. Si sólo se
+ * guardara el id no habría de dónde sacar el rótulo: el nombre llega con los
+ * partidos, y justamente no hay partidos.
+ *
+ * El id manda: es el del proveedor, y es lo que sobrevive a que renombren la
+ * competición. El nombre es sólo la etiqueta, y se refresca cuando se puede.
+ */
+function normalizarFavoritas(valor) {
+  if (!Array.isArray(valor)) return [];
+
+  const vistas = new Set();
+  const limpias = [];
+
+  for (const cruda of valor) {
+    if (!cruda) continue;
+
+    const id = String(cruda.id ?? '').trim();
+    const nombre = String(cruda.nombre ?? '').trim();
+    if (!id || !nombre || vistas.has(id)) continue;
+
+    vistas.add(id);
+    limpias.push({ id, nombre });
+    if (limpias.length >= MAXIMO_FAVORITAS) break;
+  }
+
+  return limpias;
+}
+
+/**
+ * Saca las favoritas de sus países y las devuelve aparte, para pintarlas arriba.
+ *
+ * ⚠️ NO TOCA LO QUE RECIBE. Parece un detalle de estilo y no lo es: quien llama
+ * le pasa el objeto que está guardado en la caché de ligas, y esa caché **se
+ * comparte entre quinielas** —tiene por clave el rango de fechas y nada más—.
+ * Modificarlo aquí le serviría a la quiniela siguiente los favoritos de la
+ * anterior, con las ligas ya arrancadas de sus países.
+ *
+ * Las que no aparecen entre los partidos de la semana salen con `partidos: 0`:
+ * eso es lo que el navegador pinta en gris. Se prefiere eso a esconderlas,
+ * porque un favorito que desaparece sin explicación se siente como una
+ * configuración que se perdió.
+ */
+function aplicarFavoritas(agrupado, favoritas = []) {
+  const buscadas = normalizarFavoritas(favoritas);
+  if (!buscadas.length) return { ...agrupado, favoritas: [] };
+
+  const porId = new Map(buscadas.map(f => [f.id, f]));
+  const halladas = new Map();
+  const paises = [];
+
+  for (const grupo of agrupado?.paises || []) {
+    const resto = [];
+
+    for (const liga of grupo?.ligas || []) {
+      if (liga?.id && porId.has(liga.id)) {
+        /*
+         * El nombre que se muestra es el que acaba de dar el proveedor, no el
+         * que se guardó al marcarla: si renombraron el torneo, el rótulo viejo
+         * es el desfasado. El id es lo que identifica, el nombre sólo rotula.
+         */
+        halladas.set(liga.id, { ...liga, pais: grupo.pais });
+      } else {
+        resto.push(liga);
+      }
+    }
+
+    // Un país cuyas ligas eran todas favoritas ya no tiene nada que enseñar.
+    if (resto.length) paises.push({ ...grupo, ligas: resto });
+  }
+
+  const conPartidos = [];
+  const sinPartidos = [];
+
+  for (const favorita of buscadas) {
+    const hallada = halladas.get(favorita.id);
+    if (hallada) conPartidos.push(hallada);
+    else sinPartidos.push({ id: favorita.id, nombre: favorita.nombre, partidos: 0, pais: null });
+  }
+
+  const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, 'es');
+
+  /*
+   * Las que juegan primero. El orden en que se marcaron no significa nada —son
+   * casillas—, y dejar arriba las que no se pueden elegir sería empezar por lo
+   * inútil.
+   */
+  return {
+    ...agrupado,
+    favoritas: [...conPartidos.sort(porNombre), ...sinPartidos.sort(porNombre)],
+    paises
+  };
+}
+
 module.exports = {
   DIAS_POR_DEFECTO,
   DIAS_MAXIMO,
   SIN_PAIS,
+  MAXIMO_FAVORITAS,
   normalizarTexto,
   esLigaNoPermitida,
   normalizarDias,
   rangoDeBusqueda,
-  agruparLigasPorPais
+  agruparLigasPorPais,
+  normalizarFavoritas,
+  aplicarFavoritas
 };

@@ -250,6 +250,38 @@ document.addEventListener('DOMContentLoaded', () => {
             todos.textContent = 'Todos los torneos';
             torneoSelect.appendChild(todos);
 
+            /*
+             * Las favoritas de la quiniela, arriba del todo. El servidor ya las
+             * sacó de su país, así que no se repiten más abajo: verlas dos veces
+             * confunde más de lo que ayuda.
+             */
+            if ((datos.favoritas || []).length) {
+                const grupoFavoritas = document.createElement('optgroup');
+                grupoFavoritas.label = '⭐ Favoritas';
+
+                datos.favoritas.forEach(liga => {
+                    const opcion = document.createElement('option');
+                    opcion.value = liga.id ? 'liga:' + liga.id : '';
+
+                    /*
+                     * `partidos: 0` es una favorita que esta semana no juega. Se
+                     * deja a la vista pero no se puede elegir: esconderla haría
+                     * pensar que la configuración se perdió, y dejarla elegible
+                     * daría una búsqueda vacía sin explicar por qué.
+                     */
+                    if (liga.partidos) {
+                        opcion.textContent = liga.nombre + ' (' + liga.partidos + ')';
+                    } else {
+                        opcion.textContent = liga.nombre + ' — sin partidos esta semana';
+                        opcion.disabled = true;
+                    }
+
+                    grupoFavoritas.appendChild(opcion);
+                });
+
+                torneoSelect.appendChild(grupoFavoritas);
+            }
+
             (datos.paises || []).forEach(grupo => {
                 const optgroup = document.createElement('optgroup');
                 optgroup.label = grupo.pais;
@@ -270,8 +302,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             anadirOpcionesFijas();
 
+            /*
+             * Las favoritas cuentan, pero sólo las que juegan: el total dice
+             * cuántos torneos se pueden elegir, y las de «sin partidos» no.
+             */
             const cuantasLigas = (datos.paises || [])
-                .reduce((suma, grupo) => suma + (grupo.ligas || []).length, 0);
+                .reduce((suma, grupo) => suma + (grupo.ligas || []).length, 0)
+                + (datos.favoritas || []).filter(liga => liga.partidos).length;
 
             rangoTexto.textContent = cuantasLigas
                 ? cuantasLigas + ' torneos con partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.'
