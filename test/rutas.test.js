@@ -2077,3 +2077,160 @@ test('⚠️ correoEnviado true NO significa que el correo saliera', async () =>
   assert.equal(correo.bandeja.at(-1).para, res.body.usuario.email,
     'se quedo en la bandeja en memoria, que es donde acaba lo que no se envia');
 });
+
+/* ==================== Recuperar la contraseña ==================== */
+
+/** Pide el enlace de restablecimiento y devuelve su token. */
+async function pedirEnlace(email) {
+  const res = await request(app).post('/api/auth/olvide-password').send({ email });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return ultimoToken();
+}
+
+test('el enlace llega, cambia la contraseña, y la nueva sirve para entrar', async () => {
+  const { datos } = await cuentaNueva('olvida');
+
+  const token = await pedirEnlace(datos.email);
+
+  const cambio = await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'contrasena-nueva-1' });
+  assert.equal(cambio.status, 200);
+  assert.equal(cambio.body.username, datos.username);
+
+  const conNueva = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: 'contrasena-nueva-1' });
+  assert.equal(conNueva.status, 200);
+
+  const conVieja = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: datos.password });
+  assert.equal(conVieja.status, 401, 'la contraseña anterior deja de valer');
+});
+
+test('⚠️ restablecer CIERRA las sesiones abiertas', async () => {
+  const { agente, datos } = await cuentaNueva('sesion');
+
+  // La sesión está viva antes del cambio.
+  assert.equal((await agente.get('/api/auth/me')).status, 200);
+
+  const token = await pedirEnlace(datos.email);
+  const cambio = await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'contrasena-nueva-1' });
+
+  assert.equal(cambio.body.sesionesCerradas, 1);
+
+  /*
+   * Si el motivo del cambio fue que otra persona entró a la cuenta, su sesión
+   * NO puede sobrevivir: cambiar la clave sin esto la dejaría dentro.
+   */
+  assert.equal((await agente.get('/api/auth/me')).status, 401,
+    'la sesión de antes del cambio tiene que morir');
+});
+
+test('⚠️ restablecer confirma la dirección de paso', async () => {
+  /*
+   * Quien abrió el enlace demostró que controla el buzón. Sin esto, alguien que
+   * recuperara la contraseña sin haber confirmado nunca SEGUIRÍA sin poder
+   * entrar, y el mensaje de error no le diría por qué.
+   */
+  const agente = request.agent(app);
+  const datos = credenciales('sinconf');
+  await agente.post('/api/auth/registro').send(datos);
+
+  const token = await pedirEnlace(datos.email);
+  await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'contrasena-nueva-1' });
+
+  const entrada = await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: 'contrasena-nueva-1' });
+
+  assert.equal(entrada.status, 200, 'no puede quedarse fuera por no haber confirmado');
+  assert.equal(entrada.body.usuario.emailVerificado, true);
+});
+
+test('⚠️ el token de restablecer es de UN SOLO uso', async () => {
+  const { datos } = await cuentaNueva('unsolo');
+  const token = await pedirEnlace(datos.email);
+
+  assert.equal((await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'contrasena-nueva-1' })).status, 200);
+
+  const segunda = await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'otra-contrasena-1' });
+  assert.equal(segunda.status, 400);
+
+  // Y la contraseña sigue siendo la del primer cambio.
+  assert.equal((await request(app).post('/api/auth/login')
+    .send({ identificador: datos.username, password: 'contrasena-nueva-1' })).status, 200);
+});
+
+test('⚠️ un token de confirmar NO sirve para restablecer', async () => {
+  /*
+   * Los dos viven en la misma tabla. Si `usable` no filtrara por propósito,
+   * el enlace de confirmar el correo —que dura 24 horas— serviría para cambiar
+   * la contraseña de cualquiera.
+   */
+  const agente = request.agent(app);
+  const datos = credenciales('cruzado');
+  await agente.post('/api/auth/registro').send(datos);
+  const tokenDeConfirmar = ultimoToken();
+
+  const res = await request(app).post('/api/auth/restablecer-password')
+    .send({ token: tokenDeConfirmar, password: 'contrasena-nueva-1' });
+
+  assert.equal(res.status, 400);
+});
+
+test('una contraseña corta se rechaza, y el token NO se gasta', async () => {
+  const { datos } = await cuentaNueva('corta');
+  const token = await pedirEnlace(datos.email);
+
+  const corta = await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'corta' });
+  assert.equal(corta.status, 400);
+
+  // El token sigue sirviendo: no se puede castigar por escribir mal una vez.
+  assert.equal((await request(app).post('/api/auth/restablecer-password')
+    .send({ token, password: 'contrasena-nueva-1' })).status, 200);
+});
+
+test('⚠️ pedir el enlace responde lo MISMO exista o no la cuenta', async () => {
+  const { datos } = await cuentaNueva('misma');
+
+  const existe = await request(app).post('/api/auth/olvide-password').send({ email: datos.email });
+  const noExiste = await request(app).post('/api/auth/olvide-password')
+    .send({ email: 'nadie-de-por-aqui@ejemplo.com' });
+
+  assert.equal(existe.status, 200);
+  assert.equal(noExiste.status, 200);
+  assert.deepEqual(existe.body, noExiste.body,
+    'distinguirlas diría qué direcciones están registradas');
+});
+
+test('no se manda ningún correo a una dirección sin cuenta', async () => {
+  const cuantos = correo.bandeja.length;
+  await request(app).post('/api/auth/olvide-password').send({ email: 'nadie@ejemplo.com' });
+  assert.equal(correo.bandeja.length, cuantos, 'ni da pistas ni gasta cuota');
+});
+
+test('el enlace de restablecer vive MENOS que el de confirmar', async () => {
+  /*
+   * Este enlace ABRE la cuenta a quien lo tenga: un correo viejo olvidado en
+   * una bandeja es una llave. Confirmar una dirección no tiene ese riesgo.
+   */
+  assert.ok(tokens.HORAS_RESTABLECER < tokens.HORAS_VERIFICACION);
+  assert.equal(tokens.HORAS_RESTABLECER, 1);
+});
+
+test('el correo de restablecer dice que ignorarlo no cambia nada', async () => {
+  const { datos } = await cuentaNueva('pie');
+  await pedirEnlace(datos.email);
+
+  const mensaje = correo.bandeja.at(-1);
+  assert.match(mensaje.asunto, /Restablece tu contraseña/);
+  assert.match(mensaje.texto, /restablecer-password\.html\?token=[a-f0-9]{64}/);
+  /*
+   * Quien recibe esto sin haberlo pedido tiene que saber que NO tiene que hacer
+   * nada. Sin esa frase, un correo así asusta.
+   */
+  assert.match(mensaje.texto, /tu contraseña seguirá siendo la misma/);
+});

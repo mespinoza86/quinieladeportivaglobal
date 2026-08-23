@@ -28,6 +28,14 @@ const db = require('./db');
 
 const HORAS_VERIFICACION = Number(process.env.VERIFY_TOKEN_HOURS || 24);
 
+/*
+ * ⚠️ Mucho más corto que el de confirmación, y a propósito: este enlace **abre
+ * la cuenta a quien lo tenga**. Un correo viejo olvidado en una bandeja es una
+ * llave, así que cuanto menos viva, mejor. Confirmar una dirección no tiene ese
+ * riesgo, y por eso aquél dura un día.
+ */
+const HORAS_RESTABLECER = Number(process.env.RESET_TOKEN_HOURS || 1);
+
 const VERIFICAR_EMAIL = 'verificar_email';
 const RESTABLECER_PASSWORD = 'restablecer_password';
 
@@ -88,6 +96,6 @@ async function marcarUsado(id) {
 }
 
 module.exports = {
-  HORAS_VERIFICACION, VERIFICAR_EMAIL, RESTABLECER_PASSWORD,
+  HORAS_VERIFICACION, HORAS_RESTABLECER, VERIFICAR_EMAIL, RESTABLECER_PASSWORD,
   hashDe, emitir, usable, marcarUsado
 };

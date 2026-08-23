@@ -149,6 +149,37 @@ async function marcarVerificado(id) {
   return usuario || null;
 }
 
+/**
+ * Cambia la contraseña. Devuelve el usuario, o `null` si la cuenta no existe.
+ *
+ * No comprueba nada: quien llama decide si tenía derecho —conociendo la
+ * anterior, o presentando un token de un solo uso—.
+ */
+async function cambiarPassword(id, nueva) {
+  const { rows: [usuario] } = await db.consulta(
+    `UPDATE usuarios SET password = $2, updated_at = now()
+      WHERE id = $1 AND activo
+      RETURNING id, username, email, email_verificado`,
+    [id, await bcrypt.hash(nueva, SALT_ROUNDS)]);
+  return usuario || null;
+}
+
+/**
+ * Cierra TODAS las sesiones abiertas de alguien.
+ *
+ * ⚠️ Se llama al restablecer la contraseña, y no es opcional: si el motivo del
+ * cambio fue que otra persona entró a la cuenta, **su sesión no puede
+ * sobrevivir al cambio**. Cambiar la clave sin esto deja al intruso dentro.
+ *
+ * El identificador vive dentro del JSON que guarda `express-session`, así que
+ * se busca por ahí.
+ */
+async function cerrarSesiones(usuarioId) {
+  const { rowCount } = await db.consulta(
+    "DELETE FROM sesiones WHERE sess->>'usuarioId' = $1", [String(usuarioId)]);
+  return rowCount;
+}
+
 async function porId(id) {
   const { rows: [usuario] } = await db.consulta(
     'SELECT id, username, email, email_verificado, activo FROM usuarios WHERE id = $1', [id]);
@@ -158,5 +189,6 @@ async function porId(id) {
 module.exports = {
   normalizarIdentidad, publico, validarRegistro,
   enUso, crear, autenticar, porId, porEmail, marcarVerificado,
+  cambiarPassword, cerrarSesiones,
   SALT_ROUNDS
 };

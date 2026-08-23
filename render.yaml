@@ -82,6 +82,11 @@ services:
       - key: MAIL_FROM_NAME
         value: Quiniela Deportiva Global
 
+      # ⚠️ El enlace de restablecer la contrasena vive 1 hora por defecto -abre
+      # la cuenta a quien lo tenga-. Se descomenta solo si se quiere otro plazo.
+      # - key: RESET_TOKEN_HOURS
+      #   value: '1'
+
       # De donde cuelga el enlace del correo. Sin esto apuntaria a localhost.
       - key: APP_ORIGIN
         value: https://quinieladeportivaglobal.onrender.com

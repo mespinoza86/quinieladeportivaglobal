@@ -190,7 +190,26 @@ async function intentar(envio, descripcion) {
   }
 }
 
+/** El correo para elegir una contraseña nueva. */
+async function enviarRestablecer({ para, nombre, url, horas }) {
+  const { texto, html } = plantilla({
+    titulo: 'Restablece tu contraseña',
+    saludo: `Hola ${nombre}:`,
+    parrafo: `Recibimos una solicitud para cambiar la contraseña de tu cuenta. Abre el enlace para elegir una nueva. Vence en ${horas} hora(s) y sólo se puede usar una vez.`,
+    boton: 'Elegir una contraseña nueva',
+    url,
+    /*
+     * ⚠️ Este pie importa. Quien recibe esto sin haberlo pedido tiene que saber
+     * que NO tiene que hacer nada: su contraseña sigue siendo la misma mientras
+     * no abra el enlace. Sin esa frase, un correo así asusta.
+     */
+    pie: 'Si no pediste este cambio, puedes ignorar este mensaje: tu contraseña seguirá siendo la misma.'
+  });
+
+  await enviar({ para, asunto: 'Restablece tu contraseña de Quiniela Deportiva Global', texto, html });
+}
+
 module.exports = {
   TRANSPORTE, bandeja,
-  escapar, plantilla, enviarVerificacion, intentar
+  escapar, plantilla, enviarVerificacion, enviarRestablecer, intentar
 };

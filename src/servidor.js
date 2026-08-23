@@ -505,6 +505,81 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
 
   require('./rutas/plataforma').sinQuiniela(app, ctx);
 
+  /* ---------- Recuperar la contraseña ---------- */
+
+  /*
+   * ⚠️ Responde SIEMPRE lo mismo, exista o no la cuenta. Es la misma razón que
+   * en el reenvío de la confirmación: si distinguiera, cualquiera podría
+   * averiguar qué direcciones están registradas probando correos.
+   */
+  app.post('/api/auth/olvide-password', limiteReenvio, async (req, res) => {
+    const usuario = await usuariosMod.porEmail(req.body?.email || '');
+
+    if (usuario) {
+      const token = await tokensMod.emitir(
+        usuario.id, tokensMod.RESTABLECER_PASSWORD, tokensMod.HORAS_RESTABLECER);
+
+      const base = (process.env.APP_ORIGIN || `http://localhost:${PORT}`).replace(/\/+$/, '');
+
+      await correoMod.intentar(
+        () => correoMod.enviarRestablecer({
+          para: usuario.email,
+          nombre: usuario.username,
+          url: `${base}/restablecer-password.html?token=${token}`,
+          horas: tokensMod.HORAS_RESTABLECER
+        }),
+        `el restablecimiento de ${usuario.email}`);
+    }
+
+    res.json({
+      success: true,
+      mensaje: 'Si esa dirección tiene una cuenta, le enviamos un enlace para cambiar la contraseña.'
+    });
+  });
+
+  app.post('/api/auth/restablecer-password', async (req, res) => {
+    const token = String(req.body?.token || '');
+    const password = String(req.body?.password || '');
+
+    if (!token) return res.status(400).json({ error: 'Falta el token.' });
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+
+    const fila = await tokensMod.usable(token, tokensMod.RESTABLECER_PASSWORD);
+    if (!fila) {
+      return res.status(400).json({
+        error: 'El enlace no es válido, ya se usó o venció. Pide otro.'
+      });
+    }
+
+    await db.enTransaccion(async () => {
+      await tokensMod.marcarUsado(fila.id);
+      await usuariosMod.cambiarPassword(fila.usuario_id, password);
+
+      /*
+       * ⚠️ Quien abrió el enlace demostró que controla el buzón, así que la
+       * dirección queda confirmada de paso. Sin esto, alguien que recuperara la
+       * contraseña sin haber confirmado nunca **seguiría sin poder entrar**, y
+       * el mensaje de error no le diría por qué.
+       */
+      await usuariosMod.marcarVerificado(fila.usuario_id);
+    });
+
+    /*
+     * ⚠️ Y se cierran las sesiones abiertas. Si el motivo del cambio fue que
+     * otra persona entró a la cuenta, **su sesión no puede sobrevivir**:
+     * cambiar la clave sin esto la dejaría dentro.
+     *
+     * Va fuera de la transacción a propósito: es un borrado en otra tabla que
+     * no tiene que deshacerse si algo posterior fallara, y cerrar sesiones de
+     * más nunca hace daño.
+     */
+    const cerradas = await usuariosMod.cerrarSesiones(fila.usuario_id);
+
+    res.json({ success: true, username: fila.username, sesionesCerradas: cerradas });
+  });
+
   /* ---------- Las páginas de administración ---------- */
 
   const PAGINAS_ADMIN = [

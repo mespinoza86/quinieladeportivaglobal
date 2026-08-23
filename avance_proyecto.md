@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 310/310
-npm run test:e2e            # 62/62, ~2,5 min
+npm test                    # 325/325
+npm run test:e2e            # 68/68, ~2,5 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,8 +53,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **310**, ~47 s |
-| Pruebas de navegador | **62**, ~2,5 min, contra el servidor de verdad |
+| Pruebas rápidas | **325**, ~50 s |
+| Pruebas de navegador | **68**, ~2,5 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -570,6 +570,7 @@ borrar un archivo es facil, y resucitarlo "temporalmente" tambien.
 | ✅ | **C — Buscador de ligas dinámico** | 9 | Hecha (Entrada 030) |
 | ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031) |
 | ✅ | **E — Verificación de correo** | 8 | Hecha (Entrada 054). **Brevo**, y **sin confirmar no se entra** |
+| ✅ | **Recuperar la contraseña** | — | Hecha (Entrada 056). **No estaba en §20**: salió al ver funcionar el correo, y el terreno ya estaba puesto |
 | **1.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Necesita la tabla de posiciones de cada liga, que hoy no se consulta |
 | ✅ | **Aparte** | 7 (SQL) | **Respondida y en marcha**: se migra. Ver §21 |
 
@@ -8929,6 +8930,105 @@ columnas viejas. La base está vacía, así que vale otra vez `db/poner-al-dia.s
 
 Después queda la **Fase F** — sugerencias de partidos destacados—, que necesita
 definir las heurísticas.
+
+---
+
+### 📌 Entrada 056 — 22 de agosto de 2026 — Recuperar la contraseña
+
+**Objetivo:** que quien olvide su contraseña pueda elegir una nueva. No estaba
+en §20 —es una petición del usuario al ver funcionar el correo— pero el terreno
+ya estaba preparado.
+
+**Casi no hubo que decidir nada, y eso es la señal de que la Fase E se hizo
+bien.** `auth_tokens` ya tenía `restablecer_password` en su `CHECK`,
+`src/tokens.js` ya exportaba la constante, y `src/correo.js` ya tenía la
+plantilla y los tres transportes. La mecánica es idéntica —un valor aleatorio,
+que vence, que se usa una vez y que pertenece a alguien— y por eso se escribió
+una sola tabla para los dos flujos.
+
+**Las cuatro decisiones que sí hubo:**
+
+1. ⚠️ **Restablecer CIERRA todas las sesiones abiertas.** Si el motivo del
+   cambio fue que otra persona entró a la cuenta, **su sesión no puede
+   sobrevivir**: cambiar la clave sin esto la dejaría dentro, que es justo lo
+   contrario de lo que se pretendía. El identificador vive dentro del JSON de
+   `express-session`, así que se busca por `sess->>'usuarioId'`.
+2. ⚠️ **Restablecer confirma la dirección de paso.** Quien abrió el enlace
+   demostró que controla el buzón. Sin esto, alguien que recuperara la
+   contraseña sin haber confirmado nunca **seguiría sin poder entrar**, y el
+   mensaje de error no le diría por qué.
+3. ⚠️ **El enlace vive 1 hora, no 24.** Este enlace **abre la cuenta a quien lo
+   tenga**: un correo viejo olvidado en una bandeja es una llave. Confirmar una
+   dirección no tiene ese riesgo, y por eso aquél sigue durando un día.
+4. **Una contraseña corta no gasta el token.** Escribir mal una vez no puede
+   costar volver a pedir el enlace.
+
+Y lo de siempre contra la enumeración: **pedir el enlace responde igual exista o
+no la cuenta**, y a una dirección sin cuenta no se le manda nada — ni da pistas
+ni gasta cuota.
+
+**Qué se hizo:**
+
+1. **`src/correo.js`** — `enviarRestablecer`, con un pie que importa: *«si no
+   pediste este cambio, tu contraseña seguirá siendo la misma»*. Quien lo recibe
+   sin haberlo pedido tiene que saber que no tiene que hacer nada.
+2. **`src/usuarios.js`** — `cambiarPassword` y `cerrarSesiones`.
+3. **`src/tokens.js`** — `HORAS_RESTABLECER`, con su propia variable de entorno.
+4. **`src/servidor.js`** — `POST /api/auth/olvide-password` y
+   `POST /api/auth/restablecer-password`.
+5. **Dos pantallas** y el enlace desde el login, que es donde uno se acuerda de
+   que la olvidó.
+6. **10 pruebas de rutas y 3 de navegador.**
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/servidor.js` | Las dos rutas |
+| `src/correo.js` | `enviarRestablecer` |
+| `src/usuarios.js` | `cambiarPassword`, `cerrarSesiones` |
+| `src/tokens.js` | `HORAS_RESTABLECER` |
+| `public/olvide-password.html` | **Nueva** |
+| `public/restablecer-password.html` | **Nueva** |
+| `private/js/olvide-password.js` | **Nuevo** |
+| `private/js/restablecer-password.js` | **Nuevo** |
+| `public/login.html` | El enlace «¿Olvidaste tu contraseña?» |
+| `test/rutas.test.js` | 10 pruebas |
+| `test/e2e/password.spec.js` | **Nueva.** 3 pruebas por la interfaz |
+| `.env.example`, `render.yaml` | `RESET_TOKEN_HOURS` |
+
+**Verificación:**
+
+```
+npm test         → 325/325
+npm run test:e2e →  68/68
+```
+
+**Hallazgos nuevos:**
+
+1. **Los dos flujos comparten tabla, y por eso hay que filtrar por propósito.**
+   Si `usable()` no lo hiciera, **el enlace de confirmar el correo —que dura 24
+   horas— serviría para cambiar la contraseña de cualquiera**. Hay una prueba que
+   lo intenta a propósito.
+2. **La sesión se guarda como JSON en la tabla `sesiones`**, con la forma que
+   impone `connect-pg-simple`. Cerrar las de alguien es un `DELETE ... WHERE
+   sess->>'usuarioId' = $1`. Con `connect-mongo` esto habría sido más incómodo:
+   el identificador estaba igual de enterrado, pero sin un operador de camino
+   que lo sacara en la propia consulta.
+3. **El token se borra de la barra de direcciones nada más leerlo.** Aquí importa
+   más que en la confirmación: éste **abre la cuenta**, así que dejarlo a la
+   vista invita a copiarlo o a que lo vea quien pase por detrás.
+4. **Cerrar sesiones va FUERA de la transacción.** Es un borrado en otra tabla
+   que no tiene que deshacerse si algo posterior fallara, y **cerrar sesiones de
+   más nunca hace daño**: lo peor que pasa es que alguien vuelva a entrar.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Hay que redesplegar en Render** para que esté disponible. No hace falta
+tocar el esquema —`auth_tokens` ya estaba— ni ninguna variable, aunque se puede
+poner `RESET_TOKEN_HOURS` si se quiere otro plazo que la hora por defecto.
+
+Y queda la **Fase F** —sugerencias de partidos destacados—, lo último de §20.
 
 ---
 
