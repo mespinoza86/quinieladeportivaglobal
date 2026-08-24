@@ -2698,3 +2698,84 @@ test('⛔ quitar un partido desde la pantalla sólo borra los pronósticos de ES
   assert.deepEqual(fila[1].map(x => x.marcador1), [1, 3],
     'A conserva su 1 y C su 3: ninguno hereda el marcador del que se quitó');
 });
+
+/* ==================== Los tres hallazgos de la auditoría ==================== */
+
+test('⛔ un miembro normal NO puede gastar la cuota del proveedor', async () => {
+  /*
+   * La cuota de APIFootball es UNA SOLA para todas las quinielas. Sin guardia,
+   * cualquiera con cuenta podía pedir rangos de fechas en bucle y dejar al
+   * resto sin poder armar jornadas. No es fuga de datos: es dejar sin servicio
+   * a quinielas ajenas.
+   */
+  const jefe = await admin('cuota');
+  const socio = await miembroDe(jefe, 'cuotasocio');
+
+  assert.equal((await socio.agente.get('/api/football/fixtures?date=2099-01-01')).status, 403);
+  assert.equal((await socio.agente.get('/api/football/leagues')).status, 403);
+  assert.equal((await socio.agente.get('/api/football/ligas-disponibles')).status, 403);
+});
+
+test('⛔ cambiar la contraseña cierra las OTRAS sesiones, no la propia', async () => {
+  /*
+   * Misma razón que en restablecer (Entrada 056): si otra persona entró a la
+   * cuenta, su sesión no puede sobrevivir. Y aquí pesa más, porque quien lo
+   * hace desde su perfil suele hacerlo precisamente porque sospecha.
+   */
+  const jefe = await admin('cierra');
+
+  const otra = request.agent(app);
+  await otra.post('/api/auth/login')
+    .send({ identificador: jefe.datos.username, password: jefe.datos.password });
+  await otra.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+  assert.equal((await otra.get('/api/auth/me')).status, 200, 'la segunda sesión está viva');
+
+  const cambio = await jefe.agente.post(`/api/jugadores/${jefe.datos.username}/cambiar-password`)
+    .send({ currentPassword: jefe.datos.password, newPassword: 'contrasena-nueva-9' });
+
+  assert.equal(cambio.status, 200);
+  assert.equal(cambio.body.sesionesCerradas, 1);
+
+  assert.equal((await otra.get('/api/auth/me')).status, 401,
+    'la sesión de antes del cambio tiene que morir');
+
+  // Y la de quien lo pidió sigue abierta: no se echa a quien hizo lo correcto.
+  assert.equal((await jefe.agente.get('/api/auth/me')).status, 200);
+});
+
+test('las entradas inválidas de cobros dan 400, no 500', async () => {
+  /*
+   * Un identificador que no es uuid hacía que PostgreSQL rechazara la consulta
+   * y salía como «error interno». No filtraba nada, pero cada petición
+   * malformada escribía un error que podía tapar los de verdad.
+   */
+  const jefe = await admin('valida');
+
+  assert.equal((await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: 'no-soy-un-uuid', concepto: 'jornada', monto: 1000 })).status, 400);
+
+  assert.equal((await jefe.agente.post('/api/cobros/abonos/tampoco/anular').send({})).status, 400);
+
+  assert.equal((await jefe.agente.patch('/api/cobros/jugadores/ni-yo')
+    .send({ juegaTorneo: false })).status, 400);
+
+  assert.equal((await jefe.agente.get('/api/cobros/abonos?jugador=basura')).status, 400);
+});
+
+test('un monto absurdo se rechaza con un mensaje, no con un 500', async () => {
+  const jefe = await admin('tope');
+  const socio = await miembroDe(jefe, 'topesocio');
+
+  await jefe.agente.patch('/api/quiniela-actual/configuracion').send({
+    cobros: { torneo: { activo: false, precio: 0 }, jornada: { activo: true, precio: 100 } }
+  });
+
+  const cuentas = await jefe.agente.get('/api/cobros/cuentas');
+  const j = cuentas.body.cuentas.find(c => c.nombre === socio.datos.username);
+
+  const res = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 1e15 });
+
+  assert.equal(res.status, 400, 'numeric(12,2) se desborda y la consulta revienta');
+  assert.match(res.body.error, /monto/i);
+});

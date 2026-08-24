@@ -64,8 +64,14 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * AQUÍ y no en el navegador, donde vivía la lista hasta la Fase C. Antes el
    * filtro sólo se aplicaba si había un torneo elegido: con «todos los torneos»
    * se colaban igual.
+   *
+   * ⛔ EXIGE `requireAdmin`, y no es por los datos: **la cuota del proveedor es
+   * una sola para todas las quinielas**. Sin la guardia, cualquier miembro de
+   * cualquier quiniela podía pedir rangos de fechas en bucle y dejar al resto
+   * sin poder armar jornadas. La ruta hermana —`ligas-disponibles`— sí la
+   * llevaba desde el principio; ésta se quedó sin ella (Entrada 064).
    */
-  app.get('/api/football/fixtures', async (req, res) => {
+  app.get('/api/football/fixtures', requireAdmin, async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const { date, from, to, league } = req.query;
@@ -119,7 +125,8 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     res.json({ ...ligas.aplicarFavoritas(respuesta, favoritas), deCache: false });
   });
 
-  app.get('/api/football/leagues', async (req, res) => {
+  // Misma razón que la de arriba: sale a la red y gasta cuota compartida.
+  app.get('/api/football/leagues', requireAdmin, async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
     res.json(await proveedor.ligas());
   });
@@ -337,6 +344,10 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
 
   /** El historial completo de abonos, para cuando hay que revisar una cuenta. */
   app.get('/api/cobros/abonos', requireAdmin, async (req, res) => {
+    if (req.query.jugador && !cobros.esUuid(req.query.jugador)) {
+      return res.status(400).json({ error: 'Ese jugador no es válido.' });
+    }
+
     res.json(req.query.jugador
       ? await pagosMod.deJugador(req.quiniela.id, req.query.jugador)
       : await pagosMod.deQuiniela(req.quiniela.id));
@@ -346,7 +357,15 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   app.post('/api/cobros/abonos', requireAdmin, async (req, res) => {
     const { jugadorId, concepto, monto, nota } = req.body || {};
 
-    if (!jugadorId) return res.status(400).json({ error: 'Falta el jugador.' });
+    /*
+     * ⚠️ Se comprueba la FORMA antes de consultar. Un identificador que no es
+     * uuid hace que PostgreSQL rechace la consulta, y eso salía como 500
+     * «error interno»: ni dice qué pasó ni deja el registro limpio, y cada
+     * petición malformada escribe un error que puede tapar los de verdad.
+     */
+    if (!cobros.esUuid(jugadorId)) {
+      return res.status(400).json({ error: 'Falta el jugador o no es válido.' });
+    }
     if (!cobros.CONCEPTOS.includes(concepto)) {
       return res.status(400).json({ error: 'El concepto debe ser "torneo" o "jornada".' });
     }
@@ -361,6 +380,16 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
      */
     if (!(cantidad > 0)) {
       return res.status(400).json({ error: 'El monto tiene que ser mayor que cero.' });
+    }
+
+    /*
+     * Y un tope: `numeric(12,2)` se desborda con cifras absurdas y la consulta
+     * revienta. Mejor un mensaje que un 500.
+     */
+    if (cantidad > cobros.MONTO_MAXIMO) {
+      return res.status(400).json({
+        error: `El monto no puede pasar de ${cobros.MONTO_MAXIMO.toLocaleString('es-CR')}.`
+      });
     }
 
     const jugador = await pagosMod.cuentaDetallada(
@@ -383,6 +412,10 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * reescribirlo.
    */
   app.post('/api/cobros/abonos/:pagoId/anular', requireAdmin, async (req, res) => {
+    if (!cobros.esUuid(req.params.pagoId)) {
+      return res.status(400).json({ error: 'Ese abono no es válido.' });
+    }
+
     const r = await pagosMod.anular(req.quiniela.id, req.params.pagoId, {
       registradoPor: req.session.usuarioId,
       nota: req.body?.nota
@@ -401,6 +434,10 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
 
   /** Si un jugador entra al torneo completo, y desde qué jornada se le cobra. */
   app.patch('/api/cobros/jugadores/:jugadorId', requireAdmin, async (req, res) => {
+    if (!cobros.esUuid(req.params.jugadorId)) {
+      return res.status(400).json({ error: 'Ese jugador no es válido.' });
+    }
+
     const { juegaTorneo, cobrarDesde } = req.body || {};
 
     if (cobrarDesde !== undefined && cobrarDesde !== null && !(Number(cobrarDesde) >= 1)) {
@@ -418,6 +455,9 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   app.patch('/api/cobros/jornadas/:nombre/precio', requireAdmin, async (req, res) => {
     const precio = cobros.aMonto(req.body?.precio);
     if (!(precio >= 0)) return res.status(400).json({ error: 'El precio no puede ser negativo.' });
+    if (precio > cobros.MONTO_MAXIMO) {
+      return res.status(400).json({ error: 'El precio es demasiado alto.' });
+    }
 
     const j = await require('../jornadas').cambiarPrecio(
       req.quiniela.id, req.params.nombre, precio);

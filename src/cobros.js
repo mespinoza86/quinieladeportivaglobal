@@ -45,6 +45,21 @@
 /** Los dos conceptos que se cobran. Cada abono es de uno o del otro. */
 const CONCEPTOS = ['torneo', 'jornada'];
 
+/*
+ * Tope de un abono. `numeric(12,2)` aguanta hasta 9.999.999.999,99, y pasarse
+ * hacía reventar la consulta con un 500 en vez de decir qué pasaba. Diez
+ * millones es holgadísimo para una quiniela de barrio y deja el error del lado
+ * del mensaje claro.
+ */
+const MONTO_MAXIMO = 10_000_000;
+
+/** ¿Tiene forma de uuid? Sirve para no mandarle basura a PostgreSQL. */
+const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function esUuid(valor) {
+  return ES_UUID.test(String(valor || ''));
+}
+
 /**
  * Lo que trae una quiniela que no ha configurado nada.
  *
@@ -223,6 +238,8 @@ function jornadaPagada({ jugador, jornadas = [], pagos = [], jornadaId } = {}) {
 
 module.exports = {
   CONCEPTOS,
+  MONTO_MAXIMO,
+  esUuid,
   COBROS_POR_DEFECTO,
   aMonto,
   normalizarCobros,

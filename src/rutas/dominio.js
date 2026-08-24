@@ -109,7 +109,32 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
       'UPDATE usuarios SET password = $2, updated_at = now() WHERE id = $1',
       [usuario.id, await bcrypt.hash(newPassword, usuariosMod.SALT_ROUNDS)]);
 
-    res.json({ message: 'Contraseña cambiada correctamente' });
+    /*
+     * ⚠️ CAMBIAR LA CONTRASEÑA CIERRA LAS DEMÁS SESIONES.
+     *
+     * Es la misma razón que en `restablecer-password` (Entrada 056): si el
+     * motivo del cambio fue que otra persona entró a la cuenta, **su sesión no
+     * puede sobrevivir**. Y aquí pesa más todavía, porque quien cambia su
+     * contraseña desde su perfil suele hacerlo precisamente porque sospecha.
+     *
+     * Se hace DESPUÉS de guardar la contraseña nueva: al revés, un fallo al
+     * guardar dejaría a todo el mundo fuera sin haber cambiado nada.
+     */
+    const cerradas = await usuariosMod.cerrarSesiones(usuario.id);
+
+    /*
+     * Y la sesión de quien lo pidió se vuelve a dejar abierta: el borrado se
+     * las llevó todas, incluida la suya, y no tiene sentido echar de la
+     * aplicación a quien acaba de hacer lo correcto.
+     */
+    req.session.usuarioId = usuario.id;
+    await new Promise((listo, fallo) =>
+      req.session.save(error => (error ? fallo(error) : listo())));
+
+    res.json({
+      message: 'Contraseña cambiada correctamente',
+      sesionesCerradas: Math.max(0, cerradas - 1)
+    });
   });
 
   /* ==================== Jornadas ==================== */

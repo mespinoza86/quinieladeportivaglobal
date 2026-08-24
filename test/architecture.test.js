@@ -511,6 +511,30 @@ test('⚠️ los abonos no se editan ni se borran: se corrigen con un asiento in
   assert.match(esquema, /CREATE UNIQUE INDEX pagos_una_anulacion_por_abono/);
 });
 
+test('⛔ toda ruta que salga a la red del proveedor exige requireAdmin', () => {
+  /*
+   * La cuota de APIFootball es UNA SOLA para todas las quinielas. Una ruta de
+   * `/api/football/*` sin guardia deja que cualquier miembro de cualquier
+   * quiniela pida rangos de fechas en bucle y agote la cuota de TODAS.
+   *
+   * No es fuga de datos y por eso se coló: `ligas-disponibles` llevaba la
+   * guardia desde el principio y `fixtures` no, sin que nada lo delatara
+   * (Entrada 064). Esto lo delata.
+   */
+  const admin = quitarComentarios(leer(path.join('src', 'rutas', 'admin.js')));
+
+  const rutasFootball = [...admin.matchAll(
+    /app\.(get|post|patch|delete)\('(\/api\/football\/[^']+)'\s*,\s*([^,)]+)/g)];
+
+  assert.ok(rutasFootball.length >= 3,
+    `Se esperaban al menos 3 rutas de proveedor, hay ${rutasFootball.length}`);
+
+  for (const [, , ruta, siguiente] of rutasFootball) {
+    assert.equal(siguiente.trim(), 'requireAdmin',
+      `${ruta} sale a la red y gasta cuota compartida: necesita requireAdmin`);
+  }
+});
+
 test('lo que se guarda en la cache de ligas es lo del proveedor, sin favoritas', () => {
   /*
    * La cache de ligas tiene por clave el rango de fechas y NADA MAS, para que

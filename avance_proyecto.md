@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 395/395
+npm test                    # 400/400
 npm run test:e2e            # 94/94, ~3,4 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **395**, ~60 s |
+| Pruebas rápidas | **400**, ~65 s |
 | Pruebas de navegador | **94**, ~3,4 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -606,7 +606,13 @@ Lo que sigue abierto:
    vez.** El aislamiento está probado —RLS, 240 peticiones concurrentes, y
    pruebas en cada módulo— pero eso es distinto de haberlo visto funcionando con
    gente dentro. Es lo primero que dirá si algo se pasó por alto.
-6. ⚠️ **`public/miembros.html` abre TRES documentos**: tres `<!DOCTYPE>`, tres
+6. **Sin limitador en `verificar-password` ni `cambiar-password`.** Sólo sirve
+   contra la cuenta propia y exige la contraseña actual, así que es poco
+   explotable; queda anotado por si algún día se endurece (Entrada 064).
+7. **`script-src` permite `cdnjs.cloudflare.com`**, que es de donde sale jsPDF.
+   Si ese CDN se viera comprometido, ejecutaría código en las pantallas. Es el
+   compromiso habitual de usar un CDN, pero conviene tenerlo escrito.
+8. ⚠️ **`public/miembros.html` abre TRES documentos**: tres `<!DOCTYPE>`, tres
    `<html>` y tres `<head>`. El navegador lo remienda y la pantalla funciona,
    por eso lleva ahí desde siempre sin que nadie lo note. El mismo fallo estaba
    en `configuracion-quiniela.html` y se corrigió en la Entrada 059; éste se
@@ -917,7 +923,7 @@ demás recibe la conexión ya preparada.
 |---|---:|---|
 | `puntuacion.js` | 377 | 10 — resultados, totales, clasificación por jornada |
 | `plataforma.js` | 387 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
-| `admin.js` | 430 | 20 — administración, sincronizador y **cobros** |
+| `admin.js` | 470 | 20 — administración, sincronizador y **cobros** |
 | `dominio.js` | 268 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 235 | 14 — trivias y sus respuestas |
 
@@ -948,7 +954,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 395 pruebas rápidas y 94 de navegador
+### 2.5 `test/` — 400 pruebas rápidas y 94 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -956,8 +962,8 @@ PostgreSQL de verdad y no una imitación.
 
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
-| `rutas.test.js` | 2.700 | **167** | El servidor en marcha: HTTP real con `supertest` |
-| `architecture.test.js` | 1.253 | **50** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `rutas.test.js` | 2.780 | **171** | El servidor en marcha: HTTP real con `supertest` |
+| `architecture.test.js` | 1.300 | **51** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
 | `puntuacion.test.js` | 700 | 31 | El motor de puntos, comodines y **la identidad del partido** |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
@@ -10045,6 +10051,126 @@ Redesplegar en Render. **No toca la base.**
 quitando partidos por el camino de guardar la jornada entera, en vez de usar
 `eliminarPartidos`. Ahora es **seguro** —por eso no urge— pero es un rodeo, y
 `eliminarPartidos` sigue sin usarse fuera de las pruebas.
+
+---
+
+### 📌 Entrada 064 — 23 de agosto de 2026 — Auditoría de seguridad: tres agujeros y lo que sí estaba bien
+
+**Objetivo:** el usuario preguntó si había alguna vulnerabilidad que tener en
+cuenta, ahora que el sistema maneja dinero. Se auditó **con sondas ejecutables**,
+no leyendo el código: cada sospecha se comprobó lanzando la petición y mirando
+qué respondía.
+
+## 1. ⛔ Cualquier miembro podía gastar la cuota del proveedor
+
+`/api/football/fixtures` **no llevaba `requireAdmin`**. Su ruta hermana,
+`ligas-disponibles`, sí. Comprobado con una sonda: un miembro normal recibía
+**200** de la primera y **403** de la segunda.
+
+⚠️ **La cuota de APIFootball es UNA SOLA para todas las quinielas.** Cualquiera
+con cuenta en cualquier quiniela podía pedir rangos de fechas en bucle y dejar
+al resto sin poder armar jornadas. No es fuga de datos —y por eso se coló— pero
+sí **impacto entre quinielas**, que es justo lo que la RLS existe para impedir en
+la base y aquí se escapaba por otro sitio.
+
+Se puso la guardia en las tres rutas de `/api/football/*`, y un centinela que
+recorre el archivo y **exige que todas la lleven**. Se comprobó quitándosela a
+una a propósito.
+
+## 2. ⛔ Cambiar la contraseña no echaba a quien ya estuviera dentro
+
+Comprobado con dos sesiones abiertas: se cambió la contraseña desde una y **la
+otra siguió respondiendo 200**. La contraseña vieja sí dejaba de servir, pero la
+sesión que ya estaba abierta sobrevivía.
+
+Lo llamativo es que **el proyecto ya sabía que eso está mal**: restablecer la
+contraseña sí cierra todas las sesiones, y la Entrada 056 escribió por qué —*«si
+el motivo del cambio fue que otra persona entró a la cuenta, su sesión no puede
+sobrevivir»*—. Ese razonamiento **pesa más aquí**: quien cambia su contraseña
+desde su perfil suele hacerlo precisamente porque sospecha.
+
+`cerrarSesiones` ya existía; sólo había que llamarla. Y un detalle que sí hubo
+que pensar: el borrado se lleva **todas** las sesiones, incluida la de quien lo
+pidió, así que después se vuelve a guardar la suya. **No tiene sentido echar de
+la aplicación a quien acaba de hacer lo correcto.**
+
+## 3. Entradas inválidas daban 500 en vez de 400
+
+Un `jugadorId` que no es uuid, o un monto de 10¹⁵ que desborda `numeric(12,2)`:
+los dos devolvían **«error interno»**. No se filtraba nada —el mensaje es
+genérico— pero **cada petición malformada escribía un error en el registro**, y
+ese ruido puede tapar los que sí importan.
+
+Se comprueba la forma antes de consultar, y hay un tope de diez millones por
+abono: holgadísimo para una quiniela y suficiente para que el error salga como
+mensaje y no como caída.
+
+## Lo que se comprobó y estaba bien
+
+Vale la pena dejarlo escrito, para no volver a auditarlo desde cero:
+
+| Qué | Estado |
+|---|---|
+| Dependencias | `npm audit --omit=dev` → **0 vulnerabilidades** |
+| Aislamiento entre quinielas | RLS **activada y forzada** en las 13 tablas, `pagos` incluida |
+| Inyección SQL | Todas las consultas parametrizadas |
+| Cookie de sesión | `httpOnly`, `secure` en producción, `sameSite: strict` |
+| Salto de directorio | Cerrado con `path.basename`, y con su comentario |
+| Tokens de correo | Sólo en SHA-256 |
+| Los abonos | Ni se editan ni se borran; asiento inverso con autor |
+| «Mis pagos» | Se resuelve desde la sesión, nunca desde un id de la URL |
+| `cambiar-password` | Exige la contraseña actual y sólo permite la cuenta propia |
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/rutas/admin.js` | `requireAdmin` en las rutas del proveedor; validación de uuid y tope de monto |
+| `src/rutas/dominio.js` | Cambiar la contraseña cierra las demás sesiones |
+| `src/cobros.js` | `MONTO_MAXIMO` y `esUuid` |
+| `test/rutas.test.js` | 4 pruebas, una por hallazgo |
+| `test/architecture.test.js` | 1 centinela para la cuota del proveedor |
+
+**Verificación:**
+
+```
+npm test         → 400/400
+npm run test:e2e →  94/94
+npm audit --omit=dev → 0 vulnerabilidades
+quitando la guardia a una ruta del proveedor → el centinela falla (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un agujero que no filtra datos se cuela más fácil.** El de la cuota no
+   enseñaba nada de nadie: sólo dejaba sin servicio a quinielas ajenas. Por eso
+   pasó desapercibido mientras la ruta hermana sí estaba protegida. **La
+   revisión de permisos no puede mirar sólo quién ve qué; también quién gasta
+   qué**, cuando lo que se gasta es compartido.
+2. ⚠️ **Una lección escrita en una entrada no se aplica sola al resto del
+   código.** El razonamiento de cerrar sesiones estaba redactado en la Entrada
+   056 y aplicado en un solo sitio. **Es la tercera vez esta semana** que una
+   lección aprendida vive en un lugar y falta en otro —pasó también con
+   `quitarComentarios` (Entrada 062)—. Cuando se resuelve algo así, vale la
+   pena buscar los demás sitios donde aplica **el mismo día**.
+3. **Auditar ejecutando encuentra lo que leer no.** Las cuatro sondas eran
+   peticiones reales contra el servidor en memoria. La de la cuota devolvió
+   200 donde se esperaba 403, y eso no se ve leyendo una lista de rutas: se ve
+   lanzándolas. Costó veinte minutos y encontró dos cosas de verdad.
+4. **Una sonda que falla por el arnés no prueba nada.** El primer intento de la
+   sonda de sesiones dio 409 —faltaba tener una quiniela seleccionada— y podría
+   haberse leído como «no pasa nada». Hubo que repetirla bien para ver el 200
+   que delataba el fallo. **Un resultado inesperado en una prueba de seguridad
+   es sospechoso hasta que se entiende.**
+
+**Pendiente / siguiente paso:**
+
+Redesplegar en Render. **No toca la base.**
+
+Queda anotado en §B.2 lo que se decidió no hacer: sin limitador en
+`verificar-password` ni `cambiar-password` —poco explotable, exige la
+contraseña actual y sólo sirve contra la cuenta propia— y la dependencia de
+`cdnjs.cloudflare.com` en la CSP.
 
 ---
 
