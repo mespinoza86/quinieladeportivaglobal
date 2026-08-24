@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 400/400
+npm test                    # 401/401
 npm run test:e2e            # 94/94, ~3,4 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **400**, ~65 s |
+| Pruebas rápidas | **401**, ~65 s |
 | Pruebas de navegador | **94**, ~3,4 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -954,7 +954,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 400 pruebas rápidas y 94 de navegador
+### 2.5 `test/` — 401 pruebas rápidas y 94 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -963,7 +963,7 @@ PostgreSQL de verdad y no una imitación.
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
 | `rutas.test.js` | 2.780 | **171** | El servidor en marcha: HTTP real con `supertest` |
-| `architecture.test.js` | 1.300 | **51** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
+| `architecture.test.js` | 1.322 | **52** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
 | `puntuacion.test.js` | 700 | 31 | El motor de puntos, comodines y **la identidad del partido** |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
@@ -1054,6 +1054,9 @@ Un único `styles.css` con el sistema visual "mobile shell".
 
 - La **regla general para `a`** (Entrada 057): antes no había ninguna, y cualquier
   enlace fuera de `.bottom-nav` o `.action-card` salía con el azul del navegador.
+  Desde la Entrada 065, al pasar el ratón **se aclara y no se subraya**, y el
+  foco de teclado conserva su **anillo** — que es lo que se pierde en silencio
+  cuando alguien «limpia» los estilos de foco.
 - **`.checkbox-fila` y `.checkbox-card`** (Entrada 060): deshacen el
   `width: 100%` que la regla global de `input` aplica también a las casillas de
   verificación. Sin ellas la casilla mide el ancho de la fila y **el texto deja
@@ -10171,6 +10174,88 @@ Queda anotado en §B.2 lo que se decidió no hacer: sin limitador en
 `verificar-password` ni `cambiar-password` —poco explotable, exige la
 contraseña actual y sólo sirve contra la cuenta propia— y la dependencia de
 `cdnjs.cloudflare.com` en la CSP.
+
+---
+
+### 📌 Entrada 065 — 23 de agosto de 2026 — El subrayado de los enlaces, y un resalte que apagaba
+
+**Objetivo:** el usuario avisó de que al pasar el ratón por un enlace se
+subrayaba, y que *«se ve como una página web de los 2000»*. Pidió que se
+resaltara, pero de otra forma.
+
+**Tenía razón, y de paso había un segundo problema en la misma regla.**
+
+## Lo que estaba mal, las dos cosas
+
+La regla la había escrito yo en la Entrada 057:
+
+```css
+a:hover, a:focus-visible { color: var(--primary-dark); text-decoration: underline; }
+```
+
+1. **El subrayado** desentona con el resto de la interfaz, que no subraya nada.
+   Se puso por inercia, que es la peor razón para poner algo.
+2. ⚠️ **Y el color iba a `--primary-dark`.** Sobre el fondo oscuro de esta
+   aplicación, eso **resalta MENOS que el color normal**: el enlace se apagaba
+   justo cuando se le apuntaba. Un «resalte» que atenúa es un resalte al revés,
+   y llevaba ahí desde que lo escribí sin que nadie lo notara —porque el
+   subrayado tapaba el efecto—.
+
+## Lo que se hizo
+
+**Al pasar el ratón, el enlace se aclara**: sube un paso dentro de la misma
+familia de verdes (`--primary-claro: #4ade80`, que es el escalón de arriba del
+`#22c55e` de reposo). Sin subrayado.
+
+⚠️ **Y el foco se separó del hover**, que hasta ahora compartían regla. No son
+lo mismo: quien navega con el teclado **no tiene ratón que seguir**, así que un
+cambio de color no basta para saber dónde está. El foco conserva un **anillo**
+—`outline` de 2px con separación— además del color claro.
+
+Quitar el subrayado del hover es una decisión de gusto y es del usuario. Quitar
+la marca del foco habría sido dejar sin poder navegar a quien usa el teclado, y
+eso no estaba en la petición.
+
+**Comprobado mirando y midiendo**, no suponiendo:
+
+```
+REPOSO : color rgb(34,197,94)   decoración none
+HOVER  : color rgb(74,222,128)  decoración none    ← más claro, sin subrayar
+FOCO   : color rgb(74,222,128)  contorno 2px
+```
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | `--primary-claro`; hover aclara sin subrayar; foco con anillo propio |
+| `test/architecture.test.js` | 1 centinela |
+
+**Verificación:**
+
+```
+npm test         → 401/401
+npm run test:e2e →  94/94
+estilos calculados en el navegador y captura del foco → mirados
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Un resalte puede resaltar menos.** `--primary-dark` suena a «énfasis» y
+   sobre fondo oscuro es lo contrario. **En un tema oscuro, destacar es aclarar**
+   —y el nombre de la variable empujaba a equivocarse—.
+2. **Un fallo tapado por otro no se ve.** El color que atenuaba llevaba semanas
+   ahí y nadie lo notó porque el subrayado sí se veía. Al quitar lo que
+   molestaba quedó a la vista lo que no funcionaba. **Arreglar lo cosmético a
+   veces destapa lo de debajo.**
+3. ⚠️ **Hover y foco no son la misma cosa aunque compartan estilo.** Meterlos en
+   una regla común es cómodo hasta que se cambia una y se pierde la otra. Aquí,
+   quitar el subrayado habría dejado el foco de teclado sin ninguna marca
+   —invisible—, y el centinela nuevo vigila justo eso.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar en Render. **No toca la base.**
 
 ---
 

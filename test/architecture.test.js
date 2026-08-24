@@ -444,6 +444,28 @@ test('cada partido tiene ventana de consulta según su estado real', () => {
   assert.match(mod, /Math\.min\(proxima, inicio\.getTime\(\)\)/);
 });
 
+test('⚠️ los enlaces se aclaran al pasar el ratón, y el foco conserva su anillo', () => {
+  /*
+   * Dos decisiones distintas que hasta la Entrada 065 compartian regla:
+   *
+   *   - HOVER: se aclara, NO se subraya. El subrayado es la convencion de las
+   *     paginas de hace veinte anos y desentona con esta interfaz, que no
+   *     subraya nada. Ademas el color iba a `--primary-dark`, que sobre fondo
+   *     oscuro resalta MENOS: el enlace se apagaba al apuntarlo.
+   *
+   *   - FOCO: si se marca, y con un anillo. Quien navega con el teclado no
+   *     tiene raton que seguir, asi que un cambio de color no basta. Es lo que
+   *     se pierde en silencio cuando alguien "limpia" los estilos de foco.
+   */
+  const css = leer(path.join('private', 'css', 'styles.css'));
+
+  assert.doesNotMatch(css, /a:hover[^{]*\{[^}]*text-decoration:\s*underline/,
+    'el subrayado al pasar el raton se retiro a proposito');
+
+  assert.match(css, /a:focus-visible\s*\{[^}]*outline:/,
+    'sin anillo de foco, quien navega con teclado avanza a ciegas');
+});
+
 test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', () => {
   /*
    * La hoja de estilos tiene una regla global que alcanza a TODOS los input:

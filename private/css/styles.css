@@ -7,6 +7,7 @@
   --muted: #9fb0c7;
   --primary: #22c55e;
   --primary-dark: #16a34a;
+  --primary-claro: #4ade80;
   --accent: #facc15;
   --danger: #ef4444;
   --border: rgba(255, 255, 255, 0.12);
@@ -37,10 +38,34 @@ a {
   text-decoration: none;
 }
 
-a:hover,
+/*
+ * ⚠️ AL PASAR EL RATON SE ACLARA, NO SE SUBRAYA.
+ *
+ * El subrayado en hover se puso en la Entrada 057 sin pensarlo: es la
+ * convencion de las paginas de hace veinte anos y desentona con el resto de
+ * esta interfaz, que no subraya nada.
+ *
+ * Y el color iba a `--primary-dark`, que sobre un fondo oscuro RESALTA MENOS
+ * que el normal: el enlace se apagaba justo cuando se le apuntaba. Ahora sube
+ * un paso hacia el claro, que es lo que hace un resalte.
+ */
+a:hover {
+  color: var(--primary-claro);
+}
+
+/*
+ * ⚠️ EL FOCO SI SE MARCA, Y CON UN ANILLO.
+ *
+ * Quien navega con el teclado necesita ver DONDE esta, y un cambio de color no
+ * basta: no hay raton que siga, asi que sin marca visible se avanza a ciegas.
+ * Se separa del hover a proposito, porque son dos cosas distintas aunque hasta
+ * ahora compartieran regla.
+ */
 a:focus-visible {
-  color: var(--primary-dark);
-  text-decoration: underline;
+  color: var(--primary-claro);
+  outline: 2px solid var(--primary-claro);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 body {
