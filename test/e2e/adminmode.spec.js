@@ -100,3 +100,23 @@ test('con todo bien, se pide la contraseña y luego aparece el panel', async ({ 
   // Y las tarjetas de administración están donde deben.
   await expect(page.locator('#admin-content')).toContainText('Cobros');
 });
+
+test('salir del modo administrador lleva a la portada, no al formulario', async ({ page }) => {
+  /*
+   * Antes se quedaba en «Confirmar acceso», que es la puerta por la que se
+   * acaba de salir: pedirle la contraseña a quien acaba de decir que ya no
+   * quiere ser administrador es lo contrario de lo que pidió.
+   */
+  const datos = await comoAdministradora(page, 'admE');
+
+  await page.goto('/adminmode.html');
+  await page.locator('#adminPassword').fill(datos.password);
+  await page.getByRole('button', { name: /Confirmar|Entrar|Activar/i }).click();
+  await expect(page.locator('#admin-content')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Salir de Admin mode' }).click();
+  await page.waitForURL('**/index.html', { timeout: 15_000 });
+
+  // Y sigue con la sesión abierta: salir del modo admin no es cerrar sesión.
+  await expect(page.locator('#quinielaActualNombre')).toBeVisible({ timeout: 15_000 });
+});

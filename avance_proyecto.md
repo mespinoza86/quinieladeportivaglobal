@@ -23,7 +23,7 @@
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 npm test                    # 381/381
-npm run test:e2e            # 92/92, ~3,3 min
+npm run test:e2e            # 94/94, ~3,4 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -54,7 +54,7 @@ entradas de bitácora (040 a 052).
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **381**, ~50 s |
-| Pruebas de navegador | **92**, ~3,3 min, contra el servidor de verdad |
+| Pruebas de navegador | **94**, ~3,4 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -948,7 +948,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 381 pruebas rápidas y 92 de navegador
+### 2.5 `test/` — 381 pruebas rápidas y 94 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -972,7 +972,7 @@ PostgreSQL de verdad y no una imitación.
 > `test/*.test.js` funciona en Windows y falla en el CI de Linux, porque quien
 > expande el comodín es el shell (Entrada 025).
 
-**`test/e2e/` — 92 de navegador, con Playwright.** Aparte, porque tardan ~2,5
+**`test/e2e/` — 94 de navegador, con Playwright.** Aparte, porque tardan ~2,5
 minutos y la suite rápida tiene que seguir siendo rápida.
 
 | Archivo | Líneas | Qué cubre |
@@ -984,7 +984,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `arrancar.js` | 116 | Levanta la aplicación sobre PGlite. ⚠️ Aquí vive `/e2e/ultimo-correo`, **que nunca se declara en `crearApp`** |
 | `ayudas.js` | 111 | Registro, quiniela y Admin Mode. Cada prueba crea su cuenta |
 | `cobros.spec.js` | 138 | Encender los cobros, anotar un abono y que el jugador lo vea |
-| `adminmode.spec.js` | 100 | ⚠️ Qué se enseña cuando la comprobación de permisos falla |
+| `adminmode.spec.js` | 125 | ⚠️ Qué se enseña cuando la comprobación de permisos falla, y adónde se sale |
 | `ligas-favoritas.spec.js` | 114 | Marcar favoritas y verlas de primeras al armar la jornada |
 | `jornadas-buscador.spec.js` | 109 | El desplegable dinámico, las exclusiones y el proveedor caído |
 | `inyeccion.spec.js` | 95 | El marcado en los nombres se muestra como texto (S-04) |
@@ -9839,6 +9839,17 @@ Por eso `pedirJson` comprueba ahora el `content-type` antes de interpretar: si
 no viene JSON, el error dice *«el servidor respondió 502 sin datos, puede estar
 arrancando»* en vez de un error de sintaxis que no ayuda a nadie.
 
+## Y salir del modo administrador dejaba en la puerta
+
+El usuario lo señaló al probarlo: **«Salir de Admin mode» dejaba el formulario
+de «Confirmar acceso» en pantalla**, que es exactamente la puerta por la que
+acababa de salir. Pedirle la contraseña a quien acaba de decir que ya no quiere
+ser administrador es lo contrario de lo que pidió.
+
+Ahora lleva a la portada. Y **sigue con la sesión abierta**: salir del modo
+administrador no es cerrar sesión, y hay una prueba que lo fija porque son dos
+botones contiguos y confundirlos sería fácil.
+
 ## Dos cosas que aparecieron por el camino
 
 **`guest-content` era marcado inalcanzable, y lo había sido siempre.** Quien no
@@ -9871,13 +9882,13 @@ legítima y el que buscaba mal era él.
 | `public/adminmode.html` | Las cuatro secciones ocultas, y el aviso de fallo |
 | `private/js/adminmode.js` | Reescrito: `mostrarSolo`, reintento, `pedirJson` y errores recogidos |
 | `test/architecture.test.js` | El centinela de `html` quita comentarios antes de buscar |
-| `test/e2e/adminmode.spec.js` | **Nueva.** 4 pruebas |
+| `test/e2e/adminmode.spec.js` | **Nueva.** 5 pruebas |
 
 **Verificación:**
 
 ```
 npm test         → 381/381
-npm run test:e2e →  92/92
+npm run test:e2e →  94/94
 con el comportamiento viejo puesto a propósito → 2 de las 4 nuevas fallan
 ```
 

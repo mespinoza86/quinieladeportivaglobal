@@ -162,7 +162,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   exitAdminMode?.addEventListener('click', async () => {
     await fetch('/api/admin-mode/desactivar', { method: 'POST' });
-    mostrarEstado(false);
+
+    /*
+     * ⚠️ Se sale A LA PORTADA, no al formulario de contraseña.
+     *
+     * Antes se quedaba aquí mostrando «Confirmar acceso», que es la puerta por
+     * la que se acaba de salir: pedirle la contraseña a quien acaba de decir
+     * que ya no quiere ser administrador es justo lo contrario de lo que pidió.
+     */
+    window.location.href = '/index.html';
   });
 
   logoutForm?.addEventListener('submit', async event => {
