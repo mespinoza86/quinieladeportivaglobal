@@ -287,9 +287,21 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
 
 #### ⚠️ 1. Redesplegar en Render
 
-Es lo único que separa lo escrito de lo que ve la gente. Arrastra los **cobros**
-(Entrada 061), las **ligas favoritas** (Entrada 059), la **recuperación de
-contraseña** (Entrada 056) y el **arreglo del enlace azul** (Entrada 057).
+Es lo único que separa lo escrito de lo que ve la gente. **Van diez cosas
+acumuladas**, de la Entrada 056 a la 065:
+
+| Entrada | Qué llega |
+|---|---|
+| 056, 057 | Recuperación de contraseña y el enlace azul |
+| 059 | Ligas favoritas de la quiniela |
+| 061 | **Cobros**: cuota de torneo y por jornada |
+| 062 | La pantalla de admin que se quedaba en el menú público, y salir a la portada |
+| 063 | ⛔ **Quitar un partido ya no borra los pronósticos de los demás**, y el orden por hora |
+| 064 | ⛔ Los tres arreglos de seguridad |
+| 065 | Los enlaces ya no se subrayan |
+
+⚠️ **Las dos con ⛔ son las que más urgen**: una evitaba pérdida de datos de la
+gente y la otra cerraba agujeros. Todo lo demás puede esperar; eso no.
 
 ✅ **La migración de los cobros ya se corrió en Neon el 23 de agosto**, y se
 comprobó: `pagos` con RLS activada y forzada, su política puesta y las cuatro
@@ -561,7 +573,7 @@ borrar un archivo es facil, y resucitarlo "temporalmente" tambien.
 
 ## B. Lo que ya estaba pendiente antes de la migración
 
-### B.1 Plan de producto (§20) — quedan dos fases
+### B.1 Plan de producto (§20) — queda UNA fase, y está aparcada
 
 | Orden | Fase | Peticiones | Qué hace falta antes de empezar |
 |---|---|---|---|
@@ -571,15 +583,19 @@ borrar un archivo es facil, y resucitarlo "temporalmente" tambien.
 | ✅ | **D — Administración de jornadas unificada** | 3 | Hecha (Entrada 031) |
 | ✅ | **E — Verificación de correo** | 8 | Hecha (Entrada 054). **Brevo**, y **sin confirmar no se entra** |
 | ✅ | **Recuperar la contraseña** | — | Hecha (Entrada 056). **No estaba en §20**: salió al ver funcionar el correo, y el terreno ya estaba puesto |
-| **1.º** | **F — Sugerencias de partidos destacados** | 10 | ⚠️ **Definir las heurísticas**: qué cuenta como "igualados", qué es un "clásico". Necesita la tabla de posiciones de cada liga, que hoy no se consulta |
-| ✅ | **Aparte** | 7 (SQL) | **Respondida y en marcha**: se migra. Ver §21 |
+| ✅ | **G — Ligas favoritas** | — | Hecha (Entrada 059). Tampoco estaba: salió al ver el desplegable en uso |
+| ✅ | **H — Cobros** | — | Hecha (Entrada 061). Tampoco estaba. **Lo primero del sistema que cuenta dinero** |
+| 📥 | **F — Sugerencias de partidos destacados** | 10 | **En el backlog desde el 23-ago por decisión del usuario.** Sigue sin definir qué cuenta como «igualados» y qué es un «clásico», y necesita la tabla de posiciones de cada liga, que hoy no se consulta |
+| ✅ | **Aparte** | 7 (SQL) | **Respondida y hecha**: se migró. Ver §21 |
 
-✅ **El dominio definitivo ya está decidido**: `quinieladeportivaglobal.onrender.com`,
-que además ya es el valor por defecto de CORS en `server.js`. Era el cabo que
-bloqueaba la Fase E; **ya no bloquea**.
+⚠️ **Tres de las cinco cosas hechas después de la migración no estaban en el
+plan**: salieron de ver la aplicación en uso. Vale la pena tenerlo presente
+cuando se decida qué hacer a continuación — el plan escrito hace una semana
+acertó menos que mirar la pantalla.
 
-**Cuándo hacer la Fase E:** después de la migración, y sobre PostgreSQL. Hacerla
-ahora significaría escribirla dos veces.
+✅ **El dominio definitivo es** `quinieladeportivaglobal.onrender.com`, y es el
+valor por defecto de `ALLOWED_ORIGINS`. Era el cabo que bloqueaba la Fase E, y
+la Fase E está hecha desde el 22 de agosto.
 
 ### B.2 Deuda técnica que sigue abierta
 
@@ -2844,10 +2860,16 @@ de construir lo de la clasificación.
 
 **Qué se toca**
 
+> ⚠️ **Esta tabla se escribió el 18 de agosto, con `server.js` todavía vivo.**
+> Hoy no existe. Al retomar la fase, lo que aquí dice `server.js` va a
+> `src/rutas/admin.js` —sale a la red, así que con `requireAdmin`— y las
+> heurísticas a un módulo puro de `src/`, junto a `ligas.js`.
+
 | Pieza | Cambio |
 |---|---|
 | Datos | Lista de clásicos por liga, mantenida a mano |
-| `server.js` | Consulta y caché de la clasificación de la liga; heurísticas de "igualados", "liderato" y "descenso" |
+| `src/` (módulo nuevo) | Heurísticas de "igualados", "liderato" y "descenso". **Puras**, como el motor de puntuación |
+| `src/proveedor.js` + `src/rutas/admin.js` | Consulta y caché de la clasificación de la liga. ⚠️ Gasta cuota compartida: `requireAdmin` (Entrada 064) |
 | Pantalla de jornadas | Marcar los partidos sugeridos, con el motivo visible |
 
 **Cómo se comprueba:** las heurísticas son funciones puras y se prueban sueltas,
