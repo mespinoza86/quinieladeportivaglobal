@@ -285,40 +285,30 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### ⚠️ 1. Redesplegar en Render
+#### ✅ 1. El despliegue NO es un pendiente: Render lo hace solo
 
-Es lo único que separa lo escrito de lo que ve la gente. **Van diez cosas
-acumuladas**, de la Entrada 056 a la 065:
+⛔ **Durante diez entradas este documento dijo «hay que redesplegar a mano», y
+era falso.** Render tiene el despliegue automático: cada empujón a `main` sale a
+producción sin que nadie toque nada. Se comprobó el 23 de agosto (Entrada 066) y
+hasta entonces se venía copiando el aviso de una entrada a la siguiente.
 
-| Entrada | Qué llega |
-|---|---|
-| 056, 057 | Recuperación de contraseña y el enlace azul |
-| 059 | Ligas favoritas de la quiniela |
-| 061 | **Cobros**: cuota de torneo y por jornada |
-| 062 | La pantalla de admin que se quedaba en el menú público, y salir a la portada |
-| 063 | ⛔ **Quitar un partido ya no borra los pronósticos de los demás**, y el orden por hora |
-| 064 | ⛔ Los tres arreglos de seguridad |
-| 065 | Los enlaces ya no se subrayan |
+**Cómo comprobar qué hay desplegado**, en dos comandos y sin entrar a Render:
 
-⚠️ **Las dos con ⛔ son las que más urgen**: una evitaba pérdida de datos de la
-gente y la otra cerraba agujeros. Todo lo demás puede esperar; eso no.
+```bash
+# ¿Está el último cambio del CSS? (cambia el patrón por lo último que tocaste)
+curl -s https://quinieladeportivaglobal.onrender.com/css/styles.css | grep -c primary-claro
 
-✅ **La migración de los cobros ya se corrió en Neon el 23 de agosto**, y se
-comprobó: `pagos` con RLS activada y forzada, su política puesta y las cuatro
-concesiones a `app_quiniela`. **No hay que volver a correrla.**
+# ¿Cuánto lleva vivo el proceso? Un número pequeño = acaba de desplegarse
+curl -s https://quinieladeportivaglobal.onrender.com/readyz
+```
 
-Se deja escrito el procedimiento por si hace falta montar la base otra vez:
+`/readyz` da además el estado de la base y **del transporte de correo**, que fue
+lo que en la Entrada 055 costó un diagnóstico entero.
 
-1. En el **editor SQL de Neon**, **con el rol dueño** (no `app_quiniela`), pegar
-   y ejecutar `db/migraciones/001-cobros.sql` entero.
-2. Comprobar con las tres consultas que trae al final —sobre todo la del RLS de
-   `pagos`: si `relrowsecurity` o `relforcerowsecurity` salen en falso, **los
-   pagos de una quiniela se verían desde otra**.
-3. Y entonces sí: *Manual Deploy* → *Deploy latest commit*.
-
-La migración es aditiva y se puede correr dos veces sin romper nada. **No hace
-falta ninguna variable de entorno nueva**, y las quinielas que ya existen no
-cambian: los dos cobros nacen apagados.
+**Sobre la base:** los cambios de esquema **sí son a mano**, y ésos no se
+despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
+**con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
+001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
 #### 2. 📥 Fase F — sugerencias de partidos destacados *(en el backlog)*
 
@@ -363,8 +353,8 @@ En `/api/admin/sync-metricas`:
 
 1. **Borrar el proyecto de Neon en Ohio**, si sigue ahí. Ya no lo usa nadie, y
    un proyecto al que alguien podría apuntar por error es peor que no tenerlo.
-2. **Las ramas viejas**: `postgres` y las ocho de trabajo están contenidas en
-   `main` y se pueden borrar.
+2. ✅ **Las nueve ramas viejas, borradas** el 23 de agosto (Entrada 066). Sólo
+   queda `main`, aquí y en el remoto.
 
 #### Las cuatro reglas del código, que siguen valiendo
 
@@ -10278,6 +10268,116 @@ estilos calculados en el navegador y captura del foco → mirados
 **Pendiente / siguiente paso:**
 
 Redesplegar en Render. **No toca la base.**
+
+---
+
+### 📌 Entrada 066 — 23 de agosto de 2026 — El pendiente que llevaba diez entradas sin existir
+
+**Objetivo:** al enumerar lo que quedaba, el usuario respondió: *«yo en Render
+tengo lo latest, ¿por qué me dices esto?»*. Tenía razón.
+
+## ⛔ Lo que pasó
+
+Este documento venía diciendo, entrada tras entrada, que había que **redesplegar
+a mano en Render**. Es falso: **Render despliega solo** con cada empujón a
+`main`.
+
+Se comprobó desde fuera en dos comandos, sin entrar al panel:
+
+```
+/css/styles.css  → contiene --primary-claro           (el último commit, Entrada 065)
+                 → `text-decoration: underline` = 0   (el arreglo de hoy, ya arriba)
+/cobros.html     → 302 hacia login  (la página existe Y su guardia funciona)
+/readyz          → 228 segundos de vida               (reinició hace 4 minutos)
+```
+
+Los 228 segundos son la prueba: producción se había actualizado sola con el
+último empujón, minutos antes.
+
+## Por qué duró tanto
+
+El aviso se escribió una vez, cuando el despliegue **sí** era manual —los
+primeros días, cuando aún se configuraba el servicio—. Se quedó en «Lo
+siguiente», y de ahí **se copió a la respuesta siguiente, y a la siguiente**,
+durante diez entradas. Nunca se volvió a comprobar.
+
+⛔ **Es exactamente la deriva que encontró la Entrada 058** —una sección que se
+declara al día y no lo está— con dos agravantes: la escribí yo, y **era
+comprobable en dos comandos** que nunca corrí.
+
+Y hubo una consecuencia peor que la molestia: se presentaron como *«arreglos que
+la gente está sufriendo ahora mismo»* cosas que **ya llevaban minutos en
+producción**. Meter prisa por algo que ya está hecho gasta la credibilidad de
+cuando de verdad urja.
+
+## Qué queda escrito en su lugar
+
+En «Lo siguiente», los dos comandos para **ver qué hay desplegado** en vez de
+suponerlo. Y la distinción que sí importa:
+
+⚠️ **El código se despliega solo; el ESQUEMA no.** Los cambios de base van en
+`db/migraciones/`, se ejecutan a mano en Neon con el rol dueño, y **antes** del
+empujón que necesita la columna nueva. Ese orden no es un detalle: al revés, el
+código nuevo llega a producción y consulta una columna que todavía no existe.
+
+## Y la limpieza de ramas
+
+Nueve ramas de trabajo, todas contenidas en `main`. Se comprobó con
+`git branch --no-merged main` —ninguna— y se borraron con `-d`, que **se niega
+si algo no está fundido**, en vez de `-D`, que no pregunta. La punta de cada una
+quedó anotada antes de borrar:
+
+```
+arreglo-ci 724c10c · cache-ranking a1b37da · cinco-puntos 942bffa
+e2e-playwright ba497c4 · fase-4-sincronizador 19f31b5
+fase-6-endurecimiento 2e2730f · postgres 796e0ff
+s04-xss 01dcfe5 · transacciones 1185c08
+```
+
+También se borró `origin/postgres`, después de confirmar con
+`git merge-base --is-ancestor` que sus commits viven en `main`. Queda **sólo
+`main`**, aquí y en el remoto.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | «Lo siguiente» sin el falso pendiente; cómo comprobar el despliegue; ramas marcadas como hechas. Esta entrada |
+
+**Verificación:**
+
+```
+curl a /css/styles.css, /cobros.html y /readyz → producción al día
+git branch --no-merged main                   → ninguna
+git branch -a                                 → sólo main
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un pendiente se copia solo de una respuesta a la siguiente.** Nadie
+   decidió repetirlo diez veces: estaba en «Lo siguiente» y de ahí salía cada
+   vez. **Un aviso escrito una vez sobrevive a la razón que lo motivó**, y
+   cuanto más se repite más verdadero parece.
+2. ⚠️ **Lo comprobable no se supone.** Bastaban dos `curl`. El coste de
+   verificar era ridículo comparado con el de repetir algo falso diez veces, y
+   aun así no se hizo **porque ya estaba escrito**.
+3. ⚠️ **Meter prisa por algo ya resuelto tiene coste.** Se marcaron como
+   urgentes arreglos que llevaban minutos en producción. La próxima vez que algo
+   urja de verdad, el aviso vale menos.
+4. **La distinción que faltaba: qué se despliega solo y qué no.** El código sí,
+   el esquema no. Sin eso escrito, la respuesta a «¿hay que hacer algo?» era
+   siempre la misma para las dos cosas, y para una era falsa y para la otra
+   crítica.
+
+**Pendiente / siguiente paso:**
+
+**Ninguno urgente.** Los dos arreglos graves —el de los pronósticos (063) y los
+de seguridad (064)— llevan en producción desde que se empujaron.
+
+Queda lo que no es programar: probar con varias quinielas y gente de verdad,
+mirar las trivias con datos reales, y vigilar
+`consultasAhorradasPorDeduplicacion` cuando haya tráfico. Más la deuda de §B.2 y
+la Fase F en el backlog.
 
 ---
 
