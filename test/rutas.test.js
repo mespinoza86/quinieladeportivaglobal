@@ -2609,3 +2609,92 @@ test('⛔ los pagos de una quiniela no se ven desde otra', async () => {
   const ajenos = await otro.jefe.agente.get('/api/cobros/abonos');
   assert.deepEqual(ajenos.body, [], 'la RLS de `pagos` tiene que aguantar esto');
 });
+
+
+/* ============ Orden de los partidos, y lo que se borra al guardar ============ */
+
+const conHoraApi = (equipo1, fixture, apiDate) =>
+  partido(equipo1, 'X', { apiFixtureId: fixture, apiDate });
+
+test('al crear la jornada los partidos se ordenan solos por hora', async () => {
+  const jefe = await admin('orden');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [
+      conHoraApi('Tarde', '3', '2099-01-01 20:00'),
+      conHoraApi('Manana', '1', '2099-01-01 09:00'),
+      conHoraApi('Mediodia', '2', '2099-01-01 13:00')
+    ]
+  });
+
+  const j = await jefe.agente.get('/api/jornadas');
+  const jornada = j.body.find(x => x.nombre === 'J1');
+  assert.deepEqual(jornada.partidos.map(p => p.equipo1), ['Manana', 'Mediodia', 'Tarde']);
+});
+
+test('⚠️ al añadir a una jornada con pronósticos, el nuevo va al FINAL y no se borra nada', async () => {
+  const jefe = await admin('anade');
+  const socio = await miembroDe(jefe, 'anadesocio');
+
+  const dos = [
+    conHoraApi('Primero', '1', '2099-01-01 09:00'),
+    conHoraApi('Segundo', '2', '2099-01-01 20:00')
+  ];
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: dos });
+
+  await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1',
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 0 }]
+  });
+
+  // Se añade uno que por hora iría PRIMERO. Debe quedarse al final.
+  const res = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [...dos, conHoraApi('Madrugada', '3', '2099-01-01 06:00')]
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.pronosticosBorrados, 0, 'añadir no puede costar ni un pronóstico');
+
+  const j = await jefe.agente.get('/api/jornadas');
+  const jornada = j.body.find(x => x.nombre === 'J1');
+  assert.deepEqual(jornada.partidos.map(p => p.equipo1), ['Primero', 'Segundo', 'Madrugada'],
+    'los guardados no se mueven; el nuevo va al final aunque se juegue antes');
+});
+
+test('⛔ quitar un partido desde la pantalla sólo borra los pronósticos de ESE', async () => {
+  const jefe = await admin('quita');
+  const socio = await miembroDe(jefe, 'quitasocio');
+
+  const tres = [
+    conHoraApi('A', '1', '2099-01-01 09:00'),
+    conHoraApi('B', '2', '2099-01-01 15:00'),
+    conHoraApi('C', '3', '2099-01-01 20:00')
+  ];
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: tres });
+
+  await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1',
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 0 },
+                  { marcador1: 3, marcador2: 0 }]
+  });
+
+  // Justo lo que manda la pantalla al quitar el del medio: la lista sin él.
+  const res = await jefe.agente.post('/api/jornadas')
+    .send({ nombre: 'J1', partidos: [tres[0], tres[2]] });
+
+  assert.equal(res.body.pronosticosBorrados, 1, 'sólo el del partido retirado');
+  assert.equal(res.body.partidosRetirados, 1);
+
+  // Y el de C sigue siendo el de C, no el que era de B.
+  const j = await jefe.agente.get('/api/jornadas');
+  const jornada = j.body.find(x => x.nombre === 'J1');
+  assert.deepEqual(jornada.partidos.map(x => x.equipo1), ['A', 'C']);
+
+  const tabla = await socio.agente.get('/api/resultados?jornada=J1');
+  const fila = tabla.body.find(([clave]) => clave === `${socio.datos.username}_J1`);
+
+  assert.deepEqual(fila[1].map(x => x.marcador1), [1, 3],
+    'A conserva su 1 y C su 3: ninguno hereda el marcador del que se quitó');
+});

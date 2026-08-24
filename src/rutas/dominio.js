@@ -160,13 +160,39 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
      */
     const precio = cobros.normalizarCobros(req.quiniela.configuracion).jornada;
 
-    await enQuiniela(req, async () => {
-      await jornadasMod.guardar(req.quiniela.id, nombre, partidos,
+    /*
+     * ⚠️ El orden se decide AQUÍ, nunca dentro de `guardar`.
+     *
+     * Si viviera dentro, cada guardado reordenaría también las jornadas viejas
+     * —el caso que no queremos, porque mueve de sitio partidos que la gente ya
+     * rellenó—. Aquí se hace una vez, con lo que hay en la base a la vista:
+     * los guardados conservan su orden y los nuevos se ordenan entre sí por
+     * hora de inicio y van al final.
+     */
+    const guardada = await jornadasMod.porNombre(req.quiniela.id, nombre);
+    const enOrden = jornadasMod.ordenarParaGuardar(
+      partidos, (guardada?.partidos || []).map(p => p.apiFixtureId));
+
+    const cambio = await enQuiniela(req, async () => {
+      const r = await jornadasMod.guardar(req.quiniela.id, nombre, enOrden,
         precio.activo ? precio.precio : 0);
       await rankingMod.actualizar(req.quiniela.id, nombre, req.puntuacion);
+      return r;
     });
 
-    res.json(await jornadasMod.listar(req.quiniela.id));
+    /*
+     * ⚠️ Se informa de lo que se borró. Antes `guardar` contaba los pronósticos
+     * que se llevaba por delante y esta ruta TIRABA ESE NÚMERO sin mirarlo, así
+     * que la gente perdía sus marcadores y nadie se enteraba.
+     *
+     * Borrarlos puede ser correcto —el partido ya no está en la jornada— pero
+     * eso no lo hace callable: son datos de otras personas.
+     */
+    res.json({
+      jornadas: await jornadasMod.listar(req.quiniela.id),
+      partidosRetirados: cambio.partidosReemplazados,
+      pronosticosBorrados: cambio.pronosticosBorrados
+    });
   });
 
   app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {

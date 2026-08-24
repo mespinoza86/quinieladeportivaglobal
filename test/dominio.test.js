@@ -414,3 +414,86 @@ test('las favoritas repetidas se quedan en una, y hay un tope', () => {
 
   assert.deepEqual(ligas.normalizarFavoritas('no es una lista'), []);
 });
+
+
+/* ============ El orden de los partidos por hora de inicio ============ */
+
+/*
+ * Función pura: no toca la base. Recibe los partidos que llegan y los
+ * `apiFixtureId` que ya están guardados, en su orden.
+ */
+
+const conHora = (equipo1, fixture, apiDate, extra = {}) =>
+  ({ ...partido(equipo1, 'X'), apiFixtureId: fixture, apiDate, ...extra });
+
+test('al crear una jornada, los partidos se ordenan por hora de inicio', () => {
+  const salida = jornadas.ordenarParaGuardar([
+    conHora('Tarde', '3', '2099-01-01 20:00'),
+    conHora('Manana', '1', '2099-01-01 09:00'),
+    conHora('Mediodia', '2', '2099-01-01 13:00')
+  ], []);   // nada guardado: es una jornada nueva
+
+  assert.deepEqual(salida.map(p => p.equipo1), ['Manana', 'Mediodia', 'Tarde']);
+});
+
+test('un partido de otro día va después aunque su hora del reloj sea menor', () => {
+  const salida = jornadas.ordenarParaGuardar([
+    conHora('Manana siguiente', '2', '2099-01-02 09:00'),
+    conHora('Hoy tarde', '1', '2099-01-01 20:00')
+  ], []);
+
+  assert.deepEqual(salida.map(p => p.equipo1), ['Hoy tarde', 'Manana siguiente']);
+});
+
+test('⚠️ los que ya estaban guardados NO cambian de sitio', () => {
+  /*
+   * Es la decisión del usuario, y además evita el único caso peligroso:
+   * reordenar una jornada con pronósticos movería de sitio partidos que la
+   * gente ya rellenó.
+   */
+  const salida = jornadas.ordenarParaGuardar([
+    conHora('Tarde', '3', '2099-01-01 20:00'),      // guardado, va 2.º
+    conHora('Manana', '1', '2099-01-01 09:00')      // guardado, va 1.º
+  ], ['3', '1']);   // en la base están en ESE orden: Tarde y luego Manana
+
+  assert.deepEqual(salida.map(p => p.equipo1), ['Tarde', 'Manana'],
+    'aunque por hora irían al revés, se respeta el orden guardado');
+});
+
+test('los partidos nuevos van al final, ordenados entre sí', () => {
+  const salida = jornadas.ordenarParaGuardar([
+    conHora('Nuevo tarde', '9', '2099-01-01 22:00'),
+    conHora('Ya estaba', '1', '2099-01-01 15:00'),
+    conHora('Nuevo manana', '8', '2099-01-01 08:00')
+  ], ['1']);
+
+  assert.deepEqual(salida.map(p => p.equipo1),
+    ['Ya estaba', 'Nuevo manana', 'Nuevo tarde'],
+    'el nuevo de las 08:00 no se cuela por delante del guardado de las 15:00');
+});
+
+test('un partido sin hora va al final de los nuevos', () => {
+  const salida = jornadas.ordenarParaGuardar([
+    conHora('Sin hora', '2', ''),
+    conHora('Con hora', '1', '2099-01-01 20:00')
+  ], []);
+
+  assert.deepEqual(salida.map(p => p.equipo1), ['Con hora', 'Sin hora']);
+});
+
+test('⚠️ dos partidos a la misma hora salen SIEMPRE en el mismo orden', () => {
+  /*
+   * Sin desempate fijo, la jornada bailaría sola entre guardados sin que nadie
+   * la tocara. Se comprueba con las dos entradas al revés: la salida no cambia.
+   */
+  const a = conHora('Zeta', '1', '2099-01-01 15:00', { apiLeagueId: '7' });
+  const b = conHora('Alfa', '2', '2099-01-01 15:00', { apiLeagueId: '7' });
+
+  assert.deepEqual(jornadas.ordenarParaGuardar([a, b], []).map(p => p.equipo1), ['Alfa', 'Zeta']);
+  assert.deepEqual(jornadas.ordenarParaGuardar([b, a], []).map(p => p.equipo1), ['Alfa', 'Zeta']);
+});
+
+test('la lista vacía y la basura no rompen el orden', () => {
+  assert.deepEqual(jornadas.ordenarParaGuardar([], []), []);
+  assert.deepEqual(jornadas.ordenarParaGuardar([null, undefined], []), []);
+});

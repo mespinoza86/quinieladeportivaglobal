@@ -628,7 +628,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            avisar('Jornada «' + nombre + '» guardada.');
+            const datos = await respuesta.json().catch(() => ({}));
+
+            /*
+             * ⚠️ Si al guardar se retiró algún partido, sus pronósticos se van
+             * con él. Puede ser lo correcto —ese partido ya no está en la
+             * jornada— pero son marcadores que otras personas escribieron, y
+             * desaparecer en silencio no es aceptable.
+             */
+            if (datos.pronosticosBorrados > 0) {
+                avisar('Jornada «' + nombre + '» guardada. Se retiraron '
+                    + datos.partidosRetirados + ' partido(s) y con ellos se borraron '
+                    + datos.pronosticosBorrados + ' pronóstico(s).', true);
+            } else {
+                avisar('Jornada «' + nombre + '» guardada.');
+            }
+
             await cargarJornadas(nombre);
         } catch (error) {
             console.error('Error guardando la jornada:', error);

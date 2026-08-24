@@ -558,3 +558,147 @@ test('congelar en una quiniela no toca la jornada del mismo nombre de otra', asy
   });
   assert.equal(enB, null, 'la J1 de B sigue sin congelar');
 });
+
+
+/* ========== El fallo de quitar un partido desde la pantalla ========== */
+
+/*
+ * La pantalla de jornadas no llama a `eliminarPartidos`: quita el partido de su
+ * lista en el navegador y vuelve a guardar la jornada entera. Con la
+ * reconciliación por posición, eso borraba los pronósticos de todos los
+ * partidos POSTERIORES al que se quitó, en silencio.
+ */
+
+test('⛔ quitar el del medio DESDE LA PANTALLA no puede borrar los pronósticos de los demás', async () => {
+  const q = await quinielaNueva();
+
+  const cuatro = [
+    partido('A', 'B', { apiFixtureId: '1' }),
+    partido('C', 'D', { apiFixtureId: '2' }),
+    partido('E', 'F', { apiFixtureId: '3' }),
+    partido('G', 'H', { apiFixtureId: '4' })
+  ];
+
+  await jornadas.guardar(q.id, 'J1', cuatro);
+
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1',
+    pronosticos: [
+      { marcador1: 1, marcador2: 0 },
+      { marcador1: 2, marcador2: 0 },
+      { marcador1: 3, marcador2: 0 },
+      { marcador1: 4, marcador2: 0 }
+    ]
+  });
+
+  /*
+   * Esto es exactamente lo que manda la pantalla al quitar el segundo: la misma
+   * lista, sin él. No pasa por `eliminarPartidos`.
+   */
+  const r = await jornadas.guardar(q.id, 'J1', [cuatro[0], cuatro[2], cuatro[3]]);
+
+  assert.equal(r.pronosticosBorrados, 1,
+    'sólo el del partido que se quitó de verdad');
+
+  const mios = await pronosticos.deJugador(q.id, 'ana', 'J1');
+  const conPronostico = mios.filter(p => p.marcador1 !== null);
+  assert.equal(conPronostico.length, 3, 'los otros tres pronósticos siguen ahí');
+
+  /*
+   * Y cada uno sigue pegado a SU partido, que es lo que de verdad importa:
+   * perderlos es malo, pero que apunten al equivocado sería peor.
+   */
+  const j = await jornadas.porNombre(q.id, 'J1');
+  assert.deepEqual(j.partidos.map(p => p.equipo1), ['A', 'E', 'G']);
+
+  const porPartido = new Map(conPronostico.map(p => [p.equipo1, p.marcador1]));
+  assert.equal(porPartido.get('A'), 1);
+  assert.equal(porPartido.get('E'), 3, 'E-F conserva SU marcador, no el de C-D');
+  assert.equal(porPartido.get('G'), 4);
+});
+
+test('quitar el del medio conserva los id de los que quedan', async () => {
+  const q = await quinielaNueva();
+  const tres = [
+    partido('A', 'B', { apiFixtureId: '1' }),
+    partido('C', 'D', { apiFixtureId: '2' }),
+    partido('E', 'F', { apiFixtureId: '3' })
+  ];
+  await jornadas.guardar(q.id, 'J1', tres);
+
+  const antes = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT id, equipo1 FROM partidos ORDER BY orden');
+    return rows;
+  });
+
+  await jornadas.guardar(q.id, 'J1', [tres[0], tres[2]]);
+
+  const despues = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT id, orden, equipo1 FROM partidos ORDER BY orden');
+    return rows;
+  });
+
+  assert.deepEqual(despues.map(p => p.orden), [0, 1], 'renumerados sin huecos');
+  assert.equal(despues[0].id, antes[0].id);
+  assert.equal(despues[1].id, antes[2].id, 'E-F conserva su id aunque suba de posición');
+});
+
+test('sustituir un partido por otro sí se lleva su pronóstico, y sólo ése', async () => {
+  /*
+   * La red de seguridad tiene que seguir funcionando: si el administrador
+   * cambia un partido por otro distinto, lo que se pronosticó del viejo ya no
+   * vale y no puede quedarse pegado al nuevo.
+   */
+  const q = await quinielaNueva();
+  const dos = [
+    partido('A', 'B', { apiFixtureId: '1' }),
+    partido('C', 'D', { apiFixtureId: '2' })
+  ];
+  await jornadas.guardar(q.id, 'J1', dos);
+
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1',
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 0 }]
+  });
+
+  const r = await jornadas.guardar(q.id, 'J1', [
+    dos[0],
+    partido('X', 'Y', { apiFixtureId: '99' })   // otro partido en lugar de C-D
+  ]);
+
+  assert.equal(r.pronosticosBorrados, 1);
+
+  const mios = await pronosticos.deJugador(q.id, 'ana', 'J1');
+  const conPronostico = mios.filter(p => p.marcador1 !== null);
+
+  assert.equal(conPronostico.length, 1);
+  assert.equal(conPronostico[0].equipo1, 'A', 'el que sobrevive es el de A-B');
+
+  // Y el partido nuevo entra en blanco: nadie lo ha pronosticado.
+  assert.equal(mios.find(p => p.equipo1 === 'X').marcador1, null);
+});
+
+test('los partidos SIN identificador siguen por el camino de siempre', async () => {
+  /*
+   * Son los históricos de la migración. Ahí no hay forma de saber si es el
+   * mismo partido, y adivinar podría dejar un pronóstico colgando del
+   * equivocado, que es peor que perderlo.
+   */
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B'), partido('C', 'D')]);
+
+  const antes = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT id FROM partidos ORDER BY orden');
+    return rows;
+  });
+
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B'), partido('C', 'D')]);
+
+  const despues = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT id FROM partidos ORDER BY orden');
+    return rows;
+  });
+
+  assert.deepEqual(despues.map(p => p.id), antes.map(p => p.id),
+    'sin identificador se empareja por posición, y las posiciones no cambiaron');
+});

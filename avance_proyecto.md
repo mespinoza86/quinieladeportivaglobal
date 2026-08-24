@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 381/381
+npm test                    # 395/395
 npm run test:e2e            # 94/94, ~3,4 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **381**, ~50 s |
+| Pruebas rápidas | **395**, ~60 s |
 | Pruebas de navegador | **94**, ~3,4 min, contra el servidor de verdad |
 | Rutas sobre PostgreSQL | **81 de 81** |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -890,7 +890,7 @@ demás recibe la conexión ya preparada.
 | `eventos.js` | 445 | Bitácora de eventos del dominio |
 | `sincronizador.js` | 440 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
-| `jornadas.js` | 334 | Jornadas, sus partidos y **lo que costó cada una** |
+| `jornadas.js` | 480 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
 | `pronosticos.js` | 287 | Pronósticos, y la tabla comparativa en **una sola consulta** |
 | `membresias.js` | 248 | Quién pertenece a qué quiniela y con qué papel |
 | `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
@@ -948,7 +948,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 381 pruebas rápidas y 94 de navegador
+### 2.5 `test/` — 395 pruebas rápidas y 94 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -956,13 +956,13 @@ PostgreSQL de verdad y no una imitación.
 
 | Archivo | Líneas | Pruebas | Qué comprueba |
 |---|---:|---:|---|
-| `rutas.test.js` | 2.611 | **164** | El servidor en marcha: HTTP real con `supertest` |
+| `rutas.test.js` | 2.700 | **167** | El servidor en marcha: HTTP real con `supertest` |
 | `architecture.test.js` | 1.253 | **50** | El TEXTO del código. Guardan lecciones ya pagadas: que una ruta retirada no vuelva, que el rol no pueda desactivar la RLS |
-| `puntuacion.test.js` | 560 | 27 | El motor de puntos, comodines incluidos |
+| `puntuacion.test.js` | 700 | 31 | El motor de puntos, comodines y **la identidad del partido** |
 | `trivias.test.js` | 529 | 27 | Apertura, cierre y respuestas |
 | `sincronizador.test.js` | 448 | 29 | Ventanas por estado y proveedor caído |
 | `plataforma.test.js` | 335 | 24 | Quinielas, membresías y aislamiento |
-| `dominio.test.js` | 416 | 27 | Jornadas, partidos y pronósticos, más las ligas favoritas (puras) |
+| `dominio.test.js` | 505 | 34 | Jornadas, partidos y pronósticos, más ligas favoritas y **el orden por hora** (puras) |
 | `cobros.test.js` | 252 | 19 | **La aritmética del dinero.** Pura: no toca base ni red |
 | `db.test.js` | 235 | 14 | Transacciones, contexto de quiniela y que ninguna tabla se quede sin RLS |
 | `postgres-en-memoria.js` | 167 | — | El arnés de PGlite |
@@ -9918,6 +9918,133 @@ cobros ya se corrió y se comprobó.
 
 Y si el problema volviera a aparecer, ahora la pantalla dice qué pasó: con eso y
 la consola (F12) se puede confirmar por fin cuál es el disparador.
+
+---
+
+### 📌 Entrada 063 — 23 de agosto de 2026 — Quitar un partido borraba los pronósticos de los demás
+
+**Objetivo:** el usuario pidió que los partidos se ordenaran por hora de inicio
+al crear la jornada, y que los añadidos después fueran al final. Al analizarlo
+apareció **un fallo que ya estaba en producción y que costaba datos de la
+gente**, así que se arregló primero.
+
+## ⛔ Lo que estaba mal, y no avisaba
+
+`guardar` emparejaba lo guardado con lo que llega **por posición**. La pantalla
+de jornadas, al quitar un partido, no llama a `eliminarPartidos` —que renumera
+bien—: lo saca de su lista en el navegador y **vuelve a guardar la jornada
+entera** más corta.
+
+Con `[A, B, C, D]` guardados, quitar B mandaba `[A, C, D]`:
+
+| Posición | Tenía | Recibe | Qué pasaba |
+|---|---|---|---|
+| 0 | A | A | igual |
+| 1 | B | C | fixture distinto → **borraba los pronósticos** |
+| 2 | C | D | fixture distinto → **borraba los pronósticos** |
+| 3 | D | — | fila eliminada |
+
+**Se perdían los pronósticos de todos los partidos posteriores al que se quitó.**
+No se corrompían —ninguno acababa apuntando al partido equivocado— pero
+desaparecían.
+
+⚠️ Y lo peor: `guardar` **contaba** los borrados y devolvía `pronosticosBorrados`
+… y **la ruta tiraba ese número sin mirarlo**. El dato existía, estaba bien
+calculado, y nadie lo veía.
+
+## El arreglo: emparejar por identidad, no por posición
+
+Desde la Fase D los partidos salen sólo del API, así que **todos traen
+`api_fixture_id`**. Ésa es la señal fiable de si dos partidos son el mismo.
+
+Ahora `guardar` empareja por ese identificador: C y D se reconocen, conservan su
+fila, su `id` y sus pronósticos, y sólo desaparece B —el que de verdad se
+quitó—. La red de seguridad sigue en pie: sustituir un partido por otro **sí**
+se lleva lo que se pronosticó del viejo, porque ya no vale.
+
+⚠️ **El camino por posición se conserva** para los partidos sin identificador,
+que son los históricos de la migración. Ahí no hay forma de saber si es el
+mismo, y adivinar podría dejar un pronóstico colgando del equivocado —**que es
+peor que perderlo**—.
+
+Y la ruta ya no tira el contador: si al guardar se retiró algún partido, la
+pantalla lo dice. *«Se retiraron 1 partido(s) y con ellos se borraron 3
+pronóstico(s)»*. Borrarlos puede ser correcto; callarlo no.
+
+## Y entonces sí, el orden por hora
+
+Una función pura, `ordenarParaGuardar(partidos, guardados)`:
+
+- los que **ya estaban guardados conservan su orden exacto**, al principio;
+- los **nuevos se ordenan entre sí** por hora de inicio y van al final;
+- sin hora, al final de los nuevos.
+
+Al crear una jornada no hay guardados, así que **se ordena todo** — que es lo
+que se pedía. **Un solo camino cubre los dos casos**, y la seguridad sale de la
+forma de la salida: como los guardados no se mueven de sitio, no hay reordenado
+que pueda tocar una jornada que ya tiene pronósticos.
+
+⚠️ **Se aplica en la ruta, nunca dentro de `guardar`.** Si viviera dentro,
+cada guardado reordenaría también las jornadas viejas —el caso que el usuario
+descartó a propósito, porque mueve de sitio partidos que la gente ya rellenó—.
+
+**El desempate no es un adorno.** Dos partidos a la misma hora sin criterio fijo
+saldrían en orden distinto en cada guardado —`sort` no promete estabilidad entre
+listas diferentes— y la jornada bailaría sola. Se rompe por liga y luego equipo
+local: arbitrario, pero siempre el mismo. Y la hora se lee con
+`parseFechaPartidoCostaRica`, que ya existía y ya sabe que Costa Rica es UTC−6
+todo el año.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/jornadas.js` | Reconciliación por identidad, y `ordenarParaGuardar` |
+| `src/rutas/dominio.js` | Ordena antes de guardar, e informa de lo borrado |
+| `private/js/jornadas.js` | Avisa cuando se pierden pronósticos |
+| `test/puntuacion.test.js` | 4 pruebas de la identidad del partido |
+| `test/dominio.test.js` | 7 puras del orden |
+| `test/rutas.test.js` | 3 de ruta |
+
+**Verificación:**
+
+```
+npm test         → 395/395
+npm run test:e2e →  94/94
+forzando el camino por posición → fallan las 2 del borrado
+desactivando el orden          → falla la de crear ordenado
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **La función segura existía y la pantalla no la usaba.** `eliminarPartidos`
+   renumera bien desde la migración, y resultó que **sólo la llamaban las
+   pruebas**. Tener el código correcto no sirve de nada si el camino que la
+   gente recorre pasa por otro sitio. **Vale la pena comprobar de vez en cuando
+   qué funciones sólo usan los tests.**
+2. ⛔ **Un número bien calculado y tirado es peor que no calcularlo.** `guardar`
+   sabía exactamente cuántos pronósticos borraba. La ruta descartaba su valor de
+   retorno, así que el dato existía y no llegaba a nadie. Es la versión más
+   silenciosa de la pérdida de datos: no hay error, no hay aviso, y hay una
+   variable con la respuesta.
+3. ⚠️ **Una prueba mía pasó por la razón equivocada.** `deJugador` devuelve una
+   fila POR PARTIDO, con marcador nulo donde no hay pronóstico; contar sus filas
+   cuenta partidos. La aserción daba el número correcto midiendo otra cosa. Se
+   corrigió filtrando por `marcador1 !== null`. **Un número que cuadra no prueba
+   que se esté midiendo lo que se cree.**
+4. **La decisión del usuario eliminó el riesgo, no lo mitigó.** Pedir que los
+   nuevos vayan al final —en vez de reordenar todo— dejó fuera el único caso
+   peligroso. **Una restricción del usuario puede valer más que una salvaguarda
+   del programador**, porque no hay nada que se pueda saltar.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar en Render. **No toca la base.**
+
+⚠️ Y queda una cosa que no se hizo y conviene tener presente: la pantalla sigue
+quitando partidos por el camino de guardar la jornada entera, en vez de usar
+`eliminarPartidos`. Ahora es **seguro** —por eso no urge— pero es un rodeo, y
+`eliminarPartidos` sigue sin usarse fuera de las pruebas.
 
 ---
 
