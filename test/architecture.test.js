@@ -194,6 +194,21 @@ test('las rutas de autenticación tienen limitación de intentos', () => {
   assert.match(server, /app\.post\('\/api\/admin-mode\/activar', limiteAdminMode/);
   // En login y admin mode solo cuentan los intentos fallidos.
   assert.match(server, /skipSuccessfulRequests: true/);
+
+  /*
+   * ⚠️ EL LIMITADOR DE REGISTRO NO PUEDE SER MEZQUINO. Una IP publica no es una
+   * persona: los operadores moviles agrupan a muchos clientes bajo una misma
+   * (CGNAT), asi que desconocidos comparten contador. Con 5 por hora, en un
+   * estreno la sexta persona veia "se alcanzo el limite" sin haber hecho nada
+   * mal (Entrada 067).
+   *
+   * Y sigue sirviendo para lo que se puso, porque **una cuenta sin confirmar no
+   * da acceso a nada**: registrar en masa no abre ninguna puerta.
+   */
+  const registro = server.match(/const limiteRegistro = rateLimit\(\{[^}]*limit:\s*(\d+)/);
+  assert.ok(registro, 'no se encontro el limitador de registro');
+  assert.ok(Number(registro[1]) >= 20,
+    `el registro admite ${registro[1]} por IP y hora: con IP compartida bloquea a gente inocente`);
 });
 
 test('el registro NO abre sesión, y el login la regenera', () => {

@@ -10381,6 +10381,102 @@ la Fase F en el backlog.
 
 ---
 
+### 📌 Entrada 067 — 23 de agosto de 2026 — Lo que habría bloqueado a gente el día del estreno
+
+**Objetivo:** el usuario preguntó si ya podía **mover a todos los jugadores de
+una**. Antes de contestar se revisaron los límites, que es lo que muerde cuando
+llegan treinta personas a la vez. Apareció uno que **habría bloqueado a gente
+inocente el primer día**.
+
+## ⛔ El registro admitía 5 cuentas por hora y por IP
+
+```
+limiteRegistro: 60 minutos, límite 5
+```
+
+El limitador se puso contra la creación de cuentas en masa, y la intención era
+buena. El problema es la suposición de debajo: **que una IP pública es una
+persona**. No lo es:
+
+- dos o tres personas de la misma casa ya comparten contador;
+- y sobre todo, **los operadores móviles agrupan a muchos clientes bajo una
+  misma IP pública** (CGNAT). Quien se registra desde el celular con datos puede
+  caer en el mismo cubo que desconocidos.
+
+En un estreno —treinta personas entrando la misma tarde, casi todas desde el
+móvil— **la sexta habría visto «se alcanzó el límite de cuentas creadas desde
+esta conexión» sin haber hecho nada mal**. Y en día de estreno eso se lee como
+«esto no sirve».
+
+## Por qué subirlo no debilita nada
+
+La clave es una decisión que ya estaba tomada: **«sin confirmar no se entra»**
+(Entrada 054). Una cuenta registrada y no confirmada **no da acceso a nada**.
+
+Así que registrar en masa no abre ninguna puerta; lo único que cuesta de verdad
+es **la cuota diaria de correos**. Para eso, 20 por IP y hora es de sobra: el
+plan gratuito de Brevo son 300 al día, y haría falta que quince IPs distintas
+tiraran a la vez durante una hora para acercarse.
+
+Se sube el registro de **5 a 20 por hora**, y el reenvío de **5 a 15 por 15
+minutos** por la misma razón: entre personas distintas se gastaban el cupo.
+
+**Y el centinela vigila el número, no sólo que el limitador exista.** El que
+había comprobaba que la ruta llevara `limiteRegistro` puesto —y lo llevaba—;
+por eso el 5 pasó desapercibido. Ahora se comprueba que sea al menos 20.
+
+## Lo demás que se revisó para el estreno
+
+| Riesgo | Estado |
+|---|---|
+| **Arranque en frío de Render** | ✅ **Deja de aplicar**: el usuario pasa a plan de pago, así que el servicio no se duerme. Era la causa más probable del fallo de la Entrada 062 |
+| **Cuota de Brevo (300/día)** | ✅ Suficiente por ahora. Y el fallo ya está bien manejado: si el correo no sale, el registro responde `correoEnviado: false` y la pantalla dice *«la cuenta se creó, pero no pudimos enviar el correo; pide que te lo reenviemos»* |
+| **Varias quinielas a la vez** | Sigue sin verse con gente. Para una sola quiniela no es el riesgo |
+| **Cobros y trivias** | Probados, nunca usados por personas de verdad |
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/servidor.js` | `limiteRegistro` 5 → 20/hora; `limiteReenvio` 5 → 15/15 min |
+| `test/architecture.test.js` | El centinela comprueba el NÚMERO, no sólo que exista |
+
+**Verificación:**
+
+```
+npm test → 401/401
+bajando el límite a 5 otra vez → el centinela falla (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una IP pública no es una persona.** Es la suposición que hace que un
+   limitador honesto castigue a inocentes. Con CGNAT, desconocidos comparten
+   contador, y **el que paga es el sexto que llega**. Cualquier límite por IP
+   tiene que dimensionarse pensando en cuánta gente distinta cabe detrás.
+2. ⚠️ **Un centinela que comprueba que algo EXISTE no comprueba que esté bien.**
+   La prueba verificaba que la ruta llevara su limitador, y lo llevaba. El
+   número —lo único que importaba— nunca se miró. **Comprobar la presencia es
+   fácil y engaña.**
+3. **Una decisión anterior cambia lo que un límite tiene que proteger.** Cuando
+   se escribió el 5, no existía la confirmación de correo y una cuenta creada
+   era una cuenta usable. Desde «sin confirmar no se entra», lo que hay que
+   proteger ya no es el acceso sino la cuota de correos — y el número correcto
+   es otro. **Los límites envejecen cuando cambia lo que hay detrás.**
+4. **La pregunta «¿ya puedo abrir a todos?» encontró algo que las pruebas no.**
+   No es un fallo de código: las 401 pruebas pasaban. Es un fallo de
+   dimensionado, y sólo se ve preguntándose qué pasa cuando llegan treinta
+   personas en vez de una.
+
+**Pendiente / siguiente paso:**
+
+Ninguno técnico que bloquee. Se recomendó al usuario **abrir primero con tres o
+cuatro personas** y recorrer una jornada entera —registro, pronósticos,
+resultados, una trivia y un abono— antes de mover a todos. Si eso sale limpio,
+adelante.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

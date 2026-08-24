@@ -263,9 +263,28 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
     message: { error: 'Demasiados intentos fallidos. Espera unos minutos antes de volver a intentarlo.' }
   });
 
-  // Registro: cuentan todos, para que nadie cree cuentas en masa desde una IP.
+  /**
+   * Registro: cuentan todos, para que nadie cree cuentas en masa desde una IP.
+   *
+   * ⚠️ **ERAN 5 POR HORA Y BLOQUEABA A GENTE INOCENTE.** Una IP pública no es
+   * una persona:
+   *
+   *   - dos o tres personas de la misma casa comparten contador;
+   *   - y sobre todo, **los operadores móviles agrupan a muchos clientes bajo
+   *     una misma IP** (CGNAT). Quien se registra desde el celular con datos
+   *     puede caer en el mismo cubo que desconocidos.
+   *
+   * En un estreno —treinta personas entrando la misma tarde, casi todas desde
+   * el móvil— la sexta veía «se alcanzó el límite» sin haber hecho nada mal.
+   *
+   * Se sube a 20 por hora, y sigue sirviendo para lo que se puso: **porque una
+   * cuenta sin confirmar no sirve de nada**. La política es «sin confirmar no
+   * se entra», así que registrar en masa no da acceso a nadie; lo único que
+   * cuesta de verdad es la cuota diaria de correos, y para eso el tope de 20
+   * por IP y hora es de sobra.
+   */
   const limiteRegistro = rateLimit({
-    ...comunes, windowMs: 60 * 60 * 1000, limit: 5,
+    ...comunes, windowMs: 60 * 60 * 1000, limit: 20,
     message: { error: 'Se alcanzó el límite de cuentas creadas desde esta conexión. Inténtalo más tarde.' }
   });
 
@@ -284,9 +303,12 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * La ventana es de 15 minutos y no de una hora: quien no recibe el correo lo
    * pide dos o tres veces seguidas y luego se va. Una hora de castigo por eso
    * es desproporcionado.
+   *
+   * ⚠️ El límite subió de 5 a 15 por la MISMA razón que el del registro: varias
+   * personas distintas pueden compartir IP, y entre ellas se gastaban el cupo.
    */
   const limiteReenvio = rateLimit({
-    ...comunes, windowMs: 15 * 60 * 1000, limit: 5,
+    ...comunes, windowMs: 15 * 60 * 1000, limit: 15,
     message: {
       error: 'Has pedido el enlace demasiadas veces. Espera unos minutos antes de volver a intentarlo.'
     }
