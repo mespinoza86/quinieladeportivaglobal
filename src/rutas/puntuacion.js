@@ -172,7 +172,21 @@ module.exports = function rutasDePuntuacion(app, { requireAdmin, enQuiniela }) {
     if (r.ok === false) return res.status(404).json({ success: false, error: 'Jornada no encontrada.' });
 
     invalidarCacheRanking(req.quiniela.id);
-    res.json({ success: true, guardados: r.guardados, bloqueados: r.bloqueados });
+
+    /*
+     * ⚠️ Los cuatro contadores salen a la pantalla, y no es adorno: hasta la
+     * Entrada 068 se devolvían dos y el navegador los tiraba, así que decía
+     * «guardados correctamente» aunque no hubiera guardado ni uno. Es el mismo
+     * fallo que la Entrada 063 encontró en las jornadas —un número bien
+     * calculado y descartado— y seguía vivo aquí.
+     */
+    res.json({
+      success: true,
+      guardados: r.guardados,
+      bloqueados: r.bloqueados,
+      sinTocar: r.sinTocar,
+      borrados: r.borrados
+    });
   });
 
   app.get('/api/resultados/:jugador/:jornada', async (req, res) => {

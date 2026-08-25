@@ -512,6 +512,108 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ ningún marcador en blanco se enseña como un cero', () => {
+  /*
+   * Cinco sitios del frontend hacian `p.marcador1 || '0'`. Con eso, un partido
+   * que la persona NO pronostico salia impreso como **0**, y ese texto es el
+   * que se copia al portapapeles y se manda por WhatsApp: quedaba escrito que
+   * habia pronosticado 0-0 cuando no habia puesto nada (Entrada 068).
+   *
+   * ⚠️ Y el mismo `||` al reves seria igual de malo: `0 || '-'` da "-", asi que
+   * un 0-0 de verdad desapareceria. Por eso la regla no es "usa otro valor por
+   * defecto" sino **no uses `||` sobre un marcador**: hay que comprobar null y
+   * cadena vacia por separado, que es lo que hace `marcadorVisible`.
+   */
+  const scripts = listar(path.join('private', 'js'));
+  const nombres = fs.readdirSync(path.join(root, 'private', 'js')).filter(f => f.endsWith('.js'));
+
+  nombres.forEach((nombre, i) => {
+    const codigo = quitarComentarios(scripts[i]);
+
+    const sospechosas = codigo.match(/marcador\w*\s*\|\|\s*(['"]?)[-0–]\1/gi) || [];
+
+    assert.deepEqual(sospechosas, [],
+      `${nombre}: un marcador no se resuelve con "||". Un blanco saldria como 0 `
+      + '(o un 0 real desapareceria). Usa marcadorVisible() de marcador-visible.js');
+  });
+
+  // Y el ayudante tiene que seguir distinguiendo los tres estados.
+  const ayudante = leer(path.join('private', 'js', 'marcador-visible.js'));
+  assert.match(ayudante, /if \(oculto\) return NO_VISIBLE/);
+  assert.match(ayudante, /valor === null \|\| valor === undefined/);
+  assert.match(ayudante, /valor\.trim\(\) === ''/);
+});
+
+test('⛔ quien imprime pronósticos ajenos mira si todavía son secretos', () => {
+  /*
+   * `/api/resultados-con-equipos` devuelve `oculto: true` para los pronosticos
+   * de partidos que aun no empiezan -la privacidad se decide partido a partido,
+   * Entrada 019- y manda el marcador vacio.
+   *
+   * ⛔ Ningun script miraba ese campo. Con el `|| '0'` de antes, el
+   * administrador que copiaba la jornada ANTES de que arrancara obtenia un
+   * texto en el que los treinta jugadores habian pronosticado 0-0: el dato
+   * secreto no se filtraba, pero se sustituia por uno inventado y creible.
+   */
+  const consumidores = ['enviarresultados.js', 'copiarresultadojugador.js', 'enviarresultadospartido.js'];
+
+  for (const nombre of consumidores) {
+    const codigo = quitarComentarios(leer(path.join('private', 'js', nombre)));
+
+    assert.match(codigo, /resultados-con-equipos/,
+      `${nombre}: si dejo de leer esa ruta, revisa esta prueba`);
+
+    /*
+     * ⚠️ Se cuentan TODAS las llamadas, no se busca una.
+     *
+     * La primera version de esta prueba hacia un `match` de
+     * `marcadorVisible(... oculto`, y con eso bastaba que UNA de las dos
+     * llamadas lo llevara: quitarselo al marcador local pasaba desapercibido
+     * porque el visitante seguia teniendolo. Se descubrio rompiendola a
+     * proposito, que es justo para lo que sirve romperlas. Es la leccion de la
+     * Entrada 067 -comprobar que algo existe no comprueba que este bien-.
+     */
+    const todas = codigo.match(/marcadorVisible\(/g) || [];
+    const conOculto = codigo.match(/marcadorVisible\([^()]*\.oculto\s*\)/g) || [];
+
+    assert.ok(todas.length > 0, `${nombre}: ya no usa marcadorVisible; revisa esta prueba`);
+
+    assert.equal(conOculto.length, todas.length,
+      `${nombre}: ${todas.length - conOculto.length} de ${todas.length} llamadas a `
+      + 'marcadorVisible() no pasan "oculto", asi que los pronosticos que todavia '
+      + 'no son publicos saldran como si fueran un marcador');
+  }
+});
+
+test('⛔ guardar distingue «no vino» de «vino vacío»', () => {
+  /*
+   * Es lo que impedia perder pronosticos. La pantalla, al dejar un partido a
+   * medias, mandaba los DOS marcadores en blanco y `guardar` lo tomaba como
+   * "ponlo todo a nulo": borraba lo que la persona ya tenia guardado, sin error
+   * y con un "guardado correctamente" en pantalla (Entrada 068).
+   *
+   * ⚠️ El `|| {}` de antes es exactamente lo que no puede volver: convierte un
+   * hueco del arreglo en un objeto vacio, y ahi las dos cosas se dicen igual.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'pronosticos.js')));
+
+  assert.doesNotMatch(mod, /pronosticos\?\.\[i\]\s*\|\|\s*\{\}/,
+    'un hueco del arreglo volveria a leerse como "dejalo todo en blanco"');
+
+  assert.match(mod, /enviado === null \|\| enviado === undefined/,
+    'lo que no viene tiene que dejarse sin tocar');
+
+  assert.match(mod, /marcador1 === null && marcador2 === null[\s\S]{0,400}DELETE FROM pronosticos/,
+    'los dos vacios quitan el pronostico, en vez de dejar una fila de nulos');
+
+  // Y la pantalla tiene que enterarse de lo que paso de verdad.
+  const ruta = quitarComentarios(leer(path.join('src', 'rutas', 'puntuacion.js')));
+  for (const contador of ['guardados', 'bloqueados', 'sinTocar', 'borrados']) {
+    assert.match(ruta, new RegExp(`${contador}:\\s*r\\.${contador}`),
+      `la ruta calcula "${contador}" y no lo devuelve: un numero bien calculado y tirado`);
+  }
+});
+
 test('⚠️ el precio de una jornada se fija al crearla y guardar no lo cambia', () => {
   /*
    * Es la decision que sostiene todos los cobros. El administrador puede subir

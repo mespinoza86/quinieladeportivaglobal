@@ -22,6 +22,7 @@ const membresias = require('../src/membresias');
 const jornadas = require('../src/jornadas');
 const jugadores = require('../src/jugadores');
 const ligas = require('../src/ligas');
+const { normalizarMarcador } = require('../src/validacion');
 const enMemoria = require('./postgres-en-memoria');
 
 test.before(async () => { await enMemoria.levantar(); });
@@ -496,4 +497,47 @@ test('⚠️ dos partidos a la misma hora salen SIEMPRE en el mismo orden', () =
 test('la lista vacía y la basura no rompen el orden', () => {
   assert.deepEqual(jornadas.ordenarParaGuardar([], []), []);
   assert.deepEqual(jornadas.ordenarParaGuardar([null, undefined], []), []);
+});
+
+
+/* ============ El cero, el blanco y la diferencia entre los dos ============ */
+
+/*
+ * Función pura de `src/validacion.js`. Hasta la Entrada 068 no tenía ninguna
+ * prueba propia: se usaba pasándola como argumento y nadie fijaba su contrato.
+ *
+ * ⛔ Y su contrato es el que impide el fallo más caro que puede tener una
+ * quiniela: que un partido terminado 0-0 le pague puntos a quien NO pronosticó
+ * nada. Si un día alguien "simplifica" el `bruto === ''` a un `|| 0`, todos los
+ * que dejaron la casilla vacía cobrarían por los empates a cero.
+ */
+
+test('⛔ un marcador en blanco es null, y un cero es un cero', () => {
+  const m = valor => normalizarMarcador(valor, 'x');
+
+  // En blanco, en todas sus formas: no hay pronóstico.
+  assert.equal(m(''), null);
+  assert.equal(m('   '), null, 'los espacios son blanco, no un número');
+  assert.equal(m(null), null);
+  assert.equal(m(undefined), null);
+
+  // Cero: es un pronóstico como cualquier otro y tiene que sobrevivir.
+  assert.equal(m(0), 0, 'un 0 no puede volverse null: es un pronóstico de verdad');
+  assert.equal(m('0'), 0);
+  assert.equal(m('00'), 0);
+
+  // Y lo demás sigue igual.
+  assert.equal(m(' 3 '), 3);
+  assert.equal(m('12'), 12);
+});
+
+test('un marcador que no es un entero de 0 a 99 se rechaza con su mensaje', () => {
+  const malos = ['-3', '2.5', '1e999', 'dos', '100', {}, []];
+
+  for (const malo of malos) {
+    assert.throws(
+      () => normalizarMarcador(malo, 'El marcador local del partido 1'),
+      /marcador/i,
+      `${JSON.stringify(malo)} debería rechazarse`);
+  }
 });

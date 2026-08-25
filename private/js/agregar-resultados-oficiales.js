@@ -110,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input
                             type="number"
                             min="0"
+                            max="99"
                             class="marcador-input"
                             data-equipo="${partido.equipo1}"
                             value="${valorInput(partido.marcador1)}"
@@ -121,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input
                             type="number"
                             min="0"
+                            max="99"
                             class="marcador-input"
                             data-equipo="${partido.equipo2}"
                             value="${valorInput(partido.marcador2)}"

@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 401/401
-npm run test:e2e            # 94/94, ~3,4 min
+npm test                    # 410/410
+npm run test:e2e            # 100/100, ~3,8 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -618,7 +618,15 @@ Lo que sigue abierto:
 7. **`script-src` permite `cdnjs.cloudflare.com`**, que es de donde sale jsPDF.
    Si ese CDN se viera comprometido, ejecutaría código en las pantallas. Es el
    compromiso habitual de usar un CDN, pero conviene tenerlo escrito.
-8. ⚠️ **`public/miembros.html` abre TRES documentos**: tres `<!DOCTYPE>`, tres
+8. ⚠️ **`llenar_jornada_user.js` tiene dos carreras entre la carga de los
+   partidos y la de los pronósticos** (Entrada 068). Si la contraseña se valida
+   antes de que los partidos estén pintados, **los pronósticos guardados no se
+   pintan nunca**; y cuando la respuesta llega tarde, **pisa lo que se esté
+   escribiendo**. En uso real casi nunca muerden —una persona tarda segundos en
+   teclear su contraseña— y por eso llevan ahí desde siempre; las destapó
+   Playwright, que la teclea en milisegundos. Lo correcto es encadenar las dos
+   cargas en vez de dejarlas competir. Las pruebas las esquivan esperando.
+9. ⚠️ **`public/miembros.html` abre TRES documentos**: tres `<!DOCTYPE>`, tres
    `<html>` y tres `<head>`. El navegador lo remienda y la pantalla funciona,
    por eso lleva ahí desde siempre sin que nadie lo note. El mismo fallo estaba
    en `configuracion-quiniela.html` y se corrigió en la Entrada 059; éste se
@@ -960,7 +968,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 401 pruebas rápidas y 94 de navegador
+### 2.5 `test/` — 410 pruebas rápidas y 100 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -10474,6 +10482,254 @@ Ninguno técnico que bloquee. Se recomendó al usuario **abrir primero con tres 
 cuatro personas** y recorrer una jornada entera —registro, pronósticos,
 resultados, una trivia y un abono— antes de mover a todos. Si eso sale limpio,
 adelante.
+
+---
+
+### 📌 Entrada 068 — 24 de agosto de 2026 — El cero, el blanco, y lo que se borraba sin decirlo
+
+**Objetivo:** el usuario pidió revisar que en «llenar quiniela» el 0 fuera
+distinto del vacío, que un campo en blanco llegara a la base como nulo y no como
+`""`, y que dejar un marcador sin poner no hiciera fallar el guardado. Su
+preocupación, dicha con todas las letras: **si un partido queda 0-0 y la persona
+no puso nada, podría puntuar**.
+
+**No podía.** Pero al ir a comprobarlo aparecieron cuatro cosas que sí estaban
+mal, y una de ellas costaba datos de la gente.
+
+## Lo primero: la pregunta tenía respuesta, y era «no»
+
+Se comprobó **ejecutando**, no leyendo, que es la lección de la Entrada 064:
+
+```
+normalizarMarcador:  ""  → null      0   → 0
+                    "  " → null     "0"  → 0
+                    null → null     "00" → 0
+```
+
+Y contra la base de verdad, con dos partidos terminados **0-0**:
+
+| Lo que hizo el jugador | Puntos |
+|---|---|
+| No puso nada (`null`) | **0** |
+| Dejó el campo en blanco (`""` → `null`) | **0** |
+| **Sí escribió 0-0** | **5** |
+
+La columna es `integer` nullable, así que a la base va **NULL, nunca `""`**, y el
+motor exige `typeof valor === 'number'` antes de comparar. Hay incluso doble red:
+un `""` crudo que llegara al motor también daría cero.
+
+**El núcleo estaba bien y no se tocó.** Lo que estaba mal era todo lo de
+alrededor.
+
+## ⛔ 1. Guardar un partido a medias borraba el pronóstico que ya tenías
+
+El fallo de verdad, y el que costaba datos.
+
+El arreglo de pronósticos es **posicional**, y no distinguía dos cosas que no
+son la misma: «no toques este partido» y «deja este partido en blanco». Las dos
+viajaban igual, como dos marcadores vacíos, porque el servidor hacía
+`pronosticos?.[i] || {}`: un hueco del arreglo se leía igual que dos casillas
+vacías, y el `ON CONFLICT DO UPDATE` machacaba con nulos lo que hubiera guardado.
+
+Medido contra la base:
+
+```
+Tras guardar completo  : 2-1 | 0-0
+Tras dejar uno a medias: null-null | 0-0     ← el 2-1 desapareció
+```
+
+**Editar un partido te borraba otro.** Sin error, sin aviso, y con un «guardados
+correctamente» en pantalla. Y el aviso que sí salía —*«Faltan resultados por
+agregar. ¿Está seguro que desea guardar?»*— callaba justo lo único que había que
+saber: que aceptar borraba.
+
+**El arreglo es la misma distinción de la Entrada 059 con las ligas favoritas**
+—«no vino» no es «vino vacía»—, y por la misma razón: sin ella, callar y borrar
+se dicen igual. Ahora la posición admite tres cosas y cada una significa una:
+
+| Lo que llega | Qué pasa |
+|---|---|
+| `null` / `undefined` | **no se toca.** Es lo que manda la pantalla para lo que quedó a medias y para lo ya cerrado |
+| los dos marcadores vacíos | se **quita** el pronóstico |
+| con marcadores | se escribe |
+
+⚠️ **Y los dos vacíos borran la fila, no la dejan en nulos.** No pronosticar y
+pronosticar «nada» no pueden ser dos estados distintos que signifiquen lo mismo:
+sin fila = no pronosticó, con fila = sí. Una fila de nulos habría que
+interpretarla en cada consulta que la encuentre.
+
+## ⛔ 2. Un blanco se enseñaba como un cero — y lo secreto también
+
+Cinco sitios del frontend resolvían el marcador con un `||` y un cero de
+respaldo. Un partido sin pronosticar salía impreso como **0**, y ese texto es el
+que se copia al portapapeles y se manda por WhatsApp: quedaba escrito que la
+persona había pronosticado 0-0.
+
+La base estaba bien. **El papel que circula por el grupo mentía** — y es justo el
+papel que alguien saca el día de la discusión.
+
+⛔ **Y debajo había algo peor.** `/api/resultados-con-equipos` devuelve un campo
+`oculto` para los pronósticos ajenos de partidos que aún no empiezan —la
+privacidad se decide partido a partido, Entrada 019— y manda el marcador vacío.
+**Ningún script del frontend miraba ese campo**; se comprobó con un grep, y
+`oculto` no aparecía en ninguno.
+
+Así que el administrador que copiaba los pronósticos de todos **antes** de que
+arrancara la jornada obtenía un texto donde los treinta jugadores habían puesto
+0-0. El dato secreto no se filtraba: **se sustituía por uno inventado y creíble**,
+que es peor, porque un hueco se nota y un número no.
+
+Los tres estados se resuelven ahora en un solo sitio,
+`private/js/marcador-visible.js`: el número tal cual, un guion si no pronosticó,
+un candado si todavía no se puede ver.
+
+⚠️ **Y la regla no es «usa otro valor por defecto», es no usar `||` sobre un
+marcador.** El mismo atajo al revés haría desaparecer los 0-0 de verdad, porque
+un cero también es falso para `||`. Hay que comprobar `null` y cadena vacía por
+separado.
+
+## 3. La pantalla decía «guardados correctamente» sin haber guardado nada
+
+La ruta devolvía `guardados` y `bloqueados`, y el navegador los tiraba: mostraba
+`data.mensaje` con un respaldo de «Resultados guardados correctamente», y esa
+ruta **nunca ha mandado un `mensaje`**. Así que siempre salía «correctamente»,
+aunque no se hubiera guardado ni un pronóstico porque todos los partidos ya
+habían empezado.
+
+Es **el mismo fallo que la Entrada 063** encontró en las jornadas —un número bien
+calculado y tirado— y seguía vivo aquí, en la pantalla que usa toda la gente. Es
+la cuarta vez esta semana que una lección aprendida vive en un sitio y falta en
+otro.
+
+## 4. Y el teclado de letras para escribir goles
+
+Los campos eran `type="text"` pelado: en el celular salía el teclado alfabético
+para escribir un marcador, y una letra sólo se detectaba al pulsar guardar.
+
+Pasan a `inputmode="numeric"` con `maxlength="2"`, que amarra con `MAX_GOLES`.
+**Se descartó `type="number"` a propósito**: cambia el valor con la rueda del
+ratón y con las flechas, y en una lista de veinte partidos eso mueve marcadores
+sin querer. La de resultados oficiales, que ya era `number`, gana su `max`.
+
+## ⚠️ Un centinela mío pasó por la razón equivocada
+
+Al romper los tres centinelas nuevos a propósito, el del `oculto` **no falló**.
+Buscaba una llamada que pasara `oculto` y con eso bastaba que **una** de las dos
+lo llevara: quitárselo al marcador local pasaba desapercibido porque el
+visitante seguía teniéndolo.
+
+⛔ **Es exactamente el hallazgo de la Entrada 067**, ocho entradas después y
+cometido por mí: comprobar que algo existe no comprueba que esté bien. Ahora
+cuenta **todas** las llamadas y exige que todas lo pasen. Se volvió a romper y
+ahora sí falla, diciendo *«1 de 2 llamadas no pasan oculto»*.
+
+Y sólo se supo **porque se rompieron**. Un centinela que no se ha visto fallar no
+se sabe si vigila.
+
+## ⚠️ Y la prueba de navegador destapó dos carreras que ya estaban
+
+La política del arreglo 1 —«a medias no se guarda»— **vive en la pantalla**, no
+en el servidor: el servidor sólo obedece lo que le llega. Una prueba de ruta
+puede quedarse en verde con la pantalla mandando otra vez dos vacíos y
+borrándolo todo, así que hizo falta una de navegador que recorriera el camino de
+la persona. Al escribirla apareció, sin buscarlo, que `llenar_jornada_user.js`
+tiene **dos carreras** entre la carga de los partidos y la de los pronósticos:
+
+1. **Si la contraseña se valida antes de que los partidos estén pintados, los
+   pronósticos guardados no se pintan nunca.** `cargarResultadosGuardados` busca
+   los `input` por id, no los encuentra, y nadie vuelve a intentarlo: la pantalla
+   queda en blanco como si no hubiera nada guardado.
+2. **Y cuando sí llega, escribe en las casillas** —incluida la cadena vacía donde
+   no hay pronóstico—, así que lo que se teclee mientras la respuesta está en
+   vuelo **se pierde**.
+
+⚠️ **Las dos son viejas y en uso real casi nunca muerden**, porque una persona
+tarda segundos en escribir su contraseña y para entonces todo ha llegado.
+Playwright la escribe en milisegundos y gana las dos carreras: por eso salieron
+aquí y no en un año de uso. La prueba las esquiva esperando lo que hay que
+esperar, y **quedan anotadas como deuda en §B.2**: lo correcto es encadenar las
+dos cargas en vez de dejarlas competir.
+
+**Se decidió no arreglarlas hoy**: no era lo que se pidió, no está roto a la
+vista, y meterlo en la misma tanda mezclaría un arreglo de datos con uno de
+concurrencia. Pero ahora está escrito, que es lo que faltaba.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/pronosticos.js` | «No vino» ≠ «vino vacío»; los dos vacíos borran la fila; `sinTocar` y `borrados` |
+| `src/rutas/puntuacion.js` | Los cuatro contadores salen a la pantalla |
+| `private/js/marcador-visible.js` | **Nuevo.** Los tres estados de un marcador, en un solo sitio |
+| `private/js/llenar_jornada_user.js` | Manda `null` para lo que no se toca; aviso que dice qué pasa; resumen real de lo guardado; teclado numérico |
+| `private/js/enviarresultados.js`, `copiarresultadojugador.js`, `enviarresultadospartido.js` | Fuera el cero de respaldo, y se respeta `oculto` |
+| `private/js/resultados.js`, `agregar-resultados-oficiales.js` | Teclado numérico y tope de 99 |
+| 5 pantallas HTML | Cargan `marcador-visible.js` |
+| `test/dominio.test.js` | 2 puras de `normalizarMarcador`, que **no tenía ninguna** |
+| `test/puntuacion.test.js` | 1 del motor contra un 0-0, y 3 del guardado |
+| `test/architecture.test.js` | 3 centinelas |
+| `test/e2e/llenar-quiniela.spec.js` | **Nueva.** 3 por la interfaz, que es donde vive la política |
+
+**Verificación:**
+
+```
+npm test         → 410/410
+npm run test:e2e → 100/100
+los tres centinelas, rotos a propósito → fallan (comprobado)
+  ⚠️ el del `oculto` NO falló a la primera; se corrigió y se volvió a romper
+con el comportamiento viejo puesto a propósito → falla la de navegador,
+  y con el mensaje que toca: «el 2-1 no lo pidió borrar nadie»
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un formato posicional que no distingue «no vino» de «vino vacío» borra
+   datos.** No es un problema de este arreglo: es de cualquier sitio donde una
+   lista represente «lo que hay» y se mande entera. La posición vacía **tiene que
+   poder significar «no opino»**, o el silencio se interpreta como una orden.
+2. ⛔ **Sustituir un dato ausente por uno creíble es peor que dejar el hueco.**
+   El cero de respaldo no rompía nada: rellenaba. Un hueco se nota y se pregunta;
+   un cero se lee y se cree. Vale para lo que falta y para lo que todavía no se
+   puede ver.
+3. ⚠️ **La pregunta del usuario era la correcta aunque la respuesta fuera «no».**
+   El 0-0 no pagaba de más — pero ir a comprobarlo destapó un borrado silencioso,
+   un dato inventado, un mensaje que mentía y un teclado equivocado. **Una
+   sospecha bien planteada vale aunque se descarte**, porque obliga a recorrer el
+   camino entero del dato.
+4. ⚠️ **Un caso de prueba «fácil» esconde el difícil.** La única prueba del
+   marcador nulo usaba un oficial **1-1**, donde un nulo y un número nunca se
+   parecen. El caso que importaba —el **0-0**— no estaba escrito por ningún lado.
+   Cuando dos valores se confunden, la prueba tiene que usar **el valor que se
+   confunde**, no uno cómodo.
+5. ⚠️ **Me pasó lo de la Entrada 067 ocho entradas después.** Escribí un centinela
+   que comprobaba presencia en vez de corrección, con la lección ya redactada en
+   este mismo documento. Leerla no basta: lo que la aplica es **romper el
+   centinela**, y eso cuesta dos comandos.
+6. ⚠️ **Una prueba de ruta no cubre una política que vive en la pantalla.** El
+   servidor sólo obedece: lo que llega como `null` no se toca. **Quien decide
+   mandar `null` es el navegador**, así que las pruebas de ruta habrían seguido
+   en verde con la pantalla volviendo a borrarlo todo. La regla: cuando una
+   decisión se toma en el frontend, la prueba que la fija tiene que pasar por el
+   frontend.
+7. **Escribir esa prueba encontró dos carreras que nadie buscaba.** No fallaban
+   en un año de uso porque una persona tarda segundos donde Playwright tarda
+   milisegundos. **Un arnés más rápido que un humano es un detector de carreras
+   gratis** — y lo que encuentra es real, aunque su probabilidad sea baja.
+8. **La trampa del heredoc volvió a morder al escribir esta entrada.** El texto
+   largo con comillas y acentos graves no pasa por la línea de comandos sin
+   pelearse con el shell. Está en §C desde la Entrada 024 y sigue siendo verdad:
+   **el texto largo va en un archivo**.
+
+**Pendiente / siguiente paso:**
+
+**No toca la base**: `pronosticos.marcador1` y `marcador2` ya eran nulables. Va
+a producción con el empujón, como todo lo demás.
+
+⚠️ Y queda una decisión de producto anotada, que este cambio hace visible: quien
+guarde **todos** los partidos en blanco ahora no deja ninguna fila, así que deja
+de aparecer en la tabla de todos contra todos en vez de salir con las casillas
+vacías. Es lo correcto —no pronosticó— pero conviene mirarlo en pantalla la
+primera vez que pase.
 
 ---
 

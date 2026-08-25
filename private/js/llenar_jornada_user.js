@@ -339,6 +339,9 @@ const fechaPartidoHTML = html`
 
                 <input
                 type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="2"
                 id="resultadoEquipo1_${i}"
                 ${bloqueado ? 'disabled' : ''}
 >
@@ -349,6 +352,9 @@ const fechaPartidoHTML = html`
 
             <input
             type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="2"
             id="resultadoEquipo2_${i}"
             ${bloqueado ? 'disabled' : ''}
 >
@@ -390,8 +396,13 @@ function copiarResultados() {
             const equipo1 = partidoDiv.dataset.equipo1 || '';
             const equipo2 = partidoDiv.dataset.equipo2 || '';
 
-            const resultado1 = document.getElementById(`resultadoEquipo1_${index}`)?.value || '0';
-            const resultado2 = document.getElementById(`resultadoEquipo2_${index}`)?.value || '0';
+            /*
+             * ⚠️ `marcadorVisible` y no `|| '0'` (Entrada 068). Este texto se
+             * copia y se manda por WhatsApp: un partido sin llenar salía como
+             * «0» y quedaba escrito que la persona había pronosticado 0-0.
+             */
+            const resultado1 = marcadorVisible(document.getElementById(`resultadoEquipo1_${index}`)?.value);
+            const resultado2 = marcadorVisible(document.getElementById(`resultadoEquipo2_${index}`)?.value);
 
             const comodin = partidoDiv.dataset.comodin === 'true';
             const formato = comodin ? '*' : '';
@@ -431,8 +442,13 @@ function enviarPorWhatsapp() {
             const equipo1 = partidoDiv.dataset.equipo1 || '';
             const equipo2 = partidoDiv.dataset.equipo2 || '';
 
-            const resultado1 = document.getElementById(`resultadoEquipo1_${index}`)?.value || '0';
-            const resultado2 = document.getElementById(`resultadoEquipo2_${index}`)?.value || '0';
+            /*
+             * ⚠️ `marcadorVisible` y no `|| '0'` (Entrada 068). Este texto se
+             * copia y se manda por WhatsApp: un partido sin llenar salía como
+             * «0» y quedaba escrito que la persona había pronosticado 0-0.
+             */
+            const resultado1 = marcadorVisible(document.getElementById(`resultadoEquipo1_${index}`)?.value);
+            const resultado2 = marcadorVisible(document.getElementById(`resultadoEquipo2_${index}`)?.value);
 
             const comodin = partidoDiv.dataset.comodin === 'true';
             const formato = comodin ? '*' : '';
@@ -533,36 +549,53 @@ async function guardarResultados(jornada, jugadorValidado) {
     }
 
 
-    // 4. Preparar pronósticos
-    const partidosContainer = document.getElementById('partidosContainer');
+    /*
+     * ============================================================
+     * ⛔ LO QUE NO SE PUEDE GUARDAR SE MANDA COMO `null`, NO VACÍO
+     * ============================================================
+     *
+     * Antes, un partido a medias —un marcador escrito y el otro en blanco— se
+     * mandaba con LOS DOS en blanco, y el servidor lo tomaba como «déjalo todo
+     * a nulo»: **borraba el pronóstico que la persona ya tenía guardado**. Un
+     * 2-1 de la semana pasada desaparecía por editar otra cosa, sin error y sin
+     * aviso (Entrada 068).
+     *
+     * Desde el arreglo, la posición que va como `null` significa «no toques
+     * este partido», y sólo dos casillas vacías a propósito borran. Así:
+     *
+     *   - a medias  → `null` → lo guardado sigue intacto, y se avisa;
+     *   - cerrado   → `null` → el servidor ya lo ignoraba, pero ahora se dice
+     *                 con el mismo lenguaje en vez de mandar vacíos;
+     *   - vacío     → `{'',''}` → se quita el pronóstico, que es como se borra.
+     */
     const pronosticos = [];
-    let hayResultadosFaltantes = false;
+    const partidosAMedias = [];
     let errorDetectado = false;
 
     Array.from(document.querySelectorAll('.partido-container')).forEach((partidoDiv, index) => {
         const inputs = partidoDiv.querySelectorAll('input');
-    
+
+        // Cerrado: no se manda nada suyo. Ver arriba.
         if (inputs[0].disabled || inputs[1].disabled) {
-    pronosticos.push({
-        marcador1: '',
-        marcador2: ''
-    });
-    return;
-}
+            pronosticos.push(null);
+            return;
+        }
 
-const marcador1 = inputs[0].value.trim();
-const marcador2 = inputs[1].value.trim();
+        const marcador1 = inputs[0].value.trim();
+        const marcador2 = inputs[1].value.trim();
 
+        // Los dos en blanco: es «no quiero pronosticar este partido».
+        if (marcador1 === '' && marcador2 === '') {
+            pronosticos.push({ marcador1: '', marcador2: '' });
+            return;
+        }
 
-        // Si uno de los dos está vacío
+        // Uno sí y otro no: no es medio pronóstico, es ninguno. No se manda.
         if (marcador1 === '' || marcador2 === '') {
 
-            hayResultadosFaltantes = true;
+            partidosAMedias.push(index + 1);
 
-            pronosticos.push({
-                marcador1: '',
-                marcador2: ''
-            });
+            pronosticos.push(null);
 
             return;
         }
@@ -571,6 +604,7 @@ const marcador2 = inputs[1].value.trim();
         if (isNaN(marcador1) || isNaN(marcador2)) {
             alert(`Error: solo se permiten valores numéricos en el partido ${index + 1}`);
             errorDetectado = true;
+            pronosticos.push(null);
             return;
         }
 
@@ -584,12 +618,23 @@ const marcador2 = inputs[1].value.trim();
         return;
     }
 
-    if (hayResultadosFaltantes) {
-    
+    /*
+     * ⚠️ El aviso dice QUÉ partidos y QUÉ les pasa. El de antes —«Faltan
+     * resultados por agregar»— callaba lo único importante: que al aceptar se
+     * borraba lo que ya estaba guardado.
+     */
+    if (partidosAMedias.length) {
+
+        const cuales = partidosAMedias.join(', ');
+        const plural = partidosAMedias.length > 1;
+
         const continuar = confirm(
-            'Faltan resultados por agregar.\n\n¿Está seguro que desea guardar?'
+            `${plural ? 'Los partidos' : 'El partido'} ${cuales} ${plural ? 'tienen' : 'tiene'} `
+            + `un solo marcador, así que no se ${plural ? 'guardan' : 'guarda'}.\n\n`
+            + `Si ya ${plural ? 'tenían' : 'tenía'} algo guardado, se queda como está. `
+            + 'El resto sí se guarda.\n\n¿Continuar?'
         );
-    
+
         if (!continuar) {
             return;
         }
@@ -613,7 +658,39 @@ if (!res.ok || !data.success) {
 
 await cargarResultadosGuardados(jugador, jornada);
 
-alert(data.mensaje || "Resultados guardados correctamente.");
+alert(resumenDeGuardado(data, partidosAMedias));
 
 
+}
+
+/**
+ * El mensaje de después de guardar, con lo que de verdad pasó.
+ *
+ * ⚠️ Antes esto era `alert(data.mensaje || "Resultados guardados
+ * correctamente.")` — y esa ruta **nunca ha mandado un `mensaje`**, así que
+ * siempre salía «correctamente», incluso cuando no se había guardado ni un
+ * pronóstico porque todos los partidos ya habían empezado. El servidor mandaba
+ * los contadores y el navegador los tiraba: el mismo fallo que la Entrada 063
+ * encontró en las jornadas (Entrada 068).
+ */
+function resumenDeGuardado(data, partidosAMedias = []) {
+    const partes = [];
+
+    partes.push(data.guardados
+        ? `Se guardaron ${data.guardados} pronóstico(s).`
+        : 'No se guardó ningún pronóstico.');
+
+    if (data.borrados) {
+        partes.push(`Se quitaron ${data.borrados} que habías dejado en blanco.`);
+    }
+
+    if (data.bloqueados) {
+        partes.push(`${data.bloqueados} partido(s) ya habían empezado y no se modificaron.`);
+    }
+
+    if (partidosAMedias.length) {
+        partes.push(`${partidosAMedias.length} quedaron a medias y se dejaron como estaban.`);
+    }
+
+    return partes.join('\n');
 }

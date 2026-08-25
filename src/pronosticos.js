@@ -217,6 +217,28 @@ async function tabla(quinielaId, jornadaNombre = null, ahora = new Date()) {
  * Todo va en una transacción: si el marcador del partido 7 es inválido, no se
  * guarda ninguno. Guardar seis y fallar en el séptimo dejaría al jugador con
  * media apuesta y sin forma de saber cuál mitad.
+ *
+ * ============================================================================
+ * ⚠️ «NO VINO» Y «VINO VACÍO» SON COSAS DISTINTAS (Entrada 068)
+ * ============================================================================
+ *
+ * El arreglo posicional no distinguía las dos, y ahí se perdían datos de la
+ * gente. La pantalla, al dejar un partido a medias —un marcador escrito y el
+ * otro en blanco—, mandaba LOS DOS en blanco; esto lo tomaba como «ponlo todo a
+ * nulo» y **borraba el pronóstico que la persona ya tenía guardado**. Sin error
+ * y sin aviso: se veía «guardado correctamente» y el 2-1 de antes ya no estaba.
+ *
+ * Ahora la posición `i` admite tres cosas, y cada una significa una:
+ *
+ *   - `null` / `undefined` → **no vino**: ese partido NO SE TOCA. Es lo que
+ *     manda la pantalla para lo que quedó a medias y para lo ya cerrado.
+ *   - los dos marcadores vacíos → **no hay pronóstico**: se borra la fila si
+ *     existía. No pronosticar es no tener fila, no tener una fila de nulos.
+ *   - con marcadores → se escribe.
+ *
+ * Es la misma distinción que `ligasFavoritas` en la Entrada 059 —«no vino» no
+ * es «vino vacía»—, y por la misma razón: sin ella, callar y borrar se dicen
+ * igual.
  */
 async function guardar(quinielaId, { jugador, usuarioId = null, jornada, pronosticos, ahora = new Date() }) {
   return db.enQuiniela(quinielaId, async c => {
@@ -238,6 +260,8 @@ async function guardar(quinielaId, { jugador, usuarioId = null, jornada, pronost
 
     let guardados = 0;
     let bloqueados = 0;
+    let sinTocar = 0;
+    let borrados = 0;
 
     for (let i = 0; i < partidos.length; i++) {
       const partido = partidos[i];
@@ -248,9 +272,38 @@ async function guardar(quinielaId, { jugador, usuarioId = null, jornada, pronost
         continue;
       }
 
-      const enviado = pronosticos?.[i] || {};
+      const enviado = pronosticos?.[i];
+
+      /*
+       * ⚠️ No vino nada para este partido: se deja EXACTAMENTE como estaba.
+       *
+       * Antes esto era `pronosticos?.[i] || {}`, así que un hueco en el arreglo
+       * se leía igual que dos casillas en blanco y machacaba con nulos lo que
+       * hubiera guardado. Es lo que borraba los pronósticos de quien dejaba un
+       * partido a medias.
+       */
+      if (enviado === null || enviado === undefined) {
+        sinTocar += 1;
+        continue;
+      }
+
       const marcador1 = normalizarMarcador(enviado.marcador1, `El marcador local del partido ${i + 1}`);
       const marcador2 = normalizarMarcador(enviado.marcador2, `El marcador visitante del partido ${i + 1}`);
+
+      /*
+       * Vino, y viene vacío: es «quítame el pronóstico de este partido». Se
+       * borra la fila en vez de dejarla con dos nulos, para que no haya dos
+       * formas de decir lo mismo. Sin fila = no pronosticó; con fila = sí. Una
+       * fila de nulos no significaría ninguna de las dos y habría que
+       * interpretarla en cada consulta que la encuentre.
+       */
+      if (marcador1 === null && marcador2 === null) {
+        const { rowCount } = await c.query(
+          'DELETE FROM pronosticos WHERE resultado_id = $1 AND partido_id = $2',
+          [resultado.id, partido.id]);
+        borrados += rowCount;
+        continue;
+      }
 
       await c.query(
         `INSERT INTO pronosticos (quiniela_id, resultado_id, partido_id, marcador1, marcador2)
@@ -262,7 +315,7 @@ async function guardar(quinielaId, { jugador, usuarioId = null, jornada, pronost
       guardados += 1;
     }
 
-    return { ok: true, guardados, bloqueados };
+    return { ok: true, guardados, bloqueados, sinTocar, borrados };
   });
 }
 

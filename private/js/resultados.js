@@ -62,9 +62,9 @@ function loadJornadas() {
                     partidoDiv.innerHTML = html`
                         <div style="display: flex; align-items: center;">
                             ${partido.equipo1}
-                            <input type="text" id="resultado${index}_1" placeholder="Marcador" style="margin-left: 10px; margin-right: 10px;" value="${marcador1}">
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" id="resultado${index}_1" placeholder="Marcador" style="margin-left: 10px; margin-right: 10px;" value="${marcador1}">
                             vs
-                            <input type="text" id="resultado${index}_2" placeholder="Marcador" style="margin-left: 10px; margin-right: 10px;" value="${marcador2}">
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" id="resultado${index}_2" placeholder="Marcador" style="margin-left: 10px; margin-right: 10px;" value="${marcador2}">
                             ${partido.equipo2}
                         </div>
                     `;

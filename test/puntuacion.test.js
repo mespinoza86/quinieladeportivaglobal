@@ -102,6 +102,35 @@ test('sin pronóstico, sin resultado o con un marcador nulo, son cero puntos', (
   assert.equal(puntuacionMod.puntosDePartido({ marcador1: null, marcador2: 1 }, oficial, false, PUNTUACION), 0);
 });
 
+test('⛔ un partido que quedó 0-0 NO paga a quien dejó la casilla en blanco', () => {
+  /*
+   * El caso que de verdad importa, y el que faltaba: la prueba de arriba usa un
+   * oficial 1-1, donde un nulo y un número nunca se parecen. Con un **0-0** sí,
+   * porque `null` y `0` son la misma cosa para cualquier comparación laxa
+   * —`null == 0` es falso, pero `Number(null)` es 0 y `!null` es `!0`—.
+   *
+   * Si esto se rompiera, todos los que no pronosticaron un partido cobrarían
+   * cada empate a cero de la temporada. Y no fallaría: pagaría de más.
+   */
+  const cero = { marcador1: 0, marcador2: 0 };
+  const puntos = pron => puntuacionMod.puntosDePartido(pron, cero, false, PUNTUACION);
+
+  assert.equal(puntos({ marcador1: null, marcador2: null }), 0, 'no pronosticó: no cobra');
+  assert.equal(puntos({ marcador1: 0, marcador2: null }), 0, 'medio pronóstico tampoco');
+  assert.equal(puntos({ marcador1: null, marcador2: 0 }), 0);
+  assert.equal(puntos(null), 0, 'sin fila: no cobra');
+
+  // Y quien SÍ escribió 0-0 cobra el marcador exacto. Es lo que se protege.
+  assert.equal(puntos({ marcador1: 0, marcador2: 0 }), PUNTUACION.marcadorExacto);
+
+  /*
+   * La cadena vacía no debería llegar hasta aquí —`normalizarMarcador` la
+   * convierte en `null` antes— pero el motor es la última red y tiene que
+   * aguantarla igual.
+   */
+  assert.equal(puntos({ marcador1: '', marcador2: '' }), 0, 'la red de seguridad del motor');
+});
+
 test('una jornada sin partidos no se da por terminada', () => {
   assert.equal(puntuacionMod.jornadaEstaFinalizada([], new Map()), false);
   assert.equal(puntuacionMod.jornadaEstaFinalizada(null, new Map()), false);
@@ -701,4 +730,84 @@ test('los partidos SIN identificador siguen por el camino de siempre', async () 
 
   assert.deepEqual(despues.map(p => p.id), antes.map(p => p.id),
     'sin identificador se empareja por posición, y las posiciones no cambiaron');
+});
+
+
+/* ============ «No vino» y «vino vacío» son cosas distintas ============ */
+
+/*
+ * Entrada 068. La pantalla, al dejar un partido a medias, mandaba los DOS
+ * marcadores en blanco, y `guardar` lo tomaba como «ponlo todo a nulo»: se
+ * llevaba por delante el pronóstico que la persona ya tenía guardado. Sin
+ * error, sin aviso, y con un «guardado correctamente» en pantalla.
+ */
+
+test('⛔ lo que NO viene no se toca: un hueco no borra el pronóstico guardado', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B'), partido('C', 'D')]);
+
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1',
+    pronosticos: [{ marcador1: 2, marcador2: 1 }, { marcador1: 0, marcador2: 0 }]
+  });
+
+  // El primero llega como `null` —es lo que manda la pantalla para lo que
+  // quedó a medias— y el segundo se cambia.
+  const r = await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1',
+    pronosticos: [null, { marcador1: 3, marcador2: 3 }]
+  });
+
+  const mios = await pronosticos.deJugador(q.id, 'ana', 'J1');
+
+  assert.deepEqual(mios.map(p => `${p.marcador1}-${p.marcador2}`), ['2-1', '3-3'],
+    'el 2-1 tiene que seguir ahí: nadie pidió tocarlo');
+  assert.equal(r.sinTocar, 1);
+  assert.equal(r.guardados, 1);
+});
+
+test('los dos marcadores vacíos quitan el pronóstico, y no dejan una fila de nulos', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B')]);
+
+  await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1', pronosticos: [{ marcador1: 2, marcador2: 1 }]
+  });
+
+  const r = await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1', pronosticos: [{ marcador1: '', marcador2: '' }]
+  });
+
+  assert.equal(r.borrados, 1);
+
+  /*
+   * Sin fila, no con una fila de nulos: no pronosticar y pronosticar «nada» no
+   * pueden ser dos estados distintos que signifiquen lo mismo.
+   */
+  const filas = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT count(*)::int AS n FROM pronosticos');
+    return rows[0].n;
+  });
+
+  assert.equal(filas, 0, 'la fila se va: no hay pronóstico');
+
+  // Y la pantalla lo sigue viendo como una casilla vacía, igual que antes.
+  const mios = await pronosticos.deJugador(q.id, 'ana', 'J1');
+  assert.equal(mios[0].marcador1, null);
+});
+
+test('un cero SÍ se guarda: no es lo mismo que dejarlo en blanco', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B')]);
+
+  const r = await pronosticos.guardar(q.id, {
+    jugador: 'ana', jornada: 'J1', pronosticos: [{ marcador1: '0', marcador2: '0' }]
+  });
+
+  assert.equal(r.guardados, 1);
+  assert.equal(r.borrados, 0, 'un 0-0 es un pronóstico, no un borrado');
+
+  const mios = await pronosticos.deJugador(q.id, 'ana', 'J1');
+  assert.equal(mios[0].marcador1, 0);
+  assert.equal(mios[0].marcador2, 0);
 });

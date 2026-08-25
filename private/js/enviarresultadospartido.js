@@ -85,7 +85,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const p = pronosticos[Number(partidoIndex)];
 
-        textoResultado += `${jugador}: ${p.equipo1} ${p.marcador1 || '0'} - ${p.marcador2 || '0'} ${p.equipo2}\n`;
+        /* El blanco no es un cero, y lo aún no público tampoco (Entrada 068). */
+        textoResultado += `${jugador}: ${p.equipo1} ${marcadorVisible(p.marcador1, p.oculto)} - ${marcadorVisible(p.marcador2, p.oculto)} ${p.equipo2}\n`;
       }
 
       if (!textoResultado.trim()) {

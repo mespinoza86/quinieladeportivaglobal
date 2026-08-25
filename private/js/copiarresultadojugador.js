@@ -68,9 +68,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             textoResultado += `Jornada: ${jornada}\n`;
             textoResultado += `-------------------------------\n`;
 
+            /* Ver `marcador-visible.js`: el blanco no es un cero, y lo que
+             * todavía no es público tampoco (Entrada 068). */
             resultados.forEach((r, i) => {
-                textoResultado += `${i + 1}. ${r.equipo1} ${r.marcador1 || 0}\n`;
-                textoResultado += `   ${r.equipo2} ${r.marcador2 || 0}\n`;
+                textoResultado += `${i + 1}. ${r.equipo1} ${marcadorVisible(r.marcador1, r.oculto)}\n`;
+                textoResultado += `   ${r.equipo2} ${marcadorVisible(r.marcador2, r.oculto)}\n`;
             });
 
             resultadoTexto.value = textoResultado;

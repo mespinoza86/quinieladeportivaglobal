@@ -55,9 +55,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 textoResultado += `Nombre: ${jugador}\n`;
                 textoResultado += `-------------------------------\n`;
 
+                /*
+                 * ⚠️ `marcadorVisible` y no `|| '0'` (Entrada 068): un partido
+                 * sin pronosticar salía como 0, y este texto se manda al grupo.
+                 * `p.oculto` viene del servidor para los pronósticos que aún no
+                 * son públicos —el partido no ha empezado— y nadie lo miraba,
+                 * así que copiar la jornada antes de que arrancara daba un
+                 * texto donde todo el mundo había puesto 0-0.
+                 */
                 pronosticos.forEach((p, i) => {
-                    textoResultado += `${i + 1}. ${p.equipo1} ${p.marcador1 || '0'}\n`;
-                    textoResultado += `   ${p.equipo2} ${p.marcador2 || '0'}\n`;
+                    textoResultado += `${i + 1}. ${p.equipo1} ${marcadorVisible(p.marcador1, p.oculto)}\n`;
+                    textoResultado += `   ${p.equipo2} ${marcadorVisible(p.marcador2, p.oculto)}\n`;
                 });
 
                 textoResultado += `\n`;
