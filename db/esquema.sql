@@ -78,7 +78,7 @@ CREATE TABLE acciones_superadmin (
   actor_email        text NOT NULL,
 
   accion             text NOT NULL
-                       CHECK (accion IN ('desactivar','reactivar','liberar_correo','borrar')),
+                       CHECK (accion IN ('desactivar','reactivar','liberar_correo','borrar','verificar')),
 
   /*
    * ⛔ EL OBJETIVO VA SIN CLAVE AJENA, Y ES A PROPOSITO.

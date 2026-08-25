@@ -142,6 +142,17 @@ module.exports = function rutasSuperadmin(app, { requireLogin, requireSuperadmin
     }));
   });
 
+  /*
+   * Dar por buena la dirección sin que la persona abra el enlace. Para
+   * desatascar a quien no recibe el correo; ver `src/superadmin.js` sobre lo
+   * que se pierde al hacerlo.
+   */
+  app.post('/api/superadmin/cuentas/:id/verificar', requireSuperadmin, async (req, res) => {
+    res.json(await superadminMod.verificar(req.params.id, {
+      actor: actorDe(req), motivo: req.body?.motivo
+    }));
+  });
+
   app.post('/api/superadmin/cuentas/:id/reactivar', requireSuperadmin, async (req, res) => {
     res.json(await superadminMod.reactivar(req.params.id, {
       actor: actorDe(req), motivo: req.body?.motivo

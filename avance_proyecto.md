@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 428/428
-npm run test:e2e            # 108/108, ~4,1 min
+npm test                    # 431/431
+npm run test:e2e            # 110/110, ~4,8 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -310,16 +310,15 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **La 002 (superadministrador) está corrida**, y `SUPERADMIN_EMAILS` puesta en
-Render, las dos el 25 de agosto.
+✅ **Las migraciones 002, 003 y 004 están corridas y verificadas contra Neon**,
+todas el 25 de agosto, igual que `SUPERADMIN_EMAILS` en Render. **No queda
+ningún paso manual pendiente.**
 
-⛔ **Pero queda la 003, y no es opcional.** Al comprobar la base después de la
-002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría: un
+De las tres, la que enseñó algo fue la **003**: al comprobar la base después de
+la 002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría —un
 `GRANT` sólo suma, y los privilegios por defecto del esquema ya se lo habían
-dado. `003-auditoria-solo-lectura.sql` lo quita.
-
-**Sin ella todo funciona y la auditoría es de mentira**, que es peor que un
-error: la aplicación puede borrar su propio rastro y nada avisa.
+dado—. Sin ella todo funcionaba y la auditoría era de mentira, que es peor que
+un error.
 
 ⚠️ **Y de ahí sale una costumbre que conviene mantener**: después de cada
 migración, preguntarle a la base con el rol de la aplicación qué permisos
@@ -988,7 +987,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 428 pruebas rápidas y 108 de navegador
+### 2.5 `test/` — 431 pruebas rápidas y 110 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11172,6 +11171,156 @@ capturas en escritorio y móvil → miradas las dos
 **Pendiente / siguiente paso:**
 
 Redesplegar; **no toca la base**. Es sólo pantalla y una consulta de lectura.
+
+---
+
+
+### 📌 Entrada 071 — 25 de agosto de 2026 — Dar un correo por bueno, y el CHECK que casi se queda corto
+
+**Objetivo:** el usuario pidió poder marcar un correo como verificado él mismo,
+para desatascar a quien no recibe el enlace de confirmación.
+
+## Lo primero: el riesgo que yo iba a advertir no existía
+
+Mi primer instinto fue avisar de que saltarse la verificación abriría la puerta
+a que alguien tomara una cuenta ajena. **Se comprobó antes de decirlo, y era
+falso**: `/api/auth/olvide-password` **no exige tener el correo confirmado** para
+mandar el enlace de restablecimiento, y `restablecer-password` marca la
+dirección como verificada de paso.
+
+O sea: quien controle ese buzón ya podía entrar a la cuenta, con o sin esto.
+**Marcarla a mano no abre ninguna puerta nueva.**
+
+⚠️ Vale la pena anotarlo porque el aviso habría sonado sensato y habría estado
+mal. Una advertencia de seguridad también se comprueba.
+
+## El riesgo que SÍ queda, y es otro
+
+Si la dirección tiene un error de escritura —`gmial.com`—, darla por buena
+significa que:
+
+- esa persona **no podrá recuperar su contraseña nunca**, y
+- el sistema deja de pedirle confirmar, así que **nadie volverá a notar el
+  error**. El «sin confirmar» era justamente la señal.
+
+Por eso el aviso de la pantalla dice **lo que se pierde**, no sólo lo que se
+gana, y remite a «Liberar correo» para ese caso: la dirección queda libre y la
+persona se registra con la buena.
+
+## ⛔ Y el CHECK con lista cerrada, que casi se queda corto
+
+`acciones_superadmin.accion` se creó en la migración 002 con una lista cerrada
+de cuatro valores. Añadir `verificar` al arreglo de JavaScript **no basta**: el
+`INSERT` lo rechaza la base.
+
+Y ése es el tipo de fallo que no aparece en ningún sitio hasta que duele: no
+falla al arrancar, no lo ve ninguna prueba de módulo, y revienta **en producción
+la primera vez que alguien usa la acción nueva**, con un error de restricción
+que no explica nada.
+
+Lo pilló mirar el esquema, no una prueba. **Así que ahora hay prueba**: un
+centinela que compara la lista del código con el `CHECK` de `db/esquema.sql` y
+falla si se separan, en las dos direcciones. Se comprobó rompiéndolo.
+
+Nace `004-accion-verificar.sql`. Queda escrito, para la próxima: **añadir una
+acción del superadministrador cuesta una migración**. No es un olvido, es el
+precio de que el registro no pueda contener basura — y vale la pena pagarlo.
+
+## Tres estados, no dos
+
+`✅ confirmado` · `🔑 CONFIRMADO POR TI` · `✉️ SIN CONFIRMAR`
+
+El del medio es azul y no verde a propósito: **no es lo mismo**. Es el único
+estado donde nadie ha probado que esa dirección exista, así que si algún día esa
+cuenta no recibe nada, es el primer sitio donde mirar. Debajo salen la fecha y
+el motivo que se escribió.
+
+⚠️ **Y no hizo falta una columna nueva**: la marca sale del propio registro de
+acciones. Duplicarla en `usuarios` habría creado dos verdades que se pueden
+separar.
+
+## Dos cosas que salieron por el camino
+
+**Una prueba mía pasaba sola y fallaba en la suite.** Comprobaba que el contador
+dijera «todas confirmadas» después de verificar, y la base es la misma para toda
+la corrida: otras pruebas dejan sus propias cuentas sin confirmar. Se cambió por
+una aserción sobre **esa cuenta concreta** —que deje de salir en el filtro—, que
+no depende de lo que hayan hecho las demás. Un fallo así parece de la aplicación
+y es de la prueba.
+
+⚠️ **Y la sonda de verificación contra Neon escribió en producción**, a
+propósito: para saber si la base acepta de verdad la acción nueva no basta leer
+el catálogo —eso dice lo que la base *cree*—, hay que intentar el `INSERT`. Se
+hizo dentro de una transacción con `ROLLBACK` forzado, y se comprobó después que
+el registro no tenía ninguna fila de la sonda. **Leer dice lo que declara;
+escribir y deshacer dice lo que hace.**
+
+## Y una nota sobre el despliegue anterior
+
+⚠️ El script que vigilaba el despliegue de la Entrada 070 **estaba roto**: usaba
+`grep -c` sobre una respuesta de varias líneas, el `[` fallaba con «integer
+expected», y repitió «aún no» treinta veces **sin comprobar nada**. Con la única
+señal fiable rota, se llamó «no desplegado» a lo que era «todavía no
+desplegado», y se le pidió al usuario que fuera a mirar Render por nada.
+
+⛔ **Una sonda rota no dice «no sé»: dice «no».** Es la misma familia que el
+centinela que pasa por la razón equivocada, y esta vez el falso negativo costó
+una alarma injustificada. Cualquier verificación automática tiene que distinguir
+«comprobado que no» de «no pude comprobarlo».
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/004-accion-verificar.sql` | **Nueva.** El `CHECK` admite `verificar` |
+| `db/esquema.sql` | Lo mismo, para instalaciones desde cero |
+| `src/superadmin.js` | La acción `verificar`, y la marca sacada del registro |
+| `src/rutas/superadmin.js` | La ruta |
+| `private/js/superadmin.js` | El botón, el tercer estado y el aviso de lo que se pierde |
+| `private/css/styles.css` | `.status-a-mano` |
+| `test/rutas.test.js` | 2 de ruta |
+| `test/architecture.test.js` | 1 centinela: el código y el `CHECK` no se separan |
+| `test/e2e/superadmin.spec.js` | 1 por la interfaz |
+
+**Verificación:**
+
+```
+npm test         → 431/431
+npm run test:e2e → 110/110
+el centinela del CHECK, roto a propósito → falla (comprobado)
+contra Neon: INSERT de 'verificar' aceptado, 'inventada' rechazado, 0 filas dejadas
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Una advertencia de seguridad también se comprueba.** Iba a avisar de que
+   esto abría una puerta, y no la abre: la recuperación de contraseña no exige
+   el correo confirmado. **Un aviso que suena sensato y es falso gasta la
+   credibilidad de los que sí importan**, que es la lección de la Entrada 066
+   dicha de otra forma.
+2. ⛔ **Una lista cerrada en la base es una decisión que hay que recordar al
+   ampliar el código.** Añadir el valor en JavaScript no falla en ningún sitio
+   hasta producción. El centinela que ata las dos listas cuesta diez líneas y
+   cubre todas las veces que vuelva a pasar.
+3. ⚠️ **Leer el catálogo dice lo que la base declara; un INSERT dice lo que
+   hace.** La sonda escribe y deshace con `ROLLBACK`, y luego comprueba que no
+   dejó nada. Es más trabajo que un `SELECT` sobre `pg_constraint` y es la
+   diferencia entre creer y saber.
+4. ⛔ **Una sonda rota no dice «no sé»: dice «no».** El vigilante del despliegue
+   fallaba en silencio y su respuesta por defecto era la negativa, así que
+   generó una alarma falsa. **Toda comprobación automática necesita distinguir
+   «comprobado que no» de «no pude comprobarlo»**, o sus negativos no valen
+   nada.
+5. **Una prueba que depende del estado global pasa sola y falla acompañada.** El
+   contador general no era asunto de esa prueba; la cuenta concreta sí. Cuando
+   una aserción mira algo que otras pruebas pueden mover, el fallo se disfraza
+   de problema de la aplicación.
+
+**Pendiente / siguiente paso:**
+
+✅ La migración 004 **ya está corrida y verificada contra Neon** —admite
+`verificar`, sigue rechazando lo inventado, y la sonda no dejó rastro—, así que
+al empujar no queda nada manual.
 
 ---
 

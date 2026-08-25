@@ -3161,3 +3161,81 @@ test('el filtro de desactivadas enseña justo las que se retiraron', async () =>
     assert.equal(despues.body.conteos.desactivadas, 1);
   });
 });
+
+test('⚠️ dar un correo por bueno a mano lo deja confirmado y con su rastro', async () => {
+  const jefe = await cuentaNueva('mando11');
+
+  const pendiente = credenciales('sinabrir');
+  const alta = await request(app).post('/api/auth/registro').send(pendiente);
+  assert.equal(alta.status, 201, JSON.stringify(alta.body));
+  const pendienteId = alta.body.usuario.id;
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    // Sin confirmar, no puede entrar. Es el punto de partida.
+    const antes = await request(app).post('/api/auth/login')
+      .send({ identificador: pendiente.username, password: pendiente.password });
+    assert.equal(antes.status, 403, 'sin confirmar no se entra');
+
+    const r = await jefe.agente.post(`/api/superadmin/cuentas/${pendienteId}/verificar`)
+      .send({ motivo: 'el correo le caia en spam' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+
+    /*
+     * ⛔ Lo que de verdad importa: ahora SÍ puede entrar. Sin esta comprobación,
+     * la prueba diría que el campo cambió sin decir si sirvió de algo.
+     */
+    const despues = await request(app).post('/api/auth/login')
+      .send({ identificador: pendiente.username, password: pendiente.password });
+    assert.equal(despues.status, 200, 'tras darlo por bueno tiene que poder entrar');
+
+    // Y queda marcado como verificado A MANO, no como uno cualquiera.
+    const lista = await jefe.agente.get('/api/superadmin/cuentas');
+    const ficha = lista.body.cuentas.find(c => c.id === pendienteId);
+
+    assert.equal(ficha.emailVerificado, true);
+    assert.ok(ficha.verificadaAMano, 'tiene que distinguirse de una confirmada por su dueño');
+    assert.equal(ficha.verificadaAMano.motivo, 'el correo le caia en spam');
+    assert.equal(ficha.verificadaAMano.porQuien, jefe.datos.email);
+
+    // La cuenta del jefe, que confirmó ella sola, no lleva esa marca.
+    const suya = lista.body.cuentas.find(c => c.id === jefe.usuarioId);
+    assert.equal(suya.verificadaAMano, null);
+
+    // Repetirlo no tiene sentido y se dice.
+    const otraVez = await jefe.agente.post(`/api/superadmin/cuentas/${pendienteId}/verificar`)
+      .send({ motivo: 'otra vez' });
+    assert.equal(otraVez.status, 409);
+  });
+});
+
+test('una cuenta desactivada no se puede dar por confirmada a medias', async () => {
+  const jefe = await cuentaNueva('mando12');
+
+  const pendiente = credenciales('apagada');
+  const alta = await request(app).post('/api/auth/registro').send(pendiente);
+  const pendienteId = alta.body.usuario.id;
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    await jefe.agente.post(`/api/superadmin/cuentas/${pendienteId}/desactivar`)
+      .send({ motivo: 'la apago para probar' });
+
+    /*
+     * `marcarVerificado` sólo actúa sobre cuentas activas: sobre una
+     * desactivada no tocaría nada y devolvería silencio. Se rechaza diciendo
+     * qué hacer, en vez de responder que sí sin haber hecho nada.
+     */
+    const r = await jefe.agente.post(`/api/superadmin/cuentas/${pendienteId}/verificar`)
+      .send({ motivo: 'probando' });
+
+    assert.equal(r.status, 409);
+    assert.match(r.body.error, /reactívala primero/i);
+
+    const lista = await jefe.agente.get('/api/superadmin/cuentas');
+    const ficha = lista.body.cuentas.find(c => c.id === pendienteId);
+    assert.equal(ficha.emailVerificado, false, 'no se tocó nada');
+  });
+});

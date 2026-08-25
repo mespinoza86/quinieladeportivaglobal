@@ -177,3 +177,73 @@ test('⚠️ las cuentas sin confirmar se ven y se pueden filtrar', async ({ bro
   await contextoJefa.close();
   await contextoPendiente.close();
 });
+
+test('⚠️ dar un correo por bueno desde la pantalla, y su rastro', async ({ browser }) => {
+  const cJefa = await browser.newContext();
+  const cPend = await browser.newContext();
+  const pJefa = await cJefa.newPage();
+  const pPend = await cPend.newPage();
+
+  const jefa = await registrarse(pJefa, 'validadora');
+  await crearQuiniela(pJefa, 'La de la validadora');
+
+  const marca = Date.now().toString(36);
+  const pendiente = {
+    username: `atascado${marca}`,
+    email: `atascado${marca}@ejemplo.com`,
+    password: 'contrasena-larga-1'
+  };
+
+  await pPend.goto('/registro.html');
+  await pPend.locator('#username').fill(pendiente.username);
+  await pPend.locator('#email').fill(pendiente.email);
+  await pPend.locator('#password').fill(pendiente.password);
+  await pPend.locator('#confirmarPassword').fill(pendiente.password);
+  await pPend.getByRole('button', { name: 'Crear cuenta' }).click();
+  await pPend.locator('#registroForm').waitFor({ state: 'hidden' });
+
+  await pJefa.request.post('/e2e/dar-poder', { data: { email: jefa.email } });
+
+  await pJefa.goto('/superadmin.html');
+  await pJefa.locator('#password').fill(jefa.password);
+  await pJefa.locator('#confirmarBtn').click();
+  await expect(pJefa.locator('#cuentasPanel')).toBeVisible();
+
+  /*
+   * El motivo se pide con `prompt`, así que hay que contestarlo antes de
+   * pulsar: Playwright descarta los diálogos por omisión, y un `prompt`
+   * descartado devuelve null, que la pantalla trata como «cancelar».
+   */
+  pJefa.on('dialog', d => d.accept('no le llegaba el correo'));
+
+  const tarjeta = pJefa.locator('.info-card', { hasText: pendiente.email });
+  await tarjeta.getByRole('button', { name: /Dar el correo por bueno/i }).click();
+
+  /*
+   * ⛔ Y se queda marcada como confirmada POR EL ADMINISTRADOR, no como una
+   * cualquiera: es el único estado en el que nadie ha probado que la dirección
+   * exista, y tiene que poder distinguirse después.
+   */
+  const yaVista = pJefa.locator('.info-card', { hasText: pendiente.email });
+  await expect(yaVista.locator('.status-pill', { hasText: 'CONFIRMADO POR TI' })).toBeVisible();
+  await expect(yaVista).toContainText('no le llegaba el correo');
+
+  // Y el botón desaparece: ya no hay nada que dar por bueno.
+  await expect(yaVista.getByRole('button', { name: /Dar el correo por bueno/i })).toHaveCount(0);
+
+  /*
+   * ⚠️ Y deja de salir en el filtro de «sin confirmar».
+   *
+   * Se comprueba sobre ESTA cuenta y no sobre el contador general: la base es
+   * la misma para toda la corrida, así que otras pruebas dejan sus propias
+   * cuentas sin confirmar. Una aserción del tipo «ya no queda ninguna» pasa
+   * cuando esta prueba corre sola y falla dentro de la suite — y ese fallo
+   * parece un problema de la aplicación cuando es de la prueba.
+   */
+  await pJefa.locator('[data-filtro="sin_confirmar"]').click();
+  await expect(pJefa.locator('#listado')).not.toContainText(pendiente.email);
+
+  await pJefa.request.post('/e2e/dar-poder', { data: { email: '' } });
+  await cJefa.close();
+  await cPend.close();
+});

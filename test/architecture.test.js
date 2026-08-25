@@ -642,6 +642,44 @@ test('⛔ el registro del superadministrador no puede borrarse ni perderse', () 
     'sin el REVOKE, la aplicacion hereda DELETE y puede borrar su propio rastro');
 });
 
+test('⛔ las acciones del superadministrador caben en el CHECK de la base', () => {
+  /*
+   * `acciones_superadmin.accion` tiene una lista CERRADA. Añadir una accion en
+   * JavaScript y olvidar la migracion **no falla al arrancar ni en ninguna
+   * prueba de modulo**: falla en produccion, la primera vez que alguien usa esa
+   * accion, con un error de restriccion que no dice nada util.
+   *
+   * Estuvo a punto de pasar al anadir "verificar": el array de JS se amplio y
+   * el CHECK seguia con cuatro valores. Lo pillo mirar el esquema, no una
+   * prueba — asi que ahora hay prueba.
+   *
+   * ⚠️ Y se comprueba contra `db/esquema.sql`, que es la verdad de una base
+   * nueva. La migracion que lo puso al dia se comprueba aparte.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'superadmin.js')));
+
+  const declaradas = (mod.match(/const ACCIONES = \[([^\]]*)\]/) || [])[1] || '';
+  const enCodigo = [...declaradas.matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+
+  assert.ok(enCodigo.length >= 4, 'no se encontro la lista de acciones');
+
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  const check = (esquema.match(/CHECK \(accion IN \(([^)]*)\)\)/) || [])[1] || '';
+  const enBase = [...check.matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+
+  for (const accion of enCodigo) {
+    assert.ok(enBase.includes(accion),
+      `la accion "${accion}" no esta en el CHECK de db/esquema.sql: el INSERT `
+      + 'lo rechazaria la base. Hace falta una migracion que amplie la restriccion');
+  }
+
+  // Y al reves: un valor en la base que el codigo ya no usa es basura acumulada.
+  for (const accion of enBase) {
+    assert.ok(enCodigo.includes(accion),
+      `el CHECK admite "${accion}" y el codigo ya no la usa`);
+  }
+});
+
 test('⚠️ el superadministrador no consulta tablas con RLS sin contexto', () => {
   /*
    * ⛔ ESTO YA MORDIO, y el fallo no se veia leyendo el codigo.

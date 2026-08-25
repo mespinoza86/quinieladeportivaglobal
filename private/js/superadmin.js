@@ -126,6 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
        * «Liberar correo» es irreversible.
        */
       : html`<div class="acciones-cuenta">
+          ${cuenta.emailVerificado
+            ? ''
+            : html`<button data-accion="verificar" data-id="${cuenta.id}">Dar el correo por bueno</button>`}
           ${cuenta.activo
             ? html`<button data-accion="desactivar" data-id="${cuenta.id}">Desactivar</button>`
             : html`<button data-accion="reactivar" data-id="${cuenta.id}">Reactivar</button>`}
@@ -147,9 +150,24 @@ document.addEventListener('DOMContentLoaded', () => {
      * no. Lo que hay que destacar es lo EXCEPCIONAL —sin confirmar—, no lo
      * normal.
      */
-    const confirmacion = cuenta.emailVerificado
-      ? html`<span class="status-pill status-live">✅ confirmado</span>`
-      : html`<span class="status-pill status-scheduled">✉️ SIN CONFIRMAR</span>`;
+    /*
+     * Tres estados, no dos: confirmado por la persona, confirmado por ti, y sin
+     * confirmar. El del medio importa porque es el único donde **nadie ha
+     * probado que esa dirección exista**: si mañana esa cuenta no recibe nada,
+     * es el primer sitio donde mirar.
+     */
+    const confirmacion = !cuenta.emailVerificado
+      ? html`<span class="status-pill status-scheduled">✉️ SIN CONFIRMAR</span>`
+      : cuenta.verificadaAMano
+        ? html`<span class="status-pill status-a-mano">🔑 CONFIRMADO POR TI</span>`
+        : html`<span class="status-pill status-live">✅ confirmado</span>`;
+
+    const notaAMano = cuenta.verificadaAMano
+      ? html`<p class="helper-text">
+          Lo diste por bueno el ${fecha(cuenta.verificadaAMano.fecha)}:
+          «${cuenta.verificadaAMano.motivo}»
+        </p>`
+      : '';
 
     /* Sólo se marca lo excepcional: una cuenta activa es lo normal y no
      * necesita insignia. Marcar todo es no marcar nada. */
@@ -161,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <h3>${cuenta.username}</h3>
       <p class="helper-text">${cuenta.email}</p>
       <p>${confirmacion} ${actividad}</p>
+      ${notaAMano}
       <p class="helper-text">Alta: ${fecha(cuenta.creadaEn)}</p>
       ${pintarQuinielas(cuenta.quinielas)}
       ${acciones}
@@ -188,7 +207,17 @@ document.addEventListener('DOMContentLoaded', () => {
     desactivar: 'Se desactiva la cuenta: deja de poder entrar y se cierran sus sesiones. Es reversible.',
     reactivar: 'Vuelve a poder entrar.',
     'liberar-correo': 'Su dirección queda libre para registrarse de nuevo, y la cuenta se desactiva. NO es reversible.',
-    borrar: 'Se borra la cuenta. NO es reversible.'
+    borrar: 'Se borra la cuenta. NO es reversible.',
+    /*
+     * ⚠️ El aviso dice lo que se pierde, no sólo lo que se gana. Si la
+     * dirección está mal escrita, darla por buena deja a esa persona sin poder
+     * recuperar nunca su contraseña, y apaga la única señal de que algo va
+     * mal. Para ese caso la salida es «Liberar correo», y se dice aquí.
+     */
+    verificar: 'La cuenta pasa a estar confirmada sin que la persona abra el enlace.\n\n'
+      + '⚠️ Hazlo sólo si la dirección es correcta y conoces a esa persona: si '
+      + 'tiene un error de escritura, no podrá recuperar su contraseña nunca y '
+      + 'nada volverá a avisarte. Si sospechas del correo, usa «Liberar correo».'
   };
 
   async function ejecutar(accion, id) {

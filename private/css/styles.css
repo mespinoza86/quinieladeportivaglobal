@@ -1928,3 +1928,17 @@ button + button {
   color: #fff;
   border-color: transparent;
 }
+
+/*
+ * Un correo que el superadministrador dio por bueno sin que la persona abriera
+ * el enlace.
+ *
+ * Azul y no verde a proposito: NO es lo mismo que un correo confirmado por su
+ * dueno. Nadie ha probado que esa direccion exista, y si algun dia esa cuenta
+ * no recibe nada, este es el primer sitio donde mirar. Un color distinto es lo
+ * que hace que se pueda mirar.
+ */
+.status-a-mano {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+}

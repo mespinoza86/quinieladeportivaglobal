@@ -36,8 +36,8 @@
 const db = require('./db');
 const usuarios = require('./usuarios');
 
-/** Las cuatro cosas que se pueden hacer, y que el registro sabe nombrar. */
-const ACCIONES = ['desactivar', 'reactivar', 'liberar_correo', 'borrar'];
+/** Las cosas que se pueden hacer, y que el registro sabe nombrar. */
+const ACCIONES = ['desactivar', 'reactivar', 'liberar_correo', 'borrar', 'verificar'];
 
 /** Un motivo tiene que decir algo: el registro existe para poder releerlo. */
 const MOTIVO_MINIMO = 3;
@@ -173,6 +173,30 @@ async function listarCuentas({ buscar = '', filtro = 'todas', limite = 50, despl
 
   if (!cuentas.length) return { cuentas: [], total, conteos };
 
+  /*
+   * Quiénes tienen el correo dado por bueno a mano.
+   *
+   * ⚠️ Sale del REGISTRO, no de una columna nueva: la información ya está ahí y
+   * duplicarla en `usuarios` sería tener dos verdades que se pueden separar. No
+   * hace falta migración para esto.
+   *
+   * Se toma el asiento más reciente por persona: si se verificó, luego se
+   * liberó el correo y se volvió a verificar, lo que importa es la última vez.
+   */
+  const { rows: verificadasAMano } = await db.consulta(
+    `SELECT DISTINCT ON (objetivo_usuario_id)
+            objetivo_usuario_id, actor_email, motivo, created_at
+       FROM acciones_superadmin
+      WHERE accion = 'verificar' AND objetivo_usuario_id = ANY($1::uuid[])
+      ORDER BY objetivo_usuario_id, created_at DESC`,
+    [cuentas.map(c => c.id)]);
+
+  const aMano = new Map(verificadasAMano.map(f => [f.objetivo_usuario_id, {
+    porQuien: f.actor_email,
+    motivo: f.motivo,
+    fecha: f.created_at
+  }]));
+
   const { rows: membresias } = await db.consulta(
     `SELECT m.usuario_id, m.rol, m.estado, q.id AS quiniela_id, q.nombre, q.estado AS quiniela_estado
        FROM membresias m
@@ -201,6 +225,12 @@ async function listarCuentas({ buscar = '', filtro = 'todas', limite = 50, despl
       username: c.username,
       email: c.email,
       emailVerificado: c.email_verificado,
+      /*
+       * Sólo cuenta si además está verificada: si después se liberó el correo,
+       * la cuenta volvió a «sin confirmar» y el asiento viejo ya no describe su
+       * estado de ahora.
+       */
+      verificadaAMano: c.email_verificado ? (aMano.get(c.id) || null) : null,
       activo: c.activo,
       creadaEn: c.created_at,
       esSuperadmin: correosConPoder().includes(usuarios.normalizarIdentidad(c.email)),
@@ -451,6 +481,66 @@ async function desactivar(usuarioId, { actor, motivo }) {
   return { ok: true, sesionesCerradas };
 }
 
+/**
+ * Da por buena la dirección sin que la persona abra el enlace.
+ *
+ * ============================================================================
+ * PARA QUÉ SIRVE, Y QUÉ SE ACEPTA A CAMBIO
+ * ============================================================================
+ *
+ * Sirve para desatascar a quien no recibe el correo —spam, un proveedor que lo
+ * rechaza, la cuota diaria agotada— cuando quien administra **conoce a esa
+ * persona**. En una quiniela de amigos es el caso normal.
+ *
+ * ⚠️ Y NO abre ninguna puerta nueva, aunque lo parezca: `/api/auth/olvide-password`
+ * **no exige tener el correo confirmado** para mandar el enlace de
+ * restablecimiento, así que quien controle ese buzón ya podía entrar a la
+ * cuenta con o sin esto.
+ *
+ * ⛔ Lo que sí se pierde es una señal. Si la dirección tiene un error de
+ * escritura —`gmial.com`— dejarla por verificada significa que:
+ *
+ *   - esa persona no podrá recuperar su contraseña nunca, y
+ *   - el sistema deja de pedirle confirmar, así que **nadie volverá a notar el
+ *     error**. El «sin confirmar» era justamente el aviso.
+ *
+ * Para ese caso la salida correcta es `liberarCorreo`, no ésta: la dirección
+ * queda libre y se registra de nuevo con la buena.
+ */
+async function verificar(usuarioId, { actor, motivo }) {
+  const razon = normalizarMotivo(motivo);
+  const objetivo = await objetivoValido(usuarioId, actor);
+
+  if (objetivo.email_verificado) {
+    throw errorDeValidacion('Esa cuenta ya tenía el correo confirmado.', 409);
+  }
+
+  /*
+   * ⚠️ `marcarVerificado` sólo actúa sobre cuentas ACTIVAS: sobre una
+   * desactivada no toca nada y devuelve `null`, en silencio. Se comprueba antes
+   * para poder decir qué hacer, en vez de responder que sí y no haber hecho
+   * nada.
+   */
+  if (!objetivo.activo) {
+    throw errorDeValidacion(
+      'Esa cuenta está desactivada: reactívala primero y luego confirma el correo.', 409);
+  }
+
+  await db.enTransaccion(async cliente => {
+    await cliente.query(
+      `UPDATE usuarios SET email_verificado = true, updated_at = now()
+        WHERE id = $1 AND activo`,
+      [objetivo.id]);
+
+    await anotar(cliente, {
+      actor, accion: 'verificar', objetivo, motivo: razon,
+      detalle: { emailDadoPorBueno: objetivo.email }
+    });
+  });
+
+  return { ok: true };
+}
+
 /** Le devuelve el acceso. */
 async function reactivar(usuarioId, { actor, motivo }) {
   const razon = normalizarMotivo(motivo);
@@ -620,6 +710,6 @@ async function borrar(usuarioId, { actor, motivo, desvincularJugadores = false }
 module.exports = {
   correosConPoder, esSuperadmin, hayAlguienConfigurado,
   listarCuentas, cuenta, ataduras, historial,
-  desactivar, reactivar, liberarCorreo, borrar,
+  desactivar, reactivar, liberarCorreo, borrar, verificar,
   normalizarMotivo, ACCIONES, MOTIVO_MINIMO, MOTIVO_MAXIMO
 };
