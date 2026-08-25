@@ -57,6 +57,7 @@ const quinielasMod = require('./quinielas');
 const membresiasMod = require('./membresias');
 const tokensMod = require('./tokens');
 const correoMod = require('./correo');
+const superadminMod = require('./superadmin');
 
 const RAIZ = path.join(__dirname, '..');
 
@@ -89,6 +90,54 @@ function requireAdmin(req, res, next) {
       requiereAdminMode: true
     });
   }
+  return next();
+}
+
+/**
+ * Superadministrador del sistema entero, y con la contraseña confirmada.
+ *
+ * ============================================================================
+ * ⛔ CUATRO COMPROBACIONES, Y NINGUNA SOBRA
+ * ============================================================================
+ *
+ * Ésta es la guardia de la única pantalla que enseña **los correos de todo el
+ * mundo**. Si dejara pasar, no sería un fallo de funcionalidad: sería una fuga
+ * de datos personales de todos los usuarios de todas las quinielas.
+ *
+ *   1. Que haya sesión.
+ *   2. Que la cuenta **leída de la base** —no lo que diga el navegador— tenga
+ *      su correo en `SUPERADMIN_EMAILS`, y esté activa y verificada.
+ *   3. Que haya confirmado su contraseña hace menos de una hora. Tener el
+ *      correo en la variable no basta: una sesión olvidada en un teléfono no
+ *      puede ser la llave para borrar cuentas del sistema.
+ *
+ * ⚠️ Y **el 403 es idéntico para quien no lo es y para quien lo es sin
+ * confirmar en el paso 2**: distinguirlos convertiría esta ruta en una forma de
+ * averiguar quién tiene poder. Sólo se pide la contraseña —con `requiereConfirmacion`—
+ * a quien ya se sabe que lo es.
+ */
+async function requireSuperadmin(req, res, next) {
+  if (!req.session?.usuarioId) {
+    return res.status(401).json({ error: 'Debes iniciar sesión.' });
+  }
+
+  const usuario = await usuariosMod.porId(req.session.usuarioId);
+
+  if (!superadminMod.esSuperadmin(usuario)) {
+    return res.status(403).json({ error: 'No tienes acceso a esta sección.' });
+  }
+
+  const acceso = req.session?.superadminMode;
+  if (!acceso || Date.now() - acceso.verificadoEn >= 1000 * 60 * 60) {
+    return res.status(401).json({
+      error: 'Confirma tu contraseña para administrar el sistema.',
+      requiereConfirmacion: true
+    });
+  }
+
+  // Lo dejamos resuelto para que las rutas no lo vuelvan a leer, y para que el
+  // registro de acciones firme siempre con la identidad de la sesión.
+  req.superadmin = { id: usuario.id, email: usuario.email, username: usuario.username };
   return next();
 }
 
@@ -318,6 +367,18 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * El más estricto de los tres: quien llega aquí ya tiene sesión y rol, y lo
    * único que lo separa de operar la quiniela es la contraseña.
    */
+  /*
+   * La puerta del superadministrador: el más estricto de todos.
+   *
+   * Quien llega aquí ya tiene sesión y su correo ya está en la variable; lo
+   * único que lo separa de poder retirar cuentas del sistema es la contraseña.
+   * Cinco intentos fallidos por cuarto de hora, y los aciertos no gastan cuota.
+   */
+  const limiteSuperadmin = rateLimit({
+    ...comunes, windowMs: 15 * 60 * 1000, limit: 5, skipSuccessfulRequests: true,
+    message: { error: 'Demasiados intentos de confirmación. Espera unos minutos.' }
+  });
+
   const limiteAdminMode = rateLimit({
     ...comunes, windowMs: 15 * 60 * 1000, limit: 5, skipSuccessfulRequests: true,
     message: { error: 'Demasiados intentos de confirmación. Espera unos minutos.' }
@@ -521,11 +582,19 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * poder seleccionar quiniela dejaría a una cuenta nueva sin forma de entrar.
    */
   const ctx = {
-    requireLogin, requireAdmin, enQuiniela,
-    limiteLogin, limiteRegistro, limiteAdminMode
+    requireLogin, requireAdmin, requireSuperadmin, enQuiniela,
+    limiteLogin, limiteRegistro, limiteAdminMode, limiteSuperadmin
   };
 
   require('./rutas/plataforma').sinQuiniela(app, ctx);
+
+  /*
+   * ⚠️ Y el superadministrador también va AQUÍ, por la misma razón de orden:
+   * no pertenece a ninguna quiniela en particular —puede no tener ninguna— así
+   * que montarlo después del guard le daría «Debes seleccionar una quiniela
+   * activa» al pedir una lista que no es de ninguna quiniela.
+   */
+  require('./rutas/superadmin')(app, ctx);
 
   /* ---------- Recuperar la contraseña ---------- */
 
@@ -619,6 +688,27 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * APIs sí exigen `requireAdmin`— pero sí de superficie, y una mala
    * experiencia: la página cargaba y luego fallaba petición por petición.
    */
+  /*
+   * ⚠️ La pantalla del superadministrador tiene guardia PROPIA, y no entra en
+   * `PAGINAS_ADMIN`: aquélla exige una quiniela seleccionada y una membresía
+   * con rol, y el superadministrador **no pertenece a ninguna quiniela**. Con
+   * la guardia de abajo se le mandaría a elegir quiniela para ver una pantalla
+   * que no es de ninguna.
+   *
+   * Aquí sólo se comprueba quién es; la contraseña la exige `requireSuperadmin`
+   * en cada ruta de datos. Servir el HTML a quien no toca no filtraría nada
+   * —el marcado viene vacío— pero enseñar que existe es una pista de más.
+   */
+  app.use(async (req, res, next) => {
+    if (req.path !== '/superadmin.html') return next();
+    if (!req.session?.usuarioId) return res.redirect('/login.html');
+
+    const usuario = await usuariosMod.porId(req.session.usuarioId);
+    if (!superadminMod.esSuperadmin(usuario)) return res.redirect('/index.html');
+
+    return next();
+  });
+
   app.use(async (req, res, next) => {
     if (!PAGINAS_ADMIN.includes(req.path)) return next();
     if (!req.session?.usuarioId) return res.redirect('/login.html');
@@ -778,9 +868,11 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
 
   return {
     app,
-    requireLogin, requireAdmin, enQuiniela,
-    limitadores: { limiteLogin, limiteRegistro, limiteAdminMode, limiteReenvio }
+    requireLogin, requireAdmin, requireSuperadmin, enQuiniela,
+    limitadores: {
+      limiteLogin, limiteRegistro, limiteAdminMode, limiteReenvio, limiteSuperadmin
+    }
   };
 }
 
-module.exports = { crearApp, requireLogin, requireAdmin, enQuiniela };
+module.exports = { crearApp, requireLogin, requireAdmin, requireSuperadmin, enQuiniela };

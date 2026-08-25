@@ -2779,3 +2779,323 @@ test('un monto absurdo se rechaza con un mensaje, no con un 500', async () => {
   assert.equal(res.status, 400, 'numeric(12,2) se desborda y la consulta revienta');
   assert.match(res.body.error, /monto/i);
 });
+
+
+/* ==================== El superadministrador ==================== */
+
+/*
+ * ============================================================================
+ * ⛔ AQUÍ EL PESO ESTÁ EN LOS PERMISOS, NO EN LA FUNCIONALIDAD
+ * ============================================================================
+ *
+ * Es la única pantalla del sistema que enseña **los correos de todo el mundo**.
+ * Si la guardia dejara pasar, no sería un fallo de funcionalidad: sería una
+ * fuga de datos personales de todos los usuarios de todas las quinielas, de una
+ * sola vez. Por eso las primeras pruebas son de quién NO puede entrar.
+ *
+ * `SUPERADMIN_EMAILS` se toca en cada prueba y se deja como estaba: es una
+ * variable de proceso, así que una prueba que la olvide puesta le daría poder a
+ * las siguientes y podrían pasar por la razón equivocada.
+ */
+
+/** Corre `fn` con estos correos como superadministradores, y luego lo deshace. */
+async function conSuperadmins(correos, fn) {
+  const antes = process.env.SUPERADMIN_EMAILS;
+  process.env.SUPERADMIN_EMAILS = correos;
+  try {
+    return await fn();
+  } finally {
+    if (antes === undefined) delete process.env.SUPERADMIN_EMAILS;
+    else process.env.SUPERADMIN_EMAILS = antes;
+  }
+}
+
+/**
+ * Confirma la contraseña de quien ya está en la lista.
+ *
+ * Va aparte de `cuentaNueva` porque la variable de entorno se pone DESPUÉS de
+ * crear la cuenta: `esSuperadmin` mira el correo, y ese correo no se conoce
+ * hasta que la cuenta existe.
+ */
+async function confirmarPoder({ agente, datos }) {
+  const res = await agente.post('/api/superadmin/confirmar').send({ password: datos.password });
+  assert.equal(res.status, 200, `No se pudo confirmar: ${JSON.stringify(res.body)}`);
+  return agente;
+}
+
+/** Las siete rutas de datos, para barrerlas de una. */
+const RUTAS_SUPERADMIN = [
+  ['get', '/api/superadmin/cuentas'],
+  ['get', '/api/superadmin/cuentas/00000000-0000-0000-0000-000000000000'],
+  ['get', '/api/superadmin/acciones'],
+  ['post', '/api/superadmin/cuentas/00000000-0000-0000-0000-000000000000/desactivar'],
+  ['post', '/api/superadmin/cuentas/00000000-0000-0000-0000-000000000000/reactivar'],
+  ['post', '/api/superadmin/cuentas/00000000-0000-0000-0000-000000000000/liberar-correo'],
+  ['delete', '/api/superadmin/cuentas/00000000-0000-0000-0000-000000000000']
+];
+
+test('⛔ sin SUPERADMIN_EMAILS no entra NADIE, ni el dueño de una quiniela', async () => {
+  const { agente, datos } = await cuentaNueva('nadie');
+  await quinielaNueva(agente, datos);
+
+  await conSuperadmins('', async () => {
+    for (const [metodo, ruta] of RUTAS_SUPERADMIN) {
+      const res = await agente[metodo](ruta).send({ motivo: 'probando' });
+      assert.equal(res.status, 403,
+        `${metodo.toUpperCase()} ${ruta} dejó pasar sin superadministradores configurados`);
+    }
+
+    const quien = await agente.get('/api/superadmin/quien-soy');
+    assert.equal(quien.body.esSuperadmin, false);
+  });
+});
+
+test('⛔ un usuario normal recibe 403 en las siete rutas', async () => {
+  const jefe = await cuentaNueva('conpoder');
+  const otro = await cuentaNueva('sinpoder');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    for (const [metodo, ruta] of RUTAS_SUPERADMIN) {
+      const res = await otro.agente[metodo](ruta).send({ motivo: 'probando' });
+      assert.equal(res.status, 403, `${metodo.toUpperCase()} ${ruta} dejó pasar a un usuario normal`);
+    }
+  });
+});
+
+test('⚠️ estar en la lista NO basta: hay que confirmar la contraseña', async () => {
+  const { agente, datos } = await cuentaNueva('sinconfirmar');
+
+  await conSuperadmins(datos.email, async () => {
+    const res = await agente.get('/api/superadmin/cuentas');
+
+    assert.equal(res.status, 401, 'sin confirmar la contraseña no se opera');
+    assert.equal(res.body.requiereConfirmacion, true);
+
+    // Y la confirmación exige la contraseña de verdad.
+    const mala = await agente.post('/api/superadmin/confirmar').send({ password: 'la-que-no-es' });
+    assert.equal(mala.status, 401);
+
+    const buena = await agente.post('/api/superadmin/confirmar').send({ password: datos.password });
+    assert.equal(buena.status, 200);
+
+    const ahora = await agente.get('/api/superadmin/cuentas');
+    assert.equal(ahora.status, 200);
+  });
+});
+
+test('⚠️ el correo se compara sin distinguir mayúsculas', async () => {
+  const { agente, datos } = await cuentaNueva('mayus');
+
+  await conSuperadmins(datos.email.toUpperCase(), async () => {
+    const quien = await agente.get('/api/superadmin/quien-soy');
+    assert.equal(quien.body.esSuperadmin, true,
+      'un correo escrito con mayúsculas en Render tiene que casar igual');
+  });
+});
+
+test('la lista trae los correos y las quinielas de cada quien', async () => {
+  const jefe = await cuentaNueva('mando');
+  const socio = await cuentaNueva('socio');
+  await quinielaNueva(socio.agente, socio.datos, 'La de los amigos');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const res = await jefe.agente.get('/api/superadmin/cuentas');
+    assert.equal(res.status, 200);
+
+    const ficha = res.body.cuentas.find(c => c.email === socio.datos.email);
+    assert.ok(ficha, 'el socio tiene que salir en la lista');
+    assert.equal(ficha.quinielas.length, 1);
+    assert.equal(ficha.quinielas[0].nombre, 'La de los amigos');
+    assert.equal(ficha.quinielas[0].rol, 'propietario');
+
+    // ⚠️ Y no sale la contraseña, ni siquiera cifrada.
+    assert.equal(ficha.password, undefined);
+    assert.equal(ficha.passwordHash, undefined);
+  });
+});
+
+test('⛔ desactivar echa de verdad: no puede entrar y sus sesiones se cierran', async () => {
+  const jefe = await cuentaNueva('mando2');
+  const victima = await cuentaNueva('victima');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const res = await jefe.agente
+      .post(`/api/superadmin/cuentas/${victima.usuarioId}/desactivar`)
+      .send({ motivo: 'cuenta duplicada' });
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    // La sesión que ya tenía abierta deja de valer.
+    const conSesionVieja = await victima.agente.get('/api/auth/me');
+    assert.equal(conSesionVieja.status, 401, 'su sesión abierta tenía que cerrarse');
+
+    // Y no puede volver a entrar.
+    const login = await request(app).post('/api/auth/login')
+      .send({ identificador: victima.datos.username, password: victima.datos.password });
+    assert.equal(login.status, 401);
+  });
+});
+
+test('el motivo es obligatorio: el registro existe para poder releerlo', async () => {
+  const jefe = await cuentaNueva('mando3');
+  const otro = await cuentaNueva('otro3');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    for (const motivo of ['', '  ', 'x']) {
+      const res = await jefe.agente
+        .post(`/api/superadmin/cuentas/${otro.usuarioId}/desactivar`).send({ motivo });
+      assert.equal(res.status, 400, `un motivo "${motivo}" no debería valer`);
+    }
+  });
+});
+
+test('liberar el correo deja registrarse otra vez con esa dirección', async () => {
+  const jefe = await cuentaNueva('mando4');
+  const antigua = await cuentaNueva('antigua');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const res = await jefe.agente
+      .post(`/api/superadmin/cuentas/${antigua.usuarioId}/liberar-correo`)
+      .send({ motivo: 'se equivocó de correo al registrarse' });
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    /*
+     * Lo que importa: la dirección vuelve a estar libre. Antes de esto, un
+     * correo mal escrito en el registro dejaba esa dirección ocupada para
+     * siempre y sin forma de recuperarla.
+     */
+    const denuevo = await request(app).post('/api/auth/registro').send({
+      username: 'renacido', email: antigua.datos.email,
+      password: 'contrasena-larga-1', confirmarPassword: 'contrasena-larga-1'
+    });
+    assert.equal(denuevo.status, 201, `la dirección tenía que quedar libre: ${JSON.stringify(denuevo.body)}`);
+  });
+});
+
+test('⛔ no puedes tocarte a ti mismo, ni a otro superadministrador', async () => {
+  const jefe = await cuentaNueva('mando5');
+  const colega = await cuentaNueva('colega');
+
+  await conSuperadmins(`${jefe.datos.email},${colega.datos.email}`, async () => {
+    await confirmarPoder(jefe);
+
+    const yo = await jefe.agente
+      .post(`/api/superadmin/cuentas/${jefe.usuarioId}/desactivar`).send({ motivo: 'probando' });
+    assert.equal(yo.status, 409, 'desactivarte a ti mismo te deja fuera de la propia pantalla');
+
+    const elOtro = await jefe.agente
+      .post(`/api/superadmin/cuentas/${colega.usuarioId}/desactivar`).send({ motivo: 'probando' });
+    assert.equal(elOtro.status, 409, 'quitarle el poder a otro se hace en Render, no aquí');
+  });
+});
+
+test('⛔ borrar a la dueña de una quiniela se rechaza y dice cuál', async () => {
+  const jefe = await cuentaNueva('mando6');
+  const duena = await cuentaNueva('duena');
+  await quinielaNueva(duena.agente, duena.datos, 'La que no puede quedarse sin dueño');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const res = await jefe.agente
+      .delete(`/api/superadmin/cuentas/${duena.usuarioId}`)
+      .send({ motivo: 'limpieza' });
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /La que no puede quedarse sin dueño/,
+      'tiene que nombrar la quiniela, no dar un error de clave ajena');
+  });
+});
+
+test('⚠️ borrar a quien tiene historial exige confirmarlo, y lo desvincula sin perderlo', async () => {
+  const jefe = await cuentaNueva('mando7');
+
+  // Una quiniela ajena donde el jugador tiene pronósticos.
+  const jefa = await admin('lajefa');
+  const socio = await cuentaNueva('sociojuega');
+
+  const unirse = await socio.agente.post('/api/quinielas/unirse')
+    .send({ codigoIngreso: jefa.quiniela.codigoIngreso });
+  assert.equal(unirse.status, 202);
+
+  const miembros = await jefa.agente.get('/api/quiniela-actual/miembros');
+  const pendiente = miembros.body.find(m => m.username === socio.datos.username);
+  await jefa.agente.patch(`/api/quiniela-actual/miembros/${pendiente.id}/aprobar`).send({});
+
+  await jefa.agente.post('/api/jornadas')
+    .send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  await socio.agente.post(`/api/quinielas/${jefa.quiniela.id}/seleccionar`).send({});
+  const pronostico = await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username, jornada: 'J1',
+    pronosticos: [{ marcador1: 2, marcador2: 1 }]
+  });
+  assert.equal(pronostico.status, 200, JSON.stringify(pronostico.body));
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    // Sin confirmar la desvinculación, se rechaza y explica.
+    const primero = await jefe.agente
+      .delete(`/api/superadmin/cuentas/${socio.usuarioId}`).send({ motivo: 'se fue del grupo' });
+
+    assert.equal(primero.status, 409);
+    assert.match(primero.body.error, /desvincular/i);
+
+    // Confirmando, se borra la cuenta y el juego se queda.
+    const segundo = await jefe.agente
+      .delete(`/api/superadmin/cuentas/${socio.usuarioId}`)
+      .send({ motivo: 'se fue del grupo', desvincularJugadores: true });
+
+    assert.equal(segundo.status, 200, JSON.stringify(segundo.body));
+    assert.equal(segundo.body.jugadoresDesvinculados, 1);
+  });
+
+  /*
+   * ⛔ Lo que de verdad se está probando: el pronóstico SIGUE AHÍ. Borrar una
+   * cuenta no puede reescribir la historia de una quiniela ajena.
+   */
+  const quedan = await jefa.agente.get(`/api/resultados/${socio.datos.username}/J1`);
+  assert.equal(quedan.status, 200);
+  assert.equal(quedan.body[0].marcador1, 2, 'el pronóstico no puede desaparecer');
+});
+
+test('⛔ el registro sobrevive al borrado de la cuenta que registra', async () => {
+  const jefe = await cuentaNueva('mando8');
+  const efimera = await cuentaNueva('efimera');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const borrada = await jefe.agente
+      .delete(`/api/superadmin/cuentas/${efimera.usuarioId}`)
+      .send({ motivo: 'cuenta de prueba' });
+    assert.equal(borrada.status, 200, JSON.stringify(borrada.body));
+
+    const historial = await jefe.agente.get('/api/superadmin/acciones');
+    assert.equal(historial.status, 200);
+
+    const asiento = historial.body.find(a => a.objetivoEmail === efimera.datos.email);
+
+    /*
+     * Ésta es la prueba de que `objetivo_usuario_id` no tiene clave ajena. Con
+     * `ON DELETE CASCADE`, borrar la cuenta se habría llevado el registro de
+     * que la borraste —el único caso en que hace falta de verdad— y este
+     * `assert.ok` fallaría.
+     */
+    assert.ok(asiento, 'el asiento tiene que sobrevivir a la cuenta que registra');
+    assert.equal(asiento.accion, 'borrar');
+    assert.equal(asiento.motivo, 'cuenta de prueba');
+    assert.equal(asiento.objetivoUsername, efimera.datos.username);
+    assert.equal(asiento.objetivoExiste, false, 'y sabe que esa cuenta ya no está');
+  });
+});

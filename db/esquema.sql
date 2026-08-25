@@ -59,6 +59,53 @@ CREATE UNIQUE INDEX auth_tokens_hash ON auth_tokens (token_hash);
 CREATE INDEX auth_tokens_pendientes ON auth_tokens (usuario_id, proposito)
   WHERE usado_en IS NULL;
 
+/*
+ * El registro de lo que hace el superadministrador (migracion 002).
+ *
+ * Es la primera cosa del sistema que puede dejar a alguien fuera, asi que
+ * queda escrito quien, a quien, cuando y por que. Mismo criterio que los
+ * abonos: un historial sin autor no sirve para lo unico que sirve.
+ *
+ * ⚠️ QUIEN es superadministrador NO vive aqui: sale de la variable de entorno
+ * `SUPERADMIN_EMAILS`. Con una columna, cualquiera que llegue a serlo podria
+ * nombrar a otro desde la propia pantalla; con la variable hace falta entrar
+ * a Render. El poder total no se concede desde dentro de la aplicacion.
+ */
+CREATE TABLE acciones_superadmin (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  actor_usuario_id   uuid REFERENCES usuarios(id) ON DELETE SET NULL,
+  actor_email        text NOT NULL,
+
+  accion             text NOT NULL
+                       CHECK (accion IN ('desactivar','reactivar','liberar_correo','borrar')),
+
+  /*
+   * ⛔ EL OBJETIVO VA SIN CLAVE AJENA, Y ES A PROPOSITO.
+   *
+   * Con `ON DELETE CASCADE`, borrar una cuenta se llevaria por delante el
+   * registro de que la borraste -el unico caso en que esta tabla hace falta
+   * de verdad-. Con `RESTRICT` seria peor: el registro impediria el borrado
+   * que el mismo registra. Por eso el id va suelto y el correo y el nombre
+   * se COPIAN: el asiento tiene que seguir siendo legible cuando la fila
+   * original ya no exista.
+   */
+  objetivo_usuario_id uuid,
+  objetivo_email      text NOT NULL,
+  objetivo_username   text NOT NULL,
+
+  -- Obligatorio de verdad: un registro de motivos vacios no explica nada.
+  motivo             text NOT NULL CHECK (btrim(motivo) <> ''),
+
+  -- Que se llevo por delante: membresias borradas, jugadores desvinculados,
+  -- el correo anterior al liberarlo.
+  detalle            jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON acciones_superadmin (created_at DESC);
+CREATE INDEX ON acciones_superadmin (objetivo_usuario_id);
+
 CREATE TABLE quinielas (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre          text NOT NULL,

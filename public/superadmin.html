@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administración del sistema</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/html-seguro.js" defer></script>
+  <script src="/js/superadmin.js" defer></script>
+  <!-- Toda pantalla con campo de contraseña lleva el ojo para verla. Lo pide un
+       centinela, y con razón: escribir una contraseña a ciegas en el móvil es
+       de donde salen la mitad de los «no me deja entrar». -->
+  <script src="/js/password-visible.js" defer></script>
+</head>
+<body class="app-body">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow">Todo el sistema</p><h1>Cuentas</h1></div>
+        <div class="app-logo">🛡️</div>
+      </div>
+      <p id="resumenCuentas" class="hero-text">Cargando…</p>
+    </section>
+
+    <!--
+      Las cuatro secciones arrancan OCULTAS, y es la lección de la Entrada 062:
+      mientras una venga visible de fábrica, cualquier tropiezo la deja puesta
+      por accidente. Aquí importa más que en ninguna otra pantalla, porque lo
+      que se enseña son los correos de todo el mundo.
+    -->
+    <section class="app-panel" id="confirmarPanel" hidden>
+      <h2>Confirma tu contraseña</h2>
+      <p class="helper-text">
+        Tener acceso no basta para operar aquí. Vuelve a escribir tu contraseña:
+        vale por una hora.
+      </p>
+      <label class="field-label" for="password">Contraseña</label>
+      <input type="password" id="password" autocomplete="current-password" />
+      <button id="confirmarBtn">Entrar</button>
+      <p id="confirmarError" class="helper-text" hidden></p>
+    </section>
+
+    <section class="app-panel" id="cuentasPanel" hidden>
+      <label class="field-label" for="buscar">Buscar por correo o usuario</label>
+      <input type="search" id="buscar" placeholder="ana@ejemplo.com" />
+      <div id="listado"></div>
+    </section>
+
+    <section class="app-panel" id="historialPanel" hidden>
+      <h2>Últimas acciones</h2>
+      <p class="helper-text">
+        Queda registrado quién hizo qué y por qué. No se puede borrar desde aquí.
+      </p>
+      <div id="historial"></div>
+    </section>
+
+    <section class="app-panel" id="errorPanel" hidden>
+      <p id="errorTexto" class="helper-text"></p>
+      <button id="reintentarBtn">Reintentar</button>
+    </section>
+
+    <button class="secondary" data-ir-a="/index.html">Volver a la portada</button>
+  </main>
+</body>
+</html>

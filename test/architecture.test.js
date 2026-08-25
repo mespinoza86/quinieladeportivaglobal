@@ -512,6 +512,172 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ TODA ruta de superadministrador lleva su guardia', () => {
+  /*
+   * Es la unica pantalla del sistema que enseña **los correos de todo el
+   * mundo**. Una ruta que se quede sin `requireSuperadmin` no fallaria: dejaria
+   * pasar, y seria una fuga de datos personales de todos los usuarios de todas
+   * las quinielas de una sola vez.
+   *
+   * Es exactamente la forma del hallazgo de la Entrada 064 -`/api/football/fixtures`
+   * sin `requireAdmin` mientras su ruta hermana si la tenia-, y por eso se
+   * cuenta en vez de buscar: comprobar que "alguna" la lleva es lo que dejo
+   * pasar aquella.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'rutas', 'superadmin.js')));
+
+  const declaraciones = mod.match(/app\.(get|post|delete|put|patch)\([^)]*/g) || [];
+  assert.ok(declaraciones.length >= 7, 'esperaba al menos 7 rutas de superadministrador');
+
+  /*
+   * Las tres publicas son a proposito y estan enumeradas: `quien-soy` responde
+   * si tienes acceso o no -si exigiera acceso, nadie podria preguntarlo-,
+   * `confirmar` ES la puerta, y `salir` no da nada.
+   */
+  const SIN_GUARDIA = ['/api/superadmin/quien-soy', '/api/superadmin/confirmar', '/api/superadmin/salir'];
+
+  for (const declaracion of declaraciones) {
+    const ruta = (declaracion.match(/'([^']+)'/) || [])[1] || '';
+    if (SIN_GUARDIA.includes(ruta)) continue;
+
+    assert.match(declaracion, /requireSuperadmin/,
+      `${ruta} no lleva requireSuperadmin: enseñaria los correos de todo el sistema`);
+  }
+
+  // Y las tres publicas exigen al menos sesion: no son anonimas.
+  for (const declaracion of declaraciones) {
+    const ruta = (declaracion.match(/'([^']+)'/) || [])[1] || '';
+    if (!SIN_GUARDIA.includes(ruta)) continue;
+    assert.match(declaracion, /requireLogin/, `${ruta} tiene que exigir sesion`);
+  }
+});
+
+test('⛔ quién es superadministrador sale del entorno, nunca de la base', () => {
+  /*
+   * La mitad de la seguridad de esto. Con una columna `es_superadmin`,
+   * cualquiera que llegue a serlo puede nombrar a otro desde la propia
+   * pantalla, y una cuenta comprometida se vuelve permanente. Con la variable
+   * hace falta entrar al panel de Render.
+   *
+   * Es la misma logica que impide que la aplicacion se conecte con el rol dueño
+   * de la base: el poder total no se concede desde dentro de la aplicacion.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'superadmin.js')));
+
+  assert.match(mod, /process\.env\.SUPERADMIN_EMAILS/, 'el poder sale de la variable');
+
+  /*
+   * ⚠️ `\b` a los dos lados, y no es un detalle de estilo: sin el limite de
+   * palabra, `es_superadmin` casa DENTRO de `accione|s_superadmin`, que es el
+   * nombre de la tabla del registro. La primera version de esta prueba fallaba
+   * acusando al archivo de tener una columna que no tiene.
+   *
+   * Es la misma trampa de las Entradas 055 y 062 -un centinela engañado por el
+   * texto que el mismo busca-, esta vez por el nombre de una tabla en vez de
+   * por un comentario. Tercera vez que muerde.
+   */
+  assert.doesNotMatch(mod, /\bes_superadmin\b/,
+    'no puede haber una columna de superadministrador: se concederia desde dentro');
+
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  assert.doesNotMatch(esquema, /\bes_superadmin\b/,
+    'la base no debe tener columna de superadministrador');
+
+  /*
+   * Y las cuatro condiciones de la guardia. Se comprueban una a una porque cada
+   * una tapa un agujero distinto, y quitar cualquiera deja la puerta abierta de
+   * una forma que no falla.
+   */
+  const guardia = quitarComentarios(leer(path.join('src', 'servidor.js')))
+    .match(/async function requireSuperadmin[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.ok(guardia, 'no se encontro requireSuperadmin');
+  assert.match(guardia, /usuariosMod\.porId/, 'el usuario se lee de la BASE, no de la sesion');
+  assert.match(guardia, /superadminMod\.esSuperadmin/, 'tiene que preguntar por la lista');
+  assert.match(guardia, /superadminMode/, 'tiene que exigir la contraseña confirmada');
+  assert.match(guardia, /1000 \* 60 \* 60/, 'la confirmacion tiene que caducar');
+});
+
+test('⛔ el registro del superadministrador no puede borrarse ni perderse', () => {
+  /*
+   * Dos cosas que se romperian sin fallar:
+   *
+   * 1. Si `objetivo_usuario_id` tuviera clave ajena con CASCADE, borrar una
+   *    cuenta se llevaria por delante el registro de que la borraste -el unico
+   *    caso en el que esta tabla hace falta de verdad-.
+   * 2. Si la aplicacion tuviera DELETE sobre la tabla, podria borrar su propio
+   *    rastro. Un registro que el actor puede limpiar no es un registro.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  const tabla = esquema.match(/CREATE TABLE acciones_superadmin[\s\S]*?\n\);/)?.[0] || '';
+
+  assert.ok(tabla, 'no se encontro la tabla acciones_superadmin');
+
+  assert.match(tabla, /objetivo_usuario_id\s+uuid,/,
+    'objetivo_usuario_id NO puede llevar REFERENCES: el asiento tiene que sobrevivir al borrado');
+  assert.match(tabla, /objetivo_email\s+text NOT NULL/, 'el correo se copia, porque la fila puede irse');
+  assert.match(tabla, /motivo\s+text NOT NULL CHECK/, 'el motivo es obligatorio de verdad');
+
+  const migracion = leer(path.join('db', 'migraciones', '002-superadmin.sql'));
+  assert.match(migracion, /GRANT SELECT, INSERT ON acciones_superadmin/);
+
+  /*
+   * ⛔ Y el REVOKE, que es lo que de verdad lo impide.
+   *
+   * El GRANT de la 002 no bastaba: **un GRANT solo suma**. Neon deja
+   * privilegios por defecto que conceden los cuatro permisos sobre toda tabla
+   * nueva, asi que `acciones_superadmin` nacio con DELETE y la aplicacion podia
+   * borrar su propio rastro. Se descubrio comprobandolo contra la base de
+   * verdad DESPUES de correr la migracion; leyendo el SQL parecia correcto.
+   *
+   * ⚠️ Y el patron va ANCLADO A INICIO DE LINEA (`^` con `m`), no suelto: en
+   * SQL un comentario es `--` al principio, asi que buscar el REVOKE por el
+   * medio lo encuentra igual dentro de una linea comentada. Se descubrio
+   * rompiendo esta prueba a proposito, que es para lo que sirve romperlas.
+   * **Cuarta vez esta semana** que un centinela mio se deja engañar por texto
+   * que no se ejecuta -las Entradas 055, 062 y la del nombre de la tabla-.
+   */
+  const revoke = leer(path.join('db', 'migraciones', '003-auditoria-solo-lectura.sql'));
+  assert.match(revoke, /^\s*REVOKE\s+UPDATE,\s*DELETE\s+ON\s+acciones_superadmin\s+FROM\s+app_quiniela/m,
+    'sin el REVOKE, la aplicacion hereda DELETE y puede borrar su propio rastro');
+});
+
+test('⚠️ el superadministrador no consulta tablas con RLS sin contexto', () => {
+  /*
+   * ⛔ ESTO YA MORDIO, y el fallo no se veia leyendo el codigo.
+   *
+   * `ataduras()` preguntaba por los `jugadores` de una cuenta con un JOIN a
+   * pelo. `jugadores` lleva RLS, asi que sin contexto de quiniela devolvia
+   * CERO FILAS -no fallaba, devolvia vacio-: decia "no juega en ninguna parte",
+   * el borrado seguia adelante y reventaba contra la clave ajena. Justo el
+   * error criptico que este modulo promete evitar.
+   *
+   * La regla: en este archivo, toda consulta a una tabla de dominio va dentro
+   * de `enQuiniela`. Las de plataforma -usuarios, quinielas, membresias- no
+   * llevan RLS y pueden ir sueltas.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'superadmin.js')));
+
+  const CON_RLS = [
+    'jugadores', 'jornadas', 'partidos', 'resultados', 'pronosticos',
+    'resultados_oficiales', 'trivias', 'respuestas_trivia', 'equipos',
+    'puntos_jornada', 'pagos'
+  ];
+
+  // Las llamadas a `db.consulta(...)`: las que van FUERA de un contexto.
+  for (const llamada of mod.match(/db\.consulta\(\s*`[^`]*`/g) || []) {
+    for (const tabla of CON_RLS) {
+      assert.doesNotMatch(llamada, new RegExp(`\\b(FROM|UPDATE|INTO|JOIN)\\s+${tabla}\\b`, 'i'),
+        `db.consulta() toca "${tabla}", que lleva RLS: sin contexto devuelve cero filas `
+        + 'en silencio. Tiene que ir dentro de db.enQuiniela()');
+    }
+  }
+
+  // Y la vuelta: si se tocan, es dentro de un contexto.
+  assert.match(mod, /db\.enQuiniela\([\s\S]*?FROM jugadores/,
+    'los jugadores se consultan quiniela por quiniela');
+});
+
 test('⛔ ningún marcador en blanco se enseña como un cero', () => {
   /*
    * Cinco sitios del frontend hacian `p.marcador1 || '0'`. Con eso, un partido

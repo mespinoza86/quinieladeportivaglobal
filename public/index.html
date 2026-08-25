@@ -33,6 +33,16 @@
         <span class="icon">⚙️</span><div><h3>Admin mode</h3><p>Administrar jornadas, trivias, resultados y miembros</p></div>
       </a>
 
+      <!--
+        Oculta de fábrica, como todo lo que depende de permisos: sólo la enseña
+        `index-contexto.js` si el servidor dice que esta cuenta es
+        superadministradora. Ver la Entrada 062 sobre por qué nada que dependa
+        de permisos puede venir visible por defecto.
+      -->
+      <a id="superadminCard" class="action-card" href="superadmin.html" style="display:none">
+        <span class="icon">🛡️</span><div><h3>Administrar el sistema</h3><p>Todas las cuentas del sistema, no sólo esta quiniela</p></div>
+      </a>
+
     <section class="app-panel" id="miCuentaCard" hidden>
       <h2>Mis pagos</h2>
       <div id="miCuentaContenido"></div>

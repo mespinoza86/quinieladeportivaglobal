@@ -98,3 +98,15 @@ services:
       # atienden peticiones, y encendida en la que hace de trabajador.
       - key: JOBS_HABILITADOS
         value: 'true'
+
+      # Quien puede administrar el sistema entero: ver todas las cuentas y
+      # retirarlas. Correos separados por comas.
+      #
+      # ⛔ NO vive en la base a proposito: con una columna, cualquiera que llegue
+      # a serlo podria nombrar a otro desde la pantalla. Aqui hace falta entrar
+      # a Render. Vacio o sin poner = nadie entra.
+      #
+      # `sync: false` para ponerlo a mano en el panel y que no quede escrito en
+      # el repositorio.
+      - key: SUPERADMIN_EMAILS
+        sync: false

@@ -98,6 +98,29 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
     res.json(mensaje);
   });
 
+  /*
+   * ⚠️ LA SEGUNDA PUERTA QUE SOLO EXISTE EN EL ARNES.
+   *
+   * Quien es superadministrador sale de `SUPERADMIN_EMAILS`, y eso se decide
+   * al arrancar el proceso — pero las cuentas de prueba se crean DESPUES, con
+   * un correo generado al vuelo. Sin esto, la pantalla del superadministrador
+   * no se puede probar por la interfaz: la cuenta que la prueba acaba de crear
+   * nunca estaria en la lista.
+   *
+   * Funciona porque `correosConPoder()` lee `process.env` en CADA llamada y no
+   * la cachea, que es como se escribio a proposito.
+   *
+   * ⛔ Y por eso mismo se registra AQUI y no en `crearApp`: en produccion esta
+   * ruta **no existe** —no es que responda 404 por una bandera: no esta
+   * declarada—. Una ruta capaz de nombrar superadministradores dentro de la
+   * aplicacion seria exactamente lo que la variable de entorno existe para
+   * impedir.
+   */
+  app.post('/e2e/dar-poder', (req, res) => {
+    process.env.SUPERADMIN_EMAILS = String(req.body?.email || '');
+    res.json({ ok: true, ahora: process.env.SUPERADMIN_EMAILS });
+  });
+
   const escuchando = app.listen(PUERTO, () => {
     console.log(`E2E: aplicación en http://127.0.0.1:${PUERTO}`);
   });

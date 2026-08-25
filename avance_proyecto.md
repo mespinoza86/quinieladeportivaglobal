@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 410/410
-npm run test:e2e            # 100/100, ~3,8 min
+npm test                    # 426/426
+npm run test:e2e            # 106/106, ~3,9 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -309,6 +309,26 @@ lo que en la Entrada 055 costó un diagnóstico entero.
 despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
+
+✅ **La 002 (superadministrador) está corrida**, y `SUPERADMIN_EMAILS` puesta en
+Render, las dos el 25 de agosto.
+
+⛔ **Pero queda la 003, y no es opcional.** Al comprobar la base después de la
+002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría: un
+`GRANT` sólo suma, y los privilegios por defecto del esquema ya se lo habían
+dado. `003-auditoria-solo-lectura.sql` lo quita.
+
+**Sin ella todo funciona y la auditoría es de mentira**, que es peor que un
+error: la aplicación puede borrar su propio rastro y nada avisa.
+
+⚠️ **Y de ahí sale una costumbre que conviene mantener**: después de cada
+migración, preguntarle a la base con el rol de la aplicación qué permisos
+quedaron de verdad. El guion puede decir exactamente lo que se quería y la base
+tener otra cosa (Entrada 069).
+
+⚠️ Y una advertencia: **la contraseña de esa cuenta pasa a ser la llave del
+sistema entero**, no de una quiniela. Merece una que no se use en ningún otro
+sitio.
 
 #### 2. 📥 Fase F — sugerencias de partidos destacados *(en el backlog)*
 
@@ -968,7 +988,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 410 pruebas rápidas y 100 de navegador
+### 2.5 `test/` — 426 pruebas rápidas y 106 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -10730,6 +10750,311 @@ guarde **todos** los partidos en blanco ahora no deja ninguna fila, así que dej
 de aparecer en la tabla de todos contra todos en vez de salir con las casillas
 vacías. Es lo correcto —no pronosticó— pero conviene mirarlo en pantalla la
 primera vez que pase.
+
+---
+
+
+### 📌 Entrada 069 — 25 de agosto de 2026 — Un superadministrador, y la RLS impidiendo que yo escribiera el fallo
+
+**Objetivo:** el usuario pidió poder ver todos los correos inscritos, a qué
+quinielas pertenece cada quien, y poder borrar una cuenta. Siendo él
+superadministrador del sistema entero, no de una quiniela.
+
+## Las cuatro decisiones, preguntadas antes de escribir nada
+
+Otra vez, y otra vez valió la pena: **dos de ellas cambiaron el diseño**.
+
+| Decisión | Qué se eligió |
+|---|---|
+| ¿Qué es «borrar»? | **Las tres cosas**: desactivar (reversible), liberar el correo, y borrado físico sólo cuando se puede. Un solo botón no cubría los casos reales |
+| ¿Quién manda? | **Variable de entorno `SUPERADMIN_EMAILS`**, no columna en la base |
+| ¿Ve dentro de las quinielas? | **No.** Sólo cuentas y membresías |
+| ¿Registro de acciones? | **Sí, tabla propia** |
+
+## Lo que hizo esto viable: los datos pedidos no llevan RLS
+
+Lo primero fue comprobar si un «ver todo» chocaba con el aislamiento, que es la
+pieza sobre la que se sostiene la seguridad del sistema. **No choca**, y la
+razón es afortunada: `usuarios`, `quinielas` y `membresias` son tablas de
+**plataforma** y a propósito no llevan RLS.
+
+Así que el panel se hace con consultas normales: **sin tocar el rol de la base,
+sin desactivar políticas y sin recorrer nada quiniela por quiniela**. Eso
+convirtió un trabajo que parecía cirugía en uno acotado.
+
+## ⛔ Por qué el poder NO vive en la base
+
+`SUPERADMIN_EMAILS` es una lista de correos en Render, y es la mitad de la
+seguridad de todo esto. Con una columna `es_superadmin`:
+
+- cualquiera que llegue a serlo **puede nombrar a otro** desde la propia
+  pantalla;
+- y una cuenta comprometida se vuelve permanente.
+
+Con la variable hace falta entrar al panel de Render. **Es la misma lógica que
+impide que la aplicación se conecte con el rol dueño de la base**: el poder
+total no se concede desde dentro de la aplicación.
+
+Vacía o sin poner = nadie entra. El fallo por defecto es cerrado, que es el
+único aceptable para esta puerta.
+
+⚠️ Y estar en la lista **no basta para operar**: hace falta la cuenta activa,
+el correo confirmado, y **volver a escribir la contraseña cada hora**. Una
+sesión olvidada en un teléfono no puede ser la llave para borrar cuentas del
+sistema.
+
+## ⛔ El fallo de fondo: la RLS me paró, y menos mal
+
+Es lo que más merece quedar escrito, porque **el código parecía correcto**.
+
+`ataduras()` —la función que dice qué ata a una cuenta y por tanto si se puede
+borrar— preguntaba por los jugadores con un `JOIN` a pelo:
+
+```sql
+SELECT j.id, j.nombre, q.nombre
+  FROM jugadores j JOIN quinielas q ON q.id = j.quiniela_id
+ WHERE j.usuario_id = $1
+```
+
+**`jugadores` lleva RLS.** Una consulta a una tabla de dominio sin contexto de
+quiniela **devuelve cero filas: no falla, devuelve vacío**. Así que:
+
+1. decía «no juega en ninguna parte», siempre;
+2. `sePuedeBorrar` daba que sí, siempre;
+3. el borrado seguía adelante y **reventaba contra la clave ajena** — justo el
+   error críptico que este módulo prometía evitar.
+
+Medido con una sonda, que es lo que lo dejó claro:
+
+```
+SELECT sin contexto  -> 0 filas
+UPDATE sin contexto  -> 0 filas tocadas
+UPDATE CON contexto  -> 1 fila
+```
+
+⚠️ **La RLS no causó el fallo: impidió que lo escribiera.** Sin ella, ese `JOIN`
+habría devuelto los jugadores de todas las quinielas alegremente y nadie se
+habría enterado nunca. Es la trampa de la que avisa `src/db.js` en su cabecera,
+y mordió en el módulo que precisamente no habla de quinielas — que es donde uno
+baja la guardia.
+
+El arreglo: los jugadores se buscan **quiniela por quiniela**, con
+`db.enQuiniela`, recorriendo todas las no eliminadas. Y la desvinculación
+igual. Es la única vía honesta, y es la que ya estaba escrita en la cabecera del
+módulo antes de que yo la incumpliera diez líneas más abajo.
+
+## Las tres acciones, y por qué son tres
+
+- **Desactivar** — `activo = false`, que ya funcionaba: `autenticar` y `porId`
+  filtran por ese campo desde siempre. Se le cierran además las sesiones
+  abiertas, porque si no seguiría dentro hasta que su cookie caducara —catorce
+  días—, que es lo mismo que arregló la Entrada 064.
+- **Liberar el correo** — la dirección queda libre y la cuenta se desactiva. El
+  correo se **renombra** en vez de vaciarse: `email` es único y obligatorio, así
+  que no se puede dejar en blanco. Resuelve el caso real de quien se equivocó de
+  dirección al registrarse y la dejó ocupada para siempre.
+- **Borrar** — con dos comprobaciones antes:
+  - **propietaria de una quiniela** → se rechaza y **se nombran cuáles**. No es
+    una decisión de producto: `propietario_id` es obligatorio y la base lo
+    rechazaría igual. Se dice antes y con nombres, en vez de dejar salir un
+    error de clave ajena.
+  - **con historial de juego** → se ofrece **desvincular**: `jugadores.usuario_id`
+    pasa a nulo y esa persona queda como jugador histórico, conservando
+    pronósticos, puntos y pagos. **Es para lo que esa columna es nulable** —así
+    quedaron los que migró el script de la base anterior—. La confirmación es
+    explícita: la segunda pulsación es distinta de la primera a propósito.
+
+## Y dos cosas más que salieron mal, las dos mías
+
+**1. El registro decía que la cuenta seguía existiendo, siempre.**
+`objetivoExiste` se deducía de si `objetivo_usuario_id` era nulo — y esa columna
+**no tiene clave ajena a propósito**, para que el asiento sobreviva al borrado,
+así que nunca se pone a nulo sola. El dato estaba ahí y la conclusión era del
+revés. Ahora se comprueba con un `LEFT JOIN`.
+
+**2. ⚠️ El nombre de mi propia tabla disparó mi propio centinela.** La prueba
+que prohíbe una columna `es_superadmin` fallaba acusando al archivo… porque
+`es_superadmin` casa **dentro de `acciones_superadmin`**, que es la tabla del
+registro.
+
+⛔ **Es la tercera vez esta semana** que un centinela se deja engañar por el
+texto que él mismo busca: la Entrada 055 con una prueba que citaba lo que
+buscaba, la 062 con un comentario, y ahora con **el nombre de una tabla**. Se
+arregló con límites de palabra, no reescribiendo el nombre: el nombre era
+correcto y el que buscaba mal era él.
+
+## Y el barrido de navegación cazó la pantalla nueva
+
+Al correr las de navegador, el barrido de los 23 botones falló:
+
+```
+superadmin.html: redirigio a /index.html y no se pudo probar
+```
+
+**No era un fallo: era la guardia funcionando.** La prueba se registra, crea una
+quiniela y activa el Admin Mode —con eso entra a las catorce pantallas de
+administración— pero `superadmin.html` **no depende de la quiniela**: exige
+estar en `SUPERADMIN_EMAILS`. La cuenta recién creada no lo estaba, así que la
+redirigió, que es exactamente lo que tiene que pasar.
+
+Es la primera pantalla del proyecto con un permiso que **no sale del rol dentro
+de una quiniela**, y el barrido lo notó solo. Que una prueba escrita hace días
+detecte una categoría de permiso que no existía cuando se escribió es la mejor
+señal de que estaba bien planteada.
+
+⚠️ La salida: una segunda puerta que **sólo existe en el arnés**,
+`/e2e/dar-poder`, hermana de `/e2e/ultimo-correo`. Las cuentas de prueba se
+crean al vuelo, así que su correo no puede estar en la variable desde el
+arranque. Funciona porque `correosConPoder()` lee `process.env` **en cada
+llamada** y no lo cachea — que se escribió así a propósito, aunque no por esto.
+
+⛔ **Y se registra en `test/e2e/arrancar.js`, nunca en `crearApp`**: en
+producción esa ruta **no existe**, no es que responda 404 por una bandera. Una
+ruta capaz de nombrar superadministradores dentro de la aplicación sería
+justamente lo que la variable de entorno existe para impedir.
+
+## ⛔ Y lo mejor vino al final: un GRANT no es una política de permisos
+
+Antes de empujar se comprobó **contra Neon de verdad**, con el rol de la
+aplicación, que la migración estuviera aplicada. Salió esto:
+
+```
+1. ¿Existe la tabla acciones_superadmin?  SI
+3. Claves ajenas: 1  ✅ el objetivo no la lleva
+4. Permisos de app_quiniela: DELETE, INSERT, SELECT, UPDATE
+   ⛔ Tiene DELETE: la aplicacion podria borrar su propio rastro.
+```
+
+La migración 002 concedía `GRANT SELECT, INSERT`, con un comentario que decía
+*«SIN DELETE: un registro que la aplicación puede borrar no es una auditoría»*.
+**Era falso.**
+
+⚠️ **Un `GRANT` sólo suma.** Neon —y `db/poner-al-dia.sql`— dejan puestos
+*privilegios por defecto* que conceden los cuatro permisos a `app_quiniela`
+sobre **toda tabla nueva del esquema**. Así que la tabla nació con `DELETE`, y
+conceder menos no quita nada. Para que un permiso no esté **hay que quitarlo**.
+
+Y esto **no se ve leyendo el SQL**: el guion dice exactamente lo que se quería,
+y la base tiene otra cosa. Sólo aparece preguntándole a la base con el rol de la
+aplicación, que es lo que hizo la comprobación previa al despliegue.
+
+Nace `003-auditoria-solo-lectura.sql` con el `REVOKE`. **La 002 no se edita**
+—ya se corrió en producción, y cambiarla dejaría el archivo describiendo algo
+distinto de lo que se ejecutó—; sólo se corrige su comentario para que no siga
+prometiendo lo que no cumple. Es la regla 1 de la carpeta, aplicada al caso para
+el que se escribió.
+
+⚠️ **Cuarta vez que un centinela mío se deja engañar por texto que no se
+ejecuta.** El primero que escribí para vigilar el `REVOKE` buscaba el patrón
+suelto, así que **comentar la línea con `--` lo dejaba pasar igual**. Se
+descubrió rompiéndolo a propósito. Ahora va anclado a inicio de línea. Van:
+la 055 (una prueba citando lo que buscaba), la 062 (un comentario), el nombre de
+la tabla de hoy, y ésta.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/002-superadmin.sql` | **Nueva.** La tabla del registro |
+| `db/migraciones/003-auditoria-solo-lectura.sql` | **Nueva.** El `REVOKE` que el `GRANT` no daba |
+| `db/esquema.sql` | Lo mismo, para instalaciones desde cero |
+| `src/superadmin.js` | **Nuevo.** La lista, las ataduras y las cuatro acciones |
+| `src/rutas/superadmin.js` | **Nuevo.** 10 rutas, montadas antes del guard de quiniela |
+| `src/servidor.js` | `requireSuperadmin`, su limitador y la guardia de la página |
+| `public/superadmin.html`, `private/js/superadmin.js` | **Nuevas.** La pantalla |
+| `public/index.html`, `private/js/index-contexto.js` | La tarjeta, oculta de fábrica |
+| `.env.example`, `render.yaml` | `SUPERADMIN_EMAILS`, documentada |
+| `test/rutas.test.js` | 11 de ruta, casi todas de permisos |
+| `test/architecture.test.js` | 4 centinelas |
+| `test/e2e/superadmin.spec.js` | **Nueva.** 3 por la interfaz |
+| `test/e2e/arrancar.js`, `navegacion.spec.js` | La puerta `/e2e/dar-poder` del arnés |
+
+**Verificación:**
+
+```
+npm test         → 426/426
+npm run test:e2e → 106/106
+los cuatro centinelas, rotos a propósito → fallan (comprobado)
+sonda de RLS: SELECT sin contexto = 0 filas, con contexto = 1
+el barrido de navegación cazó la pantalla nueva antes que yo
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **La RLS impidió que escribiera el fallo, no lo causó.** Un `JOIN` a una
+   tabla de dominio sin contexto devuelve **cero filas en silencio**, y sobre
+   ese vacío se construyó una respuesta falsa —«no juega en ninguna parte»— que
+   sólo se destapó al reventar contra una clave ajena. Sin RLS, ese mismo JOIN
+   habría devuelto datos de todas las quinielas y nadie se habría enterado.
+   **La misma política que protege el aislamiento protege de escribir consultas
+   mal.**
+2. ⚠️ **Se baja la guardia justo en el módulo que no habla de quinielas.** La
+   trampa está escrita en la cabecera de `src/db.js` desde la tajada 1, y la
+   incumplí diez líneas debajo de haberla citado yo mismo. Saber una regla y
+   aplicarla en el sitio donde no parece que toque son dos cosas distintas.
+3. ⛔ **Un poder que se puede conceder desde dentro no está limitado.** Con una
+   columna, el primer superadministrador puede crear al segundo, y una cuenta
+   comprometida se vuelve permanente. Con la variable de entorno hace falta otro
+   sistema —Render— para cambiarla. **La frontera del privilegio tiene que caer
+   fuera de la aplicación**, igual que el rol de la base.
+4. ⚠️ **Un dato correcto puede llevar a una conclusión del revés.**
+   `objetivo_usuario_id` no tiene clave ajena a propósito, y de eso deduje que
+   «no ser nulo = la cuenta existe». Nunca es nulo, precisamente por eso. **La
+   ausencia de una restricción no es información sobre los datos.**
+5. ⚠️ **Tercera vez que un centinela se deja engañar por el texto que busca**,
+   y esta vez por el nombre de una tabla dentro de otro nombre. `quitarComentarios`
+   no cubre este caso; lo que lo cubre son los límites de palabra. **Cuando un
+   patrón es una palabra, hay que anclarlo como palabra.**
+6. **Preguntar cuatro cosas cambió el diseño dos veces**, otra vez. «Las tres
+   opciones de borrado» y «el poder fuera de la base» no eran lo que yo iba a
+   escribir por defecto.
+7. ⚠️ **Una prueba bien planteada detecta categorías que no existían cuando se
+   escribió.** El barrido de navegación cazó `superadmin.html` porque descubre
+   las pantallas **leyendo el marcado** en vez de una lista escrita a mano.
+   Añadir una pantalla con una clase de permiso nueva —la primera que no
+   depende de la quiniela— la metió sola en el barrido y falló hasta que se
+   trató bien. **Una lista escrita a mano no habría dicho nada.**
+8. ⛔ **Un `GRANT` no es una política de permisos: es una suma.** Conceder
+   `SELECT, INSERT` no impide el `DELETE` que la tabla ya heredó de los
+   privilegios por defecto del esquema. **Para que un permiso no esté hay que
+   quitarlo**, y hay que comprobarlo preguntándole a la base con el rol de la
+   aplicación — el guion que se corrió puede decir exactamente lo que se quería
+   y la base tener otra cosa.
+9. ⚠️ **Comprobar la base ANTES de empujar encontró lo que ninguna prueba podía.**
+   Las 426 pasaban: PGlite no tiene `app_quiniela` ni privilegios por defecto,
+   así que ese permiso de más **no existe en el arnés**. Es la clase de fallo
+   que sólo vive en producción, y el único momento de verlo era ése. **La
+   comprobación previa al despliegue no es burocracia.**
+
+**Pendiente / siguiente paso:**
+
+⛔ **El orden del despliegue importa, y esta vez sí hay migración**:
+
+1. ✅ correr `db/migraciones/002-superadmin.sql` en Neon **con el rol dueño**
+   — hecho por el usuario el 25 de agosto;
+2. ✅ poner `SUPERADMIN_EMAILS` en Render — hecho;
+3. ⛔ **correr `003-auditoria-solo-lectura.sql`**, que salió de comprobar la
+   base después de la 002. Sin él, la aplicación puede borrar su propio rastro
+   de auditoría;
+4. y **sólo entonces** empujar.
+
+Al revés, el código llega a producción y consulta una tabla que no existe. Si
+falta el paso 2, no entra nadie — que es el fallo correcto. Si falta el 3, todo
+funciona y la auditoría es de mentira, que es el peor de los tres.
+
+**Y la comprobación que lo destapó vale la pena repetirla** después de cualquier
+migración, con el rol de la aplicación:
+
+```sql
+SELECT privilege_type FROM information_schema.role_table_grants
+ WHERE table_name = 'acciones_superadmin' AND grantee = 'app_quiniela'
+ ORDER BY privilege_type;
+-- INSERT, SELECT   <- sólo esos dos
+```
+
+⚠️ Y una advertencia que conviene tener escrita: **a partir de ahora la
+contraseña de esa cuenta es la llave del sistema entero.** No de una quiniela:
+de todas las cuentas. Merece una contraseña que no se use en ningún otro sitio.
 
 ---
 

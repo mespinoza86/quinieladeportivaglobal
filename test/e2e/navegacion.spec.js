@@ -86,6 +86,18 @@ test('todos los botones de navegacion llevan a donde dicen', async ({ page }) =>
   await crearQuiniela(page, 'Quiniela Barrido');
   await activarAdminMode(page, datos.password);
 
+  /*
+   * ⚠️ Y superadministrador, que es un permiso APARTE del rol en la quiniela.
+   *
+   * `superadmin.html` no está detrás de la guardia de administración: exige
+   * estar en `SUPERADMIN_EMAILS`, que no depende de ninguna quiniela. Sin esto
+   * redirige a la portada y sus botones no se prueban — que fue justo lo que
+   * cazó este barrido cuando la pantalla se añadió.
+   *
+   * La puerta `/e2e/dar-poder` sólo existe en el arnés; ver `arrancar.js`.
+   */
+  await page.request.post('/e2e/dar-poder', { data: { email: datos.email } });
+
   expect(PANTALLAS.length, 'Se esperaban al menos 20 pantallas con boton').toBeGreaterThanOrEqual(20);
 
   const fallos = [];
