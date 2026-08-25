@@ -113,7 +113,19 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const acciones = cuenta.esSuperadmin
       ? html`<p class="helper-text">🛡️ Superadministrador. Se cambia en Render, no aquí.</p>`
-      : html`<div>
+      /*
+       * ⚠️ Botones EN LÍNEA y pequeños, no tres barras a todo el ancho.
+       *
+       * La regla global `input, select, button, textarea { width: 100% }` los
+       * estiraba, y con treinta cuentas la lista se volvía kilométrica: cada
+       * ficha ocupaba más en botones que en información. Es la misma regla que
+       * rompía las casillas de verificación en la Entrada 060.
+       *
+       * Y sólo «Borrar» va en rojo. Las otras dos no son la acción principal de
+       * nada: pintarlas en verde de acción primaria invita a pulsarlas, y
+       * «Liberar correo» es irreversible.
+       */
+      : html`<div class="acciones-cuenta">
           ${cuenta.activo
             ? html`<button data-accion="desactivar" data-id="${cuenta.id}">Desactivar</button>`
             : html`<button data-accion="reactivar" data-id="${cuenta.id}">Reactivar</button>`}
@@ -121,14 +133,35 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="danger-button" data-accion="borrar" data-id="${cuenta.id}">Borrar</button>
         </div>`;
 
+    /*
+     * ⚠️ El estado de confirmación va en su PROPIA insignia, no de corrido con
+     * el resto.
+     *
+     * La primera versión pintaba «✅ activa · confirmada · alta 24 ago» todo
+     * seguido, en gris y del mismo tamaño. Dos cosas distintas —si puede entrar
+     * y si confirmó su correo— se leían como una sola, y el emoji del primero
+     * hacía que el ojo diera por leído el segundo. El usuario dijo que no veía
+     * cuáles estaban sin confirmar, y tenía razón: el dato estaba y no se veía.
+     *
+     * Es la lección de la Entrada 060: con dos cuentas se adivina; con treinta,
+     * no. Lo que hay que destacar es lo EXCEPCIONAL —sin confirmar—, no lo
+     * normal.
+     */
+    const confirmacion = cuenta.emailVerificado
+      ? html`<span class="status-pill status-live">✅ confirmado</span>`
+      : html`<span class="status-pill status-scheduled">✉️ SIN CONFIRMAR</span>`;
+
+    /* Sólo se marca lo excepcional: una cuenta activa es lo normal y no
+     * necesita insignia. Marcar todo es no marcar nada. */
+    const actividad = cuenta.activo
+      ? ''
+      : html`<span class="status-pill status-desactivada">⛔ desactivada</span>`;
+
     return html`<div class="info-card">
       <h3>${cuenta.username}</h3>
-      <p class="helper-text">
-        ${cuenta.email}<br />
-        ${cuenta.activo ? '✅ activa' : '⛔ desactivada'} ·
-        ${cuenta.emailVerificado ? 'confirmada' : 'sin confirmar'} ·
-        alta ${fecha(cuenta.creadaEn)}
-      </p>
+      <p class="helper-text">${cuenta.email}</p>
+      <p>${confirmacion} ${actividad}</p>
+      <p class="helper-text">Alta: ${fecha(cuenta.creadaEn)}</p>
       ${pintarQuinielas(cuenta.quinielas)}
       ${acciones}
     </div>`;
@@ -209,6 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- Carga ---------- */
 
   let buscando = null;
+  let filtroActual = 'todas';
 
   document.getElementById('buscar').addEventListener('input', evento => {
     clearTimeout(buscando);
@@ -216,16 +250,49 @@ document.addEventListener('DOMContentLoaded', () => {
     buscando = setTimeout(() => cargarCuentas(texto), 300);
   });
 
-  async function cargarCuentas(buscar = '') {
-    const datos = await pedirJson(`/api/superadmin/cuentas?buscar=${encodeURIComponent(buscar)}`);
+  document.getElementById('filtros').addEventListener('click', evento => {
+    const boton = evento.target.closest('[data-filtro]');
+    if (!boton) return;
 
-    resumen.textContent = datos.total === 1
-      ? '1 cuenta en el sistema'
-      : `${datos.total} cuentas en el sistema`;
+    filtroActual = boton.dataset.filtro;
+
+    for (const otro of document.querySelectorAll('#filtros [data-filtro]')) {
+      otro.classList.toggle('filtro-activo', otro === boton);
+    }
+
+    cargarCuentas(document.getElementById('buscar').value);
+  });
+
+  const VACIO = {
+    todas: 'Ninguna cuenta coincide.',
+    sin_confirmar: 'Nadie tiene el correo sin confirmar. 👍',
+    desactivadas: 'No hay ninguna cuenta desactivada.'
+  };
+
+  async function cargarCuentas(buscar = '') {
+    const datos = await pedirJson('/api/superadmin/cuentas'
+      + `?buscar=${encodeURIComponent(buscar)}&filtro=${encodeURIComponent(filtroActual)}`);
+
+    /*
+     * ⚠️ El resumen y los rótulos salen de `conteos`, que el servidor calcula
+     * SIN el filtro puesto. Contar sobre lo filtrado daría «Sin confirmar (0)»
+     * estando dentro de ese mismo filtro.
+     */
+    const c = datos.conteos || { todas: datos.total, sin_confirmar: 0, desactivadas: 0 };
+
+    resumen.textContent = c.sin_confirmar
+      ? `${c.todas} cuenta(s) · ${c.sin_confirmar} sin confirmar`
+      : `${c.todas} cuenta(s) · todas confirmadas`;
+
+    for (const boton of document.querySelectorAll('#filtros [data-filtro]')) {
+      const cuantas = c[boton.dataset.filtro] ?? 0;
+      const base = boton.dataset.rotulo || (boton.dataset.rotulo = boton.textContent.trim());
+      boton.textContent = `${base} (${cuantas})`;
+    }
 
     listado.innerHTML = datos.cuentas.length
       ? html`${datos.cuentas.map(pintarCuenta)}`
-      : html`<p class="helper-text">Ninguna cuenta coincide.</p>`;
+      : html`<p class="helper-text">${VACIO[filtroActual] || VACIO.todas}</p>`;
   }
 
   async function cargar() {

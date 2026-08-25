@@ -44,6 +44,18 @@
     <section class="app-panel" id="cuentasPanel" hidden>
       <label class="field-label" for="buscar">Buscar por correo o usuario</label>
       <input type="search" id="buscar" placeholder="ana@ejemplo.com" />
+
+      <!--
+        Los tres filtros. Van aquí y no en el navegador: la lista viene paginada,
+        así que filtrar sólo lo ya cargado daría un número que parece una
+        respuesta y no lo es.
+      -->
+      <div id="filtros">
+        <button type="button" class="filtro-activo" data-filtro="todas">Todas</button>
+        <button type="button" data-filtro="sin_confirmar">Sin confirmar</button>
+        <button type="button" data-filtro="desactivadas">Desactivadas</button>
+      </div>
+
       <div id="listado"></div>
     </section>
 

@@ -121,28 +121,57 @@ function exigirUuid(valor, etiqueta = 'La cuenta') {
  * ⚠️ Nunca devuelve la contraseña, ni siquiera cifrada. No hace falta para
  * nada de lo que esta pantalla hace, y lo que no se envía no se puede filtrar.
  */
-async function listarCuentas({ buscar = '', limite = 50, desplazamiento = 0 } = {}) {
+async function listarCuentas({ buscar = '', filtro = 'todas', limite = 50, desplazamiento = 0 } = {}) {
   const patron = String(buscar || '').trim().toLowerCase();
   const tope = Math.min(200, Math.max(1, Number(limite) || 50));
   const salto = Math.max(0, Number(desplazamiento) || 0);
 
+  /*
+   * ⚠️ EL FILTRO SE APLICA AQUÍ, NO EN EL NAVEGADOR.
+   *
+   * La lista viene paginada, así que filtrar sólo lo que ya llegó diría «3 sin
+   * confirmar» cuando hay veinte en las páginas siguientes: un número que
+   * parece una respuesta y no lo es. Es el mismo error que la Entrada 061
+   * evitó en los cobros —contar sobre lo que se ve en vez de sobre lo que hay—.
+   */
+  const CONDICIONES = {
+    todas: 'TRUE',
+    sin_confirmar: 'NOT email_verificado',
+    desactivadas: 'NOT activo'
+  };
+
+  const condicion = CONDICIONES[filtro] || CONDICIONES.todas;
+
+  const donde = `($1 = '' OR email_normalizado LIKE '%' || $1 || '%'
+                          OR username_normalizado LIKE '%' || $1 || '%')
+                 AND ${condicion}`;
+
   const { rows: cuentas } = await db.consulta(
     `SELECT id, username, email, email_verificado, activo, created_at
        FROM usuarios
-      WHERE ($1 = '' OR email_normalizado LIKE '%' || $1 || '%'
-                     OR username_normalizado LIKE '%' || $1 || '%')
+      WHERE ${donde}
       ORDER BY created_at DESC
       LIMIT $2 OFFSET $3`,
     [patron, tope, salto]);
 
-  const { rows: [{ total }] } = await db.consulta(
-    `SELECT count(*)::int AS total
+  /*
+   * Los tres recuentos salen en UNA consulta y **sin el filtro puesto**: los
+   * rótulos de los botones tienen que decir cuántas hay de cada clase, no
+   * cuántas quedan después de filtrar. Un botón «Sin confirmar (0)» estando
+   * dentro de ese mismo filtro sería absurdo.
+   */
+  const { rows: [conteos] } = await db.consulta(
+    `SELECT count(*)::int AS todas,
+            count(*) FILTER (WHERE NOT email_verificado)::int AS sin_confirmar,
+            count(*) FILTER (WHERE NOT activo)::int AS desactivadas
        FROM usuarios
       WHERE ($1 = '' OR email_normalizado LIKE '%' || $1 || '%'
                      OR username_normalizado LIKE '%' || $1 || '%')`,
     [patron]);
 
-  if (!cuentas.length) return { cuentas: [], total };
+  const total = conteos[filtro] ?? conteos.todas;
+
+  if (!cuentas.length) return { cuentas: [], total, conteos };
 
   const { rows: membresias } = await db.consulta(
     `SELECT m.usuario_id, m.rol, m.estado, q.id AS quiniela_id, q.nombre, q.estado AS quiniela_estado
@@ -166,6 +195,7 @@ async function listarCuentas({ buscar = '', limite = 50, desplazamiento = 0 } = 
 
   return {
     total,
+    conteos,
     cuentas: cuentas.map(c => ({
       id: c.id,
       username: c.username,

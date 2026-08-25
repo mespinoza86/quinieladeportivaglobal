@@ -114,3 +114,66 @@ test('la lista enseña los correos y las quinielas de cada quien', async ({ brow
   await contextoJefa.close();
   await contextoSocio.close();
 });
+
+test('⚠️ las cuentas sin confirmar se ven y se pueden filtrar', async ({ browser }) => {
+  const contextoJefa = await browser.newContext();
+  const contextoPendiente = await browser.newContext();
+
+  const paginaJefa = await contextoJefa.newPage();
+  const paginaPendiente = await contextoPendiente.newPage();
+
+  const jefa = await registrarse(paginaJefa, 'revisora');
+  await crearQuiniela(paginaJefa, 'La de la revisora');
+
+  /*
+   * Una cuenta que se registra y NO confirma. `registrarse` confirma siempre,
+   * así que este recorrido se hace a mano: es justo el estado que hay que ver.
+   */
+  const marca = Date.now().toString(36);
+  const pendiente = {
+    username: `pend${marca}`,
+    email: `pend${marca}@ejemplo.com`,
+    password: 'contrasena-larga-1'
+  };
+
+  await paginaPendiente.goto('/registro.html');
+  await paginaPendiente.locator('#username').fill(pendiente.username);
+  await paginaPendiente.locator('#email').fill(pendiente.email);
+  await paginaPendiente.locator('#password').fill(pendiente.password);
+  await paginaPendiente.locator('#confirmarPassword').fill(pendiente.password);
+  await paginaPendiente.getByRole('button', { name: 'Crear cuenta' }).click();
+  await paginaPendiente.locator('#registroForm').waitFor({ state: 'hidden' });
+
+  await paginaJefa.request.post('/e2e/dar-poder', { data: { email: jefa.email } });
+
+  await paginaJefa.goto('/superadmin.html');
+  await paginaJefa.locator('#password').fill(jefa.password);
+  await paginaJefa.locator('#confirmarBtn').click();
+  await expect(paginaJefa.locator('#cuentasPanel')).toBeVisible();
+
+  /*
+   * ⛔ Lo que se comprueba es que se VEA, no que el dato exista: el dato ya
+   * estaba antes y el usuario no lo encontraba, porque iba de corrido con el
+   * resto en gris. Ahora es una insignia propia.
+   */
+  const tarjetaPendiente = paginaJefa.locator('.info-card', { hasText: pendiente.email });
+  await expect(tarjetaPendiente.locator('.status-pill', { hasText: 'SIN CONFIRMAR' })).toBeVisible();
+
+  // La de la jefa, que sí confirmó, no la lleva.
+  const tarjetaJefa = paginaJefa.locator('.info-card', { hasText: jefa.email });
+  await expect(tarjetaJefa.locator('.status-pill', { hasText: 'SIN CONFIRMAR' })).toHaveCount(0);
+
+  // El resumen lo dice de entrada, sin tener que buscar.
+  await expect(paginaJefa.locator('#resumenCuentas')).toContainText('sin confirmar');
+
+  // Y el filtro deja sólo las pendientes.
+  await paginaJefa.locator('[data-filtro="sin_confirmar"]').click();
+
+  const listado = paginaJefa.locator('#listado');
+  await expect(listado).toContainText(pendiente.email);
+  await expect(listado).not.toContainText(jefa.email);
+
+  await paginaJefa.request.post('/e2e/dar-poder', { data: { email: '' } });
+  await contextoJefa.close();
+  await contextoPendiente.close();
+});

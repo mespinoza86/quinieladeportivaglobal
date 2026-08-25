@@ -103,6 +103,12 @@ module.exports = function rutasSuperadmin(app, { requireLogin, requireSuperadmin
   app.get('/api/superadmin/cuentas', requireSuperadmin, async (req, res) => {
     const datos = await superadminMod.listarCuentas({
       buscar: req.query.buscar || '',
+      /*
+       * Un filtro desconocido se trata como «todas» en vez de dar un 400: es un
+       * parámetro de presentación, y responder con la lista completa es más
+       * útil que un error. Los valores válidos viven en `src/superadmin.js`.
+       */
+      filtro: req.query.filtro || 'todas',
       limite: req.query.limite,
       desplazamiento: req.query.desde
     });

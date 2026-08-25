@@ -3099,3 +3099,65 @@ test('⛔ el registro sobrevive al borrado de la cuenta que registra', async () 
     assert.equal(asiento.objetivoExiste, false, 'y sabe que esa cuenta ya no está');
   });
 });
+
+test('⚠️ el filtro de cuentas sin confirmar cuenta sobre TODAS, no sobre la página', async () => {
+  const jefe = await cuentaNueva('mando9');
+
+  /*
+   * Una cuenta registrada y SIN confirmar. `cuentaNueva` confirma siempre, así
+   * que ésta se registra a pelo: es justo el estado que el filtro busca.
+   */
+  const sinConfirmar = credenciales('pendiente');
+  const alta = await request(app).post('/api/auth/registro').send(sinConfirmar);
+  assert.equal(alta.status, 201, JSON.stringify(alta.body));
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const todas = await jefe.agente.get('/api/superadmin/cuentas');
+    assert.equal(todas.status, 200);
+
+    /*
+     * ⚠️ Los conteos salen SIN el filtro puesto, para que los rótulos de los
+     * botones digan cuántas hay de cada clase. Si se calcularan sobre lo
+     * filtrado, el botón «Sin confirmar» diría 0 estando dentro de ese filtro.
+     */
+    assert.ok(todas.body.conteos, 'la respuesta tiene que traer los conteos');
+    assert.equal(todas.body.conteos.sin_confirmar, 1);
+    assert.ok(todas.body.conteos.todas >= 2);
+
+    const filtradas = await jefe.agente.get('/api/superadmin/cuentas?filtro=sin_confirmar');
+    assert.equal(filtradas.status, 200);
+
+    assert.deepEqual(
+      filtradas.body.cuentas.map(c => c.email), [sinConfirmar.email],
+      'sólo la que no ha confirmado');
+
+    // Y los conteos NO cambian por estar filtrando.
+    assert.equal(filtradas.body.conteos.todas, todas.body.conteos.todas);
+
+    // Un filtro inventado no rompe: devuelve todas.
+    const raro = await jefe.agente.get('/api/superadmin/cuentas?filtro=loquesea');
+    assert.equal(raro.status, 200);
+    assert.equal(raro.body.cuentas.length, todas.body.cuentas.length);
+  });
+});
+
+test('el filtro de desactivadas enseña justo las que se retiraron', async () => {
+  const jefe = await cuentaNueva('mando10');
+  const victima = await cuentaNueva('retirada');
+
+  await conSuperadmins(jefe.datos.email, async () => {
+    await confirmarPoder(jefe);
+
+    const antes = await jefe.agente.get('/api/superadmin/cuentas?filtro=desactivadas');
+    assert.equal(antes.body.cuentas.length, 0, 'todavía no hay ninguna desactivada');
+
+    await jefe.agente.post(`/api/superadmin/cuentas/${victima.usuarioId}/desactivar`)
+      .send({ motivo: 'probando el filtro' });
+
+    const despues = await jefe.agente.get('/api/superadmin/cuentas?filtro=desactivadas');
+    assert.deepEqual(despues.body.cuentas.map(c => c.email), [victima.datos.email]);
+    assert.equal(despues.body.conteos.desactivadas, 1);
+  });
+});

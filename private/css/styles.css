@@ -1847,3 +1847,84 @@ button + button {
   outline: 2px solid rgba(34, 197, 94, 0.55);
   outline-offset: -2px;
 }
+
+/*
+ * El estado "desactivada" de una cuenta, en la pantalla del sistema.
+ *
+ * Reusa `.status-pill`, que ya existia para los partidos, y solo aporta el
+ * color: rojo es lo que ya significa peligro en esta interfaz (`--danger`), y
+ * una cuenta a la que se le quito el acceso es exactamente eso.
+ */
+.status-desactivada {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+/*
+ * Los filtros de la lista de cuentas.
+ *
+ * ⚠️ Van en linea y NO ocupan el ancho de la fila, asi que hay que deshacer la
+ * regla global `input, select, button, textarea { width: 100% }` — la misma que
+ * rompia las casillas de verificacion en la Entrada 060. Un boton de filtro que
+ * mide el ancho de la pantalla deja de parecer un filtro.
+ */
+#filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+#filtros button {
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Cual esta puesto tiene que verse SIN tener que recordar cual se pulso. */
+#filtros button.filtro-activo {
+  background: var(--primary);
+  color: #05240f;
+  border-color: var(--primary);
+  font-weight: 700;
+}
+
+/*
+ * Los botones de cada cuenta, en la pantalla del sistema.
+ *
+ * ⚠️ Deshacen la regla global `input, select, button, textarea { width: 100% }`
+ * por la misma razon que los filtros: tres barras a todo el ancho por ficha
+ * hacen que una lista de treinta cuentas ocupe mas en botones que en datos.
+ *
+ * Y el color dice cual pesa: las dos primeras son secundarias -no son la accion
+ * principal de nada- y solo `.danger-button` va en rojo. Pintarlas todas en
+ * verde primario invita a pulsar la que no toca, y «Liberar correo» no tiene
+ * vuelta atras.
+ */
+.acciones-cuenta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.acciones-cuenta button {
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* El de borrar conserva su rojo: es el unico irreversible que se lleva algo. */
+.acciones-cuenta button.danger-button {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  color: #fff;
+  border-color: transparent;
+}

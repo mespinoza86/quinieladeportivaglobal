@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 426/426
-npm run test:e2e            # 106/106, ~3,9 min
+npm test                    # 428/428
+npm run test:e2e            # 108/108, ~4,1 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -988,7 +988,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 426 pruebas rápidas y 106 de navegador
+### 2.5 `test/` — 428 pruebas rápidas y 108 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11055,6 +11055,123 @@ SELECT privilege_type FROM information_schema.role_table_grants
 ⚠️ Y una advertencia que conviene tener escrita: **a partir de ahora la
 contraseña de esa cuenta es la llave del sistema entero.** No de una quiniela:
 de todas las cuentas. Merece una contraseña que no se use en ningún otro sitio.
+
+---
+
+
+### 📌 Entrada 070 — 25 de agosto de 2026 — El dato estaba y no se veía
+
+**Objetivo:** el usuario, ya usando la pantalla nueva, dijo que **no veía cuáles
+correos están confirmados y cuáles no**, y pidió poder verlo.
+
+## ⛔ Lo incómodo: ya estaba ahí
+
+`emailVerificado` viajaba desde el primer día y la pantalla lo pintaba. Así:
+
+```
+ana@ejemplo.com
+✅ activa · confirmada · alta 24 ago 2026
+```
+
+Tres cosas mal, y las tres mías:
+
+1. **«activa» y «confirmada» iban seguidas, en gris y del mismo tamaño.** Son
+   dos preguntas distintas —si puede entrar, y si confirmó su dirección— y se
+   leían como una sola frase.
+2. **Sólo la primera llevaba emoji.** El ojo va al ✅ y da por leído el resto,
+   así que «sin confirmar» pasaba desapercibido justo cuando importaba.
+3. **Y no se podía filtrar.** Con treinta cuentas, «ver cuáles no han
+   verificado» no se resuelve leyendo una por una.
+
+⚠️ **Que un dato esté en la pantalla no significa que se vea.** Es la lección de
+la Entrada 060 —«con dos casillas se adivina cuál es cuál; con treinta, no»—
+repetida por mí en una pantalla estrenada el día anterior. La diferencia entre
+«está» y «se ve» sólo la nota quien usa la pantalla, no quien la escribe.
+
+## Lo que se hizo
+
+**La insignia dice lo excepcional, no lo normal.** Confirmado sale en verde
+discreto; **sin confirmar sale en amarillo y en mayúsculas**. Una cuenta activa
+no lleva nada —es lo esperado— y una desactivada sí. Marcar todo es no marcar
+nada.
+
+**Tres filtros con su recuento**: *Todas (42) · Sin confirmar (5) ·
+Desactivadas (2)*, y el resumen de arriba lo adelanta sin que haya que buscar.
+
+⚠️ **El filtro va en el SERVIDOR, y los recuentos se calculan SIN él.** Dos
+decisiones que parecen detalles y no lo son:
+
+- La lista viene paginada de 50 en 50. Filtrar sólo lo ya cargado diría «3 sin
+  confirmar» habiendo veinte en las páginas siguientes: **un número que parece
+  una respuesta y no lo es**.
+- Y los rótulos de los botones cuentan sobre el total, no sobre lo filtrado. Si
+  contaran sobre lo filtrado, el botón «Sin confirmar» diría **(0)** estando
+  dentro de ese mismo filtro.
+
+Un filtro desconocido se trata como «todas» en vez de dar un 400: es un
+parámetro de presentación, y devolver la lista entera es más útil que un error.
+
+## Y la captura destapó otra cosa que el usuario no había dicho
+
+Al mirar la pantalla —no la aserción— saltó que **los tres botones de cada
+cuenta ocupaban el ancho completo, apilados y en verde de acción principal**.
+Con treinta cuentas, cada ficha ocupaba más en botones que en información. Y
+«Liberar correo», que es irreversible, se veía tan invitante como el resto.
+
+⛔ **Es otra vez la regla global** `input, select, button, textarea { width:
+100% }`, la misma que rompía las casillas de verificación en la Entrada 060. La
+lección estaba aprendida para las casillas y no se aplicó a los botones de una
+lista.
+
+Ahora van en línea, compactos, y **sólo «Borrar» conserva el rojo**: el color
+dice cuál pesa. Se miró en escritorio y en móvil.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/superadmin.js` | El filtro y los tres recuentos, en una consulta con `FILTER` |
+| `src/rutas/superadmin.js` | El parámetro `filtro` |
+| `public/superadmin.html` | Los tres botones de filtro |
+| `private/js/superadmin.js` | Insignias propias, recuentos en los rótulos y botones en línea |
+| `private/css/styles.css` | `.status-desactivada`, `#filtros` y `.acciones-cuenta` |
+| `test/rutas.test.js` | 2 de ruta |
+| `test/e2e/superadmin.spec.js` | 1 por la interfaz |
+
+**Verificación:**
+
+```
+npm test         → 428/428
+npm run test:e2e → 108/108
+capturas en escritorio y móvil → miradas las dos
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **«El dato está» y «el dato se ve» son cosas distintas, y sólo lo nota
+   quien usa la pantalla.** El campo llevaba ahí desde el primer commit y la
+   persona que lo pidió no lo encontraba. Escribir el dato es la mitad del
+   trabajo; la otra mitad es que compita por la atención con lo que hay al lado.
+2. ⚠️ **Hay que destacar lo excepcional, no lo normal.** Poner insignia a
+   «confirmado» y a «activa» —el 95% de los casos— hace que la que importa se
+   pierda entre ellas. Lo que se marca es lo que hay que mirar.
+3. ⚠️ **Un recuento junto a un filtro tiene que contar sobre el total.** Si
+   cuenta sobre lo ya filtrado, el rótulo se contradice a sí mismo en cuanto se
+   pulsa. Y si además la lista está paginada, contar en el navegador da una
+   cifra falsa que parece cierta.
+4. **Mirar la captura encontró lo que nadie había reportado.** El usuario se
+   quejó de las insignias; los botones gigantes salieron de abrir la imagen. Es
+   la cuarta vez que las capturas destapan algo que ninguna aserción vería
+   (Entradas 026, 060, 062).
+5. ⚠️ **Una lección aplicada a un componente no se aplica sola a otro.** La
+   regla global de `width: 100%` ya había mordido en las casillas de
+   verificación, con su centinela y todo — y volvió a morder en los botones de
+   una lista, en código escrito después. **Vale la pena buscar dónde más aplica
+   el mismo día**, que es exactamente lo que la Entrada 064 ya había concluido.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**. Es sólo pantalla y una consulta de lectura.
 
 ---
 
