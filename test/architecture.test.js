@@ -1492,6 +1492,53 @@ test('el arnés de pruebas corre con los MISMOS permisos que producción', () =>
   assert.match(db, /r\.superusuario \|\| r\.bypassrls \|\| r\.propias > 0/);
 });
 
+test('⛔ una cadena con etiquetas dentro de una plantilla sale como texto', () => {
+  /*
+   * El hermano del `.join('')`, y no tenía centinela ninguno.
+   *
+   *     html`<div>${cerrado ? '<span class="pill">Cerrado</span>' : ''}</div>`
+   *
+   * Esa cadena es un DATO para `html`, así que la escapa —correctamente, es su
+   * trabajo— y en pantalla se lee `&lt;span class=&quot;pill&quot;&gt;…`. El
+   * arreglo es escribirla como `html\`…\``, que la marca como marcado.
+   *
+   * Salió de que el usuario viera código HTML en cuatro pantallas. Tres eran
+   * cadenas así, en `ver-resultados_puntos.js` y `ver_jornadas.js`.
+   *
+   * ⚠️ Sólo se miran las cadenas DENTRO de una plantilla `html`. Una asignación
+   * directa —`nodo.innerHTML = '<p>Sin datos</p>'`— es correcta y frecuente: el
+   * navegador la interpreta, no pasa por el escapado.
+   */
+  const dir = path.join(root, 'private', 'js');
+  const culpables = [];
+
+  for (const archivo of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    if (archivo === 'html-seguro.js') continue;
+
+    const codigo = fs.readFileSync(path.join(dir, archivo), 'utf8');
+
+    for (const plantilla of plantillasDeRiesgo(codigo)) {
+      if (plantilla.etiqueta !== 'html') continue;
+
+      /*
+       * Una cadena entre comillas que abre una etiqueta. Se piden las comillas
+       * a los dos lados para no confundirse con el marcado de la propia
+       * plantilla, que no va entrecomillado.
+       */
+      const sospechosas = plantilla.texto.match(/'<\/?[a-z][^']*'|"<\/?[a-z][^"]*"/gi) || [];
+
+      for (const cadena of sospechosas) {
+        culpables.push(
+          `${archivo}:${codigo.slice(0, plantilla.inicio).split(/\r?\n/).length} → ${cadena.slice(0, 45)}`);
+      }
+    }
+  }
+
+  assert.deepEqual(culpables, [],
+    'Hay cadenas con etiquetas HTML dentro de una plantilla `html`: se escapan y '
+    + 'salen como texto en pantalla. Escríbelas como html`…`');
+});
+
 test('componer HTML dentro de una plantilla no pierde la marca de crudo', () => {
   /*
    * El fallo que motiva esta prueba, encontrado por las pruebas de navegador:
@@ -1520,7 +1567,35 @@ test('componer HTML dentro de una plantilla no pierde la marca de crudo', () => 
 
     for (const plantilla of plantillasDeRiesgo(codigo)) {
       if (plantilla.etiqueta !== 'html') continue;
-      if (!/=>\s*html`[\s\S]*?`\s*\)\s*\.join\(''\)/.test(plantilla.texto)) continue;
+
+      /*
+       * ⛔ SE BUSCA EL `.join('')`, NO LA FORMA DEL `map`.
+       *
+       * El patrón anterior era `=>\s*html`…`\)\s*\.join\('')`, que sólo
+       * reconoce la forma corta `x => html`…``. Los dos archivos que de verdad
+       * estaban rotos usaban la forma con bloque:
+       *
+       *     x => { const y = …; return html`…`; }
+       *
+       * …así que el `=>` no iba seguido de `html` y **el centinela pasaba en
+       * verde con el fallo delante**. Se descubrió porque el usuario vio el
+       * marcado como texto en cuatro pantallas, no porque fallara nada.
+       *
+       * Es la cuarta vez esta semana que un centinela comprueba una FORMA
+       * concreta en vez de la CONDICIÓN.
+       *
+       * Y la condición exacta es: **el resultado del `.join('')` se interpola
+       * tal cual**, sin volver a marcarlo. Eso se reconoce por el `}` que viene
+       * justo detrás:
+       *
+       *     ${ ….join('') }        ⛔ se escapa: la marca se perdió
+       *     ${ crudo(x.join('')) } ✅ correcto: `crudo` la devuelve
+       *
+       * Buscar todo `.join('')` a secas acusaba a `cobros.js`, que hace lo
+       * segundo y está bien. Un centinela que acusa al código correcto se acaba
+       * desactivando, y entonces deja de vigilar también lo que sí importa.
+       */
+      if (!/\.join\(\s*''\s*\)\s*\}/.test(plantilla.texto)) continue;
 
       culpables.push(`${archivo}:${codigo.slice(0, plantilla.inicio).split(/\r?\n/).length}`);
     }

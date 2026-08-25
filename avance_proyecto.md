@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 431/431
-npm run test:e2e            # 110/110, ~4,8 min
+npm test                    # 432/432
+npm run test:e2e            # 112/112, ~4,7 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -987,7 +987,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 431 pruebas rápidas y 110 de navegador
+### 2.5 `test/` — 432 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11321,6 +11321,162 @@ contra Neon: INSERT de 'verificar' aceptado, 'inventada' rechazado, 0 filas deja
 ✅ La migración 004 **ya está corrida y verificada contra Neon** —admite
 `verificar`, sigue rechazando lo inventado, y la sonda no dejó rastro—, así que
 al empujar no queda nada manual.
+
+---
+
+
+### 📌 Entrada 072 — 25 de agosto de 2026 — Código HTML a la vista, y tres pruebas mías que no podían fallar
+
+**Objetivo:** el usuario avisó de que en «ver resultados / puntos» y en «generar
+trivias» salía **código HTML en la pantalla**, y que en trivias además **no se
+podían marcar las casillas**, así que no se podía crear ninguna.
+
+## Dos causas distintas, el mismo síntoma
+
+**1. Cadenas con etiquetas dentro de una plantilla.** En
+`ver-resultados_puntos.js` y `ver_jornadas.js`:
+
+```js
+${!cerrado ? '<span class="status-pill">Aún no cerrado</span>' : ''}
+```
+
+Eso es un **dato** para `html`, así que lo escapa —correctamente, es su trabajo—
+y en pantalla se lee `&lt;span class=&quot;…`.
+
+**2. El `.join('')` que borra la marca.** En `admin_trivias.js` y
+`ver_resultados_totales_de_jugadores.js`:
+
+```js
+${TIPOS.map(item => { … return html`<input type="checkbox" …>`; }).join('')}
+```
+
+`html` devuelve un objeto marcado como «esto ya es HTML»; `.join('')` lo
+convierte en cadena y **pierde la marca**, así que la plantilla de fuera lo
+escapa entero. Por eso las casillas eran letras y no se podían marcar.
+
+⚠️ Lo contraintuitivo: **quitar el `.join('')` ES el arreglo**. `html` ya recorre
+los arreglos y los une respetando la marca de cada elemento.
+
+Se comprobó ejecutando, no leyendo:
+
+| | Resultado |
+|---|---|
+| `.map(…html…).join('')` | `&lt;input type=&quot;checkbox&quot;…` |
+| `.map(…html…)` a secas | `<input type="checkbox" …>` ✅ |
+
+**Y no eran dos pantallas, sino cuatro**: buscando los dos patrones aparecieron
+también «ver resultados totales de jugadores» y la insignia de comodín de «ver
+jornadas», que el usuario aún no había visto.
+
+## ⛔ El centinela existía, describía el fallo, y pasaba en verde
+
+`architecture.test.js` tiene una prueba llamada *«componer HTML dentro de una
+plantilla no pierde la marca de crudo»*, escrita para cazar exactamente esto. Su
+patrón era:
+
+```
+/=>\s*html`[\s\S]*?`\s*\)\s*\.join\('')/
+```
+
+Sólo reconoce la forma corta `x => html\`…\``. **Los dos archivos rotos usaban la
+forma con bloque** —`x => { …; return html\`…\`; }`— así que el `=>` no iba
+seguido de `html` y el centinela no veía nada. Medido:
+
+```
+x => html`...`              -> LO DETECTA
+x => { ... return html`…` } -> ⛔ NO LO DETECTA
+```
+
+Ahora busca **la condición y no la forma**: un `.join('')` cuyo resultado se
+interpola tal cual, reconocible por el `}` que viene detrás.
+
+⚠️ Y el primer intento de arreglo fue **demasiado amplio**: acusaba a
+`cobros.js`, que hace `crudo(lineas.join(''))` y está bien. Un centinela que
+acusa al código correcto se acaba desactivando, y entonces deja de vigilar
+también lo que sí importa.
+
+Para la causa 1 **no había centinela ninguno**. Ahora sí.
+
+## Y la red de seguridad, que tampoco servía a la primera
+
+Se añadió una prueba de navegador que recorre trece pantallas buscando **el
+síntoma** en vez de las causas: si en el texto que se lee aparece marcado, algo
+se escapó, venga de donde venga. Es la red que caza también las formas que
+todavía no se le han ocurrido a nadie.
+
+⛔ **Y falló tres veces antes de servir**, las tres por mi culpa, y las tres
+sólo se supieron **devolviendo el fallo a propósito y viendo si lo cazaba**:
+
+1. **Miraba pantallas vacías.** `admin_trivias.html` no pinta un solo partido
+   hasta que se selecciona una jornada. La prueba pasaba en verde sin haber
+   mirado ninguna plantilla. *Una prueba que no encuentra nada porque no hay
+   nada que mirar no dice «está bien»: no dice nada.*
+2. **Buscaba una señal imposible.** Buscaba `&lt;` en `innerText` — y
+   `innerText` **des-escapa**: el nodo de texto contiene el carácter `<` de
+   verdad, así que `&lt;` no aparece ahí jamás. La prueba **no podía fallar**.
+   Se descubrió imprimiendo el texto real de la pantalla en vez de fiarse de la
+   aserción.
+3. **Y su mensaje salía vacío.** `slice(inicio, 120)` usa el segundo argumento
+   como índice final, no como longitud: en cuanto el hallazgo estaba más allá
+   del carácter 120 el extracto era la cadena vacía. Fallaba bien y no decía qué
+   había encontrado.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/ver-resultados_puntos.js` | 3 cadenas pasan a `html\`…\`` |
+| `private/js/ver_jornadas.js` | La insignia de comodín |
+| `private/js/admin_trivias.js` | Fuera el `.join('')`: vuelven las casillas |
+| `private/js/ver_resultados_totales_de_jugadores.js` | Fuera el `.join('')` |
+| `test/architecture.test.js` | El centinela del `join` mira la condición; **1 nuevo** para las cadenas |
+| `test/e2e/marcado-escapado.spec.js` | **Nueva.** La red que busca el síntoma en 13 pantallas |
+
+**Verificación:**
+
+```
+npm test         → 432/432
+npm run test:e2e → 112/112
+los dos centinelas, rotos a propósito en sus DOS formas → fallan
+la red de navegador, con el fallo devuelto → falla y dice dónde y qué
+las cuatro plantillas, renderizadas en seco → ninguna se escapa
+y el escapado sigue neutralizando los datos: S-04 intacto
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un centinela que reconoce una FORMA no vigila una CONDICIÓN.** El del
+   `.join('')` cubría `x => html\`…\`` y no `x => { return html\`…\` }`, que es
+   la forma que usaban los dos archivos rotos. **Quinta vez esta semana** que
+   aparece esta misma familia. Cuando se escriba un patrón, la pregunta es «¿qué
+   otras formas tiene esto?», no «¿caza el caso que tengo delante?».
+2. ⛔ **Una prueba puede buscar una señal que jamás va a aparecer.** Buscar
+   `&lt;` en `innerText` es imposible por construcción: `innerText` des-escapa.
+   Esa prueba **no podía fallar**, y en verde parecía cobertura. **Lo único que
+   distingue una red de una decoración es haberla visto fallar.**
+3. ⚠️ **Una prueba que mira una pantalla sin datos no prueba nada.** Hay que
+   llevarla al estado donde el fallo se ve —seleccionar la jornada, crear los
+   partidos—, o pasa en verde sin haber mirado.
+4. ⚠️ **Un centinela demasiado amplio es tan malo como uno corto.** Acusar a
+   `cobros.js`, que estaba bien, habría llevado a desactivarlo — y con él, a
+   dejar de vigilar lo que sí importaba.
+5. **El síntoma es mejor red que la causa.** Los centinelas cazan los dos
+   patrones conocidos; la prueba de navegador caza *marcado visible*, sea cual
+   sea el motivo. Las dos cosas, no una: la del código dice **dónde**, la del
+   navegador dice **que pasa**.
+6. ⚠️ **Cuatro pantallas rotas y ninguna prueba de navegador que las abriera.**
+   El fallo llevaba ahí desde que se etiquetaron las plantillas (S-04, Entrada
+   021) y lo encontró el usuario usando la aplicación. Las pantallas que nadie
+   abre en una prueba son exactamente donde se acumula esto.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**.
+
+⚠️ Y conviene mirar «generar trivias» con datos de verdad después de desplegar:
+la pantalla llevaba rota lo suficiente como para que **nunca se haya creado una
+trivia por ahí desde el arreglo de S-04**. Es la revisión de diez minutos que
+§B.2 arrastra desde la Entrada 024.
 
 ---
 

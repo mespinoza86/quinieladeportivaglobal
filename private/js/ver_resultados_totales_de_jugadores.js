@@ -264,6 +264,13 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
             const card = document.createElement('article');
             card.className = `match-card ${esComodin ? 'match-card-comodin' : ''}`;
 
+            /*
+             * ⚠️ La lista de jugadores se interpola SIN `.join('')`. El que
+             * había convertía el arreglo de HTML marcado en texto plano, y con
+             * ello la plantilla de fuera lo escapaba: la tabla de jugadores
+             * salía como código en pantalla. `html` ya une los arreglos
+             * respetando la marca de cada elemento.
+             */
             card.innerHTML = html`
                 <div class="match-card-header">
                     ${esComodin ? html`<span class="match-comodin-badge">⭐ COMODÍN</span>` : ''}
@@ -316,7 +323,7 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
                                 <span>${puntosObtenidos}</span>
                             </div>
                         `;
-                    }).join('')}
+                    })}
                 </div>
             `;
 

@@ -87,7 +87,7 @@ function mostrarPartidosDeJornada(partidos) {
     <div class="match-card jornada-match-card">
         <div class="match-date-row">
             📅 ${formatearFechaPartido(partido.apiDate)}
-            ${partido.comodin ? '<span class="badge">Comodín</span>' : ''}
+            ${partido.comodin ? html`<span class="badge">Comodín</span>` : ''}
         </div>
 
         <div class="match-teams">

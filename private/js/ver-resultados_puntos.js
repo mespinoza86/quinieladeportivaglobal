@@ -341,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                                 <div class="match-meta">
                                     <span>📅 ${formatearFechaPartido(partidoBase.apiDate)}</span>                                    
-                                    ${!cerrado ? '<span class="status-pill status-scheduled">Aún no cerrado</span>' : ''}
+                                    ${!cerrado ? html`<span class="status-pill status-scheduled">Aún no cerrado</span>` : ''}
                                 </div>
                             </div>
 
@@ -353,8 +353,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             <div class="match-status">
                                 ${cerrado
-                                    ? (resultadoOficialCorrespondiente ? estadoPartidoHTML(resultadoOficialCorrespondiente) : '<span class="status-pill status-finished">Cerrado</span>')
-                                    : '<span class="status-pill status-scheduled">Privado</span>'
+                                    ? (resultadoOficialCorrespondiente
+                                        ? estadoPartidoHTML(resultadoOficialCorrespondiente)
+                                        : html`<span class="status-pill status-finished">Cerrado</span>`)
+                                    : html`<span class="status-pill status-scheduled">Privado</span>`
                                 }
                             </div>
                         </div>

@@ -139,6 +139,17 @@ function convertirADatetimeLocal(fecha) {
       `
       : '';
 
+    /*
+     * ⚠️ La lista de casillas se interpola SIN `.join('')`, y no es un
+     * descuido: el `.join('')` que había aquí es lo que hacía que las casillas
+     * salieran como texto y no se pudiera crear ninguna trivia.
+     *
+     * `html` devuelve un objeto marcado como «esto ya es HTML»; `.join('')` lo
+     * convierte en una cadena normal y **pierde esa marca**, así que la
+     * plantilla de fuera lo escapa entero. `html` ya recorre los arreglos y los
+     * une sin separador respetando la marca de cada elemento — por eso quitarlo
+     * es el arreglo, y no añadir nada.
+     */
     card.innerHTML = html`
       ${tituloComodin}
 
@@ -162,7 +173,7 @@ function convertirADatetimeLocal(fecha) {
               ${item.pregunta}
             </label>
           `;
-        }).join('')}
+        })}
       </div>
     `;
 
