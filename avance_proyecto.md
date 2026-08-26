@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 22 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 25 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -53,21 +53,22 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **401**, ~65 s |
-| Pruebas de navegador | **94**, ~3,4 min, contra el servidor de verdad |
-| Rutas sobre PostgreSQL | **81 de 81** |
+| Pruebas rápidas | **436**, ~70 s |
+| Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
+| Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
-| `src/` | 22 módulos + `src/rutas/` (4) |
+| `src/` | 21 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | Montada, **pero con el esquema del 20 de agosto**. Ver «Lo siguiente» |
+| Base en Neon | **Al día.** Migraciones 001 a 004 corridas y verificadas |
+| Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
 - El aislamiento entre quinielas lo aplica **la base** con *Row-Level Security*,
   no el ORM. Aguanta 240 peticiones concurrentes sobre un *pool* sin un cruce, y
   cierra **M-33**, que en Mongo era un agujero real.
-- **Ninguna prueba sale a la red ni necesita base real.** Las 295 rápidas usan
+- **Ninguna prueba sale a la red ni necesita base real.** Las rápidas usan
   PGlite; el proveedor se sustituye con `proveedor.usarFuente()`.
 - Las pruebas son **más rápidas** que con Mongo: PGlite arranca en 2,9 s contra
   los 13,4 de `MongoMemoryReplSet`.
@@ -280,6 +281,64 @@ Cuatro cosas de ese día que **no se deducen leyendo el código**:
   gratis porque estaba vacía. Entrada 053.
 
 
+### Lo que se hizo del 23 al 25 de agosto — la aplicación en uso
+
+Del 23 en adelante el trabajo cambia de naturaleza: **deja de ser construir y
+pasa a ser corregir lo que aparece al usarla**. Entradas 059 a 073.
+
+**El 23** entraron cuatro cosas que no estaban en ningún plan —ligas favoritas,
+cobros, la auditoría de seguridad, el orden de los partidos por hora— y dos
+arreglos graves: quitar un partido borraba los pronósticos de los demás
+(Entrada 063) y el registro admitía sólo 5 cuentas por hora y por IP, lo que
+habría bloqueado a gente el día del estreno (067).
+
+**El 24 y el 25**, seis entregas más, y **cinco de las seis salieron de que el
+usuario usara la aplicación**, no de las pruebas:
+
+| Entrada | Qué se arregló |
+|---|---|
+| **068** | Guardar un partido a medias **borraba el pronóstico ya guardado** |
+| **069** | El superadministrador del sistema, con auditoría que ni la aplicación puede borrar |
+| **070** | Las cuentas sin confirmar no se distinguían, y no se podían filtrar |
+| **071** | Dar un correo por bueno a mano, para desatascar a quien no recibe el enlace |
+| **072** | **Código HTML a la vista** en cuatro pantallas; en trivias impedía crear ninguna |
+| **073** | Una **cadena vacía** congelaba los resultados oficiales en cada ciclo |
+
+#### ⛔ Lo que hay que llevarse de estos tres días
+
+**1. `''` y `null` no son lo mismo, y confundirlos costó tres fallos distintos.**
+Los pronósticos borrados (068), los marcadores inventados como «0» en el texto
+que se comparte (068) y los resultados oficiales congelados (073) son **el mismo
+error en tres sitios del sistema**, todos herencia de Mongo, donde un campo
+aceptaba la cadena vacía sin protestar. En PostgreSQL una columna `integer` no
+la admite, y `??` **no la convierte**.
+
+**2. Los centinelas fallaron más que el código.** En cinco de las seis entregas
+había una prueba que debía cazar el fallo y pasaba en verde:
+
+- reconocía una **forma** concreta y no la condición (072);
+- se conformaba con **una** aparición de dos (069);
+- se dejaba engañar por el **nombre de una tabla** dentro de otro nombre (069);
+- daba por bueno un `REVOKE` **comentado** (069);
+- y una red nueva buscaba `&lt;` en `innerText`, que **des-escapa**: no podía
+  fallar nunca (072).
+
+⚠️ **Lo único que distingue una red de una decoración es haberla visto fallar.**
+Romper cada centinela a propósito pasó de ser una buena costumbre a ser el paso
+que de verdad encuentra los que no sirven.
+
+**3. Los datos de prueba cómodos esconden los casos reales.** La prueba del
+marcador nulo usaba un oficial 1-1, donde `null` y un número nunca se parecen —
+el caso que importaba era el **0-0** (068). Las del sincronizador usaban siempre
+partidos **con** marcador — el caso que rompía era el partido **programado**,
+que es el estado en el que pasa la mayor parte de su vida (073).
+
+**4. Y comprobar la base después de una migración encontró lo que ninguna
+prueba podía.** Un `GRANT` sólo suma: conceder `SELECT, INSERT` no quitó el
+`DELETE` que la tabla ya había heredado, así que la aplicación podía borrar su
+propio rastro de auditoría. PGlite no tiene `app_quiniela` ni privilegios por
+defecto, de modo que **eso no existe en el arnés** (069, migración 003).
+
 ### 🌅 Lo siguiente
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
@@ -304,6 +363,23 @@ curl -s https://quinieladeportivaglobal.onrender.com/readyz
 
 `/readyz` da además el estado de la base y **del transporte de correo**, que fue
 lo que en la Entrada 055 costó un diagnóstico entero.
+
+⚠️ **Tres cosas aprendidas comprobando despliegues el 25 de agosto**, las tres a
+base de equivocarse:
+
+1. **Render tarda entre dos y siete minutos**, y a veces más. «Todavía no» no es
+   «falló»: una comprobación que agota su plazo debe decir eso, no dar por
+   perdido el despliegue.
+2. ⛔ **Una sonda rota no dice «no sé»: dice «no».** Un vigilante con un `grep -c`
+   mal usado repitió «aún no» treinta veces **sin comprobar nada**, y llevó a
+   avisar de un fallo que no existía.
+3. **Durante el relevo de instancias conviven la vieja y la nueva.** Una sola
+   muestra puede traer el JS nuevo y el CSS viejo. Conviene **confirmar con dos
+   lecturas seguidas** antes de dar un despliegue por bueno.
+
+⚠️ Y si el cambio es **sólo de backend** no hay archivo servido que delate la
+versión: la única señal desde fuera es que el `tiempoActivoSegundos` de
+`/readyz` **baje**, señal de que el proceso reinició.
 
 **Sobre la base:** los cambios de esquema **sí son a mano**, y ésos no se
 despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
@@ -343,14 +419,25 @@ ligas favoritas. Cuando se retome, sigue necesitando dos decisiones:
 que hoy no se consulta al proveedor. Es una llamada nueva a APIFootball, con su
 cuota y su caché.
 
-#### 3. Probar con gente de verdad
+#### 3. Probar con gente de verdad — y ya hay pruebas de que funciona
 
-Nada de esto es programar, y es lo que más va a enseñar:
+⛔ **Esto dejó de ser una recomendación teórica el 24 y el 25 de agosto.** De
+las seis entregas de esos dos días, **cinco salieron de que el usuario usara la
+aplicación** y ninguna de las pruebas: pronósticos que se borraban al editar
+otro partido, marcado a la vista en cuatro pantallas, casillas que no se podían
+marcar, y los resultados oficiales congelados. Las 436 pruebas pasaban en las
+cinco.
+
+Lo que queda por ver:
 
 - ⚠️ **La aplicación nunca ha corrido con varias quinielas a la vez.** El
   aislamiento está probado por todos lados —RLS, 240 peticiones concurrentes,
   pruebas en cada módulo— pero **eso es distinto de haberlo visto funcionando
   con gente dentro**.
+- ⚠️ **Crear una trivia de punta a punta.** La pantalla estuvo rota desde el
+  arreglo de S-04 hasta la Entrada 072, así que es muy posible que **no se haya
+  creado ninguna trivia por ahí en todo ese tiempo**. Hay que comprobar que el
+  ciclo entero funciona: crearla, responderla, que cierre y que reparta puntos.
 - **Los resultados de trivias no se han mirado con datos reales** desde la
   Entrada 024. Las pruebas cubren que los datos llegan a la pantalla, no que se
   vean bien. Diez minutos con la aplicación levantada.
@@ -445,15 +532,24 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 295 pruebas rápidas, ~45 s
-npm run test:postgres      # las 249 de los módulos, sin los centinelas
-npm run test:rutas         # solo las 111 del servidor
-npm run test:arquitectura  # solo los 46 centinelas
-npm run test:e2e           # las 62 de navegador (~2,5 min, escritorio y móvil)
+npm test                   # las 436 pruebas rápidas, ~70 s
+npm run test:postgres      # 355 de los módulos ⚠️ NO incluye cobros.test.js
+npm run test:rutas         # solo las 187 del servidor
+npm run test:arquitectura  # solo los 62 centinelas
+npm run test:e2e           # las 112 de navegador (~4,7 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
 ```
+
+⚠️ **`test:postgres` se quedó sin `cobros.test.js`** cuando esa suite nació
+(Entrada 061): el script lista los archivos a mano y ése no se añadió. `npm test`
+sí los corre todos —hay un centinela que lo vigila—, pero ese centinela **sólo
+mira `scripts.test`**, no los demás. Usar `test:postgres` como atajo deja 19
+pruebas fuera sin avisar.
+
+**Estas cifras envejecen.** Se midieron el 25 de agosto ejecutando cada script;
+si no cuadran, la buena es la que imprime `npm test`, no ésta.
 
 **Ninguna prueba necesita red ni base real.** Levantan **PGlite**, que es
 PostgreSQL 18 compilado a WebAssembly y va como paquete de npm; el proveedor
