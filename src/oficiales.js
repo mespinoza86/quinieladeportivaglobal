@@ -165,9 +165,81 @@ async function asegurarContenedor(cliente, quinielaId, jornadaId) {
  * borra lo que no venga**: un ciclo del sincronizador que sólo trae dos
  * partidos no puede llevarse por delante los otros ocho.
  */
+/**
+ * Un marcador listo para una columna `integer`, o `null`.
+ *
+ * ⛔ `?? null` NO BASTA, y ahí estuvo el fallo que congeló los resultados
+ * oficiales el 25 de agosto: `??` sólo convierte `null` y `undefined`, así que
+ * una **cadena vacía** pasaba intacta hacia una columna `integer` y PostgreSQL
+ * la rechazaba con `invalid input syntax for type integer: ""`.
+ *
+ * Se arregló también en el origen —`eventos.obtenerNumeroSeguro` ya devuelve
+ * `null`— pero esta comprobación se queda: es la última puerta antes de la
+ * base, y protege de cualquier otro llamante presente o futuro. Que el dato
+ * venga bien es una esperanza; que aquí no pase basura es una garantía.
+ *
+ * ⚠️ El `0` tiene que sobrevivir: un 0-0 es un marcador de verdad, así que no
+ * vale comprobar si el valor es «verdadero».
+ */
+function comoEntero(valor) {
+  if (valor === null || valor === undefined) return null;
+  if (typeof valor === 'string' && valor.trim() === '') return null;
+
+  const numero = Number(valor);
+  return Number.isInteger(numero) ? numero : null;
+}
+
+/**
+ * Escribe los resultados de una jornada.
+ *
+ * ⚠️ Devuelve cuántas filas se escribieron y cuáles fallaron, y **un partido
+ * que falla no impide escribir los demás**.
+ *
+ * Antes, un solo valor que la base rechazara tumbaba la reescritura de la
+ * jornada ENTERA: pasó el 25 de agosto con una cadena vacía en un marcador, y
+ * el resultado fue que ningún partido se actualizaba —tampoco los que estaban
+ * perfectos— y el registro repetía el mismo error cada minuto. Un fallo de un
+ * partido tiene que costar un partido.
+ *
+ * ⛔ Y los fallos se DEVUELVEN, no se tragan: quien llama los registra con el
+ * nombre del partido. Un `catch` que sólo sigue adelante convierte un fallo
+ * ruidoso en uno invisible, que es peor.
+ */
 async function escribir(cliente, quinielaId, resultadoOficialId, filas) {
+  const fallos = [];
+  let escritas = 0;
+
   for (const fila of filas) {
-    await cliente.query(
+    /*
+     * ⛔ SAVEPOINT, y NO basta un `try/catch`.
+     *
+     * Esto corre dentro de la transacción de la petición. En PostgreSQL, una
+     * sentencia que falla **aborta la transacción entera**: todas las
+     * siguientes responden «current transaction is aborted», y atraparlas con
+     * `catch` no cambia nada — es el eco del primer error, no un error nuevo.
+     * Está en §C de la bitácora desde la Entrada 035 y cuesta dos vueltas cada
+     * vez que se olvida.
+     *
+     * Con un punto de guardado por fila, deshacer una no toca las demás y la
+     * transacción sigue viva.
+     */
+    await cliente.query('SAVEPOINT fila_oficial');
+
+    try {
+      await escribirUna(cliente, quinielaId, resultadoOficialId, fila);
+      await cliente.query('RELEASE SAVEPOINT fila_oficial');
+      escritas += 1;
+    } catch (error) {
+      await cliente.query('ROLLBACK TO SAVEPOINT fila_oficial');
+      fallos.push({ partidoId: fila.partidoId, motivo: error.message });
+    }
+  }
+
+  return { escritas, fallos };
+}
+
+async function escribirUna(cliente, quinielaId, resultadoOficialId, fila) {
+  await cliente.query(
       `INSERT INTO resultados_oficiales_partidos
          (quiniela_id, resultado_oficial_id, partido_id, marcador1, marcador2,
           estado, minuto, fecha, origen, bloqueado_final, actualizado_en)
@@ -182,13 +254,12 @@ async function escribir(cliente, quinielaId, resultadoOficialId, filas) {
          bloqueado_final = EXCLUDED.bloqueado_final,
          actualizado_en  = now()`,
       [quinielaId, resultadoOficialId, fila.partidoId,
-        fila.marcador1 ?? null, fila.marcador2 ?? null,
+        comoEntero(fila.marcador1), comoEntero(fila.marcador2),
         fila.estado ?? null,
         fila.minuto === null || fila.minuto === undefined ? null : String(fila.minuto),
         fila.fecha ?? null,
         fila.origen ?? 'api',
         Boolean(fila.bloqueadoFinal)]);
-  }
 }
 
 /**

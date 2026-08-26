@@ -28,6 +28,7 @@ const sinc = require('../src/sincronizador');
 const oficiales = require('../src/oficiales');
 const pronosticos = require('../src/pronosticos');
 const ranking = require('../src/ranking');
+const eventos = require('../src/eventos');
 const enMemoria = require('./postgres-en-memoria');
 
 test.before(async () => { await enMemoria.levantar(); });
@@ -445,4 +446,112 @@ test('el limitador no lanza más tareas a la vez de las permitidas', async () =>
   });
 
   assert.equal(maximo, 3, 'sin tope, ocho peticiones a la vez contra el proveedor');
+});
+
+
+/* ============ El partido que todavía no tiene marcador ============ */
+
+/*
+ * ⛔ EL CASO QUE FALTABA, Y QUE ROMPIÓ PRODUCCIÓN.
+ *
+ * Todas las pruebas de arriba construyen eventos CON marcador (`m1 = 1, m2 = 0`
+ * por defecto). Un partido programado —el estado normal de cualquier partido
+ * antes de jugarse— llega del proveedor con los marcadores vacíos, y eso no se
+ * probaba en ningún sitio.
+ *
+ * En Mongo daba igual: el campo aceptaba `''`. En PostgreSQL `marcador1` es
+ * `integer` y la cadena vacía la rechaza:
+ *
+ *     invalid input syntax for type integer: ""
+ *
+ * El error tumbaba la reescritura de la jornada entera, así que los resultados
+ * oficiales se quedaban congelados y el registro repetía lo mismo cada minuto.
+ */
+
+const eventoSinMarcador = ({ local = 'A', visitante = 'B' } = {}) => ({
+  match_hometeam_name: local,
+  match_awayteam_name: visitante,
+  match_hometeam_score: '',
+  match_awayteam_score: '',
+  match_hometeam_ft_score: '',
+  match_awayteam_ft_score: '',
+  match_status: '',
+  goalscorer: []
+});
+
+test('⛔ un partido sin marcador da null, no cadena vacía', () => {
+  const evento = eventoSinMarcador();
+  const estado = eventos.obtenerEstadoPartido(evento, { apiStatus: '' });
+  const marcador = eventos.obtenerMarcador90Minutos(evento, estado);
+
+  assert.equal(marcador.marcador1, null, 'una cadena vacía no cabe en una columna integer');
+  assert.equal(marcador.marcador2, null);
+
+  // Y el 0 sigue siendo un marcador de verdad, no «vacío».
+  const cero = eventos.obtenerMarcador90Minutos({
+    ...evento, match_hometeam_ft_score: '0', match_awayteam_ft_score: '0'
+  }, estado);
+
+  assert.equal(cero.marcador1, 0, 'un 0-0 es un marcador, no la ausencia de uno');
+  assert.equal(cero.marcador2, 0);
+});
+
+test('⛔ sincronizar una jornada con partidos aún sin jugar no revienta', async () => {
+  const q = await quinielaNueva();
+
+  await jornadas.guardar(q.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: 'f-jugado' }),
+    partido('C', 'D', { apiFixtureId: 'f-porjugar' })
+  ]);
+
+  await fixtures.guardar(descriptor('f-jugado'), { evento: eventoDe({ local: 'A', visitante: 'B', m1: 2, m2: 1 }) });
+  await fixtures.guardar(descriptor('f-porjugar'), { evento: eventoSinMarcador({ local: 'C', visitante: 'D' }) });
+
+  const r = await sinc.reescribirJornadaDesdeCache(q.id, "J1");
+
+  assert.equal(r.ok, true, 'la jornada entera no puede caerse por un partido sin marcador');
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+
+  /*
+   * ⛔ Lo que de verdad importa: el partido JUGADO se guardó. Antes, el fallo
+   * del segundo impedía escribir el primero, y por eso «los resultados no se
+   * actualizan».
+   */
+  const jugado = doc.partidos.find(p => p.equipo1 === 'A');
+  assert.equal(jugado.marcador1, 2, 'el partido con resultado tiene que guardarse igual');
+  assert.equal(jugado.marcador2, 1);
+
+  const porJugar = doc.partidos.find(p => p.equipo1 === 'C');
+  assert.equal(porJugar.marcador1, null, 'y el que no se ha jugado queda en nulo');
+});
+
+test('⚠️ escribir informa de los partidos que fallaron, y guarda los demás', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B'), partido('C', 'D')]);
+
+  const r = await db.enQuiniela(q.id, async c => {
+    const jornadaId = await pronosticos.jornadaIdDe(c, 'J1');
+    const lista = await pronosticos.partidosDe(c, jornadaId);
+    const contenedor = await oficiales.asegurarContenedor(c, q.id, jornadaId);
+
+    return oficiales.escribir(c, q.id, contenedor, [
+      { partidoId: lista[0].id, marcador1: 3, marcador2: 1, estado: 'TC' },
+      // Un partido que no existe: la clave ajena lo rechaza.
+      { partidoId: '00000000-0000-0000-0000-000000000000', marcador1: 1, marcador2: 1 },
+      { partidoId: lista[1].id, marcador1: 0, marcador2: 0, estado: 'TC' }
+    ]);
+  });
+
+  /*
+   * ⛔ Los dos buenos se guardan aunque el del medio falle. Esto sólo funciona
+   * con SAVEPOINT: en PostgreSQL un error aborta la transacción entera, y un
+   * `try/catch` a secas dejaría las siguientes fallando por eco del primero.
+   */
+  assert.equal(r.escritas, 2, 'un partido malo no puede llevarse los buenos');
+  assert.equal(r.fallos.length, 1);
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos.find(p => p.equipo1 === 'A').marcador1, 3);
+  assert.equal(doc.partidos.find(p => p.equipo1 === 'C').marcador1, 0);
 });

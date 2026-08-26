@@ -25,10 +25,32 @@
  */
 'use strict';
 
+/**
+ * Un marcador del proveedor, o `null` si no lo hay.
+ *
+ * ============================================================================
+ * ⛔ DEVUELVE `null`, NO CADENA VACÍA — Y ESO ROMPÍA PRODUCCIÓN
+ * ============================================================================
+ *
+ * Hasta el 25 de agosto devolvía `''` para «no hay dato». Era la convención de
+ * Mongo, donde el campo lo aceptaba sin protestar. En PostgreSQL `marcador1` es
+ * `integer`, y una cadena vacía **no es un entero**:
+ *
+ *     invalid input syntax for type integer: ""
+ *
+ * Un partido programado —el estado normal de cualquier partido antes de
+ * jugarse— llega del proveedor con los marcadores vacíos, así que el
+ * sincronizador reventaba al guardarlo. Y como el error tumbaba la reescritura
+ * de la jornada ENTERA, tampoco se actualizaban los partidos que sí tenían
+ * resultado: los oficiales se quedaban congelados y el registro repetía el
+ * mismo error cada minuto.
+ *
+ * `null` es lo que significa «no hay dato» aquí, y es lo que la columna acepta.
+ */
 function obtenerNumeroSeguro(valor) {
-  if (valor === null || valor === undefined || valor === '') return '';
+  if (valor === null || valor === undefined || valor === '') return null;
   const numero = Number(valor);
-  return Number.isNaN(numero) ? '' : numero;
+  return Number.isNaN(numero) ? null : numero;
 }
 
 function obtenerMarcador90Minutos(fixture, estadoPartido = null) {
@@ -46,7 +68,9 @@ function obtenerMarcador90Minutos(fixture, estadoPartido = null) {
   const ftHome = obtenerNumeroSeguro(fixture.match_hometeam_ft_score);
   const ftAway = obtenerNumeroSeguro(fixture.match_awayteam_ft_score);
 
-  if (ftHome !== '' && ftAway !== '') {
+  // `!== null` desde que `obtenerNumeroSeguro` devuelve null: un 0-0 es un
+  // marcador válido, así que no vale comprobar si son «verdaderos».
+  if (ftHome !== null && ftAway !== null) {
     return { marcador1: ftHome, marcador2: ftAway };
   }
 
@@ -68,8 +92,8 @@ function obtenerMarcador90Minutos(fixture, estadoPartido = null) {
     const [home, away] = ultimoGol.score.split('-').map(n => Number(n.trim()));
 
     return {
-      marcador1: Number.isNaN(home) ? '' : home,
-      marcador2: Number.isNaN(away) ? '' : away
+      marcador1: Number.isNaN(home) ? null : home,
+      marcador2: Number.isNaN(away) ? null : away
     };
   }
 

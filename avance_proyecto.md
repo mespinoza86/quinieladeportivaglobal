@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 432/432
+npm test                    # 436/436
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -987,7 +987,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 432 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 436 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11477,6 +11477,152 @@ Redesplegar; **no toca la base**.
 la pantalla llevaba rota lo suficiente como para que **nunca se haya creado una
 trivia por ahí desde el arreglo de S-04**. Es la revisión de diez minutos que
 §B.2 arrastra desde la Entrada 024.
+
+---
+
+
+### 📌 Entrada 073 — 25 de agosto de 2026 — La cadena vacía que congeló los resultados oficiales
+
+**Objetivo:** el usuario avisó de que **los resultados oficiales no se estaban
+actualizando** y pegó el registro de Render, con la misma línea repetida
+cincuenta veces:
+
+```
+Error sincronizando "Jornada1" de "quiniela2026": invalid input syntax for type integer: ""
+```
+
+## ⛔ Una cadena vacía en una columna `integer`
+
+`eventos.obtenerNumeroSeguro` devolvía **`''`** cuando el proveedor no daba
+marcador. Era la convención de Mongo, donde el campo lo aceptaba sin protestar.
+En PostgreSQL `marcador1` es `integer`, y `''` **no es un entero**.
+
+Y al guardar:
+
+```js
+fila.marcador1 ?? null
+```
+
+⚠️ **`??` sólo convierte `null` y `undefined`, no la cadena vacía.** Así que el
+`''` llegaba intacto a la base.
+
+Reproducido antes de tocar nada, con el mismo mensaje:
+
+```
+estado   : {"estado":"PROGRAMADO","minuto":null}
+marcador : {"marcador1":"","marcador2":""}
+⛔ invalid input syntax for type integer: ""
+```
+
+**Un partido programado —el estado normal de cualquier partido antes de
+jugarse— llega del proveedor sin marcador.** Así que bastaba tener una jornada
+con partidos futuros para que el sincronizador reventara cada minuto.
+
+## Lo que lo convertía en «no se actualiza nada»
+
+El error tumbaba `reescribirJornada` **entera**. Por eso no era «un partido no
+se guarda» sino **«los resultados oficiales están congelados»**: los partidos ya
+jugados, con su marcador correcto esperando, tampoco se escribían porque el
+fallo del vecino se llevaba la operación completa.
+
+⚠️ **Un fallo de un partido tiene que costar un partido.**
+
+## Los tres arreglos, y por qué son tres
+
+1. **La raíz.** `obtenerNumeroSeguro` devuelve `null`, que es lo que significa
+   «no hay dato» en PostgreSQL. De paso, la comparación interna pasa de
+   `!== ''` a `!== null`: **un 0-0 es un marcador válido**, así que no vale
+   preguntar si el valor es «verdadero».
+2. **La puerta.** `oficiales.escribir` convierte con `comoEntero`, que descarta
+   la cadena vacía explícitamente. Que el dato venga bien es una esperanza; que
+   aquí no pase basura es una garantía.
+3. **El aislamiento.** Cada partido se escribe dentro de su propio punto de
+   guardado, y los fallos se **devuelven** —no se tragan— para que el
+   sincronizador los registre con el nombre del partido y su motivo.
+
+⛔ **Y el tercero casi sale mal.** El primer intento fue un `try/catch` por
+fila, que **no funciona**: en PostgreSQL una sentencia que falla **aborta la
+transacción entera**, y las siguientes responden el eco del primer error.
+Atraparlas no cambia nada. Está en §C desde la Entrada 035 y volvió a hacer
+falta. Se resolvió con `SAVEPOINT` / `ROLLBACK TO SAVEPOINT` por fila, y hay una
+prueba que lo fija: quitando el savepoint, falla.
+
+## Por qué ninguna prueba lo cazó
+
+Todas las del sincronizador construían eventos **con marcador** —`m1 = 1,
+m2 = 0` por defecto—. **El caso de un partido que todavía no se ha jugado no se
+probaba en ningún sitio**, y es el estado en el que pasa la mayor parte de su
+vida.
+
+⚠️ Es el mismo patrón que el fallo del 0-0 de esta misma mañana (Entrada 068):
+la prueba usaba un oficial 1-1, el caso donde nada se confunde. **Los datos de
+prueba tienden a ser los cómodos, y los cómodos son justo los que no revelan
+nada.**
+
+## No venía de los cambios de hoy
+
+Se comprobó antes de decirlo, porque el usuario preguntó si estaba relacionado:
+
+| Archivo | Último cambio |
+|---|---|
+| `src/eventos.js` | 21 ago — *Migración, tajada 6* |
+| `src/oficiales.js` | 21 ago — *Migración, tajada 4* |
+| `src/sincronizador.js` | 21 ago — *Migración, tajada 6* |
+
+**Es una herencia de la migración**, viva desde el 21 de agosto y latente hasta
+que hubo una jornada real con partidos por jugar.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/eventos.js` | `obtenerNumeroSeguro` devuelve `null`; la comparación interna, contra `null` |
+| `src/oficiales.js` | `comoEntero` en la puerta, y `SAVEPOINT` por partido |
+| `src/sincronizador.js` | Registra qué partido falló y por qué, sin tumbar la jornada |
+| `test/sincronizador.test.js` | 3 pruebas: el marcador ausente, la jornada a medias y el aislamiento por fila |
+| `test/architecture.test.js` | 1 centinela: ni `''` hacia una columna numérica, ni escritura sin savepoint |
+
+**Verificación:**
+
+```
+npm test         → 436/436
+npm run test:e2e → 112/112
+el fallo, reproducido en seco antes de tocar nada → mismo mensaje que Render
+devolviendo el '' → falla la prueba del marcador
+quitando el SAVEPOINT → falla la del aislamiento por fila
+el centinela, roto a propósito → falla
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **`?? null` no limpia una cadena vacía.** Es el operador que uno escribe
+   pensando «lo dejo seguro», y sólo cubre `null` y `undefined`. Para una
+   columna numérica hace falta descartar el `''` a mano — el mismo `''` contra
+   `null` que ya mordió esta mañana en los pronósticos, ahora en el otro
+   extremo del sistema.
+2. ⛔ **Un fallo de una fila no puede costar la operación entera.** Lo que
+   convirtió un valor mal formado en «los resultados no se actualizan» fue que
+   el error se llevaba por delante la jornada completa, incluidos los partidos
+   correctos.
+3. ⚠️ **Y aislar una fila dentro de una transacción exige `SAVEPOINT`, no
+   `try/catch`.** Un error aborta la transacción entera y lo que se atrapa
+   después es su eco. Cuesta dos vueltas cada vez que se olvida; van dos.
+4. ⚠️ **Los datos de prueba cómodos esconden los casos reales.** Un partido con
+   marcador es el caso fácil; uno programado es el que ocurre siempre antes de
+   jugarse, y no estaba en ninguna prueba. Segunda vez en el mismo día.
+5. **Un error repetido cincuenta veces en el registro es un dato, no ruido.** El
+   sincronizador corre cada minuto: la repetición decía que fallaba en cada
+   ciclo, no que hubiera fallado una vez. Y el mensaje no decía **qué partido**
+   —ahora sí.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**.
+
+⚠️ Al desplegar, los resultados oficiales deberían ponerse al día solos en el
+siguiente ciclo del sincronizador —un minuto—. Conviene mirar
+`/api/admin/sync-metricas` después: `jornadasReescritas` tiene que empezar a
+subir, y era lo que llevaba parado.
 
 ---
 

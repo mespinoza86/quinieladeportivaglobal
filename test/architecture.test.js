@@ -512,6 +512,48 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ ningún marcador llega a una columna integer como cadena vacía', () => {
+  /*
+   * El fallo que congelo los resultados oficiales el 25 de agosto, y que se vio
+   * en el registro de Render repetido cada minuto:
+   *
+   *     invalid input syntax for type integer: ""
+   *
+   * `eventos.obtenerNumeroSeguro` devolvia `''` para "no hay dato" -la
+   * convencion de Mongo, donde el campo lo aceptaba- y `oficiales.escribir`
+   * lo pasaba con `?? null`, que **solo convierte null y undefined**. Un
+   * partido programado, que es el estado normal antes de jugarse, llega sin
+   * marcador y reventaba al guardarse.
+   *
+   * Dos condiciones, y las dos importan: el origen no produce cadenas vacias,
+   * y la puerta de la base no las deja pasar aunque alguien las produzca.
+   */
+  const eventosMod = quitarComentarios(leer(path.join('src', 'eventos.js')));
+
+  const numeroSeguro = eventosMod.match(/function obtenerNumeroSeguro[\s\S]*?\n\}/)?.[0] || '';
+  assert.ok(numeroSeguro, 'no se encontro obtenerNumeroSeguro');
+
+  assert.doesNotMatch(numeroSeguro, /return\s*''/,
+    'un marcador ausente tiene que ser null: una cadena vacia no cabe en una columna integer');
+
+  const oficialesMod = quitarComentarios(leer(path.join('src', 'oficiales.js')));
+
+  assert.doesNotMatch(oficialesMod, /fila\.marcador1\s*\?\?\s*null/,
+    '`?? null` no convierte la cadena vacia: usa una conversion que la contemple');
+
+  assert.match(oficialesMod, /function comoEntero[\s\S]*?trim\(\)\s*===\s*''/,
+    'la puerta de la base tiene que descartar la cadena vacia explicitamente');
+
+  /*
+   * Y el aislamiento por fila. En PostgreSQL una sentencia que falla aborta la
+   * transaccion ENTERA: un `try/catch` a secas no salva las filas siguientes,
+   * solo recoge el eco del primer error (§C, Entrada 035). Hace falta SAVEPOINT.
+   */
+  assert.match(oficialesMod, /SAVEPOINT/,
+    'sin SAVEPOINT, un partido que falla se lleva por delante los demas de la jornada');
+  assert.match(oficialesMod, /ROLLBACK TO SAVEPOINT/);
+});
+
 test('⛔ TODA ruta de superadministrador lleva su guardia', () => {
   /*
    * Es la unica pantalla del sistema que enseña **los correos de todo el

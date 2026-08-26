@@ -404,7 +404,20 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
       });
     }
 
-    await oficialesMod.escribir(c, quinielaId, contenedor, filas);
+    /*
+     * ⚠️ Los fallos por partido se registran aquí, con nombre y motivo, y NO
+     * tumban la jornada. Antes un solo valor que la base rechazara dejaba sin
+     * actualizar todos los partidos —también los correctos— y el registro sólo
+     * decía «Error sincronizando "Jornada1"», sin decir cuál ni por qué.
+     */
+    const escritura = await oficialesMod.escribir(c, quinielaId, contenedor, filas);
+
+    for (const fallo of escritura.fallos) {
+      const partido = partidos.find(p => p.id === fallo.partidoId);
+      console.error(
+        `  · no se pudo guardar "${partido?.equipo1 ?? '?'} vs ${partido?.equipo2 ?? '?'}" `
+        + `de "${jornadaNombre}": ${fallo.motivo}`);
+    }
 
     const nuevos = await oficialesMod.mapaDe(c, jornadaId);
     const cambiaronPuntos = oficialesMod.puntosPuedenHaberCambiado(anteriores, nuevos);
