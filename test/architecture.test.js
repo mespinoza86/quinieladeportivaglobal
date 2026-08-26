@@ -512,6 +512,56 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ un resultado definitivo no lo reescribe el proveedor, y no se empeora ninguno', () => {
+  /*
+   * La regla decidida el 25 de agosto: en cuanto un partido termina y su
+   * resultado queda fijado, esa fila es historia de la quiniela y deja de
+   * depender del proveedor. Asi una caida o una respuesta mala solo pueden
+   * afectar a lo que esta por jugarse o jugandose.
+   *
+   * Tres condiciones, y las tres se rompen en silencio si alguien las quita:
+   * el marcador seguiria cambiando y nadie veria un error.
+   */
+  const sinc = quitarComentarios(leer(path.join('src', 'sincronizador.js')));
+
+  /*
+   * ⚠️ La condicion es `bloqueadoFinal` A SECAS. Antes era
+   * `bloqueadoFinal && origen === 'manual'`, y por eso un partido terminado con
+   * resultado del proveedor se seguia reescribiendo en cada ciclo — que es por
+   * donde una respuesta degradada borraba el marcador bueno.
+   */
+  assert.match(sinc, /if \(previo\?\.bloqueadoFinal\) continue/,
+    'lo definitivo no se toca, venga del proveedor o del administrador');
+
+  assert.doesNotMatch(sinc, /bloqueadoFinal\s*&&\s*previo\.origen\s*===\s*'manual'/,
+    'esa condicion dejaba fuera los partidos terminados por el proveedor');
+
+  // Y el sincronizador puede mejorar un dato, nunca empeorarlo.
+  assert.match(sinc, /previoTeniaMarcador/,
+    'un evento sin marcador no puede borrar uno que si lo tiene');
+
+  /*
+   * En la carga manual, «terminado» y «definitivo» son DOS COSAS. Mezclarlas
+   * rompio el cierre de los pronosticos (Entrada 019) en el primer intento:
+   * sin `estado: 'TC'` el partido seguia admitiendo pronosticos despues de
+   * cargarle el resultado.
+   */
+  const oficiales = quitarComentarios(leer(path.join('src', 'oficiales.js')));
+
+  assert.match(oficiales, /const jugado =/, 'hace falta saber si el partido se jugo');
+  assert.match(oficiales, /const definitivo =/, 'y aparte, si su resultado esta fijado');
+  assert.match(oficiales, /estado: jugado \? 'TC'/,
+    'un partido con marcador cargado tiene que cerrar los pronosticos');
+  assert.match(oficiales, /bloqueadoFinal: definitivo/);
+
+  /*
+   * ⛔ Y `bloqueadoFinal: true` a secas no puede volver: era lo que congelaba la
+   * jornada ENTERA al guardarla una vez, incluidos los partidos sin jugar.
+   */
+  assert.doesNotMatch(oficiales, /bloqueadoFinal:\s*true/,
+    'congelar es por partido y solo si termino, nunca la jornada entera');
+});
+
 test('⛔ ningún marcador llega a una columna integer como cadena vacía', () => {
   /*
    * El fallo que congelo los resultados oficiales el 25 de agosto, y que se vio

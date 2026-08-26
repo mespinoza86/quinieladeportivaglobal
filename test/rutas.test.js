@@ -3239,3 +3239,45 @@ test('una cuenta desactivada no se puede dar por confirmada a medias', async () 
     assert.equal(ficha.emailVerificado, false, 'no se tocó nada');
   });
 });
+
+test('⛔ la casilla «ya terminó» fija el resultado, y sin ella el proveedor manda', async () => {
+  const jefe = await admin('oficial');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [partido('A', 'B'), partido('C', 'D')]
+  });
+
+  /*
+   * El caso real: el proveedor está caído, los partidos ya se jugaron y el
+   * administrador los carga a mano. Marca el primero como terminado y el
+   * segundo no, porque todavía se está jugando.
+   */
+  const guardado = await jefe.agente.post('/api/resultados-oficiales').send({
+    jornada: 'J1',
+    resultados: [
+      { marcador1: 3, marcador2: 1, final: true },
+      { marcador1: 1, marcador2: 1, final: false }
+    ]
+  });
+  assert.equal(guardado.status, 200, JSON.stringify(guardado.body));
+
+  const leido = await jefe.agente.get('/api/resultados-oficiales/J1');
+  assert.equal(leido.status, 200);
+
+  /*
+   * ⛔ La pantalla tiene que poder distinguirlos al recargar: si no supiera
+   * cuál está fijado, volvería a pintar las casillas en blanco y al guardar
+   * desfijaría lo que estaba fijado, sin que nadie lo pidiera.
+   */
+  assert.equal(leido.body.partidos[0].final, true, 'el declarado terminado queda fijado');
+  assert.equal(leido.body.partidos[1].final, false, 'el otro no');
+
+  /*
+   * Y los dos cierran los pronósticos, porque los dos tienen marcador: eso es
+   * «el partido se jugó», que es distinto de «este resultado ya no se discute»
+   * (Entrada 019).
+   */
+  assert.equal(leido.body.partidos[0].estado, 'TC');
+  assert.equal(leido.body.partidos[1].estado, 'TC');
+});

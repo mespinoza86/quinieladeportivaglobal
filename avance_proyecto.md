@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 436/436
+npm test                    # 443/443
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **436**, ~70 s |
+| Pruebas rápidas | **443**, ~72 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -1083,7 +1083,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 436 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 443 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11719,6 +11719,160 @@ Redesplegar; **no toca la base**.
 siguiente ciclo del sincronizador —un minuto—. Conviene mirar
 `/api/admin/sync-metricas` después: `jornadasReescritas` tiene que empezar a
 subir, y era lo que llevaba parado.
+
+---
+
+
+### 📌 Entrada 074 — 25 de agosto de 2026 — Lo terminado es historia, y deja de depender del proveedor
+
+**Objetivo:** el usuario lo planteó así: *«si el API se cae, todos los
+marcadores se pierden, porque todo se toma del API»*. Quería que un resultado
+cargado a mano mandara sobre el proveedor **si y sólo si el partido ya terminó**,
+y que a partir de ahí quedara guardado y no volviera a traerse del API.
+
+## Las tres decisiones, preguntadas antes de escribir
+
+| Pregunta | Qué se eligió |
+|---|---|
+| ¿Y si guardo un resultado de un partido que no ha terminado? | **Se guarda, pero el proveedor lo actualiza.** Sirve para adelantarse cuando el API va retrasado |
+| ¿Puede el proveedor pisar una corrección mía de un partido TC? | **No. Tu corrección es definitiva** |
+| ¿Cómo se deshace un error? | **Volviendo a guardarlo bien.** Sin botón de «volver al API» |
+
+## ⚠️ Y una cuarta que apareció al mirar el código
+
+La regla del usuario se apoya en «está TC», **y quien dice TC es el proveedor**.
+Si se cae ANTES de que el partido acabe, ese TC no llega nunca — y entonces, en
+el escenario exacto que motivaba todo, el resultado cargado a mano seguiría
+siendo pisable.
+
+Se le ofrecieron dos salidas —deducirlo por el tiempo transcurrido, o una
+casilla explícita— y eligió **la casilla**. Es más código y no adivina nada:
+quien declara que el partido terminó es una persona que lo vio.
+
+## Lo que ya funcionaba, y no había que tocar
+
+Antes de escribir nada se comprobó qué existía, porque media petición ya estaba
+resuelta:
+
+- un partido TC **no se vuelve a consultar** (`calcularProximaConsulta` → `null`);
+- los resultados **viven en la base**, no se traen del API para puntuar;
+- y si el proveedor **falla**, la caché conserva el evento anterior
+  (`COALESCE(evento_nuevo, evento_guardado)`).
+
+⛔ **Así que el agujero real no era la caída del API, que estaba cubierta: era
+la RESPUESTA MALA.** El proveedor a veces contesta 200 con un evento degradado
+—el partido está, sin marcador—, y eso machacaba el resultado bueno dejándolo en
+nulo. Una caída se nota; una respuesta que parece válida, no.
+
+## Y lo que estaba al revés
+
+`guardarManual` marcaba **toda la jornada** como definitiva en cuanto se
+guardaba una vez: `bloqueadoFinal: true` para las diez filas, jugadas o no.
+
+⛔ **Guardar la jornada el viernes congelaba los diez partidos y el proveedor
+dejaba de actualizarlos el domingo.** Es lo contrario de lo que el usuario
+pedía, y llevaba ahí desde la migración.
+
+## ⛔ El error de diseño que costó ocho pruebas
+
+Al primer intento se hizo que la carga manual sólo marcara TC cuando se
+declaraba terminado el partido. Rompió ocho pruebas, y **una era una regresión
+de verdad**: *«cargar el resultado oficial CIERRA el partido: ya no admite
+pronósticos»*, que es la regla de la Entrada 019.
+
+La causa fue mezclar dos conceptos que no son el mismo:
+
+| Campo | Qué significa | De qué manda |
+|---|---|---|
+| `estado: 'TC'` | **el partido se jugó** | cierra los pronósticos (019) y permite congelar los puntos |
+| `bloqueadoFinal` | **este resultado ya no se discute** | impide que el proveedor lo reescriba |
+
+⚠️ **Un partido puede estar terminado y aún admitir correcciones del proveedor.
+Lo que no puede es estar fijado y seguir cambiando.** Separándolos, las ocho
+volvieron a verde sin tocar ninguna salvo la que fijaba el comportamiento viejo
+a propósito.
+
+## La regla que queda
+
+```
+estado 'TC'      si hay marcador cargado, o se declara terminado, o el
+                 proveedor ya lo daba por terminado
+bloqueadoFinal   si se marca la casilla, o ya estaba fijado, o el proveedor
+                 lo daba por TC y el administrador lo está corrigiendo
+```
+
+Y en el sincronizador, dos líneas que sostienen todo:
+
+- **`if (previo?.bloqueadoFinal) continue;`** — lo definitivo no se toca, venga
+  de donde venga. Antes la condición llevaba `&& origen === 'manual'`, y por eso
+  un partido terminado por el proveedor se seguía reescribiendo en cada ciclo:
+  por ahí entraba la respuesta degradada.
+- **El sincronizador puede mejorar un dato, nunca empeorarlo**: un evento sin
+  marcador no borra uno que sí lo tiene.
+
+## En la pantalla
+
+Una casilla por partido, y **viene marcada sola si el partido ya se jugó**. Sin
+eso, el uso normal —cargar los resultados el domingo por la noche— obligaría a
+marcar diez casillas a mano, y quien olvidara una dejaría ese partido a merced
+del proveedor sin enterarse.
+
+⚠️ Y los marcadores pasaron a leerse **por clase y no por posición**: al añadir
+la casilla, `querySelectorAll('input')` pasó a devolver tres elementos. Leer por
+índice habría seguido funcionando ese día y se habría roto en cuanto alguien
+moviera un campo de sitio, cogiendo el input de al lado sin fallar.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/oficiales.js` | «Terminado» y «definitivo», separados y por partido |
+| `src/sincronizador.js` | Lo definitivo no se reescribe; un evento sin marcador no borra |
+| `src/rutas/puntuacion.js` | La lectura devuelve `final` y `estado` para pintar la casilla |
+| `private/js/agregar-resultados-oficiales.js` | La casilla, premarcada, y lectura por clase |
+| `test/sincronizador.test.js` | 5 pruebas: los cinco casos de la tabla |
+| `test/rutas.test.js` | 1 del flujo completo por la ruta |
+| `test/architecture.test.js` | 1 centinela |
+
+**Verificación:**
+
+```
+npm test         → 443/443
+npm run test:e2e → 112/112
+el centinela, roto a propósito → falla
+las 8 pruebas que se rompieron al primer intento → revisadas una a una;
+  7 eran una regresión real y 1 fijaba el comportamiento viejo
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **«Terminado» y «definitivo» son dos cosas, y mezclarlas rompió una regla
+   de hace un mes.** Un partido puede haber acabado y aún aceptar correcciones.
+   Cuando dos reglas cuelgan del mismo campo —cerrar pronósticos y bloquear
+   escrituras—, cambiarlo por una de ellas rompe la otra en silencio.
+2. ⛔ **El peligro no era la caída del proveedor: era su respuesta mala.** Una
+   caída se nota y la caché la cubre; un 200 con un evento vacío parece un dato
+   bueno y borra el que había. **Lo que hay que blindar no es el silencio del
+   sistema externo, sino su ruido.**
+3. ⚠️ **Ocho pruebas rojas son una pregunta, no una tarea.** Siete decían que
+   había roto algo de verdad y una fijaba el comportamiento que se venía a
+   cambiar. Actualizarlas todas sin leerlas habría enterrado la regresión de la
+   Entrada 019.
+4. ⚠️ **Un valor por defecto demasiado generoso hace lo contrario de lo
+   pedido.** `bloqueadoFinal: true` para toda la jornada parecía prudente
+   —«respeta lo que escribió el administrador»— y lo que hacía era apagar el
+   sincronizador para partidos que ni se habían jugado.
+5. **Preguntar cuánto ya existía ahorró la mitad del trabajo.** Tres de las
+   cuatro cosas que el usuario pedía ya funcionaban; lo único que faltaba era
+   lo que ninguno de los dos había mirado.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**. `bloqueado_final` y `origen` ya existían en
+`resultados_oficiales_partidos`: sólo se usan bien.
+
+⚠️ Conviene probarlo con una jornada real: cargar un resultado con la casilla
+marcada y comprobar en el ciclo siguiente que el proveedor ya no lo cambia.
 
 ---
 

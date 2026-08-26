@@ -380,10 +380,25 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
       }
 
       /*
-       * Una carga manual es la última palabra: el administrador miró el partido
-       * y escribió el marcador. El proveedor no debe pisarla.
+       * ============================================================
+       * ⛔ UN RESULTADO DEFINITIVO NO SE VUELVE A TOCAR. NUNCA.
+       * ============================================================
+       *
+       * Da igual de dónde viniera: si el partido terminó y su resultado quedó
+       * fijado, esa fila es historia de la quiniela y deja de depender del
+       * proveedor para siempre.
+       *
+       * Antes la condición era `bloqueadoFinal && origen === 'manual'`, así que
+       * **un partido terminado con resultado del API se seguía reescribiendo en
+       * cada ciclo**. No aportaba nada —ya no se consulta a un partido TC— y
+       * abría el agujero de verdad: si el proveedor respondía 200 con un evento
+       * degradado, el marcador bueno se machacaba con nulos. La caída del API
+       * estaba cubierta por la caché; **la respuesta MALA no**.
+       *
+       * Ahora lo pasado está a salvo, y una caída o un error del proveedor sólo
+       * pueden afectar a lo que está por jugarse o jugándose.
        */
-      if (previo?.bloqueadoFinal && previo.origen === 'manual') continue;
+      if (previo?.bloqueadoFinal) continue;
 
       const invertido =
         eventos.normalizarEquipo(evento.match_hometeam_name) === eventos.normalizarEquipo(partido.equipo2) &&
@@ -392,10 +407,28 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
       const estadoPartido = eventos.obtenerEstadoPartido(evento, { apiStatus: partido.api_status });
       const marcador = eventos.obtenerMarcador90Minutos(evento, estadoPartido);
 
+      const nuevo1 = invertido ? marcador.marcador2 : marcador.marcador1;
+      const nuevo2 = invertido ? marcador.marcador1 : marcador.marcador2;
+
+      /*
+       * ⛔ EL SINCRONIZADOR PUEDE MEJORAR UN DATO, NUNCA EMPEORARLO.
+       *
+       * El proveedor a veces responde 200 con un evento degradado: el partido
+       * está ahí pero sin marcador. Escribirlo tal cual **borraba un marcador
+       * bueno y lo dejaba en nulo**, y con él los puntos de esa jornada.
+       *
+       * Si lo que llega no trae marcador y lo que hay sí, se conserva lo que
+       * hay. El estado y el minuto sí se actualizan: eso siempre es
+       * información nueva.
+       */
+      const sinMarcadorNuevo = nuevo1 === null || nuevo2 === null;
+      const previoTeniaMarcador = previo && previo.marcador1 !== null && previo.marcador2 !== null;
+      const conservar = sinMarcadorNuevo && previoTeniaMarcador;
+
       filas.push({
         partidoId: partido.id,
-        marcador1: invertido ? marcador.marcador2 : marcador.marcador1,
-        marcador2: invertido ? marcador.marcador1 : marcador.marcador2,
+        marcador1: conservar ? previo.marcador1 : nuevo1,
+        marcador2: conservar ? previo.marcador2 : nuevo2,
         estado: estadoPartido.estado,
         minuto: estadoPartido.minuto,
         fecha: partido.api_date || '',

@@ -383,8 +383,19 @@ test('una carga manual bloqueada no la pisa el proveedor', async () => {
   const q = await quinielaNueva();
   await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: '111' })]);
 
+  /*
+   * ⚠️ `final: true` desde el 25 de agosto. Antes CUALQUIER carga manual
+   * congelaba el partido, y por eso esta prueba no lo declaraba; ahora hace
+   * falta decir que el partido terminó, porque guardar un marcador de un
+   * partido que aún no se ha jugado **no debe** dejar al proveedor sin poder
+   * actualizarlo.
+   *
+   * La intención de la prueba no cambia: lo que el administrador fija, se
+   * respeta. Lo que cambió es cómo se fija.
+   */
   const { normalizarMarcador } = require('../src/validacion');
-  await oficiales.guardarManual(q.id, 'J1', [{ marcador1: 4, marcador2: 4 }], normalizarMarcador);
+  await oficiales.guardarManual(
+    q.id, 'J1', [{ marcador1: 4, marcador2: 4, final: true }], normalizarMarcador);
 
   await sinc.ejecutarCiclo({
     consultar: async () => eventoDe({ m1: 1, m2: 0, estado: 'Finished' }),
@@ -554,4 +565,147 @@ test('⚠️ escribir informa de los partidos que fallaron, y guarda los demás'
   const doc = await oficiales.deJornada(q.id, 'J1');
   assert.equal(doc.partidos.find(p => p.equipo1 === 'A').marcador1, 3);
   assert.equal(doc.partidos.find(p => p.equipo1 === 'C').marcador1, 0);
+});
+
+
+/* ============ Quién manda: el proveedor o el administrador ============ */
+
+/*
+ * La regla decidida el 25 de agosto, y el motivo: que la historia de la
+ * quiniela deje de depender del proveedor en cuanto un partido termina.
+ *
+ *   - programado o en juego -> manda el proveedor;
+ *   - terminado y con resultado del administrador -> manda el administrador;
+ *   - y un resultado ya definitivo NO SE VUELVE A TOCAR, venga de donde venga.
+ */
+
+/** Carga manual como la haría la pantalla, con su casilla de «ya terminó». */
+async function cargarAMano(quinielaId, jornada, resultados) {
+  const { normalizarMarcador } = require('../src/validacion');
+  return oficiales.guardarManual(quinielaId, jornada, resultados, normalizarMarcador);
+}
+
+test('⛔ un partido TERMINADO y cargado a mano gana al proveedor, para siempre', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: 'f1' })]);
+
+  // El administrador lo declara terminado con 3-1.
+  await cargarAMano(q.id, 'J1', [{ marcador1: 3, marcador2: 1, final: true }]);
+
+  // Y el proveedor insiste con otra cosa, incluso dándolo por terminado.
+  await fixtures.guardar(descriptor('f1'), {
+    evento: eventoDe({ local: 'A', visitante: 'B', m1: 2, m2: 2, estado: 'Finished' })
+  });
+
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].marcador1, 3, 'lo que escribió el administrador es definitivo');
+  assert.equal(doc.partidos[0].marcador2, 1);
+  assert.equal(doc.partidos[0].origen, 'manual');
+});
+
+test('⚠️ un partido SIN terminar cargado a mano lo sigue actualizando el proveedor', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: 'f1' })]);
+
+  /*
+   * Sin marcar la casilla: sirve para adelantarse cuando el proveedor va
+   * retrasado, pero no congela nada.
+   */
+  await cargarAMano(q.id, 'J1', [{ marcador1: 1, marcador2: 0, final: false }]);
+
+  let doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].marcador1, 1, 'se guarda igual');
+  assert.equal(doc.partidos[0].bloqueadoFinal, false, 'pero no queda fijado');
+
+  await fixtures.guardar(descriptor('f1'), {
+    evento: eventoDe({ local: 'A', visitante: 'B', m1: 2, m2: 0, estado: '70' })
+  });
+
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].marcador1, 2, 'mientras no termine, manda el proveedor');
+});
+
+test('⛔ guardar la jornada NO congela los partidos que aún no se han jugado', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: 'f1' }),
+    partido('C', 'D', { apiFixtureId: 'f2' })
+  ]);
+
+  /*
+   * El caso que motivó el cambio: antes, guardar la jornada marcaba TODAS las
+   * filas como definitivas y el proveedor dejaba de actualizar el domingo.
+   */
+  await cargarAMano(q.id, 'J1', [
+    { marcador1: 2, marcador2: 1, final: true },   // éste sí terminó
+    { marcador1: null, marcador2: null, final: false }  // éste todavía no se juega
+  ]);
+
+  await fixtures.guardar(descriptor('f2'), {
+    evento: eventoDe({ local: 'C', visitante: 'D', m1: 4, m2: 0, estado: 'Finished' })
+  });
+
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+
+  assert.equal(doc.partidos.find(p => p.equipo1 === 'A').marcador1, 2, 'el fijado no se toca');
+  assert.equal(doc.partidos.find(p => p.equipo1 === 'C').marcador1, 4,
+    'el que no se había jugado sí se actualiza: guardar la jornada no lo congeló');
+});
+
+test('⛔ un evento sin marcador NO borra el que ya había', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: 'f1' })]);
+
+  // El partido va 2-1 en vivo.
+  await fixtures.guardar(descriptor('f1'), {
+    evento: eventoDe({ local: 'A', visitante: 'B', m1: 2, m2: 1, estado: '70' })
+  });
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  /*
+   * Y ahora el proveedor responde 200 con un evento DEGRADADO: el partido está
+   * pero sin marcador. Es la respuesta mala que la caché no filtra —la caída sí
+   * la cubre, ésta no— y la que borraba el marcador bueno dejándolo en nulo.
+   */
+  await fixtures.guardar(descriptor('f1'), {
+    evento: {
+      match_hometeam_name: 'A', match_awayteam_name: 'B',
+      match_hometeam_score: '', match_awayteam_score: '',
+      match_hometeam_ft_score: '', match_awayteam_ft_score: '',
+      match_status: '71', goalscorer: []
+    }
+  });
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].marcador1, 2, 'el sincronizador puede mejorar un dato, no empeorarlo');
+  assert.equal(doc.partidos[0].marcador2, 1);
+});
+
+test('un partido terminado por el proveedor tampoco se reescribe después', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [partido('A', 'B', { apiFixtureId: 'f1' })]);
+
+  await fixtures.guardar(descriptor('f1'), {
+    evento: eventoDe({ local: 'A', visitante: 'B', m1: 3, m2: 0, estado: 'Finished' })
+  });
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  let doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].bloqueadoFinal, true, 'TC deja el resultado fijado');
+
+  // El proveedor se contradice más tarde.
+  await fixtures.guardar(descriptor('f1'), {
+    evento: eventoDe({ local: 'A', visitante: 'B', m1: 1, m2: 1, estado: 'Finished' })
+  });
+  await sinc.reescribirJornadaDesdeCache(q.id, 'J1');
+
+  doc = await oficiales.deJornada(q.id, 'J1');
+  assert.equal(doc.partidos[0].marcador1, 3, 'lo terminado es historia: no se reescribe');
 });

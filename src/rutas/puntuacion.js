@@ -305,7 +305,14 @@ module.exports = function rutasDePuntuacion(app, { requireAdmin, enQuiniela }) {
         marcador1: p.marcador1 ?? '',
         marcador2: p.marcador2 ?? '',
         // ⚠️ El comodín sale del PARTIDO, no de una copia (Entrada 044).
-        comodin: p.comodin
+        comodin: p.comodin,
+        /*
+         * Para que la pantalla pueda pintar marcada la casilla de «ya terminó»
+         * y no la desmarque sin querer al volver a guardar: quien edita tiene
+         * que ver el estado real, no uno en blanco.
+         */
+        final: p.bloqueadoFinal === true,
+        estado: p.estado
       }))
     });
   });

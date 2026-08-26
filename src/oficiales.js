@@ -273,30 +273,94 @@ async function escribirUna(cliente, quinielaId, resultadoOficialId, fila) {
  * ⚠️ El comodín que venga en el cuerpo se **ignora**. Quien decide qué partido
  * es comodín es la jornada, no el formulario de resultados.
  */
+/**
+ * Carga manual de los resultados de una jornada.
+ *
+ * ============================================================================
+ * ⚠️ CONGELAR ES POR PARTIDO, Y SÓLO SI EL PARTIDO TERMINÓ
+ * ============================================================================
+ *
+ * Antes esto marcaba **toda la jornada** como definitiva en cuanto se guardaba
+ * una vez: `bloqueadoFinal: true` para las diez filas, jugadas o no. El efecto
+ * era el contrario del que se quiere: guardar la jornada el viernes congelaba
+ * los diez partidos y **el proveedor dejaba de actualizarlos el domingo**.
+ *
+ * La regla, decidida el 25 de agosto:
+ *
+ *   - **Mientras el partido no haya terminado, manda el proveedor.** Lo que se
+ *     escriba a mano se guarda —sirve para adelantarse cuando el API va
+ *     retrasado— pero el ciclo siguiente puede actualizarlo.
+ *   - **Cuando el partido terminó, manda lo que escribió el administrador**, y
+ *     ya nadie lo toca.
+ *
+ * Un partido cuenta como terminado si se da cualquiera de estas tres:
+ *
+ *   1. el administrador marcó la casilla «ya terminó» —la señal explícita, y
+ *      la única que funciona **si el proveedor está caído** y por tanto nunca
+ *      va a decir TC—;
+ *   2. el proveedor ya lo daba por terminado (`estado === 'TC'`);
+ *   3. o ya estaba fijado antes, y volver a guardarlo no lo reabre.
+ */
 async function guardarManual(quinielaId, jornadaNombre, resultados, normalizar) {
   return db.enQuiniela(quinielaId, async c => {
     const jornadaId = await jornadaIdDe(c, jornadaNombre);
     if (!jornadaId) return { ok: false, motivo: 'jornada_no_encontrada' };
 
     const partidos = await partidosDe(c, jornadaId);
+    const previos = await mapaDe(c, jornadaId);
     const resultadoOficialId = await asegurarContenedor(c, quinielaId, jornadaId);
+
+    let definitivos = 0;
 
     const filas = partidos.map((partido, i) => {
       const enviado = resultados?.[i] || {};
+      const previo = previos.get(partido.id);
+
+      const marcador1 = normalizar(enviado.marcador1, `El marcador local del partido ${i + 1}`);
+      const marcador2 = normalizar(enviado.marcador2, `El marcador visitante del partido ${i + 1}`);
+
+      /*
+       * ⚠️ «TERMINADO» Y «DEFINITIVO» SON DOS COSAS DISTINTAS, y confundirlas
+       * rompió el cierre de los pronósticos en el primer intento.
+       *
+       *   - `estado: 'TC'` dice que **el partido se jugó**. De ahí cuelgan dos
+       *     reglas viejas: el partido deja de admitir pronósticos (Entrada 019)
+       *     y la jornada puede congelar sus puntos.
+       *   - `bloqueadoFinal` dice que **este resultado ya no se discute**, y es
+       *     lo único que impide al proveedor volver a escribirlo.
+       *
+       * Un partido puede estar terminado y aún admitir correcciones del
+       * proveedor. Lo que no puede es estar fijado y seguir cambiando.
+       */
+      const hayMarcador = marcador1 !== null && marcador2 !== null;
+      const jugado = enviado.final === true || hayMarcador || previo?.estado === 'TC';
+
+      /*
+       * Fijado sólo si: lo declara la casilla —la única señal que funciona con
+       * el proveedor caído—, ya estaba fijado antes, o el proveedor lo daba por
+       * terminado y el administrador lo está corrigiendo (su corrección manda).
+       */
+      const definitivo =
+        enviado.final === true ||
+        previo?.bloqueadoFinal === true ||
+        (previo?.estado === 'TC' && previo?.origen === 'api');
+
+      if (definitivo) definitivos += 1;
+
       return {
         partidoId: partido.id,
-        marcador1: normalizar(enviado.marcador1, `El marcador local del partido ${i + 1}`),
-        marcador2: normalizar(enviado.marcador2, `El marcador visitante del partido ${i + 1}`),
-        estado: enviado.estado || 'TC',
+        marcador1,
+        marcador2,
+        estado: jugado ? 'TC' : (previo?.estado || 'PROGRAMADO'),
         minuto: enviado.minuto ?? null,
         fecha: enviado.fecha || partido.api_date || '',
         origen: 'manual',
-        bloqueadoFinal: true
+        bloqueadoFinal: definitivo
       };
     });
 
-    await escribir(c, quinielaId, resultadoOficialId, filas);
-    return { ok: true, partidos: filas.length };
+    const r = await escribir(c, quinielaId, resultadoOficialId, filas);
+    return { ok: true, partidos: filas.length, definitivos, fallos: r.fallos };
   });
 }
 
