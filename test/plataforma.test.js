@@ -195,10 +195,17 @@ test('aprobar a un miembro le crea su jugador dentro de la quiniela', async () =
   assert.equal(r.ok, true);
 
   const nombres = await db.enQuiniela(q.id, async c => {
-    const { rows } = await c.query('SELECT nombre FROM jugadores');
+    const { rows } = await c.query('SELECT nombre FROM jugadores ORDER BY nombre');
     return rows.map(f => f.nombre);
   });
-  assert.deepEqual(nombres, [otro.username]);
+
+  /*
+   * ⚠️ Están los DOS: el aprobado y el propietario. Desde el 26 de agosto,
+   * crear una quiniela también crea la ficha de jugador de quien la crea — antes
+   * el propietario no existía como jugador hasta su primer pronóstico, y por
+   * eso no salía en su propia tabla de posiciones ni en sus cobros.
+   */
+  assert.deepEqual(nombres.sort(), [dueno.username, otro.username].sort());
 });
 
 test('aprobar dos veces no duplica el jugador', async () => {
@@ -217,7 +224,10 @@ test('aprobar dos veces no duplica el jugador', async () => {
     const { rows } = await c.query('SELECT count(*)::int AS n FROM jugadores');
     return rows[0].n;
   });
-  assert.equal(total, 1);
+
+  // El propietario y el aprobado: dos. Lo que se prueba es que el segundo
+  // intento no añadió un tercero.
+  assert.equal(total, 2);
 });
 
 test('rechazar un ingreso lo marca rechazado; rechazar un retiro lo devuelve a activo', async () => {
@@ -330,6 +340,56 @@ test('los jugadores de dos quinielas no se mezclan aunque el usuario esté en la
     return rows[0].n;
   });
 
-  // El propietario no es jugador hasta que juega; el doble sí, una vez por quiniela.
-  assert.equal(enA, 1, 'cada quiniela ve un solo jugador, el suyo');
+  /*
+   * Dos por quiniela: el propietario —que ahora nace con su ficha— y el que se
+   * unió. Lo que se prueba es el AISLAMIENTO: que la quiniela A no vea también
+   * los de la B, aunque sea la misma persona la que está en las dos. Si la RLS
+   * fallara, aquí saldrían cuatro.
+   */
+  assert.equal(enA, 2, 'cada quiniela ve sólo sus jugadores, no los de la otra');
+});
+
+test('⛔ quien crea una quiniela nace como jugador, sin tener que pronosticar', async () => {
+  /*
+   * El hueco que se descubrió administrando los cobros: la ficha de jugador
+   * nacía por dos caminos —al aprobarte un ingreso, o al hacer tu primer
+   * pronóstico— y **crear la quiniela no era ninguno de los dos**.
+   *
+   * Así que quien la creaba no existía como jugador: no salía en su propia
+   * tabla de posiciones ni en la lista de cobros de su quiniela. Se veía en
+   * producción con tres quinielas cuyos dueños nunca habían pronosticado.
+   */
+  const dueno = await cuentaNueva('creador');
+  const q = await quinielas.crear({ nombre: 'Recién creada', propietarioId: dueno.id });
+
+  const jugadores = await db.enQuiniela(q.id, async c => {
+    const { rows } = await c.query('SELECT nombre, usuario_id, cobrar_desde FROM jugadores');
+    return rows;
+  });
+
+  assert.equal(jugadores.length, 1, 'la quiniela nace con su propietario dentro');
+  assert.equal(jugadores[0].nombre, dueno.username);
+  assert.equal(jugadores[0].usuario_id, dueno.id, 'y queda vinculado a su cuenta');
+
+  /*
+   * ⚠️ `cobrar_desde` a NULL —«desde siempre»— y es lo correcto: la quiniela
+   * acaba de nacer, no hay jornadas anteriores de las que eximirle. A quien se
+   * une después sí se le cobra desde la siguiente.
+   */
+  assert.equal(jugadores[0].cobrar_desde, null);
+});
+
+test('crear dos quinielas no le duplica el jugador a nadie', async () => {
+  const dueno = await cuentaNueva('creador2');
+
+  const qa = await quinielas.crear({ nombre: 'Una', propietarioId: dueno.id });
+  const qb = await quinielas.crear({ nombre: 'Otra', propietarioId: dueno.id });
+
+  for (const q of [qa, qb]) {
+    const n = await db.enQuiniela(q.id, async c => {
+      const { rows } = await c.query('SELECT count(*)::int AS n FROM jugadores');
+      return rows[0].n;
+    });
+    assert.equal(n, 1, 'una ficha por quiniela, no una compartida ni dos en la misma');
+  }
 });

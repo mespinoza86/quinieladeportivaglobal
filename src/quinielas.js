@@ -62,6 +62,38 @@ async function crear({ nombre, propietarioId, intentos = 5 }) {
            VALUES ($1, $2, 'propietario', 'activo', now())`,
           [quiniela.id, propietarioId]);
 
+        /*
+         * ⚠️ Y SU FICHA DE JUGADOR, que faltaba.
+         *
+         * Quien se une con el código la recibe al aprobarse su ingreso
+         * (`membresias.aprobarIngreso`), pero quien CREA la quiniela no pasaba
+         * por ahí: se insertaban la quiniela y la membresía, y nada más. El
+         * propietario no existía como jugador hasta que hacía su primer
+         * pronóstico, así que **no aparecía en la tabla de posiciones ni en los
+         * cobros** — que fue como se descubrió: administrando los pagos faltaba
+         * justo quien administra.
+         *
+         * `cobrar_desde` queda a NULL —«desde siempre»— y es lo correcto: la
+         * quiniela acaba de nacer y no hay jornadas anteriores de las que
+         * eximirle. A quien se une después sí se le cobra desde la próxima.
+         *
+         * Va dentro del contexto de la quiniela porque `jugadores` lleva RLS.
+         * `enQuiniela` es reentrante y esto ya corre dentro de la transacción
+         * de `enTransaccion`, así que es la misma: la quiniela, la membresía y
+         * el jugador van juntos o no van.
+         */
+        const { rows: [u] } = await cliente.query(
+          'SELECT username FROM usuarios WHERE id = $1', [propietarioId]);
+
+        await db.enQuiniela(quiniela.id, async c => {
+          await c.query(
+            `INSERT INTO jugadores (quiniela_id, nombre, usuario_id)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (quiniela_id, usuario_id) WHERE usuario_id IS NOT NULL
+             DO NOTHING`,
+            [quiniela.id, u.username, propietarioId]);
+        });
+
         return quiniela;
       });
     } catch (error) {

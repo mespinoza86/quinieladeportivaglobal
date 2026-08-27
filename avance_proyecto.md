@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 443/443
+npm test                    # 445/445
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **443**, ~72 s |
+| Pruebas rápidas | **445**, ~72 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -1083,7 +1083,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 443 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 445 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11873,6 +11873,123 @@ Redesplegar; **no toca la base**. `bloqueado_final` y `origen` ya existían en
 
 ⚠️ Conviene probarlo con una jornada real: cargar un resultado con la casilla
 marcada y comprobar en el ciclo siguiente que el proveedor ya no lo cambia.
+
+---
+
+
+### 📌 Entrada 075 — 26 de agosto de 2026 — Quien crea la quiniela no existía en ella
+
+**Objetivo:** el usuario preguntó si los cobros eran sólo para el
+administrador general o para todos los administradores, y luego si se podía
+elegir que los administradores también pagaran.
+
+## ⛔ La respuesta corta era «ya pagan», y casi no lo compruebo
+
+`pagos.cuentas()` lista **todos los jugadores** de la quiniela sin mirar el rol:
+no hay ninguna regla que excluya a nadie. Así que la pregunta partía de una
+premisa que no se cumplía.
+
+Se propuso una opción A —un interruptor «los administradores pagan»— y una
+opción B —crear la ficha de jugador al crear la quiniela, porque el propietario
+no la tenía—. El usuario eligió la B.
+
+⚠️ **Y al ir a implementarla se miró la base de producción, que era lo que había
+que hacer ANTES de proponer nada:**
+
+```
+quiniela2026 → 12 miembros activos, 12 fichas de jugador. No falta ninguna.
+Diego / Tete / Tete → 1 miembro cada una, 0 fichas. Faltan 3.
+```
+
+**La opción B no arreglaba nada de lo que el usuario tenía delante.** En su
+quiniela real estaban todos —él incluido— porque ya había pronosticado, y eso
+crea la ficha. Los tres huecos eran de quinielas de prueba.
+
+Y de paso apareció el dato que faltaba: en `quiniela2026` **no hay ningún otro
+administrador**. Los once restantes son `user`. Los «administradores» que el
+usuario veía en otras quinielas eran propietarios de las suyas.
+
+Se le dijo, y su respuesta fue: *«tienes razón, el administrador sí sale en el
+cobro, perdón, no he dicho nada»*.
+
+## El hueco que sí existía, y se arregló igual
+
+Aunque no fuera su problema, el fallo es real: **la ficha de jugador nacía por
+dos caminos y crear la quiniela no era ninguno**.
+
+| Cómo se entra | ¿Ficha de jugador? |
+|---|---|
+| Unirse con el código y ser aprobado | Sí, en `membresias.aprobarIngreso` |
+| Hacer el primer pronóstico | Sí, en `pronosticos.guardar` |
+| **Crear la quiniela** | ⛔ **No** |
+
+Así que quien creaba una quiniela **no aparecía en su propia tabla de posiciones
+ni en sus cobros** hasta que pronosticara. Ahora `quinielas.crear` la crea, en la
+misma transacción que la quiniela y la membresía: van juntas o no van.
+
+`cobrar_desde` queda a `NULL` —«desde siempre»— y es lo correcto: la quiniela
+acaba de nacer y no hay jornadas anteriores de las que eximir a nadie.
+
+**No se hizo migración para las tres quinielas viejas**, por decisión del
+usuario: son de prueba, y en cuanto alguien pronostique la ficha se crea sola.
+
+## Tres pruebas se pusieron rojas, y estaban bien
+
+Las tres contaban jugadores y esperaban que el propietario no estuviera:
+
+```
+aprobar a un miembro le crea su jugador     → esperaba 1, ahora hay 2
+aprobar dos veces no duplica el jugador     → esperaba 1, ahora hay 2
+los jugadores de dos quinielas no se mezclan → esperaba 1, ahora hay 2
+```
+
+Ninguna era una regresión: fijaban el estado viejo. La tercera es la más
+interesante, porque **lo que prueba de verdad no es el número sino el
+aislamiento**: que la quiniela A no vea los jugadores de la B aunque sea la
+misma persona. Si la RLS fallara, ahí saldrían cuatro en vez de dos. Se dejó
+escrito, porque el número solo no lo explica.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/quinielas.js` | Al crear la quiniela se crea la ficha del propietario |
+| `test/plataforma.test.js` | 3 pruebas puestas al día, 2 nuevas |
+
+**Verificación:**
+
+```
+npm test → 445/445
+en Neon, antes de tocar nada: 12 de 12 fichas en la quiniela real, 3 huecos
+  en las de prueba
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Mirar los datos del usuario antes de proponer, no después.** Se le
+   ofreció un arreglo de media hora para un problema que su quiniela no tenía, y
+   sólo se vio al consultar la base. **Una pregunta sobre lo que ve en pantalla
+   habría costado un mensaje** y habría ahorrado el diseño entero.
+2. ⚠️ **Un dato que nace por varios caminos acaba teniendo un camino sin
+   cubrir.** La ficha de jugador se creaba al aprobar y al pronosticar, y nadie
+   se acordó de la tercera puerta —crear la quiniela— porque quien la usa es una
+   sola persona y además la que menos se mira.
+3. ⚠️ **Una prueba que cuenta filas rara vez prueba el número.** Las tres que se
+   rompieron comprobaban «hay 1 jugador», cuando lo que les importaba era otra
+   cosa: que no se duplique, y que no se mezclen entre quinielas. Al cambiar el
+   número había que releer **qué defendía cada una** antes de tocarlas.
+4. **Y la respuesta a lo que se preguntó era «ya funciona».** No siempre lo
+   pedido es lo que falta; a veces lo que falta es enseñar lo que ya hay.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**.
+
+⚠️ Y queda anotado, por si vuelve a salir: hoy se puede eximir a alguien de la
+**cuota de torneo** con la casilla «Juega el torneo completo» de cada persona,
+pero **no de la cuota por jornada**. Para eso sólo existe `cobrar_desde`, que
+mueve el punto de partida. Si algún día hace falta eximir a alguien de las
+jornadas, es una columna más en `jugadores` y una casilla al lado de la otra.
 
 ---
 
