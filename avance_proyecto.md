@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 445/445
+npm test                    # 451/451
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **445**, ~72 s |
+| Pruebas rápidas | **451**, ~72 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -387,8 +387,23 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
 ✅ **Las migraciones 002, 003 y 004 están corridas y verificadas contra Neon**,
-todas el 25 de agosto, igual que `SUPERADMIN_EMAILS` en Render. **No queda
-ningún paso manual pendiente.**
+todas el 25 de agosto, igual que `SUPERADMIN_EMAILS` en Render.
+
+⛔ **La 005 está PENDIENTE**: `db/migraciones/005-cobro-por-jugador.sql`, con el
+rol dueño y **antes** de empujar. Añade `jugadores.juega_jornadas`, la casilla
+que decide a quién se le cobra la cuota por jornada.
+
+⚠️ Y después conviene comprobar que **nadie quedó exento sin querer**, también
+con el rol dueño:
+
+```sql
+SELECT count(*) FILTER (WHERE NOT juega_jornadas) AS exentos FROM jugadores;
+-- tiene que dar 0 justo después de la migración
+```
+
+Esa consulta no vale desde la aplicación: `jugadores` lleva RLS, así que una
+consulta global con `app_quiniela` devolvería cero filas **sin fallar**, y
+parecería que todo está bien.
 
 De las tres, la que enseñó algo fue la **003**: al comprobar la base después de
 la 002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría —un
@@ -1083,7 +1098,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 445 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 451 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -11990,6 +12005,130 @@ Redesplegar; **no toca la base**.
 pero **no de la cuota por jornada**. Para eso sólo existe `cobrar_desde`, que
 mueve el punto de partida. Si algún día hace falta eximir a alguien de las
 jornadas, es una columna más en `jugadores` y una casilla al lado de la otra.
+
+---
+
+
+### 📌 Entrada 076 — 26 de agosto de 2026 — Quién paga las jornadas, persona a persona
+
+**Objetivo:** el usuario pidió una casilla junto a cada jugador para decidir si
+se le cobra la cuota por jornada, igual que la que ya existía para el torneo.
+Salió de la Entrada 075: allí quedó anotado que se podía eximir a alguien del
+torneo pero **no de las jornadas**, y ese hueco es el que se cierra ahora.
+
+## Las tres decisiones, preguntadas antes de escribir
+
+| Pregunta | Qué se eligió |
+|---|---|
+| ¿Y lo que ya había abonado quien se exime? | **Queda como saldo a favor.** No se toca el historial |
+| ¿Qué ve en su portada quien no paga jornadas? | **Nada de jornadas.** Ni un «al día», ni un ₡0 |
+| ¿Cómo van las dos casillas? | **Una debajo de la otra**, cada una en su fila |
+
+La segunda tiene su razón: **un cero se lee como «pagado por suerte», no como
+«esto no te toca»**, y hablarle a alguien de una cuota que no le corresponde
+sólo genera la pregunta.
+
+## ⛔ El `DEFAULT true` es la mitad del trabajo
+
+La columna nueva es `jugadores.juega_jornadas boolean NOT NULL DEFAULT true`, y
+ese valor por defecto no es un detalle de estilo.
+
+Con `DEFAULT false`, la migración correría sobre las doce personas que ya hay y
+**las dejaría exentas a todas**: la deuda de la quiniela desaparecería de golpe.
+Y no fallaría —las cuentas saldrían en cero y todo el mundo aparecería al día—,
+que es exactamente el fallo que no se descubre hasta que alguien reclama.
+
+⚠️ Y para entonces **no habría forma de reconstruir el número bueno**, porque
+las cuentas se calculan y no se guardan (Entrada 061). Un dato que se borra en
+silencio en un sistema que no guarda saldos es irrecuperable.
+
+La misma lógica en la aritmética, que pregunta con `!== false` y no con
+`=== true`: un jugador que llegue sin el campo —de una consulta a la que se le
+olvidó la columna— **tiene que pagar**. El valor por defecto de una duda sobre
+dinero es cobrar, no perdonar. Hay centinela para las dos cosas.
+
+## Lo que se conserva al eximir
+
+Quitar la casilla **no borra nada**. Los abonos siguen anotados, cuentan como
+saldo a favor, y la pantalla lo dice:
+
+```
+Napoleón
+  No se le cobran las jornadas — tiene ₡6.000 a favor
+```
+
+Si se le vuelve a marcar, su dinero vuelve a descontarse como si nada hubiera
+pasado. Es coherente con la regla de los abonos desde el primer día: no se
+editan ni se borran, sólo se corrigen con un asiento inverso — y eximir a
+alguien no es corregir un abono.
+
+## Un detalle de la ruta que no se ve
+
+Cada casilla manda **sólo su campo**, y la ruta usa `COALESCE(parámetro,
+columna)`: lo que no viaja se queda como estaba. Sin eso, marcar una casilla
+desmarcaría la otra en silencio, porque la pantalla envía una por vez. Hay una
+prueba de ruta dedicada a ese caso concreto.
+
+`cobrar_desde` necesita su propio interruptor aparte, y por una razón que se
+olvida: **su valor legítimo puede ser `null`** —«desde siempre»— y con
+`COALESCE` no habría forma de ponerlo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/005-cobro-por-jugador.sql` | **Nueva.** La columna, con su `DEFAULT true` |
+| `db/esquema.sql` | Lo mismo, para instalaciones desde cero |
+| `src/cobros.js` | La cuenta responde cero, y dice `juega` para que la pantalla lo distinga |
+| `src/pagos.js` | Lee y guarda el campo; cada campo se toca sólo si vino |
+| `src/rutas/admin.js` | Un campo más en la ruta que ya existía |
+| `private/js/cobros.js` | La segunda casilla, y el saldo a favor de quien está exento |
+| `private/js/index-cuenta.js` | A quien no se le cobran, no se le habla de jornadas |
+| `test/cobros.test.js` | 4 puras |
+| `test/rutas.test.js` | 1 de ruta: que una casilla no pise la otra |
+| `test/architecture.test.js` | 1 centinela |
+
+**Verificación:**
+
+```
+npm test         → 451/451
+npm run test:e2e → 112/112
+el centinela, con DEFAULT false a propósito → falla (comprobado)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **El valor por defecto de una columna nueva es una decisión sobre los
+   datos que ya existen.** `DEFAULT false` aquí habría perdonado la deuda de
+   toda la quiniela, sin error y sin rastro. Cuando una columna nace sobre
+   datos reales, la pregunta no es «qué tiene sentido» sino «qué le pasa a lo
+   que ya hay».
+2. ⚠️ **En dinero, el valor por defecto de una duda es cobrar.** Por eso la
+   aritmética pregunta `!== false`: si el dato no llega, se cobra. Perdonar por
+   omisión es la forma silenciosa de perder dinero de otros.
+3. ⚠️ **Un `₡0` y un «no te corresponde» no son lo mismo para quien lo lee.**
+   Enseñar la cuota en cero a alguien exento le hace creer que está al día por
+   suerte. La ausencia de la sección dice más que un cero.
+4. **Actualizar un campo sin pisar sus vecinos es una decisión explícita.**
+   `COALESCE(parámetro, columna)` deja lo que no vino; sin eso, dos casillas en
+   la misma ruta se apagan la una a la otra. Y `cobrar_desde` no puede usar ese
+   patrón porque `null` es un valor suyo legítimo.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/005-cobro-por-jugador.sql` en Neon con el rol dueño
+ANTES de empujar.** Al revés, el código consulta una columna que no existe.
+
+Y comprobar después, con el rol dueño, que nadie quedó exento sin querer:
+
+```sql
+SELECT count(*) FILTER (WHERE NOT juega_jornadas) AS exentos FROM jugadores;
+-- tiene que dar 0 justo después de la migración
+```
+
+⚠️ Esa consulta va con el rol dueño y no desde la aplicación: `jugadores` lleva
+RLS, así que una consulta global desde `app_quiniela` devolvería cero filas sin
+fallar — y parecería que todo está bien.
 
 ---
 

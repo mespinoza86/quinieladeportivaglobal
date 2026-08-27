@@ -180,14 +180,38 @@ function cuentaDeJugador({ jugador, jornadas = [], pagos = [], cobros } = {}) {
   };
 
   /* ---- Cuota por jornada ---- */
-  const debeJornadas = config.jornada.activo
+
+  /*
+   * ⚠️ Dos condiciones, no una: que la quiniela cobre jornadas Y que a ESTA
+   * persona se le cobren. La segunda es la casilla «Se le cobran las jornadas»,
+   * gemela de la del torneo, y sirve para eximir a quien el administrador
+   * decida —el caso que la motivó: que un administrador no tenga que pagar—.
+   *
+   * `!== false` y no `=== true`: un jugador que venga sin el campo —de una
+   * consulta vieja, de una prueba— tiene que pagar. **El valor por defecto de
+   * una duda sobre dinero es cobrar, no perdonar.**
+   */
+  const juegaJornadas = jugador?.juegaJornadas !== false;
+
+  const debeJornadas = config.jornada.activo && juegaJornadas
     ? debePorJornadas(jornadas, jugador?.cobrarDesde ?? null)
     : 0;
+
   const abonadoJornadas = totalAbonado(pagos, 'jornada');
   const saldo = aMonto(abonadoJornadas - debeJornadas);
 
   const jornada = {
     activo: config.jornada.activo,
+    /*
+     * Se dice aparte de `activo` a propósito: «la quiniela no cobra jornadas» y
+     * «a ti no te las cobramos» son cosas distintas, y quien pinta la pantalla
+     * necesita distinguirlas para no enseñar una cuota que no le toca a nadie.
+     *
+     * ⚠️ Y lo abonado se conserva aunque no se le cobre: sus pagos siguen
+     * contados y salen como saldo a favor. Quitarle la casilla no le borra el
+     * dinero que puso.
+     */
+    juega: juegaJornadas,
     debe: debeJornadas,
     abonado: abonadoJornadas,
     // Positivo es saldo A FAVOR; negativo es lo que debe.

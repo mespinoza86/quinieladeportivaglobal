@@ -3281,3 +3281,45 @@ test('⛔ la casilla «ya terminó» fija el resultado, y sin ella el proveedor 
   assert.equal(leido.body.partidos[0].estado, 'TC');
   assert.equal(leido.body.partidos[1].estado, 'TC');
 });
+
+test('⛔ la casilla de jornadas se guarda, y no pisa la del torneo', async () => {
+  const jefe = await admin('cobrojor');
+
+  await jefe.agente.post('/api/quiniela-actual/configuracion')
+    .send({});   // sólo para asegurar que la quiniela existe y responde
+
+  // Se encienden las dos cuotas.
+  const cfg = await jefe.agente.patch('/api/quiniela-actual/configuracion').send({
+    cobros: { torneo: { activo: true, precio: 10000 }, jornada: { activo: true, precio: 2000 } }
+  });
+  assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
+
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+
+  const antes = await jefe.agente.get('/api/cobros/cuentas');
+  assert.equal(antes.status, 200, JSON.stringify(antes.body));
+
+  const yo = antes.body.cuentas.find(c => c.nombre === jefe.datos.username);
+  assert.ok(yo, 'quien crea la quiniela sale en la lista de cobros');
+  assert.equal(yo.juegaJornadas, true, 'por defecto se le cobran');
+  assert.equal(yo.jornada.debe, 2000);
+
+  /*
+   * ⚠️ Se manda SÓLO `juegaJornadas`. Lo que se comprueba es que eso no borre
+   * `juegaTorneo`: la pantalla envía una casilla por vez, y si la ruta
+   * sobrescribiera lo que no viaja, marcar una desmarcaría la otra en silencio.
+   */
+  const patch = await jefe.agente
+    .patch(`/api/cobros/jugadores/${yo.jugadorId}`)
+    .send({ juegaJornadas: false });
+
+  assert.equal(patch.status, 200, JSON.stringify(patch.body));
+
+  const despues = await jefe.agente.get('/api/cobros/cuentas');
+  const ahora = despues.body.cuentas.find(c => c.jugadorId === yo.jugadorId);
+
+  assert.equal(ahora.juegaJornadas, false);
+  assert.equal(ahora.jornada.debe, 0, 'deja de deber las jornadas');
+  assert.equal(ahora.juegaTorneo, true, 'y la casilla del torneo sigue como estaba');
+  assert.equal(ahora.torneo.debe, 10000, 'el torneo se le sigue cobrando');
+});

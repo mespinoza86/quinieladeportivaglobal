@@ -250,3 +250,113 @@ test('los precios negativos de la configuración se ignoran', () => {
   const config = cobros.normalizarCobros({ cobros: { jornada: { activo: true, precio: -500 } } });
   assert.equal(config.jornada.precio, 0, 'un precio negativo pagaría por jugar');
 });
+
+
+/* ============ A quién se le cobran las jornadas ============ */
+
+/*
+ * La casilla «Se le cobran las jornadas», gemela de la del torneo. La pidió el
+ * usuario para poder eximir a alguien —el caso que la motivó: que un
+ * administrador no pague— y vale para cualquier persona, no sólo para quien
+ * administra.
+ */
+
+const JORNADAS = [
+  { secuencia: 1, precio: 2000 },
+  { secuencia: 2, precio: 2000 }
+];
+
+const COBRA_JORNADAS = { jornada: { activo: true, precio: 2000 }, torneo: { activo: false, precio: 0 } };
+
+test('⛔ a quien no se le cobran las jornadas no debe nada, aunque la quiniela cobre', () => {
+  const exento = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: false },
+    jornadas: JORNADAS,
+    pagos: [],
+    cobros: COBRA_JORNADAS
+  });
+
+  assert.equal(exento.jornada.debe, 0, 'no se le cobra nada');
+  assert.equal(exento.jornada.juega, false, 'y se dice, para que la pantalla no lo pinte como al día');
+  assert.equal(exento.jornada.alDia, true);
+
+  // Y quien sí paga, sigue debiendo lo de siempre.
+  const normal = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: true },
+    jornadas: JORNADAS,
+    pagos: [],
+    cobros: COBRA_JORNADAS
+  });
+
+  assert.equal(normal.jornada.debe, 4000, 'a los demás no les cambia nada');
+});
+
+test('⚠️ sin el campo, se cobra: el valor por defecto de una duda sobre dinero es cobrar', () => {
+  /*
+   * Un jugador que llegue sin `juegaJornadas` —de una consulta vieja, de un
+   * arnés que no lo pase— tiene que pagar. Si el defecto fuera «exento», una
+   * consulta a la que se le olvide la columna perdonaría la deuda de todos
+   * **sin dar ningún error**.
+   */
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: {},
+    jornadas: JORNADAS,
+    pagos: [],
+    cobros: COBRA_JORNADAS
+  });
+
+  assert.equal(cuenta.jornada.debe, 4000);
+  assert.equal(cuenta.jornada.juega, true);
+});
+
+test('⛔ eximir a alguien NO le borra lo que ya había abonado', () => {
+  /*
+   * Decisión del usuario: lo pagado queda como saldo a favor. El historial no
+   * se toca, y si se le vuelve a marcar la casilla su dinero sigue contando.
+   */
+  const pagos = [{ concepto: 'jornada', monto: '6000' }];
+
+  const exento = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: false },
+    jornadas: JORNADAS,
+    pagos,
+    cobros: COBRA_JORNADAS
+  });
+
+  assert.equal(exento.jornada.debe, 0);
+  assert.equal(exento.jornada.abonado, 6000, 'sus abonos siguen ahí');
+  assert.equal(exento.jornada.saldo, 6000, 'y salen como saldo a favor');
+
+  // Y al volver a marcársela, la cuenta vuelve a salir como antes.
+  const otraVez = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: true },
+    jornadas: JORNADAS,
+    pagos,
+    cobros: COBRA_JORNADAS
+  });
+
+  assert.equal(otraVez.jornada.debe, 4000);
+  assert.equal(otraVez.jornada.saldo, 2000, 'los 6000 menos las dos jornadas');
+});
+
+test('las dos casillas son independientes', () => {
+  const soloTorneo = cobros.cuentaDeJugador({
+    jugador: { juegaTorneo: true, juegaJornadas: false },
+    jornadas: JORNADAS,
+    pagos: [],
+    cobros: { torneo: { activo: true, precio: 10000 }, jornada: { activo: true, precio: 2000 } }
+  });
+
+  assert.equal(soloTorneo.torneo.debe, 10000, 'el torneo sí');
+  assert.equal(soloTorneo.jornada.debe, 0, 'las jornadas no');
+
+  const soloJornadas = cobros.cuentaDeJugador({
+    jugador: { juegaTorneo: false, juegaJornadas: true },
+    jornadas: JORNADAS,
+    pagos: [],
+    cobros: { torneo: { activo: true, precio: 10000 }, jornada: { activo: true, precio: 2000 } }
+  });
+
+  assert.equal(soloJornadas.torneo.debe, 0);
+  assert.equal(soloJornadas.jornada.debe, 4000);
+});

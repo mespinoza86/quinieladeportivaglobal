@@ -121,7 +121,7 @@ async function anular(quinielaId, pagoId, { registradoPor, nota } = {}) {
 async function cuentas(quinielaId, configuracion) {
   const { jugadores, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
     const [j, jo, p] = await Promise.all([
-      c.query(`SELECT id, nombre, usuario_id, cobrar_desde, juega_torneo
+      c.query(`SELECT id, nombre, usuario_id, cobrar_desde, juega_torneo, juega_jornadas
                  FROM jugadores ORDER BY nombre`),
       c.query('SELECT id, nombre, secuencia, precio FROM jornadas ORDER BY secuencia'),
       c.query('SELECT jugador_id, concepto, monto FROM pagos')
@@ -141,8 +141,13 @@ async function cuentas(quinielaId, configuracion) {
     tieneCuenta: Boolean(jugador.usuario_id),
     cobrarDesde: jugador.cobrar_desde,
     juegaTorneo: jugador.juega_torneo,
+    juegaJornadas: jugador.juega_jornadas,
     ...cobros.cuentaDeJugador({
-      jugador: { juegaTorneo: jugador.juega_torneo, cobrarDesde: jugador.cobrar_desde },
+      jugador: {
+        juegaTorneo: jugador.juega_torneo,
+        juegaJornadas: jugador.juega_jornadas,
+        cobrarDesde: jugador.cobrar_desde
+      },
       jornadas,
       pagos: porJugador.get(jugador.id) || [],
       cobros: configuracion?.cobros
@@ -160,7 +165,8 @@ async function cuentas(quinielaId, configuracion) {
 async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
   const { jugador, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
-      `SELECT id, nombre, cobrar_desde, juega_torneo FROM jugadores WHERE id = $1`,
+      `SELECT id, nombre, cobrar_desde, juega_torneo, juega_jornadas
+         FROM jugadores WHERE id = $1`,
       [jugadorId]);
     if (!j) return { jugador: null, jornadas: [], pagos: [] };
 
@@ -173,7 +179,11 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
 
   if (!jugador) return null;
 
-  const suyo = { juegaTorneo: jugador.juega_torneo, cobrarDesde: jugador.cobrar_desde };
+  const suyo = {
+    juegaTorneo: jugador.juega_torneo,
+    juegaJornadas: jugador.juega_jornadas,
+    cobrarDesde: jugador.cobrar_desde
+  };
   const cuenta = cobros.cuentaDeJugador({
     jugador: suyo, jornadas, pagos, cobros: configuracion?.cobros
   });
@@ -201,18 +211,31 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
  * Sólo lo toca un administrador, y a mano: son las dos cosas que no se pueden
  * deducir solas cuando alguien entra a mitad de temporada.
  */
-async function ajustarJugador(quinielaId, jugadorId, { juegaTorneo, cobrarDesde }) {
+/**
+ * Cambia lo que se le cobra a un jugador.
+ *
+ * ⚠️ Cada campo se toca SÓLO si vino. `COALESCE($n, columna)` deja el valor
+ * anterior cuando el parámetro es nulo, así que mandar una casilla no borra la
+ * otra: la pantalla envía una sola cuando se marca, y la que no viaja se queda
+ * como estaba.
+ *
+ * `cobrarDesde` necesita su propio interruptor porque su valor legítimo puede
+ * ser `null` —«desde siempre»— y con `COALESCE` no habría forma de ponerlo.
+ */
+async function ajustarJugador(quinielaId, jugadorId, { juegaTorneo, juegaJornadas, cobrarDesde }) {
   return db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
       `UPDATE jugadores
-          SET juega_torneo = COALESCE($2, juega_torneo),
-              cobrar_desde = CASE WHEN $4 THEN $3 ELSE cobrar_desde END
+          SET juega_torneo   = COALESCE($2, juega_torneo),
+              juega_jornadas = COALESCE($5, juega_jornadas),
+              cobrar_desde   = CASE WHEN $4 THEN $3 ELSE cobrar_desde END
         WHERE id = $1
-        RETURNING id, nombre, juega_torneo, cobrar_desde`,
+        RETURNING id, nombre, juega_torneo, juega_jornadas, cobrar_desde`,
       [jugadorId,
        juegaTorneo === undefined ? null : Boolean(juegaTorneo),
        cobrarDesde === undefined || cobrarDesde === null ? null : Number(cobrarDesde),
-       cobrarDesde !== undefined]);
+       cobrarDesde !== undefined,
+       juegaJornadas === undefined ? null : Boolean(juegaJornadas)]);
     return j || null;
   });
 }

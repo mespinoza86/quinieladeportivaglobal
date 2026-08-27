@@ -205,6 +205,18 @@ CREATE TABLE jugadores (
   -- sin esta marca apareceria como deudor eterno de algo que nunca quiso.
   juega_torneo boolean NOT NULL DEFAULT true,
 
+  -- Y si se le cobra la cuota POR JORNADA (migracion 005). La gemela de la
+  -- anterior: el administrador decide, persona a persona, quien paga.
+  --
+  -- ⛔ `DEFAULT true` a proposito. Con `false`, una instalacion nueva -o una
+  -- columna anadida sobre datos existentes- dejaria exento a todo el mundo y la
+  -- deuda de la quiniela desapareceria SIN DAR NINGUN ERROR: las cuentas
+  -- saldrian en cero y todos apareceria al dia.
+  --
+  -- ⚠️ Quitarla NO borra los abonos: lo pagado queda como saldo a favor, y
+  -- vuelve a contar si se le marca otra vez.
+  juega_jornadas boolean NOT NULL DEFAULT true,
+
   UNIQUE (quiniela_id, nombre)
 );
 

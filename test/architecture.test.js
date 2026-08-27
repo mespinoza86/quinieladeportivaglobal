@@ -512,6 +512,41 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ las dos casillas de cobro nacen COBRANDO, no perdonando', () => {
+  /*
+   * `juega_torneo` y `juega_jornadas` deciden a quien se le cobra cada cuota.
+   *
+   * ⛔ Las dos tienen que ser `NOT NULL DEFAULT true`, y no es un detalle de
+   * estilo: con `DEFAULT false`, una columna anadida sobre datos existentes
+   * dejaria exenta a TODA la quiniela y la deuda desapareceria de golpe.
+   *
+   * Y no fallaria: las cuentas saldrian en cero y todo el mundo apareceria al
+   * dia. Un fallo que borra dinero sin dar ningun error no se descubre hasta
+   * que alguien reclama — y para entonces no hay forma de saber cual era el
+   * numero bueno, porque las cuentas se CALCULAN y no se guardan.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+
+  for (const columna of ['juega_torneo', 'juega_jornadas']) {
+    assert.match(esquema, new RegExp(`${columna}\\s+boolean NOT NULL DEFAULT true`),
+      `${columna} tiene que nacer en true: en false perdonaria la deuda de todos`);
+  }
+
+  const migracion = leer(path.join('db', 'migraciones', '005-cobro-por-jugador.sql'));
+  assert.match(migracion, /juega_jornadas boolean NOT NULL DEFAULT true/,
+    'la migracion tambien: es la que corre sobre los datos que ya existen');
+
+  /*
+   * Y la aritmetica pregunta con `!== false`, no con `=== true`: un jugador que
+   * llegue sin el campo -de una consulta a la que se le olvido la columna- tiene
+   * que PAGAR. El valor por defecto de una duda sobre dinero es cobrar.
+   */
+  const cobrosMod = quitarComentarios(leer(path.join('src', 'cobros.js')));
+
+  assert.match(cobrosMod, /juegaJornadas\s*=\s*jugador\?\.juegaJornadas\s*!==\s*false/);
+  assert.match(cobrosMod, /juegaTorneo\s*=\s*jugador\?\.juegaTorneo\s*!==\s*false/);
+});
+
 test('⛔ un resultado definitivo no lo reescribe el proveedor, y no se empeora ninguno', () => {
   /*
    * La regla decidida el 25 de agosto: en cuanto un partido termina y su

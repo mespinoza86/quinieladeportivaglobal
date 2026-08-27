@@ -70,7 +70,22 @@ document.addEventListener('DOMContentLoaded', () => {
           : html`<p class="helper-text">No juega el torneo completo</p>`);
       }
 
-      if (c.jornada.activo) {
+      if (c.jornada.activo && !c.jornada.juega) {
+        /*
+         * Se dice igual que en el torneo, y hace falta decirlo: sin esta línea
+         * una persona exenta se vería «al día» y parecería que pagó.
+         *
+         * ⚠️ Y si ya había abonado antes de eximirla, ese dinero **sigue
+         * contando** y hay que enseñarlo: quitarle la casilla no le borra lo
+         * que puso, y quien administra tiene que saber que hay un saldo suyo
+         * pendiente de devolver o de reutilizar.
+         */
+        lineas.push(c.jornada.abonado > 0
+          ? html`<p class="helper-text">
+              No se le cobran las jornadas — tiene ${plata(c.jornada.abonado)} a favor
+            </p>`
+          : html`<p class="helper-text">No se le cobran las jornadas</p>`);
+      } else if (c.jornada.activo) {
         if (c.jornada.saldo < 0) {
           lineas.push(html`<p class="helper-text">Jornadas: debe ${plata(-c.jornada.saldo)}</p>`);
         } else if (c.jornada.saldo > 0) {
@@ -97,6 +112,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <input type="checkbox" class="juegaTorneo" data-jugador="${c.jugadorId}" ${c.juegaTorneo ? 'checked' : ''} />
           <span>Juega el torneo completo</span>
         </label>
+        <label class="checkbox-fila">
+          <input type="checkbox" class="juegaJornadas" data-jugador="${c.jugadorId}" ${c.juegaJornadas ? 'checked' : ''} />
+          <span>Se le cobran las jornadas</span>
+        </label>
       </div>`;
     }).join('');
 
@@ -104,21 +123,34 @@ document.addEventListener('DOMContentLoaded', () => {
       .map(c => html`<option value="${c.jugadorId}">${c.nombre}</option>`)
       .join('');
 
-    for (const casilla of listaCuentas.querySelectorAll('.juegaTorneo')) {
-      casilla.addEventListener('change', async () => {
-        try {
-          await api('/api/cobros/jugadores/' + casilla.dataset.jugador, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ juegaTorneo: casilla.checked })
-          });
-          await cargar();
-        } catch (error) {
-          mensaje.textContent = error.message;
-          casilla.checked = !casilla.checked;   // deshacer lo que no se guardó
-        }
-      });
+    /*
+     * Las dos casillas se guardan igual y por separado: cada una manda SÓLO su
+     * campo, así que tocar una no puede pisar la otra. La ruta deja como estaba
+     * lo que no viaja.
+     */
+    const CASILLAS = [
+      { clase: 'juegaTorneo', campo: 'juegaTorneo' },
+      { clase: 'juegaJornadas', campo: 'juegaJornadas' }
+    ];
+
+    for (const { clase, campo } of CASILLAS) {
+      for (const casilla of listaCuentas.querySelectorAll('.' + clase)) {
+        casilla.addEventListener('change', async () => {
+          try {
+            await api('/api/cobros/jugadores/' + casilla.dataset.jugador, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ [campo]: casilla.checked })
+            });
+            await cargar();
+          } catch (error) {
+            mensaje.textContent = error.message;
+            casilla.checked = !casilla.checked;   // deshacer lo que no se guardó
+          }
+        });
+      }
     }
+
   }
 
   function pintarHistorial(abonos) {

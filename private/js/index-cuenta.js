@@ -40,7 +40,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         : html`<p class="helper-text">Cuota del torneo: al día ✅</p>`);
     }
 
-    if (cuenta.jornada?.activo) {
+    /*
+     * ⚠️ `juega !== false` además de `activo`: a esta persona pueden no
+     * cobrársele las jornadas aunque la quiniela sí las cobre.
+     *
+     * Y entonces no se le enseña NADA de jornadas —ni un «al día», ni un ₡0—.
+     * Un cero se lee como «pagado por suerte» y no como «esto no te toca», y
+     * hablarle de una cuota que no le corresponde sólo genera la pregunta.
+     *
+     * Si además no juega el torneo, `bloques` queda vacío y la tarjeta «Mis
+     * pagos» no llega a aparecer.
+     */
+    if (cuenta.jornada?.activo && cuenta.jornada.juega !== false) {
       /* La última que le toca es la que le interesa: la que se está jugando. */
       const suyas = cuenta.jornadas || [];
       const actual = suyas[suyas.length - 1];

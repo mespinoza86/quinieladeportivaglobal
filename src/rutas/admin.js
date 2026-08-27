@@ -438,14 +438,18 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
       return res.status(400).json({ error: 'Ese jugador no es válido.' });
     }
 
-    const { juegaTorneo, cobrarDesde } = req.body || {};
+    const { juegaTorneo, juegaJornadas, cobrarDesde } = req.body || {};
 
     if (cobrarDesde !== undefined && cobrarDesde !== null && !(Number(cobrarDesde) >= 1)) {
       return res.status(400).json({ error: 'La jornada desde la que se cobra no es válida.' });
     }
 
+    /*
+     * Los tres campos son opcionales e independientes: la pantalla manda sólo
+     * el que se tocó, y lo que no viaja se queda como estaba.
+     */
     const j = await pagosMod.ajustarJugador(req.quiniela.id, req.params.jugadorId,
-      { juegaTorneo, cobrarDesde });
+      { juegaTorneo, juegaJornadas, cobrarDesde });
 
     if (!j) return res.status(404).json({ error: 'Jugador no encontrado.' });
     res.json({ success: true, jugador: j });
