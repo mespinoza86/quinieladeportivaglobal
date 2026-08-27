@@ -86,7 +86,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     `).join('');
 
-    liveCard.style.display = 'block';
+    /*
+     * ⛔ SE QUITA EL ESTILO EN LÍNEA, no se pone `display: block`.
+     *
+     * Un estilo en línea gana sobre una clase, así que `style.display = 'block'`
+     * dejaba el panel visible PARA SIEMPRE, tuviera o no el turno del rotador.
+     * Y como `.rotator-panel` sin `.active` lleva `opacity: 0`, el resultado era
+     * un panel **invisible que seguía ocupando todo su alto**: 189 px de hueco
+     * medidos en la portada, y el rotador ocupando el triple de lo que enseñaba.
+     *
+     * Quitándolo, el panel vuelve a depender de la clase: oculto salvo cuando
+     * el rotador le da el turno. «Tener contenido» y «estar visible» dejan de
+     * ser la misma cosa, que era el error de fondo.
+     */
+    liveCard.style.removeProperty('display');
 
   } catch (error) {
     console.error('Error cargando partidos en vivo:', error);

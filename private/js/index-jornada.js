@@ -55,7 +55,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     `).join('');
 
-    tarjeta.style.display = 'block';
+    /*
+     * ⛔ Se QUITA el estilo en línea; ver `index-live.js`. Ponerlo a `block`
+     * dejaba el panel ocupando su alto aunque no tuviera el turno, porque un
+     * estilo en línea gana sobre la clase y `.rotator-panel` sólo lo hacía
+     * transparente. Eso era el hueco de la portada.
+     */
+    tarjeta.style.removeProperty('display');
 
   } catch (error) {
     console.error('Error cargando el podio de la jornada:', error);

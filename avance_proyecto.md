@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 451/451
+npm test                    # 452/452
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **451**, ~72 s |
+| Pruebas rápidas | **452**, ~72 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -1098,7 +1098,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 451 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 452 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -12129,6 +12129,140 @@ SELECT count(*) FILTER (WHERE NOT juega_jornadas) AS exentos FROM jugadores;
 ⚠️ Esa consulta va con el rol dueño y no desde la aplicación: `jugadores` lleva
 RLS, así que una consulta global desde `app_quiniela` devolvería cero filas sin
 fallar — y parecería que todo está bien.
+
+---
+
+
+### 📌 Entrada 077 — 26 de agosto de 2026 — Un panel invisible que ocupaba 189 píxeles
+
+**Objetivo:** el usuario avisó de dos cosas en la portada: que sobraba mucho
+espacio entre el carrusel —la tabla general, o los partidos en vivo— y el botón
+de «Llenar quiniela», y que a veces el carrusel «dura mucho sin cambiar».
+
+## Se midió en vez de mirarlo
+
+En vez de leer el CSS y opinar, se abrió la portada en el navegador y se
+midieron los tres paneles:
+
+```
+rankingCard       display en línea: (ninguno) · calculado: block · alto 189px · SE VE
+liveMatchesCard   display en línea: none      · calculado: none  · alto   0px
+jornadaPodioCard  display en línea: block     · calculado: block · alto 189px · NO SE VE
+                  ⛔ INVISIBLE PERO OCUPA 189px
+
+alto total del rotador: 426px  (para enseñar 189)
+```
+
+**El rotador ocupaba más del doble de lo que enseñaba.** Ése era el espacio.
+
+## ⛔ La causa: dos formas distintas de ocultar, peleándose
+
+El CSS resuelve la rotación así:
+
+```css
+.rotator-panel        { display: none; opacity: 0; }
+.rotator-panel.active { display: block; }
+```
+
+Pero los scripts que llenan los paneles hacían, al tener contenido:
+
+```js
+tarjeta.style.display = 'block';
+```
+
+⚠️ **Un estilo en línea gana sobre una clase.** Así que en cuanto un panel se
+llenaba quedaba con `display: block` **para siempre**, tuviera o no el turno; y
+como la clase base le seguía aplicando `opacity: 0`, el resultado era un panel
+**invisible que seguía ocupando todo su alto**.
+
+El arreglo no es añadir nada, es **quitar**: `style.removeProperty('display')`.
+El panel vuelve a depender de la clase, y la clase ya hacía lo correcto.
+
+⛔ **El error de fondo era confundir dos cosas**: «tener contenido» y «estar
+visible». El script sabe lo primero; quién está visible sólo lo sabe el rotador.
+Ahora un panel sin nada que enseñar se marca con `display: none` en línea, y uno
+con contenido **no lleva estilo en línea ninguno**.
+
+Medido después: **426 px → 221 px**. Doscientos cinco píxeles de hueco muerto.
+
+## Y lo del tiempo era otro fallo, de verdad
+
+El intervalo son 10 segundos, pero el rotador guardaba **la posición** en la
+lista:
+
+```js
+indice = indice % paneles.length;
+mostrar(paneles[indice]);
+indice = (indice + 1) % paneles.length;
+```
+
+La lista se recalcula en cada giro —a propósito, porque cada panel se llena
+cuando termina su propia petición—, **pero el índice no se ajustaba a ese
+cambio**. Si al arrancar sólo había un panel listo y luego aparecían los otros,
+el índice volvía a caer en el mismo y el primero se quedaba **veinte segundos**.
+
+Ahora se recuerda el **panel**, no su posición:
+
+```js
+paneles[(paneles.indexOf(ultimo) + 1) % paneles.length]
+```
+
+`indexOf` da `-1` si el último ya no está en la lista, y `-1 + 1` es `0`: se
+empieza por el principio sin tratar el caso aparte.
+
+Comprobado dejándolo girar: alterna limpiamente, y el rotador mantiene 221 px en
+todos los giros en vez de los 426 fijos de antes.
+
+## ⚠️ El centinela acusó al inocente a la primera
+
+El primero que se escribió buscaba cualquier `tarjeta.style.display = 'flex'` y
+**acusó a `index-contexto.js`**, que enciende la tarjeta del superadministrador
+y no tiene nada que ver con el rotador.
+
+⛔ Un centinela que acusa al código correcto se acaba desactivando, y entonces
+deja de vigilar también lo que sí importa. Se rehízo sacando **los ids de los
+paneles del propio `index.html`** y mirando sólo los archivos que los
+mencionan: un panel nuevo entra solo en la comprobación, y nadie ajeno cae
+dentro.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/index-live.js` | Quita el estilo en línea en vez de poner `block` |
+| `private/js/index-jornada.js` | Lo mismo |
+| `private/js/index-rotador.js` | Recuerda el panel, no la posición |
+| `test/architecture.test.js` | 1 centinela, para las dos cosas |
+
+**Verificación:**
+
+```
+npm test         → 452/452
+npm run test:e2e → 112/112
+medido en el navegador: el rotador pasa de 426px a 221px
+dejándolo girar: alterna, sin repetir
+el centinela, roto en sus DOS formas → falla las dos veces
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un estilo en línea gana sobre una clase, y ahí se cuelan los fallos de
+   maquetación que no dan error.** Ocultar por clase y mostrar por estilo en
+   línea son dos mecanismos que no se pueden mezclar: el segundo siempre gana, y
+   lo que queda es un elemento invisible que ocupa sitio.
+2. ⚠️ **«Tener contenido» y «estar visible» son cosas distintas.** El script que
+   llena un panel sabe lo primero y no debe decidir lo segundo. Cuando los dos
+   se mezclan en el mismo atributo, el que manda es el último que escribió.
+3. ⚠️ **Guardar un índice sobre una lista que cambia es guardar la respuesta
+   equivocada.** La lista se recalculaba a propósito y el índice no: bastaba
+   recordar el elemento en vez de su posición.
+4. **Medir en el navegador dijo en un minuto lo que leer el CSS no.** El CSS
+   estaba bien escrito; el fallo estaba en quién lo pisaba desde JavaScript, y
+   eso sólo se ve preguntándole al navegador qué tiene calculado de verdad.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**.
 
 ---
 

@@ -512,6 +512,66 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ ningún panel del rotador se muestra con un estilo en línea', () => {
+  /*
+   * El hueco de la portada, medido: el rotador ocupaba 426 px para enseñar 189.
+   *
+   * Los scripts que llenan los paneles hacian `panel.style.display = 'block'`
+   * al tener contenido. **Un estilo en linea gana sobre una clase**, asi que el
+   * panel quedaba visible para siempre aunque no tuviera el turno; y como
+   * `.rotator-panel` sin `.active` solo le pone `opacity: 0`, el resultado era
+   * un panel INVISIBLE QUE SEGUIA OCUPANDO SU ALTO.
+   *
+   * ⚠️ El fallo no daba ningun error y la pantalla parecia correcta: solo se
+   * veia como "sobra mucho espacio antes del boton".
+   *
+   * La regla: «tener contenido» y «estar visible» son cosas distintas. Un panel
+   * sin nada que enseñar se marca con `display: none` en linea; uno con
+   * contenido QUITA el estilo en linea y deja que mande la clase `.active`, que
+   * la pone y la quita `index-rotador.js`.
+   */
+  /*
+   * ⚠️ Los paneles se sacan del HTML, no de una lista escrita a mano: uno
+   * nuevo entra solo en la comprobacion. Y el filtro va por ESOS ids, no por
+   * nombres de variable — la primera version miraba cualquier `tarjeta.style` y
+   * acusaba a `index-contexto.js`, que enciende la tarjeta del
+   * superadministrador y no tiene nada que ver con el rotador.
+   *
+   * ⛔ Un centinela que acusa al codigo correcto se acaba desactivando, y
+   * entonces deja de vigilar tambien lo que si importa.
+   */
+  const portada = leer(path.join('public', 'index.html'));
+
+  const idsDePaneles = [...portada.matchAll(/id="([^"]+)"[^>]*class="[^"]*rotator-panel/g)]
+    .map(m => m[1])
+    .concat([...portada.matchAll(/class="[^"]*rotator-panel[^"]*"[^>]*id="([^"]+)"/g)].map(m => m[1]));
+
+  assert.ok(idsDePaneles.length >= 2,
+    `esperaba encontrar los paneles del rotador en index.html, hallados: ${idsDePaneles.length}`);
+
+  const dir = path.join(root, 'private', 'js');
+
+  for (const archivo of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    const codigo = quitarComentarios(fs.readFileSync(path.join(dir, archivo), 'utf8'));
+
+    // Solo los archivos que manejan un panel del rotador.
+    if (!idsDePaneles.some(id => codigo.includes(id))) continue;
+
+    const encendidos = codigo.match(/\.style\.display\s*=\s*'(block|flex)'/g) || [];
+
+    assert.deepEqual(encendidos, [],
+      `${archivo}: maneja un panel del rotador y lo enciende con estilo en linea, `
+      + 'que gana sobre la clase y lo deja ocupando sitio sin verse. '
+      + 'Usa `style.removeProperty("display")` y deja que mande `.active`');
+  }
+
+  // Y el rotador recuerda el PANEL, no su posicion: la lista cambia sola.
+  const rotador = quitarComentarios(leer(path.join('private', 'js', 'index-rotador.js')));
+
+  assert.match(rotador, /paneles\.indexOf\(ultimo\)/,
+    'con un indice guardado, un panel que se llena tarde hace repetir el anterior');
+});
+
 test('⛔ las dos casillas de cobro nacen COBRANDO, no perdonando', () => {
   /*
    * `juega_torneo` y `juega_jornadas` deciden a quien se le cobra cada cuota.

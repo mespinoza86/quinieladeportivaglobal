@@ -22,8 +22,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const INTERVALO_MS = 10000;
   const TRANSICION_MS = 80;
 
-  let indice = 0;
+  /*
+   * ⚠️ Se recuerda el PANEL mostrado, no su posición.
+   *
+   * Antes se guardaba un índice, y la lista se recalcula en cada giro porque
+   * los paneles se llenan a destiempo. Si al arrancar sólo había uno listo y
+   * después aparecían los otros, el índice volvía a caer en el mismo y **el
+   * primer panel se quedaba veinte segundos** en pantalla. Se veía como «a
+   * veces tarda el doble en cambiar», y era eso.
+   *
+   * Con la referencia al elemento da igual cómo crezca o mengüe la lista: se
+   * busca dónde está ahora el último que se enseñó y se pasa al siguiente.
+   */
+  let ultimo = null;
 
+  /*
+   * Un panel con `display:none` en línea es uno que dijo «no tengo nada que
+   * enseñar». Los que sí tienen contenido no llevan estilo en línea: su
+   * visibilidad la decide la clase `.active`, que pone y quita este archivo.
+   */
   function panelesConContenido() {
     return Array.from(contenedor.querySelectorAll('.rotator-panel'))
       .filter(panel => panel.style.display !== 'none');
@@ -47,17 +64,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function girar() {
-    const paneles = panelesConContenido();
-    if (!paneles.length) return;
-
     /*
      * La lista se recalcula en cada giro. Los paneles se llenan por su cuenta y
      * a destiempo —cada uno espera a su petición—, así que congelarla en el
      * arranque dejaría fuera al que tardara más en decidirse.
      */
-    indice = indice % paneles.length;
-    mostrar(paneles[indice]);
-    indice = (indice + 1) % paneles.length;
+    const paneles = panelesConContenido();
+    if (!paneles.length) return;
+
+    /*
+     * `indexOf` da -1 si el último ya no está en la lista —porque se quedó sin
+     * contenido, o porque es el primer giro—, y entonces `-1 + 1` es 0: se
+     * empieza por el principio. Sale bien sin tener que tratar el caso aparte.
+     */
+    const siguiente = paneles[(paneles.indexOf(ultimo) + 1) % paneles.length];
+
+    mostrar(siguiente);
+    ultimo = siguiente;
   }
 
   girar();
