@@ -12486,6 +12486,15 @@ cada uno de los tres COALESCE       → cae la prueba de las tres casillas
    `entregarAcumulado` para que aceptara un monto de fuera no tumbó ninguna
    prueba: la ruta nunca se lo pasaba. Había que romper **la ruta**, que es donde
    estaba la guarda de verdad.
+5. ⛔ **Antes de buscar una marca en una página, comprobar que la página se
+   sirve.** Dos direcciones que redirigen a login devuelven el mismo cuerpo, y
+   buscar algo dentro es preguntarle a una pared. Se ve en un segundo: **dos
+   páginas distintas no pesan lo mismo**.
+6. **Comparar lo servido con el historial de git dice QUÉ hay puesto**, no si ya
+   llegó lo nuevo. Es una respuesta en vez de una espera, y no depende de que yo
+   haya elegido bien la marca.
+7. ⚠️ **Render no despliega solo por empujar** —al menos no estaba configurado
+   así—. Lo di por hecho y se lo dije al usuario como un hecho.
 
 **Pendiente / siguiente paso:**
 
@@ -12496,6 +12505,51 @@ Después, en la quiniela real: poner ₡1.000 y ₡1.000 en la configuración. L
 jornadas que ya existen conservan sus ₡2.000 enteros como premio de jornada —el
 bote empieza a juntarse desde la siguiente—, que es lo correcto: nadie pagó por
 un acumulado que no existía.
+
+## ⛔ Y una sonda que volvió a decir «no» cuando quería decir «no sé»
+
+Es la tercera vez, y esta vez con el comentario de la Entrada 070 escrito en el
+propio archivo, dos líneas encima del fallo.
+
+La sonda del despliegue comprobaba tres direcciones. Dos de ellas
+—`/configuracion-quiniela.html` y `/cobros.html`— **redirigen a login sin
+sesión**, así que devolvían el cuerpo del redirect: 1.486 bytes, idénticos los
+dos. Las marcas que buscaba en ellas **no podían aparecer jamás**, y la sonda
+respondió «no» treinta veces con total seguridad.
+
+⚠️ La pista estaba a la vista y no la miré: **dos páginas distintas pesaban
+exactamente lo mismo**. Eso no pasa nunca, y era el aviso de que no estaba
+leyendo lo que creía.
+
+Lo que salvó la comprobación fue la tercera dirección, `/js/cobros.js`, que sí
+se sirve sin sesión, **y comparar lo servido contra el historial de git** en vez
+de contra lo que yo esperaba:
+
+```
+servido → 9.372 bytes = exactamente el commit 798ffef (Entrada 077)
+```
+
+Eso no dice «todavía no llegó»: dice **qué versión hay puesta**, que es una
+respuesta y no una espera.
+
+## Y un supuesto mío sobre Render que era falso
+
+Le dije al usuario que «Render redespliega solo en cuanto empuje». **No era
+cierto**: el servicio no estaba siguiendo la rama, y el despliegue no salió
+hasta que él lo subió a mano. Me pasé dieciséis minutos vigilando una versión
+que nadie había mandado desplegar.
+
+⚠️ Lo dije como un hecho sin haberlo comprobado nunca. Un supuesto sobre la
+infraestructura ajena no es más cierto por repetirlo.
+
+**Verificación del despliegue** (27 de agosto, después de subirlo a mano):
+
+```
+/js/cobros.js → 14.730 bytes, con la marca, DOS veces seguidas
+portada / login              → 200
+/cobros.html sin sesion      → 302 a login
+/api/cobros/botes sin sesion → 401   (existe y rechaza; un 404 seria que no esta)
+```
 
 ---
 
