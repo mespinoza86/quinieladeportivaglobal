@@ -13,8 +13,14 @@
 <label class="checkbox-fila"><input type="checkbox" id="torneoActivo" /><span>Cobrar cuota de torneo completo</span></label>
 <label class="field-label" for="torneoPrecio">Precio del torneo</label><input type="number" id="torneoPrecio" min="0" step="1" />
 <label class="checkbox-fila"><input type="checkbox" id="jornadaActivo" /><span>Cobrar por jornada</span></label>
-<label class="field-label" for="jornadaPrecio">Precio por jornada</label><input type="number" id="jornadaPrecio" min="0" step="1" />
-<p class="helper-text">⚠️ Cambiar el precio afecta sólo a las jornadas que se creen de ahora en adelante. Las que ya existen conservan lo que costaron.</p>
+<label class="field-label" for="jornadaPrecio">Cuota por jornada</label><input type="number" id="jornadaPrecio" min="0" step="1" />
+<p class="helper-text">Es el premio que se reparte en esa misma jornada.</p>
+
+<label class="field-label" for="jornadaAcumulado">Cuota al acumulado</label><input type="number" id="jornadaAcumulado" min="0" step="1" />
+<p class="helper-text">Se va juntando para el ganador de la tabla general al final del torneo. Déjalo en 0 si no quieres bote.</p>
+
+<p class="helper-text"><strong>Cada jugador paga: <span id="jornadaTotal">₡0</span></strong></p>
+<p class="helper-text">⚠️ Cambiar las cuotas afecta sólo a las jornadas que se creen de ahora en adelante. Las que ya existen conservan lo que costaron y cómo se repartían.</p>
 <button id="guardarCobros" type="button">Guardar cobros</button><p id="cobrosMensaje" class="form-message"></p></section>
 <section class="app-panel" id="favoritasPanel" hidden><h2>Ligas favoritas</h2>
 <p class="helper-text">Las que marques aquí salen de primero al armar una jornada. Si esa semana no tienen partidos, aparecen igual pero en gris.</p>

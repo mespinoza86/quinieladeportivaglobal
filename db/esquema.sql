@@ -217,6 +217,13 @@ CREATE TABLE jugadores (
   -- vuelve a contar si se le marca otra vez.
   juega_jornadas boolean NOT NULL DEFAULT true,
 
+  -- Y si aporta a la BOLSA ACUMULADA (migracion 006). Quien no participe paga
+  -- solo la parte de jornada, no el total.
+  --
+  -- ⛔ `DEFAULT true` por lo mismo que sus gemelas: en false, todo el mundo
+  -- dejaria de aportar y el bote saldria en cero SIN DAR NINGUN ERROR.
+  juega_acumulado boolean NOT NULL DEFAULT true,
+
   UNIQUE (quiniela_id, nombre)
 );
 
@@ -260,6 +267,24 @@ CREATE TABLE jornadas (
    * clasificacion de marzo.
    */
   precio      numeric(12,2) NOT NULL DEFAULT 0 CHECK (precio >= 0),
+
+  /*
+   * De ese precio, cuanto va al BOTE ACUMULADO (migracion 006). El resto es el
+   * premio de esta jornada.
+   *
+   * El administrador escribe las dos cuotas por separado —jornada y acumulado—
+   * y aqui se guarda el total y la parte del bote: una sola verdad, y el premio
+   * de la jornada se deriva restando. Guardar los tres numeros seria tener dos
+   * datos en tres sitios, y tarde o temprano se separan.
+   *
+   * ⚠️ Congelado al crear la jornada, igual que `precio`: cambiar el reparto
+   * manana no puede reinterpretar lo que ya se jugo.
+   */
+  al_acumulado numeric(12,2) NOT NULL DEFAULT 0 CHECK (al_acumulado >= 0),
+
+  -- ⛔ El bote no puede ser mayor que lo que se cobra: daria un premio de
+  -- jornada NEGATIVO, y las cuentas saldrian al reves sin fallar.
+  CONSTRAINT jornadas_acumulado_cabe_en_el_precio CHECK (al_acumulado <= precio),
 
   UNIQUE (quiniela_id, nombre)
 );
@@ -406,6 +431,35 @@ CREATE TABLE puntos_jornada_jugador (
   UNIQUE (puntos_jornada_id, jugador_id)
 );
 
+
+/*
+ * A quien se le entrego el bote acumulado (migracion 006).
+ *
+ * Cuando el ganador de la tabla general se lo lleva al final del torneo, queda
+ * escrito quien, cuanto y cuando, y el acumulado vuelve a empezar. Sin esto el
+ * numero creceria para siempre y no habria rastro de donde fue el dinero.
+ *
+ * ⚠️ `nombre_ganador` se COPIA ademas del id, por lo mismo que en
+ * `acciones_superadmin`: el jugador puede desaparecer y el asiento tiene que
+ * seguir siendo legible.
+ *
+ * ⛔ Una entrega no se edita ni se borra. Si se anoto mal, se corrige con otra.
+ * El dinero entregado es historia, igual que los abonos.
+ */
+CREATE TABLE entregas_acumulado (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiniela_id    uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
+
+  jugador_id     uuid REFERENCES jugadores(id) ON DELETE SET NULL,
+  nombre_ganador text NOT NULL,
+
+  monto          numeric(12,2) NOT NULL CHECK (monto > 0),
+  nota           text NOT NULL DEFAULT '',
+  registrado_por uuid REFERENCES usuarios(id) ON DELETE SET NULL,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON entregas_acumulado (quiniela_id, created_at DESC);
 -- Los abonos (migracion 001). Una fila por abono.
 --
 -- Cuelga de `jugadores` y NO de `membresias` a proposito: `usuario_id` es
@@ -468,7 +522,7 @@ BEGIN
     'jugadores','jornadas','partidos','resultados','pronosticos',
     'resultados_oficiales','resultados_oficiales_partidos','trivias',
     'respuestas_trivia','equipos','puntos_jornada','puntos_jornada_jugador',
-    'pagos'
+    'pagos','entregas_acumulado'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);

@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 25 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 27 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 452/452
+npm test                    # 482/482
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **452**, ~72 s |
+| Pruebas rápidas | **482**, ~75 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 21 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | **Al día.** Migraciones 001 a 004 corridas y verificadas |
+| Base en Neon | Migraciones 001 a 004 corridas y verificadas. **La 005 y la 006 hay que correrlas** |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -404,6 +404,25 @@ SELECT count(*) FILTER (WHERE NOT juega_jornadas) AS exentos FROM jugadores;
 Esa consulta no vale desde la aplicación: `jugadores` lleva RLS, así que una
 consulta global con `app_quiniela` devolvería cero filas **sin fallar**, y
 parecería que todo está bien.
+
+⛔ **La 006 también está PENDIENTE**: `db/migraciones/006-acumulado.sql`, con el
+rol dueño y **antes** de empujar. Trae `jornadas.al_acumulado`,
+`jugadores.juega_acumulado` y la tabla `entregas_acumulado` (Entrada 078). Sin
+ella, las consultas de cobros fallan enteras: piden columnas que no existen.
+
+Y después, la misma comprobación de siempre —también con el rol dueño, y por la
+misma razón de la RLS—:
+
+```sql
+SELECT count(*) FILTER (WHERE NOT juega_acumulado) AS fuera FROM jugadores;
+-- tiene que dar 0: nadie queda fuera del acumulado sin que alguien lo decida
+
+SELECT count(*) FILTER (WHERE al_acumulado <> 0) AS con_bote FROM jornadas;
+-- tiene que dar 0: las jornadas que ya existen no apartaron nada
+
+SELECT has_table_privilege('app_quiniela', 'entregas_acumulado', 'DELETE');
+-- tiene que dar false, o una entrega de dinero se puede borrar sin rastro
+```
 
 De las tres, la que enseñó algo fue la **003**: al comprobar la base después de
 la 002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría —un
@@ -1098,7 +1117,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 452 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 482 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -12265,6 +12284,221 @@ el centinela, roto en sus DOS formas → falla las dos veces
 Redesplegar; **no toca la base**.
 
 ---
+
+### 📌 Entrada 078 — 27 de agosto de 2026 — Dos cuotas en una: el premio de hoy y el bote de diciembre
+
+**Objetivo:** el usuario lo explicó con su propia quiniela: «vamos a cobrar
+2000, de esos 2000 mil son para la jornada actual y mil para el acumulado». El
+acumulado se va guardando jornada a jornada y al final del torneo se lo lleva el
+ganador de la tabla general. Y añadió que **podría haber gente que sólo juegue
+por la jornada y no por el acumulado**.
+
+Lo que pidió no es dividir el dinero en la cabeza, sino **llevar la cuenta de
+los dos botes por separado**: cuánto hay para el premio de cada jornada y cuánto
+lleva juntado el acumulado.
+
+## La corrección del usuario, que mejoró el diseño
+
+Mi propuesta era una sola casilla —la cuota de siempre— y un porcentaje o un
+monto que se apartaba de ella. El usuario propuso otra cosa:
+
+> «tenemos una casilla que dice cuota por jornada y otra cuota por acumulado.
+> Así si un administrador en otra quiniela quisiera hacerlo diferente y no mitad
+> y mitad, él decide cómo hacerlo»
+
+**Dos casillas independientes, y el total es la suma.** Es mejor por una razón
+concreta: con «total menos lo del bote» hay que preguntarse qué pasa cuando se
+sube el total —¿el extra va al premio, al bote, repartido?—. Con dos casillas
+**esa pregunta no existe**: el administrador escribe los dos números y no hay
+nada que repartir.
+
+En pantalla se piden las dos partes y se enseña la suma debajo:
+
+```
+Cuota por jornada     [ 1000 ]   ← el premio que se reparte esa jornada
+Cuota al acumulado    [ 1000 ]   ← se junta para el final del torneo
+
+Cada jugador paga: ₡2.000
+```
+
+## ⚠️ Se piden dos números y se guardan dos, pero no los mismos
+
+Guardado es al revés que en pantalla: `jornadas.precio` sigue siendo **el
+total** y la columna nueva `al_acumulado` es la parte del bote. La parte de
+jornada **no se guarda**: es la resta.
+
+Guardar los tres sería tener el mismo dato en dos sitios, y algún día no
+coincidirían —alguien tocaría uno por una ruta y el otro por otra—. Y `precio`
+tenía que seguir siendo el total porque **es lo que ya está escrito en las
+jornadas que existen**: cambiar su significado habría reinterpretado en silencio
+todo lo cobrado hasta hoy.
+
+## ⛔ El reparto se congela en la jornada, igual que el precio
+
+Es la regla de la Entrada 061 aplicada al dato nuevo. Cada jornada guarda **lo
+que costó y cómo se repartía**, copiado de la configuración al crearla.
+
+Sin eso, cambiar el reparto en diciembre recalcularía el bote de octubre: el
+dinero que la gente puso creyendo que iba mitad y mitad pasaría a estar
+repartido de otra forma, hacia atrás y sin avisar. Hay prueba de ruta que crea
+una jornada, cambia la configuración, crea otra, y comprueba que cada una
+conserva el suyo.
+
+## Los dos valores por defecto, que van en direcciones contrarias
+
+| Columna | Por defecto | Por qué |
+|---|---|---|
+| `jornadas.al_acumulado` | **0** | Una quiniela que hoy funciona no puede empezar a apartar dinero para un bote porque se desplegó una versión |
+| `jugadores.juega_acumulado` | **true** | Si el administrador enciende el bote, participan todos salvo a quien él saque. Al revés, el bote saldría vacío y nadie entendería por qué |
+
+Es la misma decisión de la Entrada 076 —`DEFAULT true` en `juega_jornadas`—
+resuelta en cada caso por lo que pasa si nadie toca nada. Hay centinela para las
+dos.
+
+## ⚠️ El bote es lo COBRADO, y al lado va lo esperado
+
+El panel enseña dos números siempre:
+
+```
+Acumulado
+₡9.000
+Juntado: ₡9.000 de ₡22.000
+```
+
+Con uno solo no se puede: **lo esperado anunciaría un premio que nadie ha
+puesto**, y lo cobrado a secas no dice si falta gente por pagar. Los dos juntos
+se leen de un vistazo.
+
+## La imputación de un abono a medias
+
+Alguien paga ₡1.500 de una jornada de ₡2.000. Hay que decidir a qué va, y la
+decisión es **primero el premio de la jornada, y lo que sobre al bote**.
+
+La razón: el premio de jornada se entrega esa misma semana y el bote no se toca
+hasta el final del torneo. Al revés, el premio de la jornada que se está jugando
+saldría corto mientras el bote, que no hace falta todavía, iría lleno.
+
+## ⛔ Una entrega del acumulado no se edita ni se borra
+
+`entregas_acumulado` es una tabla de sólo escribir, como la auditoría de la
+Entrada 069. La aplicación tiene `SELECT` e `INSERT` y **se le quitan `UPDATE` y
+`DELETE` explícitamente**.
+
+Si pudiera borrar una entrega, el bote volvería a mostrarse lleno y alguien lo
+entregaría dos veces, sin rastro de la primera. Si se anota mal, se corrige con
+otra entrega, igual que los abonos.
+
+⚠️ Y el `REVOKE` va en la misma migración desde el principio: es la lección de
+la Entrada 069, donde el `GRANT` pareció bastar y no bastaba —**un `GRANT` sólo
+suma**, y los privilegios por defecto de Neon ya conceden los cuatro sobre toda
+tabla nueva—. Costó una migración aparte entonces; aquí no.
+
+## ⛔ El monto de la entrega no se acepta del navegador
+
+La ruta recibe **a quién** se le entrega, no cuánto. El monto lo calcula el
+servidor dentro de la misma transacción en la que escribe.
+
+Aceptarlo de fuera dejaría que dos pestañas abiertas entregaran dos veces el
+mismo dinero, o una cifra que ya cambió porque alguien acaba de abonar. Hay
+prueba que manda `monto: 999999` y comprueba que se anota lo que hay.
+
+## Una incoherencia que encontró una prueba nueva
+
+Al escribir la aritmética quedaron **dos formas de calcular lo que paga alguien
+que no juega el acumulado**, y no daban lo mismo:
+
+- `precioParaJugador` le cobraba ₡1.000 —la jornada menos el bote—.
+- El reparto de sus abonos le cobraba ₡2.000, porque ponía el bote a cero y
+  entonces «todo el precio era premio».
+
+El error estaba en confundir dos cosas: **el premio de la jornada es el mismo
+para todos** —lo que ella apartó para el bote no depende de quién pague—; lo que
+cambia es si esta persona pone su parte del bote o no.
+
+Con la incoherencia, el panel de botes habría dicho que debe alguien que está al
+día. No lo encontró usar la aplicación: lo encontró una prueba escrita a
+propósito para cruzar las dos cuentas.
+
+## Y una que se dejaba engañar por el orden
+
+La prueba de que las tres casillas no se pisan mandaba dos PATCH, y romper el
+`COALESCE` a propósito **no la hacía fallar**: por el orden en que se mandaban,
+el valor acababa siendo el mismo de todas formas.
+
+Ahora apaga las tres, una por una, y comprueba que la primera sigue apagada tres
+PATCH después. Con la corrección, romper cualquiera de los tres `COALESCE` la
+tumba.
+
+Van **seis veces** que un centinela mío pasa con el fallo delante (Entradas 055,
+062, 069, 072 y ésta). El patrón se repite: la prueba comprobaba **una forma**,
+no **una condición**.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/006-acumulado.sql` | **Nuevo.** Las dos columnas, la tabla `entregas_acumulado` con RLS, y el `GRANT`+`REVOKE` |
+| `db/esquema.sql` | Lo mismo, y la tabla nueva en el `FOREACH` de RLS (ya son 14) |
+| `src/cobros.js` | `alAcumulado`/`aLaJornada` al normalizar, `precioParaJugador`, `repartoDeAbonos`, `botes` |
+| `src/pagos.js` | `juega_acumulado` en las consultas, y `botes`, `entregas`, `entregarAcumulado` |
+| `src/jornadas.js` | El reparto se copia al crear la jornada; `cambiarPrecio` acepta los dos |
+| `src/rutas/admin.js` | `GET /api/cobros/botes`, `POST /api/cobros/acumulado/entregar`, `juegaAcumulado` en el PATCH |
+| `src/rutas/dominio.js` | Pasa las dos cuotas al crear una jornada |
+| `public/configuracion-quiniela.html` + su `js` | Las dos casillas y el total en vivo |
+| `public/cobros.html` + su `js` | Casilla «Participa en el acumulado», panel de botes y la entrega |
+| `test/cobros.test.js` | 16 pruebas de aritmética del acumulado |
+| `test/rutas.test.js` | 10 de ruta: congelado, aislamiento, 403, el monto que no se acepta |
+| `test/architecture.test.js` | 3 centinelas: el `REVOKE`, los `CHECK` y los dos valores por defecto |
+| `test/db.test.js` | Las tablas con RLS pasan de 13 a 14 |
+
+**Verificación:**
+
+```
+npm test → 482/482
+
+rotas a propósito, y las cinco caen:
+  no restar lo entregado            → 1 en rojo
+  no imputar al premio primero      → 13
+  cobrar el bote a quien no juega   →  7
+  cobrado inventado                 → 17
+  bote mayor que la cuota           →  5
+
+el REVOKE comentado con `--`        → cae el centinela de la entrega
+el CHECK al revés                   → cae
+juega_acumulado por defecto false   → cae
+el monto de la entrega desde el body → cae la prueba de ruta
+cada uno de los tres COALESCE       → cae la prueba de las tres casillas
+```
+
+**Hallazgos nuevos:**
+
+1. ⚠️ **Dos formas de calcular el mismo dinero acaban discrepando.** Aquí eran
+   `precioParaJugador` y el reparto de abonos, y la que estaba mal era la que
+   parecía más obvia. La prueba que las cruza vale más que las dos que las miran
+   por separado.
+2. **Preguntar dos números es más simple que preguntar uno y repartirlo.** La
+   propuesta del usuario elimina la pregunta de «¿y el extra a dónde va?», que
+   en mi diseño no tenía respuesta buena.
+3. ⛔ **Una prueba de que «tocar A no pisa B» depende del orden en que se toquen.**
+   Con dos campos y el orden equivocado, romper el código no la hace fallar. Con
+   los tres apagándose de uno en uno, sí.
+4. **Una mutación que el código no puede alcanzar no prueba nada.** Romper
+   `entregarAcumulado` para que aceptara un monto de fuera no tumbó ninguna
+   prueba: la ruta nunca se lo pasaba. Había que romper **la ruta**, que es donde
+   estaba la guarda de verdad.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Correr `db/migraciones/006-acumulado.sql` en Neon con el rol propietario
+ANTES de subir el código.** Sin las columnas, las consultas de cobros fallan.
+
+Después, en la quiniela real: poner ₡1.000 y ₡1.000 en la configuración. Las
+jornadas que ya existen conservan sus ₡2.000 enteros como premio de jornada —el
+bote empieza a juntarse desde la siguiente—, que es lo correcto: nadie pagó por
+un acumulado que no existía.
+
+---
+
 
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS

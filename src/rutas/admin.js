@@ -438,7 +438,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
       return res.status(400).json({ error: 'Ese jugador no es válido.' });
     }
 
-    const { juegaTorneo, juegaJornadas, cobrarDesde } = req.body || {};
+    const { juegaTorneo, juegaJornadas, juegaAcumulado, cobrarDesde } = req.body || {};
 
     if (cobrarDesde !== undefined && cobrarDesde !== null && !(Number(cobrarDesde) >= 1)) {
       return res.status(400).json({ error: 'La jornada desde la que se cobra no es válida.' });
@@ -449,10 +449,55 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
      * el que se tocó, y lo que no viaja se queda como estaba.
      */
     const j = await pagosMod.ajustarJugador(req.quiniela.id, req.params.jugadorId,
-      { juegaTorneo, juegaJornadas, cobrarDesde });
+      { juegaTorneo, juegaJornadas, juegaAcumulado, cobrarDesde });
 
     if (!j) return res.status(404).json({ error: 'Jugador no encontrado.' });
     res.json({ success: true, jugador: j });
+  });
+
+  /**
+   * Cuánto hay en el premio de cada jornada y en el bote acumulado.
+   *
+   * Se calcula sobre lo COBRADO, y se devuelve también lo esperado: sin el
+   * segundo número, un premio a medio cobrar parece completo.
+   */
+  app.get('/api/cobros/botes', requireAdmin, async (req, res) => {
+    const [estado, historial] = await Promise.all([
+      pagosMod.botes(req.quiniela.id),
+      pagosMod.entregas(req.quiniela.id)
+    ]);
+
+    res.json({ ...estado, entregas: historial });
+  });
+
+  /**
+   * Entrega el acumulado al ganador, y el bote vuelve a empezar.
+   *
+   * ⚠️ El monto NO se recibe: lo calcula `pagosMod` dentro de su transacción.
+   * Aceptarlo de fuera dejaría que dos pestañas entregaran dos veces el mismo
+   * dinero, o una cifra que ya cambió porque alguien acaba de abonar.
+   */
+  app.post('/api/cobros/acumulado/entregar', requireAdmin, async (req, res) => {
+    const { jugadorId, nota } = req.body || {};
+
+    if (!cobros.esUuid(jugadorId)) {
+      return res.status(400).json({ error: 'Elige a quién se le entrega.' });
+    }
+
+    const r = await pagosMod.entregarAcumulado(req.quiniela.id, {
+      jugadorId, nota, registradoPor: req.session.usuarioId
+    });
+
+    if (r.ok === false) {
+      const codigos = { jugador_no_encontrado: 404, sin_acumulado: 409 };
+      const mensajes = {
+        jugador_no_encontrado: 'Ese jugador no existe.',
+        sin_acumulado: 'No hay nada acumulado que entregar.'
+      };
+      return res.status(codigos[r.motivo] || 409).json({ error: mensajes[r.motivo] });
+    }
+
+    res.json({ success: true, entrega: r.entrega });
   });
 
   /** Cambia lo que cuesta UNA jornada: la de finales vale más. */
@@ -463,8 +508,22 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
       return res.status(400).json({ error: 'El precio es demasiado alto.' });
     }
 
+    /*
+     * Las dos cuotas, no una. Si no viene el desglose se conserva lo que la
+     * jornada ya tenía, para que una llamada vieja no le vacíe el bote.
+     */
+    const alAcumulado = req.body?.alAcumulado === undefined
+      ? undefined
+      : cobros.aMonto(req.body.alAcumulado);
+
+    if (alAcumulado !== undefined && (alAcumulado < 0 || alAcumulado > precio)) {
+      return res.status(400).json({
+        error: 'La cuota del acumulado no puede ser negativa ni mayor que lo que se cobra.'
+      });
+    }
+
     const j = await require('../jornadas').cambiarPrecio(
-      req.quiniela.id, req.params.nombre, precio);
+      req.quiniela.id, req.params.nombre, precio, alAcumulado);
 
     if (!j) return res.status(404).json({ error: 'Jornada no encontrada.' });
     res.json({ success: true, jornada: j });

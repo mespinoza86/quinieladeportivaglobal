@@ -1017,7 +1017,13 @@ test('⚠️ el precio de una jornada se fija al crearla y guardar no lo cambia'
    */
   const mod = quitarComentarios(leer(path.join('src', 'jornadas.js')));
 
-  assert.match(mod, /INSERT INTO jornadas \(quiniela_id, nombre, precio\)/);
+  /*
+   * ⚠️ Las DOS cuotas entran en el INSERT desde la migración 006: el total y la
+   * parte que va al bote acumulado. Las dos se congelan al crear la jornada,
+   * por la misma razón que el precio — cambiar el reparto mañana no puede
+   * reinterpretar lo que ya se jugó.
+   */
+  assert.match(mod, /INSERT INTO jornadas \(quiniela_id, nombre, precio, al_acumulado\)/);
   assert.match(mod, /DO UPDATE SET nombre = EXCLUDED\.nombre\s*\n?\s*RETURNING id/,
     'el DO UPDATE no puede tocar el precio');
   assert.doesNotMatch(mod, /DO UPDATE SET[^`]*precio/,
@@ -1886,4 +1892,63 @@ test('npm test ejecuta todos los archivos de prueba, y sin comodines', () => {
       `npm test no ejecuta test/${archivo}: añádelo al script`
     );
   }
+});
+
+test('⛔ una entrega del acumulado no se edita ni se borra desde la aplicacion', () => {
+  /*
+   * Entregar el bote es mover dinero de verdad. Si la aplicacion pudiera borrar
+   * la fila, el bote volveria a mostrarse lleno y alguien lo entregaria dos
+   * veces -y no quedaria rastro de la primera-.
+   *
+   * ⚠️ El REVOKE, no el GRANT: **un GRANT solo suma**. Neon tiene privilegios
+   * por defecto que conceden los cuatro permisos sobre toda tabla nueva, asi
+   * que `entregas_acumulado` nace con UPDATE y DELETE y hay que quitarlos a
+   * mano. Es exactamente lo que paso con `acciones_superadmin` y costo una
+   * migracion aparte (la 003); aqui va en la misma.
+   *
+   * Y anclado a inicio de linea (`^` con `m`) para que un REVOKE comentado con
+   * `--` no lo de por bueno.
+   */
+  const migracion = leer(path.join('db', 'migraciones', '006-acumulado.sql'));
+
+  assert.match(migracion, /^\s*GRANT SELECT, INSERT ON entregas_acumulado TO app_quiniela/m);
+  assert.match(migracion, /^\s*REVOKE\s+UPDATE,\s*DELETE\s+ON\s+entregas_acumulado\s+FROM\s+app_quiniela/m,
+    'sin el REVOKE la aplicacion hereda DELETE y puede borrar una entrega de dinero');
+});
+
+test('⛔ la base impide que la cuota del acumulado se pase de la cuota total', () => {
+  /*
+   * `al_acumulado > precio` daria un premio de jornada NEGATIVO, y de ahi
+   * saldrian botes y deudas descuadradas sin que nada fallara. Se recorta en
+   * `cobros.js` al normalizar, pero el CHECK es lo que lo impide de verdad:
+   * `jornadas` tambien se escribe desde `cambiarPrecio`, que no pasa por ahi.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+  const migracion = leer(path.join('db', 'migraciones', '006-acumulado.sql'));
+
+  for (const [nombre, sql] of [['esquema.sql', esquema], ['006-acumulado.sql', migracion]]) {
+    assert.match(sql, /CHECK\s*\(\s*al_acumulado\s*<=\s*precio\s*\)/,
+      `${nombre}: falta el CHECK que impide un premio de jornada negativo`);
+    assert.match(sql, /al_acumulado[\s\S]{0,120}?CHECK\s*\(\s*al_acumulado\s*>=\s*0\s*\)/,
+      `${nombre}: falta el CHECK de que la cuota del acumulado no sea negativa`);
+  }
+});
+
+test('⚠️ el acumulado nace apagado y todo el mundo participa', () => {
+  /*
+   * Los dos valores por defecto, que van en direcciones distintas a proposito:
+   *
+   *   - `jornadas.al_acumulado` a CERO: una quiniela que hoy funciona no puede
+   *     empezar a apartar dinero para un bote porque se desplego una version.
+   *   - `jugadores.juega_acumulado` a TRUE: si el administrador enciende el
+   *     bote, participan todos salvo a quien el saque. Lo contrario -nadie
+   *     participa hasta que los marques uno a uno- deja un bote vacio sin que
+   *     nadie entienda por que.
+   */
+  const esquema = leer(path.join('db', 'esquema.sql'));
+
+  assert.match(esquema, /al_acumulado\s+numeric\(12,2\)\s+NOT NULL DEFAULT 0/,
+    'sin DEFAULT 0 una quiniela vieja empezaria a apartar dinero sola');
+  assert.match(esquema, /juega_acumulado\s+boolean\s+NOT NULL DEFAULT true/,
+    'sin DEFAULT true el bote de una quiniela que lo enciende saldria vacio');
 });

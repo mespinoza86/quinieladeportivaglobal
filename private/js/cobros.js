@@ -16,9 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const resumen = document.getElementById('resumenCobros');
   const listaCuentas = document.getElementById('listaCuentas');
   const listaHistorial = document.getElementById('listaHistorial');
+  const listaBotes = document.getElementById('listaBotes');
+  const listaEntregas = document.getElementById('listaEntregas');
   const mensaje = document.getElementById('mensajeCobros');
   const abonoMensaje = document.getElementById('abonoMensaje');
   const selectorJugador = document.getElementById('abonoJugador');
+  const selectorGanador = document.getElementById('entregaGanador');
+  const botesMensaje = document.getElementById('botesMensaje');
 
   let configuracion = null;
 
@@ -40,6 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cuentasPanel').hidden = !cobraAlgo;
     document.getElementById('abonoPanel').hidden = !cobraAlgo;
     document.getElementById('historialPanel').hidden = !cobraAlgo;
+    /*
+     * Los botes son de las jornadas: si la quiniela sólo cobra el torneo no hay
+     * premio de jornada ni acumulado que enseñar, y el panel sobra.
+     */
+    document.getElementById('botesPanel').hidden = !datos.cobros.jornada.activo;
 
     if (!cobraAlgo) {
       resumen.textContent = 'Sin cobros activos.';
@@ -48,7 +57,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const partes = [];
     if (datos.cobros.torneo.activo) partes.push('Torneo: ' + plata(datos.cobros.torneo.precio));
-    if (datos.cobros.jornada.activo) partes.push('Jornada: ' + plata(datos.cobros.jornada.precio));
+    if (datos.cobros.jornada.activo) {
+      /*
+       * El desglose va al lado del total porque es lo primero que se pregunta
+       * quien cobra: «de los 2.000, ¿cuánto es del bote?». Si no hay acumulado
+       * no se enseña el paréntesis: sería ruido que dice «+ ₡0».
+       */
+      const bote = Number(datos.cobros.jornada.alAcumulado || 0);
+      partes.push('Jornada: ' + plata(datos.cobros.jornada.precio) + (bote > 0
+        ? ` (${plata(datos.cobros.jornada.aLaJornada)} premio + ${plata(bote)} acumulado)`
+        : ''));
+    }
     resumen.textContent = partes.join(' · ');
 
     const cuentas = datos.cuentas || [];
@@ -103,6 +122,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           lineas.push(html`<p class="helper-text">Jornadas: al día</p>`);
         }
+
+        /*
+         * Que alguien pague menos que los demás tiene que estar escrito, no
+         * deducirse de una casilla: si no, quien cobra ve «al día» con una
+         * cifra distinta a la del resto y no sabe si es un error.
+         */
+        if (!c.jornada.juegaAcumulado && Number(configuracion.jornada.alAcumulado || 0) > 0) {
+          lineas.push(html`<p class="helper-text">
+            No juega el acumulado — paga ${plata(c.jornada.precioActual)} por jornada
+          </p>`);
+        }
       }
 
       return html`<div class="info-card" data-jugador="${c.jugadorId}">
@@ -116,12 +146,24 @@ document.addEventListener('DOMContentLoaded', () => {
           <input type="checkbox" class="juegaJornadas" data-jugador="${c.jugadorId}" ${c.juegaJornadas ? 'checked' : ''} />
           <span>Se le cobran las jornadas</span>
         </label>
+        <label class="checkbox-fila">
+          <input type="checkbox" class="juegaAcumulado" data-jugador="${c.jugadorId}" ${c.juegaAcumulado ? 'checked' : ''} />
+          <span>Participa en el acumulado</span>
+        </label>
       </div>`;
     }).join('');
 
-    selectorJugador.innerHTML = cuentas
+    const opciones = cuentas
       .map(c => html`<option value="${c.jugadorId}">${c.nombre}</option>`)
       .join('');
+
+    selectorJugador.innerHTML = opciones;
+    /*
+     * El acumulado se le puede entregar a CUALQUIERA de la lista, aunque no
+     * haya jugado por él: el ganador de la tabla general es quien es, y no le
+     * toca a esta pantalla discutirlo. Quien administra sabrá.
+     */
+    selectorGanador.innerHTML = opciones;
 
     /*
      * Las dos casillas se guardan igual y por separado: cada una manda SÓLO su
@@ -130,7 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const CASILLAS = [
       { clase: 'juegaTorneo', campo: 'juegaTorneo' },
-      { clase: 'juegaJornadas', campo: 'juegaJornadas' }
+      { clase: 'juegaJornadas', campo: 'juegaJornadas' },
+      { clase: 'juegaAcumulado', campo: 'juegaAcumulado' }
     ];
 
     for (const { clase, campo } of CASILLAS) {
@@ -194,12 +237,93 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /*
+   * Los botes: cuánto hay en el premio de cada jornada y cuánto en el bote
+   * acumulado.
+   *
+   * ⚠️ Todo lo que se pinta aquí es dinero COBRADO. Enseñar lo esperado como
+   * si estuviera es lo que hace que un premio se anuncie más grande de lo que
+   * hay en la mano; por eso van los dos números, y el segundo dice «de».
+   */
+  function pintarBotes(datos) {
+    const acumulado = datos.acumulado || {};
+    const disponible = Number(acumulado.disponible || 0);
+
+    document.getElementById('boteAcumulado').innerHTML = html`<div class="info-card">
+      <h3>Acumulado</h3>
+      <p class="hero-text"><strong>${plata(disponible)}</strong></p>
+      <p class="helper-text">
+        Juntado: ${plata(acumulado.cobrado)} de ${plata(acumulado.esperado)}${
+          Number(acumulado.entregado || 0) > 0
+            ? ` · ya entregado: ${plata(acumulado.entregado)}`
+            : ''
+        }
+      </p>
+    </div>`;
+
+    const jornadas = datos.jornadas || [];
+
+    listaBotes.innerHTML = jornadas.length
+      ? jornadas.map(j => html`<div class="info-card">
+          <h3>${j.nombre}</h3>
+          <p class="helper-text">
+            Premio de la jornada: <strong>${plata(j.premio)}</strong> de ${plata(j.esperado)}
+          </p>
+        </div>`).join('')
+      : html`<p class="helper-text">Todavía no hay jornadas creadas.</p>`;
+
+    /*
+     * El botón sólo aparece cuando hay algo que entregar. Un botón que siempre
+     * está y siempre responde «no hay nada» enseña a la gente a ignorarlo.
+     */
+    document.getElementById('entregaPanel').hidden = !(disponible > 0);
+
+    const entregas = datos.entregas || [];
+
+    listaEntregas.innerHTML = entregas.length
+      ? html`<h3>Entregas</h3>` + entregas.map(e => {
+          const fecha = new Date(e.created_at).toLocaleDateString('es-CR');
+          return html`<div class="info-card">
+            <p class="helper-text">
+              ${fecha} · ${e.nombre_ganador} · <strong>${plata(e.monto)}</strong>
+            </p>
+            ${e.nota ? crudo(html`<p class="helper-text">${e.nota}</p>`) : ''}
+            ${e.registrado_por ? crudo(html`<p class="helper-text">Anotó: ${e.registrado_por}</p>`) : ''}
+          </div>`;
+        }).join('')
+      : '';
+  }
+
+  document.getElementById('entregarAcumulado')?.addEventListener('click', async () => {
+    const jugadorId = selectorGanador.value;
+    if (!jugadorId) { botesMensaje.textContent = 'Elige a quién se le entrega.'; return; }
+
+    if (!confirm('Se entrega todo el acumulado disponible y el bote vuelve a cero. Queda anotado y no se puede borrar. ¿Continuar?')) return;
+
+    try {
+      const r = await api('/api/cobros/acumulado/entregar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jugadorId, nota: document.getElementById('entregaNota').value })
+      });
+      botesMensaje.textContent = `Entregado ${plata(r.entrega.monto)} a ${r.entrega.nombre_ganador}.`;
+      document.getElementById('entregaNota').value = '';
+      await cargar();
+    } catch (error) {
+      botesMensaje.textContent = error.message;
+    }
+  });
+
   async function cargar() {
     try {
       mensaje.textContent = '';
+      botesMensaje.textContent = '';
       pintarCuentas(await api('/api/cobros/cuentas'));
       if (configuracion?.torneo.activo || configuracion?.jornada.activo) {
         pintarHistorial(await api('/api/cobros/abonos'));
+      }
+      if (configuracion?.jornada.activo) {
+        pintarBotes(await api('/api/cobros/botes'));
       }
     } catch (error) {
       mensaje.textContent = error.message;

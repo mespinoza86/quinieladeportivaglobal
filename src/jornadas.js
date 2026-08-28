@@ -236,7 +236,7 @@ function ordenarParaGuardar(partidos = [], guardados = []) {
  * ⚠️ **Reconcilia por posición**, no borra y reinserta. Ver la cabecera del
  * módulo: reinsertar se llevaría los pronósticos por delante en cascada.
  */
-async function guardar(quinielaId, nombre, partidos, precio = 0) {
+async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0) {
   return db.enQuiniela(quinielaId, async c => {
     /*
      * ⚠️ `precio` sólo entra en el INSERT: el `DO UPDATE` no lo toca a
@@ -248,10 +248,11 @@ async function guardar(quinielaId, nombre, partidos, precio = 0) {
      * decisión explícita del administrador y no un efecto de guardar.
      */
     const { rows: [j] } = await c.query(
-      `INSERT INTO jornadas (quiniela_id, nombre, precio) VALUES ($1, $2, $3)
+      `INSERT INTO jornadas (quiniela_id, nombre, precio, al_acumulado)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (quiniela_id, nombre) DO UPDATE SET nombre = EXCLUDED.nombre
        RETURNING id`,
-      [quinielaId, nombre, precio]);
+      [quinielaId, nombre, precio, Math.min(Number(alAcumulado) || 0, Number(precio) || 0)]);
 
     const { rows: existentes } = await c.query(
       'SELECT id, orden, api_fixture_id FROM partidos WHERE jornada_id = $1 ORDER BY orden',
@@ -470,12 +471,40 @@ async function eliminar(quinielaId, nombre) {
  * `guardar` a propósito: cambiar un precio es una decisión del administrador
  * sobre el dinero, no algo que deba pasar de rebote al editar los partidos.
  */
-async function cambiarPrecio(quinielaId, nombre, precio) {
+async function cambiarPrecio(quinielaId, nombre, precio, alAcumulado) {
+  /*
+   * ⚠️ Se reciben las DOS cuotas, no sólo el total.
+   *
+   * Cuando la cuota se partió en premio de jornada y bote acumulado, esta
+   * pantalla se quedó con un solo campo por un momento — y entonces subir una
+   * jornada de ₡2.000 a ₡5.000 obligaba a INVENTAR cómo repartir el extra. Esa
+   * regla habría sido una suposición del programa sobre algo que el
+   * administrador ya sabía.
+   *
+   * Cuando un dato pasa de ser uno a ser dos, tiene que ser dos en todos los
+   * sitios donde se toca.
+   */
+  /*
+   * ⚠️ Si el desglose no viene, se CONSERVA el que la jornada ya tenía; no se
+   * pone a cero. Una llamada que sólo quiera cambiar el total no puede vaciar
+   * el bote de esa jornada sin habérselo pedido nadie.
+   *
+   * Y se acota al precio nuevo con `LEAST`: bajar el total de ₡5.000 a ₡1.000
+   * dejaría un bote de ₡1.000 mayor que lo que se cobra, y la base lo
+   * rechazaría con un error que no explica nada.
+   */
+  const bote = alAcumulado === undefined || alAcumulado === null
+    ? null
+    : Math.max(0, Number(alAcumulado) || 0);
+
   return db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
-      `UPDATE jornadas SET precio = $2 WHERE nombre = $1
-       RETURNING id, nombre, precio`,
-      [nombre, precio]);
+      `UPDATE jornadas
+          SET precio = $2,
+              al_acumulado = LEAST($2, COALESCE($3, al_acumulado))
+        WHERE nombre = $1
+       RETURNING id, nombre, precio, al_acumulado`,
+      [nombre, precio, bote]);
     return j || null;
   });
 }

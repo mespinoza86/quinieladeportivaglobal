@@ -3323,3 +3323,213 @@ test('⛔ la casilla de jornadas se guarda, y no pisa la del torneo', async () =
   assert.equal(ahora.juegaTorneo, true, 'y la casilla del torneo sigue como estaba');
   assert.equal(ahora.torneo.debe, 10000, 'el torneo se le sigue cobrando');
 });
+
+/* ==================== El acumulado ==================== */
+
+/** Cobra ₡2.000 por jornada, mil de premio y mil al bote. */
+const CON_ACUMULADO = {
+  torneo: { activo: false, precio: 0 },
+  jornada: { activo: true, precio: 2000, alAcumulado: 1000 }
+};
+
+test('⚠️ el reparto se congela en la jornada, igual que el precio', async () => {
+  /*
+   * Si el reparto se leyera de la configuración de hoy, cambiarlo recalcularía
+   * los botes hacia atrás: el bote de octubre valdría lo que se decidió en
+   * diciembre. Es la misma decisión que con el precio, y se comprueba igual.
+   */
+  const { jefe, socio } = await conCobros('bote-congela', CON_ACUMULADO);
+
+  await crearJornada(jefe.agente, 'J1');            // 1000 + 1000
+
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ cobros: { ...CON_ACUMULADO, jornada: { activo: true, precio: 2000, alAcumulado: 0 } } });
+  await crearJornada(jefe.agente, 'J2');            // 2000 de premio, nada al bote
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 4000 });
+
+  const res = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const [j1, j2] = res.body.jornadas;
+  assert.equal(j1.premio, 1000, 'la primera guardó su reparto viejo');
+  assert.equal(j2.premio, 2000, 'la segunda nació con el nuevo');
+  assert.equal(res.body.acumulado.cobrado, 1000, 'sólo el bote de la primera');
+});
+
+test('el bote enseña lo cobrado y lo esperado, no sólo uno de los dos', async () => {
+  const { jefe, socio } = await conCobros('bote-esperado', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const antes = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(antes.body.acumulado.cobrado, 0, 'nadie ha pagado');
+  assert.ok(antes.body.acumulado.esperado > 0, 'pero sí se espera');
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const despues = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(despues.body.acumulado.cobrado, 1000, 'la mitad de lo que puso');
+  assert.equal(despues.body.jornadas[0].premio, 1000, 'y la otra mitad al premio');
+});
+
+test('a quien no juega el acumulado se le cobra menos, y su dinero no va al bote', async () => {
+  const { jefe, socio } = await conCobros('bote-fuera', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  const cambio = await jefe.agente.patch(`/api/cobros/jugadores/${jugador.jugadorId}`)
+    .send({ juegaAcumulado: false });
+  assert.equal(cambio.status, 200, JSON.stringify(cambio.body));
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.juegaAcumulado, false);
+  assert.equal(cuenta.jornada.debe, 1000, 'sólo el premio de la jornada');
+
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 1000 });
+
+  const botes = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(botes.body.jornadas[0].premio, 1000, 'pagó su parte entera');
+  assert.equal(botes.body.acumulado.cobrado, 0, 'y ni un colón al bote');
+});
+
+test('⚠️ las tres casillas son independientes: tocar una no pisa las otras', async () => {
+  /*
+   * La ruta usa COALESCE, así que un campo que no viaja se queda como estaba.
+   * Con dos casillas ya era importante; con tres, mandar el objeto entero desde
+   * el navegador sería la forma fácil de desmarcar algo sin querer.
+   */
+  const { jefe, socio } = await conCobros('tres-casillas', CON_ACUMULADO);
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+
+  /*
+   * ⚠️ Las tres se apagan de una en una y en este orden a propósito: así cada
+   * PATCH deja fuera las que ya se apagaron, y si alguna se reescribiera con su
+   * valor por defecto en vez de conservarse, volvería a salir encendida.
+   *
+   * La primera versión de esta prueba mandaba dos y no servía: el orden hacía
+   * que romper el COALESCE diera igual. Se descubrió rompiéndolo a propósito.
+   */
+  for (const campo of ['juegaAcumulado', 'juegaTorneo', 'juegaJornadas']) {
+    const r = await jefe.agente.patch(`/api/cobros/jugadores/${jugador.jugadorId}`)
+      .send({ [campo]: false });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  }
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.juegaAcumulado, false, 'la primera sigue apagada tres PATCH después');
+  assert.equal(cuenta.juegaTorneo, false);
+  assert.equal(cuenta.juegaJornadas, false);
+});
+
+test('entregar el acumulado lo deja en cero y queda anotado', async () => {
+  const { jefe, socio } = await conCobros('entregar', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const entrega = await jefe.agente.post('/api/cobros/acumulado/entregar')
+    .send({ jugadorId: jugador.jugadorId, nota: 'cierre del torneo' });
+
+  assert.equal(entrega.status, 200, JSON.stringify(entrega.body));
+  assert.equal(Number(entrega.body.entrega.monto), 1000);
+
+  const despues = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(despues.body.acumulado.disponible, 0, 'el bote vuelve a empezar');
+  assert.equal(despues.body.acumulado.cobrado, 1000, 'pero lo juntado es historia');
+  assert.equal(despues.body.entregas.length, 1);
+  assert.equal(despues.body.entregas[0].nombre_ganador, socio.datos.username);
+});
+
+test('⛔ el monto de la entrega NO se acepta del navegador', async () => {
+  /*
+   * Si viniera de fuera, cualquiera con sesión de administrador podría anotar
+   * la cifra que quisiera —o dos pestañas abiertas entregarían dos veces el
+   * mismo dinero—. Se calcula dentro de la transacción que escribe.
+   */
+  const { jefe, socio } = await conCobros('entrega-monto', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const entrega = await jefe.agente.post('/api/cobros/acumulado/entregar')
+    .send({ jugadorId: jugador.jugadorId, monto: 999999 });
+
+  assert.equal(entrega.status, 200, JSON.stringify(entrega.body));
+  assert.equal(Number(entrega.body.entrega.monto), 1000, 'lo que hay, no lo que pidió');
+});
+
+test('⛔ entregar un bote vacío se rechaza en vez de anotar un cero', async () => {
+  const { jefe, socio } = await conCobros('entrega-vacia', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+  const entrega = await jefe.agente.post('/api/cobros/acumulado/entregar')
+    .send({ jugadorId: jugador.jugadorId });
+
+  assert.equal(entrega.status, 409, JSON.stringify(entrega.body));
+
+  const botes = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(botes.body.entregas.length, 0, 'no se anotó nada');
+});
+
+test('⛔ los botes y las entregas son sólo del administrador', async () => {
+  const { jefe, socio } = await conCobros('botes-403', CON_ACUMULADO);
+  const jugador = await jugadorDe(jefe, socio.datos.username);
+
+  assert.equal((await socio.agente.get('/api/cobros/botes')).status, 403);
+  assert.equal((await socio.agente.post('/api/cobros/acumulado/entregar')
+    .send({ jugadorId: jugador.jugadorId })).status, 403);
+});
+
+test('⛔ el bote de una quiniela no se ve desde otra', async () => {
+  const uno = await conCobros('bote-a', CON_ACUMULADO);
+  const otro = await conCobros('bote-b', CON_ACUMULADO);
+
+  await crearJornada(uno.jefe.agente, 'J1');
+  const jugador = await jugadorDe(uno.jefe, uno.socio.datos.username);
+  await uno.jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jugador.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const ajeno = await otro.jefe.agente.get('/api/cobros/botes');
+  assert.equal(ajeno.body.acumulado.cobrado, 0, 'el dinero de la otra quiniela no se ve');
+  assert.equal(ajeno.body.jornadas.length, 0);
+});
+
+test('una cuota al acumulado mayor que el precio se rechaza con 400', async () => {
+  const { jefe } = await conCobros('bote-400', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const res = await jefe.agente.patch('/api/cobros/jornadas/J1/precio')
+    .send({ precio: 2000, alAcumulado: 5000 });
+
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+});
+
+test('cambiar el precio de una jornada sin mandar el reparto no le vacía el bote', async () => {
+  /*
+   * Una llamada vieja —o una pantalla que aún no conoce el campo— manda sólo
+   * `precio`. Si eso pusiera `al_acumulado` a cero, subir el precio de la final
+   * se llevaría por delante el bote de esa jornada sin decir nada.
+   */
+  const { jefe } = await conCobros('bote-conserva', CON_ACUMULADO);
+  await crearJornada(jefe.agente, 'J1');
+
+  const res = await jefe.agente.patch('/api/cobros/jornadas/J1/precio').send({ precio: 5000 });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  /* Lo esperado es por cabeza, y el administrador también es jugador. */
+  const cabezas = (await jefe.agente.get('/api/cobros/cuentas')).body.cuentas.length;
+
+  const botes = await jefe.agente.get('/api/cobros/botes');
+  assert.equal(botes.body.jornadas[0].esperado, 4000 * cabezas, '5000 menos los 1000 del bote');
+  assert.equal(botes.body.acumulado.esperado, 1000 * cabezas, 'que siguen apartados');
+});

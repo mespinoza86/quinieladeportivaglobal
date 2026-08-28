@@ -54,6 +54,34 @@
       <p id="abonoMensaje" class="form-message"></p>
     </section>
 
+    <section class="app-panel" id="botesPanel" hidden>
+      <h2>Los botes</h2>
+      <p class="helper-text">
+        Lo que hay <strong>cobrado</strong>, no lo que se cobrará: el premio de una
+        jornada sube conforme la gente paga. Al lado va lo esperado, para que un
+        premio a medio cobrar no parezca completo.
+      </p>
+
+      <div id="boteAcumulado"></div>
+      <div id="listaBotes"></div>
+
+      <div id="entregaPanel" hidden>
+        <h3>Entregar el acumulado</h3>
+        <p class="helper-text">
+          ⚠️ Se entrega todo lo disponible y el bote vuelve a cero. Queda anotado
+          y no se puede borrar: si se anotó mal, se corrige con otra entrega.
+        </p>
+        <label class="field-label" for="entregaGanador">Ganador de la tabla general</label>
+        <select id="entregaGanador"></select>
+        <label class="field-label" for="entregaNota">Nota (opcional)</label>
+        <input type="text" id="entregaNota" placeholder="cierre del Clausura 2026" />
+        <button id="entregarAcumulado" type="button">Entregar el acumulado</button>
+      </div>
+
+      <div id="listaEntregas"></div>
+      <p id="botesMensaje" class="form-message"></p>
+    </section>
+
     <section class="app-panel" id="historialPanel" hidden>
       <h2>Historial</h2>
       <p class="helper-text">

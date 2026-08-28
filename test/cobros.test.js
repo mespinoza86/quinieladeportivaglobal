@@ -360,3 +360,256 @@ test('las dos casillas son independientes', () => {
   assert.equal(soloJornadas.torneo.debe, 0);
   assert.equal(soloJornadas.jornada.debe, 4000);
 });
+
+/* ==================== El acumulado ==================== */
+
+/*
+ * De cada cuota, una parte es el premio de esa jornada y otra se va guardando
+ * para el ganador de la tabla general al final del torneo.
+ *
+ * Lo que se vigila aquí:
+ *
+ *   - **El reparto vive en la jornada**, congelado como el precio. Cambiar hoy
+ *     «mil y mil» a «dos mil y cero» no puede reinterpretar el bote de octubre.
+ *   - **Quien no juega el acumulado paga menos**, no paga igual y se le
+ *     devuelve.
+ *   - **El bote es lo COBRADO**, no lo esperado. Un premio anunciado con dinero
+ *     que nadie ha puesto es una promesa que alguien tiene que cubrir.
+ *   - **Un abono a medias paga primero el premio de la jornada.** Hay que
+ *     elegir un orden; éste es el que deja el bote como lo último que se llena.
+ */
+
+/** Dos jornadas de ₡2.000, mil de premio y mil al bote. */
+const CON_BOTE = [
+  { id: 'b1', secuencia: 1, precio: 2000, al_acumulado: 1000 },
+  { id: 'b2', secuencia: 2, precio: 2000, al_acumulado: 1000 }
+];
+
+test('quien no juega el acumulado paga sólo la parte de la jornada', () => {
+  assert.equal(cobros.precioParaJugador(CON_BOTE[0], true), 2000);
+  assert.equal(cobros.precioParaJugador(CON_BOTE[0], false), 1000);
+});
+
+test('⚠️ sin el campo, se cobra completo', () => {
+  /*
+   * Misma regla que las otras dos casillas: el valor por defecto de una duda
+   * sobre dinero es cobrar. Un jugador que venga de una consulta vieja, sin el
+   * campo, no puede quedar eximido del bote sin que nadie lo decidiera.
+   */
+  assert.equal(cobros.precioParaJugador(CON_BOTE[0], undefined), 2000);
+  assert.equal(cobros.precioParaJugador(CON_BOTE[0]), 2000);
+
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: true },      // sin `juegaAcumulado`
+    jornadas: CON_BOTE,
+    pagos: [],
+    cobros: { jornada: { activo: true, precio: 2000, alAcumulado: 1000 } }
+  });
+
+  assert.equal(cuenta.jornada.debe, 4000, 'las dos completas');
+  assert.equal(cuenta.jornada.juegaAcumulado, true);
+});
+
+test('a quien no juega el acumulado se le deben sólo los premios de jornada', () => {
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: true, juegaAcumulado: false },
+    jornadas: CON_BOTE,
+    pagos: [],
+    cobros: { jornada: { activo: true, precio: 2000, alAcumulado: 1000 } }
+  });
+
+  assert.equal(cuenta.jornada.debe, 2000, 'mil por jornada, no dos mil');
+  assert.equal(cuenta.jornada.juegaAcumulado, false);
+});
+
+test('⚠️ y su estimación «te alcanza para N» va a SU precio, no al de la lista', () => {
+  /*
+   * Con el precio completo le diríamos que ₡2.000 le alcanzan para una jornada
+   * cuando le alcanzan para dos. La estimación ya era delicada; con dos precios
+   * distintos conviviendo, usar el que no es se vuelve fácil.
+   */
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: { juegaJornadas: true, juegaAcumulado: false },
+    jornadas: CON_BOTE,
+    pagos: [abono('jornada', '4000')],
+    cobros: { jornada: { activo: true, precio: 2000, alAcumulado: 1000 } }
+  });
+
+  assert.equal(cuenta.jornada.saldo, 2000, 'pagó 4000 y sólo debía 2000');
+  assert.equal(cuenta.jornada.precioActual, 1000, 'su precio, no el de la lista');
+  assert.equal(cuenta.jornada.jornadasQueCubre, 2);
+});
+
+test('el reparto congelado en la jornada manda sobre la configuración de hoy', () => {
+  /*
+   * La misma razón por la que el precio vive en la jornada. La configuración de
+   * hoy no entra en este cálculo: los números salen de lo que guardó cada
+   * jornada, así que cambiarla mañana no reinterpreta el bote de octubre.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '4000')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.cobrado, 2000, 'mil de cada jornada');
+  assert.deepEqual(estado.jornadas.map(j => j.premio), [1000, 1000]);
+});
+
+test('⚠️ el bote es lo COBRADO, y se dice al lado cuánto se espera', () => {
+  /*
+   * Dos jugadores, uno pagó todo y el otro nada. Si el bote enseñara lo
+   * esperado, se anunciaría un premio de ₡4.000 cuando en la mano hay ₡2.000.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }, { id: 'p2' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '4000')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.cobrado, 2000, 'sólo lo que entró');
+  assert.equal(estado.acumulado.esperado, 4000, 'lo que entrará si todos pagan');
+  assert.deepEqual(estado.jornadas.map(j => j.premio), [1000, 1000]);
+  assert.deepEqual(estado.jornadas.map(j => j.esperado), [2000, 2000]);
+});
+
+test('un abono a medias llena primero el premio de la jornada', () => {
+  /*
+   * ₡1.500 de una jornada de ₡2.000: ₡1.000 al premio y los ₡500 que sobran al
+   * bote. Al revés —bote primero— el premio de la jornada que se está jugando
+   * saldría corto mientras el bote, que no se entrega hasta el final, va lleno.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '1500')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.jornadas[0].premio, 1000, 'el premio primero, completo');
+  assert.equal(estado.acumulado.cobrado, 500, 'y lo que sobró al bote');
+  assert.equal(estado.jornadas[1].premio, 0, 'la segunda ni empezó');
+});
+
+test('lo que no llega ni al premio de la primera jornada no toca el bote', () => {
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '600')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.jornadas[0].premio, 600);
+  assert.equal(estado.acumulado.cobrado, 0);
+});
+
+test('⛔ el abono del torneo no entra en ningún bote de jornada', () => {
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('torneo', '10000')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.cobrado, 0);
+  assert.deepEqual(estado.jornadas.map(j => j.premio), [0, 0]);
+});
+
+test('quien no juega el acumulado aporta todo su abono al premio de la jornada', () => {
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1', juegaAcumulado: false }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '2000')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.cobrado, 0, 'ni un colón al bote');
+  assert.equal(estado.acumulado.esperado, 0, 'y tampoco se espera de él');
+  assert.deepEqual(estado.jornadas.map(j => j.premio), [1000, 1000],
+    'sus 2000 pagaron las dos jornadas enteras');
+});
+
+test('a quien no se le cobran las jornadas no se le espera nada, en ningún bote', () => {
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }, { id: 'p2', juegaJornadas: false }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map(),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.esperado, 2000, 'sólo lo del que sí paga');
+  assert.deepEqual(estado.jornadas.map(j => j.esperado), [1000, 1000]);
+});
+
+test('a quien entró a mitad no se le espera lo de antes de entrar', () => {
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }, { id: 'p2', cobrarDesde: 2 }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map(),
+    entregado: 0
+  });
+
+  assert.deepEqual(estado.jornadas.map(j => j.esperado), [1000, 2000]);
+  assert.equal(estado.acumulado.esperado, 3000);
+});
+
+test('⚠️ lo entregado se resta del disponible, y lo cobrado no se toca', () => {
+  /*
+   * Sin restar las entregas el bote seguiría enseñando dinero que ya se
+   * repartió, y alguien lo entregaría dos veces. `cobrado` se conserva aparte
+   * porque es historia: es cuánto se juntó, aunque ya no esté.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: CON_BOTE,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '4000')]]]),
+    entregado: '1500'                      // cadena, como llega de `numeric`
+  });
+
+  assert.equal(estado.acumulado.cobrado, 2000);
+  assert.equal(estado.acumulado.entregado, 1500);
+  assert.equal(estado.acumulado.disponible, 500);
+});
+
+test('la cuota al acumulado no puede pasarse del precio', () => {
+  /*
+   * La base lo impide con un CHECK, y aquí se recorta antes de llegar: una
+   * configuración con el bote más grande que la cuota daría una parte de
+   * jornada negativa, y eso descuadraría todas las cuentas en silencio.
+   */
+  const config = cobros.normalizarCobros({
+    cobros: { jornada: { activo: true, precio: 2000, alAcumulado: 5000 } }
+  });
+
+  assert.equal(config.jornada.alAcumulado, 2000);
+  assert.equal(config.jornada.aLaJornada, 0);
+});
+
+test('una cuota al acumulado negativa se trata como cero', () => {
+  const config = cobros.normalizarCobros({
+    cobros: { jornada: { activo: true, precio: 2000, alAcumulado: -1000 } }
+  });
+
+  assert.equal(config.jornada.alAcumulado, 0);
+  assert.equal(config.jornada.aLaJornada, 2000);
+});
+
+test('una quiniela sin acumulado se comporta exactamente como antes', () => {
+  /*
+   * ⚠️ Lo que más importa de todo esto: las quinielas que ya funcionan no
+   * pueden notar el cambio. Sin `alAcumulado`, el bote es cero y cada premio de
+   * jornada es la cuota entera.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1' }],
+    jornadas: [{ id: 'x1', secuencia: 1, precio: 2000 }],
+    pagosPorJugador: new Map([['p1', [abono('jornada', '2000')]]]),
+    entregado: 0
+  });
+
+  assert.equal(estado.acumulado.cobrado, 0);
+  assert.equal(estado.acumulado.esperado, 0);
+  assert.equal(estado.jornadas[0].premio, 2000);
+});

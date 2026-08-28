@@ -121,9 +121,9 @@ async function anular(quinielaId, pagoId, { registradoPor, nota } = {}) {
 async function cuentas(quinielaId, configuracion) {
   const { jugadores, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
     const [j, jo, p] = await Promise.all([
-      c.query(`SELECT id, nombre, usuario_id, cobrar_desde, juega_torneo, juega_jornadas
+      c.query(`SELECT id, nombre, usuario_id, cobrar_desde, juega_torneo, juega_jornadas, juega_acumulado
                  FROM jugadores ORDER BY nombre`),
-      c.query('SELECT id, nombre, secuencia, precio FROM jornadas ORDER BY secuencia'),
+      c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
       c.query('SELECT jugador_id, concepto, monto FROM pagos')
     ]);
     return { jugadores: j.rows, jornadas: jo.rows, pagos: p.rows };
@@ -142,10 +142,12 @@ async function cuentas(quinielaId, configuracion) {
     cobrarDesde: jugador.cobrar_desde,
     juegaTorneo: jugador.juega_torneo,
     juegaJornadas: jugador.juega_jornadas,
+    juegaAcumulado: jugador.juega_acumulado,
     ...cobros.cuentaDeJugador({
       jugador: {
         juegaTorneo: jugador.juega_torneo,
         juegaJornadas: jugador.juega_jornadas,
+        juegaAcumulado: jugador.juega_acumulado,
         cobrarDesde: jugador.cobrar_desde
       },
       jornadas,
@@ -165,13 +167,13 @@ async function cuentas(quinielaId, configuracion) {
 async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
   const { jugador, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
-      `SELECT id, nombre, cobrar_desde, juega_torneo, juega_jornadas
+      `SELECT id, nombre, cobrar_desde, juega_torneo, juega_jornadas, juega_acumulado
          FROM jugadores WHERE id = $1`,
       [jugadorId]);
     if (!j) return { jugador: null, jornadas: [], pagos: [] };
 
     const [jo, p] = await Promise.all([
-      c.query('SELECT id, nombre, secuencia, precio FROM jornadas ORDER BY secuencia'),
+      c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
       c.query('SELECT concepto, monto FROM pagos WHERE jugador_id = $1', [jugadorId])
     ]);
     return { jugador: j, jornadas: jo.rows, pagos: p.rows };
@@ -182,6 +184,7 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
   const suyo = {
     juegaTorneo: jugador.juega_torneo,
     juegaJornadas: jugador.juega_jornadas,
+    juegaAcumulado: jugador.juega_acumulado,
     cobrarDesde: jugador.cobrar_desde
   };
   const cuenta = cobros.cuentaDeJugador({
@@ -199,7 +202,13 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
       .map(j => ({
         id: j.id,
         nombre: j.nombre,
-        precio: cobros.aMonto(j.precio),
+        /*
+         * ⚠️ Lo que le toca pagar a ESTA persona, no lo que cuesta la jornada.
+         * Quien no juega el acumulado paga sólo la parte de jornada, y ponerle
+         * el total sería enseñarle una deuda que no tiene —y que además no
+         * cuadraría con el «pagada ✅» de al lado, que sí lo tiene en cuenta—.
+         */
+        precio: cobros.precioParaJugador(j, jugador.juega_acumulado !== false),
         pagada: cobros.jornadaPagada({ jugador: suyo, jornadas, pagos, jornadaId: j.id })
       }))
   };
@@ -222,20 +231,22 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
  * `cobrarDesde` necesita su propio interruptor porque su valor legítimo puede
  * ser `null` —«desde siempre»— y con `COALESCE` no habría forma de ponerlo.
  */
-async function ajustarJugador(quinielaId, jugadorId, { juegaTorneo, juegaJornadas, cobrarDesde }) {
+async function ajustarJugador(quinielaId, jugadorId, { juegaTorneo, juegaJornadas, juegaAcumulado, cobrarDesde }) {
   return db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
       `UPDATE jugadores
-          SET juega_torneo   = COALESCE($2, juega_torneo),
-              juega_jornadas = COALESCE($5, juega_jornadas),
-              cobrar_desde   = CASE WHEN $4 THEN $3 ELSE cobrar_desde END
+          SET juega_torneo    = COALESCE($2, juega_torneo),
+              juega_jornadas  = COALESCE($5, juega_jornadas),
+              juega_acumulado = COALESCE($6, juega_acumulado),
+              cobrar_desde    = CASE WHEN $4 THEN $3 ELSE cobrar_desde END
         WHERE id = $1
-        RETURNING id, nombre, juega_torneo, juega_jornadas, cobrar_desde`,
+        RETURNING id, nombre, juega_torneo, juega_jornadas, juega_acumulado, cobrar_desde`,
       [jugadorId,
        juegaTorneo === undefined ? null : Boolean(juegaTorneo),
        cobrarDesde === undefined || cobrarDesde === null ? null : Number(cobrarDesde),
        cobrarDesde !== undefined,
-       juegaJornadas === undefined ? null : Boolean(juegaJornadas)]);
+       juegaJornadas === undefined ? null : Boolean(juegaJornadas),
+       juegaAcumulado === undefined ? null : Boolean(juegaAcumulado)]);
     return j || null;
   });
 }
@@ -253,9 +264,98 @@ async function proximaSecuencia(cliente) {
   return Number(fila.siguiente);
 }
 
+/* ==================== Los botes ==================== */
+
+/**
+ * Cuánto hay en el premio de cada jornada y en el acumulado.
+ *
+ * Se trae todo de una vez y se cruza en memoria, igual que `cuentas`: tres
+ * consultas fijas en vez de tres por jugador.
+ *
+ * ⚠️ El acumulado disponible es lo cobrado MENOS lo ya entregado. Sin restar
+ * las entregas, el bote seguiría mostrando dinero que ya se repartió.
+ */
+async function botes(quinielaId) {
+  return db.enQuiniela(quinielaId, async c => {
+    const [j, jo, p, e] = await Promise.all([
+      c.query(`SELECT id, cobrar_desde, juega_jornadas, juega_acumulado FROM jugadores`),
+      c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
+      c.query('SELECT jugador_id, concepto, monto FROM pagos'),
+      c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado')
+    ]);
+
+    const pagosPorJugador = new Map();
+    for (const pago of p.rows) {
+      if (!pagosPorJugador.has(pago.jugador_id)) pagosPorJugador.set(pago.jugador_id, []);
+      pagosPorJugador.get(pago.jugador_id).push(pago);
+    }
+
+    return cobros.botes({
+      jugadores: j.rows.map(f => ({
+        id: f.id,
+        cobrarDesde: f.cobrar_desde,
+        juegaJornadas: f.juega_jornadas,
+        juegaAcumulado: f.juega_acumulado
+      })),
+      jornadas: jo.rows,
+      pagosPorJugador,
+      entregado: e.rows[0].total
+    });
+  });
+}
+
+/** Las entregas del acumulado, de la más nueva a la más vieja. */
+async function entregas(quinielaId) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows } = await c.query(
+      `SELECT e.id, e.nombre_ganador, e.monto, e.nota, e.created_at,
+              u.username AS registrado_por
+         FROM entregas_acumulado e
+         LEFT JOIN usuarios u ON u.id = e.registrado_por
+        ORDER BY e.created_at DESC`);
+    return rows;
+  });
+}
+
+/**
+ * Entrega el acumulado a alguien, y con eso el bote vuelve a empezar.
+ *
+ * ⚠️ El monto NO se recibe de fuera: se calcula aquí, dentro de la misma
+ * transacción en la que se escribe. Si viniera del navegador, dos pestañas
+ * abiertas podrían entregar dos veces el mismo dinero, o entregar una cifra que
+ * ya cambió porque alguien acaba de abonar.
+ *
+ * ⛔ Y una entrega no se edita ni se borra —la base ni siquiera se lo permite a
+ * la aplicación—. Si se anotó mal, se corrige con otra. El dinero entregado es
+ * historia, igual que los abonos.
+ */
+async function entregarAcumulado(quinielaId, { jugadorId, nota, registradoPor } = {}) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: [jugador] } = await c.query(
+      'SELECT id, nombre FROM jugadores WHERE id = $1', [jugadorId]);
+
+    if (!jugador) return { ok: false, motivo: 'jugador_no_encontrado' };
+
+    const estado = await botes(quinielaId);
+    const monto = estado.acumulado.disponible;
+
+    if (!(monto > 0)) return { ok: false, motivo: 'sin_acumulado' };
+
+    const { rows: [entrega] } = await c.query(
+      `INSERT INTO entregas_acumulado
+         (quiniela_id, jugador_id, nombre_ganador, monto, nota, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, nombre_ganador, monto, created_at`,
+      [quinielaId, jugador.id, jugador.nombre, monto, nota || '', registradoPor || null]);
+
+    return { ok: true, entrega };
+  });
+}
+
 module.exports = {
   deQuiniela, deJugador,
   registrar, anular,
   cuentas, cuentaDetallada,
-  ajustarJugador, proximaSecuencia
+  ajustarJugador, proximaSecuencia,
+  botes, entregas, entregarAcumulado
 };

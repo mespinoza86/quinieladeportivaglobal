@@ -199,8 +199,14 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
       partidos, (guardada?.partidos || []).map(p => p.apiFixtureId));
 
     const cambio = await enQuiniela(req, async () => {
+      /*
+       * ⚠️ Las DOS cuotas se copian al crear la jornada, no sólo el total: si
+       * mañana se cambia el reparto entre premio de jornada y bote acumulado,
+       * las jornadas ya jugadas conservan el suyo. Mismo motivo que el precio.
+       */
       const r = await jornadasMod.guardar(req.quiniela.id, nombre, enOrden,
-        precio.activo ? precio.precio : 0);
+        precio.activo ? precio.precio : 0,
+        precio.activo ? precio.alAcumulado : 0);
       await rankingMod.actualizar(req.quiniela.id, nombre, req.puntuacion);
       return r;
     });

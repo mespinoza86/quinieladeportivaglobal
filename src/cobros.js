@@ -68,7 +68,7 @@ function esUuid(valor) {
  */
 const COBROS_POR_DEFECTO = {
   torneo: { activo: false, precio: 0 },
-  jornada: { activo: false, precio: 0 }
+  jornada: { activo: false, precio: 0, alAcumulado: 0 }
 };
 
 /**
@@ -93,7 +93,44 @@ function normalizarCobros(configuracion) {
     const precio = Math.max(0, aMonto(r.precio));
     return { activo: Boolean(r.activo), precio };
   };
-  return { torneo: rama('torneo'), jornada: rama('jornada') };
+
+  const jornada = rama('jornada');
+
+  /*
+   * ⚠️ La cuota de jornada se parte en dos: lo que se reparte en ESA jornada y
+   * lo que va al bote acumulado para el ganador final.
+   *
+   * El administrador escribe las dos cuotas por separado —así cada quiniela
+   * reparte como quiera— y aquí se guarda `precio` como el TOTAL que paga la
+   * gente y `alAcumulado` como la parte del bote. La parte de jornada se
+   * deriva restando: guardar los tres números sería tener dos datos en tres
+   * sitios, y tarde o temprano se separan.
+   *
+   * ⛔ Se acota a `precio` porque un acumulado mayor daría un premio de jornada
+   * NEGATIVO, y las cuentas saldrían al revés sin fallar. La base lo impide con
+   * un CHECK; esto lo impide antes de llegar a ella.
+   */
+  jornada.alAcumulado = Math.min(jornada.precio, Math.max(0, aMonto(crudo.jornada?.alAcumulado)));
+  jornada.aLaJornada = aMonto(jornada.precio - jornada.alAcumulado);
+
+  return { torneo: rama('torneo'), jornada };
+}
+
+/**
+ * Lo que UNA jornada le cuesta a una persona concreta.
+ *
+ * ⚠️ Ya no es `jornada.precio` a secas: quien no participa en el bote paga sólo
+ * la parte de la jornada. De ahí que haga falta saber de quién se habla.
+ *
+ * `alAcumulado` viene congelado en la jornada, no de la configuración de hoy:
+ * subir el reparto mañana no puede reescribir lo que costó una jornada vieja.
+ */
+function precioParaJugador(jornada, juegaAcumulado = true) {
+  const total = Math.max(0, aMonto(jornada?.precio));
+  if (juegaAcumulado !== false) return total;
+
+  const bote = Math.min(total, Math.max(0, aMonto(jornada?.al_acumulado ?? jornada?.alAcumulado)));
+  return aMonto(total - bote);
 }
 
 /**
@@ -104,7 +141,7 @@ function normalizarCobros(configuracion) {
  * que se le cobra: quien entró en la jornada 7 no debe las seis anteriores,
  * no estaba. `null` es «desde siempre».
  */
-function debePorJornadas(jornadas = [], cobrarDesde = null) {
+function debePorJornadas(jornadas = [], cobrarDesde = null, juegaAcumulado = true) {
   const desde = cobrarDesde === null || cobrarDesde === undefined
     ? -Infinity
     : Number(cobrarDesde);
@@ -113,7 +150,7 @@ function debePorJornadas(jornadas = [], cobrarDesde = null) {
   for (const jornada of jornadas) {
     if (!jornada) continue;
     if (Number(jornada.secuencia) < desde) continue;
-    total += Math.max(0, aMonto(jornada.precio));
+    total += precioParaJugador(jornada, juegaAcumulado);
   }
   return aMonto(total);
 }
@@ -193,12 +230,23 @@ function cuentaDeJugador({ jugador, jornadas = [], pagos = [], cobros } = {}) {
    */
   const juegaJornadas = jugador?.juegaJornadas !== false;
 
+  /* Misma regla que las otras dos: sin el campo, participa. Ver arriba. */
+  const juegaAcumulado = jugador?.juegaAcumulado !== false;
+
   const debeJornadas = config.jornada.activo && juegaJornadas
-    ? debePorJornadas(jornadas, jugador?.cobrarDesde ?? null)
+    ? debePorJornadas(jornadas, jugador?.cobrarDesde ?? null, juegaAcumulado)
     : 0;
 
   const abonadoJornadas = totalAbonado(pagos, 'jornada');
   const saldo = aMonto(abonadoJornadas - debeJornadas);
+
+  /*
+   * ⚠️ El precio de HOY para ESTA persona, no el de la configuración a secas.
+   * Quien no juega el acumulado paga sólo la parte de jornada, así que con el
+   * precio completo la estimación «te alcanza para N» le saldría corta: le
+   * diríamos que le alcanza para 2 cuando le alcanza para 4.
+   */
+  const precioSuyo = juegaAcumulado ? config.jornada.precio : config.jornada.aLaJornada;
 
   const jornada = {
     activo: config.jornada.activo,
@@ -212,17 +260,19 @@ function cuentaDeJugador({ jugador, jornadas = [], pagos = [], cobros } = {}) {
      * dinero que puso.
      */
     juega: juegaJornadas,
+    /* Para que la pantalla pueda pintar la casilla y explicar por qué paga menos. */
+    juegaAcumulado,
     debe: debeJornadas,
     abonado: abonadoJornadas,
     // Positivo es saldo A FAVOR; negativo es lo que debe.
     saldo,
     alDia: saldo >= 0,
-    precioActual: config.jornada.precio,
+    precioActual: precioSuyo,
     /*
      * Sólo tiene sentido estimar cuando hay saldo a favor. Con saldo negativo
      * la pregunta no es «cuántas cubre» sino «cuánto debe».
      */
-    jornadasQueCubre: saldo > 0 ? jornadasQueCubre(saldo, config.jornada.precio) : 0
+    jornadasQueCubre: saldo > 0 ? jornadasQueCubre(saldo, precioSuyo) : 0
   };
 
   return { torneo, jornada, alDia: torneo.alDia && jornada.alDia };
@@ -244,9 +294,10 @@ function jornadaPagada({ jugador, jornadas = [], pagos = [], jornadaId } = {}) {
     .sort((a, b) => Number(a.secuencia) - Number(b.secuencia));
 
   let disponible = totalAbonado(pagos, 'jornada');
+  const juegaAcumulado = jugador?.juegaAcumulado !== false;
 
   for (const j of suyas) {
-    const precio = Math.max(0, aMonto(j.precio));
+    const precio = precioParaJugador(j, juegaAcumulado);
     /*
      * Una jornada gratis está pagada por definición, y no consume saldo. Sin
      * este caso, una quiniela que no cobra mostraría todo como impagado.
@@ -260,6 +311,156 @@ function jornadaPagada({ jugador, jornadas = [], pagos = [], jornadaId } = {}) {
   return false;
 }
 
+/* ==================== Los dos botes ==================== */
+
+/**
+ * Reparte lo que UNA persona ha abonado entre las jornadas y el acumulado.
+ *
+ * ============================================================================
+ * ⚠️ SE CUENTA LO COBRADO, NO LO DEBIDO
+ * ============================================================================
+ *
+ * Decisión del 27 de agosto: los botes son el dinero que existe de verdad, no
+ * el que debería existir. Así la cifra que se anuncia es la que hay.
+ *
+ * ============================================================================
+ * Y CADA ABONO CUBRE PRIMERO LA PARTE DE LA JORNADA
+ * ============================================================================
+ *
+ * Los abonos son un SALDO: `concepto: 'jornada'` no dice a qué jornada
+ * corresponde. Se consumen en orden de secuencia —la más vieja primero, igual
+ * que hace `jornadaPagada`— y dentro de cada jornada, primero su premio y
+ * después el bote.
+ *
+ * ⛔ El orden importa y no es arbitrario: el premio de la jornada se reparte en
+ * días, el acumulado al final del torneo. Completar antes lo que se paga antes
+ * es lo que hace que el premio semanal esté listo cuando toca.
+ *
+ * Devuelve lo aportado por esta persona a cada bote, jornada por jornada.
+ */
+function repartoDeAbonos({ jugador, jornadas = [], pagos = [] } = {}) {
+  const desde = jugador?.cobrarDesde ?? null;
+  const limite = desde === null || desde === undefined ? -Infinity : Number(desde);
+  const juegaAcumulado = jugador?.juegaAcumulado !== false;
+  const juegaJornadas = jugador?.juegaJornadas !== false;
+
+  const porJornada = new Map();
+  let alAcumulado = 0;
+
+  if (!juegaJornadas) return { porJornada, alAcumulado };
+
+  let disponible = totalAbonado(pagos, 'jornada');
+
+  const suyas = jornadas
+    .filter(j => j && Number(j.secuencia) >= limite)
+    .sort((a, b) => Number(a.secuencia) - Number(b.secuencia));
+
+  for (const j of suyas) {
+    if (disponible <= 0) break;
+
+    const total = Math.max(0, aMonto(j.precio));
+
+    /*
+     * ⚠️ El premio de la jornada es el MISMO para todos: lo que la jornada
+     * apartó para el bote no depende de quién pague. Lo que cambia es si esta
+     * persona pone su parte del bote o no.
+     *
+     * Con `bote = 0` para quien no juega el acumulado, el premio le saldría de
+     * ₡2.000 en vez de ₡1.000, y su abono cubriría una jornada donde cubre dos.
+     * `precioParaJugador` ya le cobra ₡1.000: las dos cuentas tienen que dar lo
+     * mismo o el panel de botes diría que debe alguien que está al día.
+     */
+    const bote = Math.min(total, Math.max(0, aMonto(j.al_acumulado ?? j.alAcumulado)));
+    const premio = aMonto(total - bote);
+    const suBote = juegaAcumulado ? bote : 0;
+
+    // Primero el premio de la jornada.
+    const aPremio = Math.min(disponible, premio);
+    disponible = aMonto(disponible - aPremio);
+    if (aPremio > 0) porJornada.set(String(j.id), aMonto((porJornada.get(String(j.id)) || 0) + aPremio));
+
+    // Y lo que sobre, al bote.
+    const aBote = Math.min(disponible, suBote);
+    disponible = aMonto(disponible - aBote);
+    alAcumulado = aMonto(alAcumulado + aBote);
+  }
+
+  return { porJornada, alAcumulado };
+}
+
+/**
+ * Cuánto hay en el premio de cada jornada y en el acumulado.
+ *
+ * ⚠️ Se calcula, no se guarda. Es la misma decisión que el ranking y que las
+ * cuentas (Entrada 061): si mañana se borra una jornada, se corrige un abono o
+ * alguien deja de participar, la cifra sale bien sola. Un contador que se va
+ * sumando se desincroniza en cuanto algo cambia, y cuando se descubre ya nadie
+ * sabe cuál era el número bueno.
+ *
+ * `entregado` es lo que ya se le dio a algún ganador: el acumulado disponible
+ * es lo juntado menos lo entregado.
+ */
+function botes({ jugadores = [], jornadas = [], pagosPorJugador = new Map(), entregado = 0 } = {}) {
+  const premios = new Map();
+  const esperadoPorJornada = new Map();
+
+  for (const j of jornadas) {
+    premios.set(String(j.id), 0);
+    esperadoPorJornada.set(String(j.id), 0);
+  }
+
+  let acumuladoCobrado = 0;
+  let acumuladoEsperado = 0;
+
+  for (const jugador of jugadores) {
+    const pagos = pagosPorJugador.get(jugador.jugadorId ?? jugador.id) || [];
+    const reparto = repartoDeAbonos({ jugador, jornadas, pagos });
+
+    for (const [jornadaId, monto] of reparto.porJornada) {
+      premios.set(jornadaId, aMonto((premios.get(jornadaId) || 0) + monto));
+    }
+    acumuladoCobrado = aMonto(acumuladoCobrado + reparto.alAcumulado);
+
+    /*
+     * Y lo ESPERADO, para poder decir «₡9.000 de ₡11.000». Sin ese segundo
+     * número, un premio a medio cobrar parece completo.
+     */
+    if (jugador.juegaJornadas === false) continue;
+
+    const limite = jugador.cobrarDesde === null || jugador.cobrarDesde === undefined
+      ? -Infinity : Number(jugador.cobrarDesde);
+
+    for (const j of jornadas) {
+      if (Number(j.secuencia) < limite) continue;
+
+      const total = Math.max(0, aMonto(j.precio));
+      const bote = jugador.juegaAcumulado !== false
+        ? Math.min(total, Math.max(0, aMonto(j.al_acumulado ?? j.alAcumulado)))
+        : 0;
+
+      esperadoPorJornada.set(String(j.id),
+        aMonto((esperadoPorJornada.get(String(j.id)) || 0) + aMonto(total - bote)));
+      acumuladoEsperado = aMonto(acumuladoEsperado + bote);
+    }
+  }
+
+  return {
+    jornadas: jornadas.map(j => ({
+      id: j.id,
+      nombre: j.nombre,
+      secuencia: Number(j.secuencia),
+      premio: premios.get(String(j.id)) || 0,
+      esperado: esperadoPorJornada.get(String(j.id)) || 0
+    })),
+    acumulado: {
+      cobrado: acumuladoCobrado,
+      esperado: acumuladoEsperado,
+      entregado: aMonto(entregado),
+      disponible: aMonto(acumuladoCobrado - entregado)
+    }
+  };
+}
+
 module.exports = {
   CONCEPTOS,
   MONTO_MAXIMO,
@@ -271,5 +472,5 @@ module.exports = {
   totalAbonado,
   jornadasQueCubre,
   cuentaDeJugador,
-  jornadaPagada
+  jornadaPagada, precioParaJugador, repartoDeAbonos, botes
 };

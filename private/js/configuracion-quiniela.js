@@ -137,12 +137,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cobrosPanel = document.getElementById('cobrosPanel');
   const cobrosMensaje = document.getElementById('cobrosMensaje');
 
+  const jornadaPrecio = document.getElementById('jornadaPrecio');
+  const jornadaAcumulado = document.getElementById('jornadaAcumulado');
+  const jornadaTotal = document.getElementById('jornadaTotal');
+
+  const colones = new Intl.NumberFormat('es-CR', {
+    style: 'currency', currency: 'CRC', maximumFractionDigits: 0
+  });
+
+  /*
+   * En pantalla se piden las DOS partes por separado —lo de la jornada y lo del
+   * bote— porque es como lo piensa quien cobra: «2.000, mil y mil». Guardado
+   * es al revés: `precio` es el total y `alAcumulado` la parte del bote.
+   *
+   * Se guarda así, y no los tres números, porque el tercero se deduce: teniendo
+   * total y bote, la parte de jornada es la resta. Guardar los tres sería tener
+   * el mismo dato en dos sitios, y algún día no coincidirían.
+   */
+  function refrescarTotal() {
+    const suma = (Number(jornadaPrecio.value) || 0) + (Number(jornadaAcumulado.value) || 0);
+    jornadaTotal.textContent = colones.format(Math.max(0, suma));
+  }
+
+  jornadaPrecio?.addEventListener('input', refrescarTotal);
+  jornadaAcumulado?.addEventListener('input', refrescarTotal);
+
   function pintarCobros(config) {
     const c = config?.cobros || {};
     document.getElementById('torneoActivo').checked = Boolean(c.torneo?.activo);
     document.getElementById('torneoPrecio').value = Number(c.torneo?.precio || 0);
     document.getElementById('jornadaActivo').checked = Boolean(c.jornada?.activo);
-    document.getElementById('jornadaPrecio').value = Number(c.jornada?.precio || 0);
+    jornadaPrecio.value = Number(c.jornada?.aLaJornada || 0);
+    jornadaAcumulado.value = Number(c.jornada?.alAcumulado || 0);
+    refrescarTotal();
   }
 
   if (['propietario', 'admin'].includes(quiniela?.rol)) {
@@ -151,6 +178,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.getElementById('guardarCobros')?.addEventListener('click', async () => {
+    const aLaJornada = Math.max(0, Number(jornadaPrecio.value) || 0);
+    const alAcumulado = Math.max(0, Number(jornadaAcumulado.value) || 0);
+
     const cobros = {
       torneo: {
         activo: document.getElementById('torneoActivo').checked,
@@ -158,7 +188,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
       jornada: {
         activo: document.getElementById('jornadaActivo').checked,
-        precio: Number(document.getElementById('jornadaPrecio').value) || 0
+        precio: aLaJornada + alAcumulado,
+        alAcumulado
       }
     };
 

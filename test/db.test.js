@@ -183,7 +183,7 @@ test('un quinielaId que no es UUID se rechaza antes de tocar la base', async () 
   assert.equal(rows[0].t, 'jugadores');
 });
 
-test('el esquema deja las 13 tablas de dominio con RLS activo y forzado', async () => {
+test('el esquema deja las 14 tablas de dominio con RLS activo y forzado', async () => {
   const { rows } = await db.consulta(`
     SELECT count(*)::int AS n
       FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
@@ -196,10 +196,11 @@ test('el esquema deja las 13 tablas de dominio con RLS activo y forzado', async 
    * Y si sube sin que se haya añadido una tabla a propósito, tampoco está
    * bien: significa que hay una tabla nueva que nadie declaró aquí.
    *
-   * La 13.ª es `pagos`, de la migración 001. Una tabla de pagos sin RLS sería
-   * una fuga de quién pagó cuánto en otra quiniela.
+   * La 13.ª es `pagos` (migración 001) y la 14.ª `entregas_acumulado` (006).
+   * Las dos guardan dinero: sin RLS serían una fuga de cuánto pagó o cobró
+   * cada quiniela, y no fallarían — devolverían filas de más.
    */
-  assert.equal(rows[0].n, 13);
+  assert.equal(rows[0].n, 14);
 });
 
 test('⚠️ ninguna tabla con quiniela_id se queda sin aislamiento, salvo la excepción declarada', async () => {
