@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 482/482
+npm test                    # 486/486
 npm run test:e2e            # 112/112, ~4,7 min
 ```
 
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **482**, ~75 s |
+| Pruebas rápidas | **486**, ~75 s |
 | Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 21 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | Migraciones 001 a 004 corridas y verificadas. **La 005 y la 006 hay que correrlas** |
+| Base en Neon | Migraciones 001 a 006 corridas y verificadas. **La 007 hay que correrla** |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -386,54 +386,65 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **Las migraciones 002, 003 y 004 están corridas y verificadas contra Neon**,
-todas el 25 de agosto, igual que `SUPERADMIN_EMAILS` en Render.
+✅ **Las migraciones 002 a 006 están corridas y verificadas contra Neon.** Las
+002, 003 y 004 el 25 de agosto —igual que `SUPERADMIN_EMAILS` en Render—, la 005
+y la 006 el 27.
 
-⛔ **La 005 está PENDIENTE**: `db/migraciones/005-cobro-por-jugador.sql`, con el
-rol dueño y **antes** de empujar. Añade `jugadores.juega_jornadas`, la casilla
-que decide a quién se le cobra la cuota por jornada.
+La 005 añadió `jugadores.juega_jornadas` (Entrada 076) y la 006 trajo
+`jornadas.al_acumulado`, `jugadores.juega_acumulado` y la tabla
+`entregas_acumulado` (Entrada 078). Comprobado contra Neon el 27: las columnas
+con su valor por defecto, los dos `CHECK`, RLS forzada en la tabla nueva y
+`app_quiniela` con `INSERT, SELECT` únicamente.
 
-⚠️ Y después conviene comprobar que **nadie quedó exento sin querer**, también
-con el rol dueño:
+⛔ **La 007 está PENDIENTE**: `db/migraciones/007-abonos-solo-escritura.sql`, con
+el rol dueño. Quita `UPDATE` y `DELETE` sobre `pagos` (Entrada 079), que los
+tenía aunque el diseño dijera desde la 001 que un abono no se edita ni se borra.
 
-```sql
-SELECT count(*) FILTER (WHERE NOT juega_jornadas) AS exentos FROM jugadores;
--- tiene que dar 0 justo después de la migración
-```
+✅ **A diferencia de las demás, ésta NO necesita despliegue**: no cambia el
+código, sólo quita permisos que el código nunca usa. Se puede correr en
+cualquier momento.
 
-Esa consulta no vale desde la aplicación: `jugadores` lleva RLS, así que una
-consulta global con `app_quiniela` devolvería cero filas **sin fallar**, y
-parecería que todo está bien.
-
-⛔ **La 006 también está PENDIENTE**: `db/migraciones/006-acumulado.sql`, con el
-rol dueño y **antes** de empujar. Trae `jornadas.al_acumulado`,
-`jugadores.juega_acumulado` y la tabla `entregas_acumulado` (Entrada 078). Sin
-ella, las consultas de cobros fallan enteras: piden columnas que no existen.
-
-Y después, la misma comprobación de siempre —también con el rol dueño, y por la
-misma razón de la RLS—:
+⚠️ Después de cualquier migración conviene comprobar la base con el rol dueño,
+porque estas consultas **no valen desde la aplicación**: `jugadores` y `jornadas`
+llevan RLS, así que una consulta global con `app_quiniela` devuelve cero filas
+**sin fallar**, y parecería que todo está bien.
 
 ```sql
-SELECT count(*) FILTER (WHERE NOT juega_acumulado) AS fuera FROM jugadores;
--- tiene que dar 0: nadie queda fuera del acumulado sin que alguien lo decida
+-- que nadie quedó exento ni fuera del bote sin que alguien lo decidiera
+SELECT count(*) FILTER (WHERE NOT juega_jornadas)  AS exentos,
+       count(*) FILTER (WHERE NOT juega_acumulado) AS fuera_del_bote
+  FROM jugadores;
+-- las dos tienen que dar 0 justo después de la migración
 
+-- que ninguna jornada vieja empezó a apartar dinero sola
 SELECT count(*) FILTER (WHERE al_acumulado <> 0) AS con_bote FROM jornadas;
--- tiene que dar 0: las jornadas que ya existen no apartaron nada
+-- 0 justo después de la 006
 
-SELECT has_table_privilege('app_quiniela', 'entregas_acumulado', 'DELETE');
--- tiene que dar false, o una entrega de dinero se puede borrar sin rastro
+-- ⛔ y que las tres tablas de solo-escritura quedaron cerradas
+SELECT table_name,
+       string_agg(privilege_type, ', ' ORDER BY privilege_type) AS permisos
+  FROM information_schema.role_table_grants
+ WHERE grantee = 'app_quiniela'
+   AND table_name IN ('pagos','acciones_superadmin','entregas_acumulado')
+ GROUP BY table_name ORDER BY table_name;
+-- las tres tienen que decir exactamente: INSERT, SELECT
 ```
 
-De las tres, la que enseñó algo fue la **003**: al comprobar la base después de
+De todas, la que enseñó algo fue la **003**: al comprobar la base después de
 la 002 salió que `app_quiniela` tenía **DELETE** sobre la tabla de auditoría —un
 `GRANT` sólo suma, y los privilegios por defecto del esquema ya se lo habían
 dado—. Sin ella todo funcionaba y la auditoría era de mentira, que es peor que
 un error.
 
-⚠️ **Y de ahí sale una costumbre que conviene mantener**: después de cada
-migración, preguntarle a la base con el rol de la aplicación qué permisos
-quedaron de verdad. El guion puede decir exactamente lo que se quería y la base
-tener otra cosa (Entrada 069).
+⛔ **Y la 007 demuestra que la costumbre no bastó**: `pagos` llevaba con `DELETE`
+desde la 001, con la regla de que un abono no se borra escrita en un comentario
+al lado. La comprobación se hizo para las tablas nuevas y nunca para las viejas.
+
+⚠️ **Así que la costumbre completa es**: después de cada migración, preguntarle a
+la base qué permisos quedaron **en todas las tablas de solo-escritura**, no sólo
+en la que se acaba de tocar. El guion puede decir exactamente lo que se quería y
+la base tener otra cosa (Entrada 069), y una tabla vieja puede llevar años con
+un permiso que nadie miró (Entrada 079).
 
 ⚠️ Y una advertencia: **la contraseña de esa cuenta pasa a ser la llave del
 sistema entero**, no de una quiniela. Merece una que no se use en ningún otro
@@ -1117,7 +1128,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 482 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 486 pruebas rápidas y 112 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -12550,6 +12561,138 @@ portada / login              → 200
 /cobros.html sin sesion      → 302 a login
 /api/cobros/botes sin sesion → 401   (existe y rechaza; un 404 seria que no esta)
 ```
+
+---
+
+### 📌 Entrada 079 — 27 de agosto de 2026 — Una regla escrita en un comentario no es una regla
+
+**Objetivo:** salió de una limpieza. El usuario quiso dejar los abonos en cero
+para empezar el torneo de verdad, y al mirar los permisos para decirle cómo
+hacerlo apareció esto:
+
+```
+pagos               → DELETE, INSERT, SELECT, UPDATE
+entregas_acumulado  → INSERT, SELECT
+```
+
+`pagos` lleva escrita desde la migración 001 la regla de que **un abono no se
+edita ni se borra**: se corrige con un asiento inverso. Es lo que hace que el
+historial de dinero sirva para lo único que sirve, resolver un «yo sí pagué».
+
+Y esa regla vivía en dos sitios, ninguno de los cuales la aplica: un comentario
+en el esquema, y un centinela que leía el texto de `src/pagos.js` comprobando
+que no dijera `DELETE FROM pagos`. La base concedía los cuatro permisos.
+
+**Un centinela que lee el código protege del código que hay hoy. El permiso
+protege del que se escriba mañana.**
+
+## ⛔ Lo gordo estaba en el banco de pruebas
+
+Buscando el alcance apareció algo peor. `test/postgres-en-memoria.js` hacía:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_quiniela;
+```
+
+Los cuatro permisos, sobre todas las tablas. Producción tenía
+`acciones_superadmin` (migración 003) y `entregas_acumulado` (006) cerradas con
+`REVOKE`. **El banco de pruebas no.**
+
+Consecuencia: **ninguna prueba podía detectar una ruta que borrara un asiento de
+dinero o de auditoría.** Se habría escrito, habría pasado las 482 pruebas en
+verde, y habría llegado a producción a estrellarse contra un permiso —o peor, a
+funcionar si a alguien se le hubiera ocurrido «arreglar» el permiso—.
+
+⚠️ Y el comentario que hay tres líneas encima de ese `GRANT` dice, literalmente:
+
+> *un banco de pruebas con más privilegios que el entorno real no prueba lo que
+> dice probar*
+
+Llevaba meses ahí, describiendo el fallo que tenía debajo. **Escribir la lección
+no es aplicarla**, y una advertencia junto al código que la incumple es más
+peligrosa que no tenerla: da por resuelto lo que no lo está.
+
+## La duda que había que resolver antes de tocar nada
+
+Quitar `DELETE` sobre `pagos` tenía un riesgo concreto: **borrar un jugador
+arrastra sus abonos por clave ajena**. Si la cascada necesitara ese permiso,
+cerrar la tabla dejaría jugadores imposibles de borrar.
+
+No lo necesita —las cascadas las ejecuta PostgreSQL como dueño de la tabla, no
+como quien llama—, pero eso había que **comprobarlo**, no razonarlo. Con el
+`REVOKE` puesto en el banco de pruebas:
+
+```
+borrar un abono a mano  → permission denied for table pagos
+editar un abono         → permission denied for table pagos
+borrar el jugador       → funcionó, y se llevó sus abonos
+borrar la quiniela      → funcionó
+```
+
+Y las 482 pruebas siguieron en verde. Pero «no falló nada» puede querer decir
+«nada lo probaba», así que las dos cascadas quedaron escritas como pruebas.
+
+## La lista vive en un sitio y se comprueba en los dos
+
+`SOLO_ESCRITURA` en el arnés es ahora la única lista, y el `REVOKE` se arma con
+ella. El centinela nuevo la compara contra lo que cierran las migraciones.
+
+⛔ Hace falta que sea de ida y vuelta porque **olvidarse de cualquiera de las dos
+mitades no falla**: si falta en las migraciones, producción concede de más y
+ninguna prueba lo nota; si falta en el arnés, las pruebas conceden de más y
+tampoco. En los dos casos todo sigue verde.
+
+| Mitad rota | Quién la detecta |
+|---|---|
+| Falta `pagos` en el arnés | la prueba de comportamiento **y** el centinela de las dos listas |
+| `REVOKE` comentado en la migración | el centinela de las dos listas (el único que puede) |
+| `REVOKE` puesto ANTES del `GRANT` | la prueba de comportamiento **y** la de permisos |
+
+La tercera es la trampa de siempre: un `REVOKE` antes del `GRANT` **no hace
+nada**, porque un `GRANT` sólo suma y el de después vuelve a conceder. Se ve
+igual de bien escrito y es un adorno.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/007-abonos-solo-escritura.sql` | **Nueva.** `REVOKE UPDATE, DELETE` sobre las tres tablas |
+| `test/postgres-en-memoria.js` | `SOLO_ESCRITURA` y el `REVOKE` derivado de ella, después del `GRANT` |
+| `test/architecture.test.js` | El centinela que compara las dos listas |
+| `test/db.test.js` | Que la base rechace borrar y editar un abono; que la cascada siga funcionando; que ninguna de las tres conserve `UPDATE`/`DELETE` |
+
+**Verificación:**
+
+```
+npm test → 486/486
+
+rotas a proposito, y las tres caen con el centinela que les toca:
+  falta 'pagos' en el arnes           → comportamiento + dos listas
+  REVOKE comentado en la migracion    → dos listas
+  REVOKE antes del GRANT              → comportamiento + permisos
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una advertencia escrita junto al código que la incumple es peor que no
+   tenerla.** El arnés llevaba meses avisando de tener más privilegios que
+   producción, encima de la línea que se los daba.
+2. **Un centinela que lee el código protege del código de hoy; un permiso
+   protege del de mañana.** La regla de «los abonos no se borran» estaba en un
+   centinela de texto, y por eso no era una regla.
+3. ⚠️ **Las cascadas de clave ajena no necesitan el permiso del rol que llama:**
+   las ejecuta PostgreSQL como dueño de la tabla. Era la única duda seria para
+   cerrar `pagos`, y se resolvió probándola, no razonándola.
+4. **Cuando una regla vive en dos sitios, hace falta un centinela de ida y
+   vuelta.** Comprobar sólo un lado deja el otro libre para desincronizarse, y
+   la desincronización no falla: deja todo verde con el agujero abierto.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **Correr `db/migraciones/007-abonos-solo-escritura.sql` en Neon con el rol
+propietario.** A diferencia de la 006, **ésta no necesita despliegue**: no
+cambia el código, sólo quita permisos que el código nunca usa. Se puede correr
+en cualquier momento, antes o después de subir.
 
 ---
 

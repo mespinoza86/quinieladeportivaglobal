@@ -96,12 +96,38 @@ class PostgresEnMemoria {
  * a 037): un banco de pruebas con más privilegios que el entorno real no prueba
  * lo que dice probar. Aquí se crea el rol `app_quiniela` igual que en Neon y la
  * sesión se pone en su piel.
+ *
+ * ⛔ Y durante meses esta advertencia estuvo escrita justo encima de un `GRANT`
+ * que la incumplía: concedía los cuatro permisos sobre TODAS las tablas,
+ * mientras producción tenía tres de ellas cerradas con `REVOKE`. O sea que
+ * **ninguna prueba podía detectar una ruta que borrara un asiento de dinero o
+ * de auditoría**: aquí estaba permitido. Por eso están los REVOKE de abajo.
  */
+
+/**
+ * Las tablas de SÓLO ESCRITURA: se insertan y se leen, nunca se editan ni se
+ * borran desde la aplicación.
+ *
+ * Las tres guardan hechos que no se pueden reescribir —dinero cobrado, dinero
+ * entregado, y quién borró qué cuenta—. Un asiento que el propio actor puede
+ * quitar no es un asiento.
+ *
+ * ⚠️ Esta lista tiene que coincidir con la que cierran las migraciones. Hay un
+ * centinela que las compara en `test/architecture.test.js`, porque olvidarse de
+ * una de las dos mitades **no falla**: o la prueba concede de más, o producción
+ * concede de más, y en los dos casos todo sigue verde.
+ */
+const SOLO_ESCRITURA = ['pagos', 'acciones_superadmin', 'entregas_acumulado'];
 const PREPARAR_ROL = `
   CREATE ROLE app_quiniela NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
   GRANT USAGE ON SCHEMA public TO app_quiniela;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_quiniela;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_quiniela;
+
+  -- ⚠️ DESPUÉS del GRANT, no antes: un GRANT sólo suma, y el de arriba acaba
+  -- de conceder los cuatro permisos sobre todo. Puesto antes no haría nada.
+  REVOKE UPDATE, DELETE ON ${SOLO_ESCRITURA.join(', ')} FROM app_quiniela;
+
   SET ROLE app_quiniela;
 `;
 
@@ -164,4 +190,4 @@ async function vaciar() {
     SET ROLE app_quiniela;`);
 }
 
-module.exports = { levantar, vaciar, PostgresEnMemoria };
+module.exports = { levantar, vaciar, PostgresEnMemoria, SOLO_ESCRITURA };

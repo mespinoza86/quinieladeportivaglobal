@@ -1952,3 +1952,51 @@ test('⚠️ el acumulado nace apagado y todo el mundo participa', () => {
   assert.match(esquema, /juega_acumulado\s+boolean\s+NOT NULL DEFAULT true/,
     'sin DEFAULT true el bote de una quiniela que lo enciende saldria vacio');
 });
+
+test('⛔ las tablas de solo-escritura estan cerradas en las migraciones Y en el arnes', () => {
+  /*
+   * Tres tablas guardan hechos que no se pueden reescribir: dinero cobrado
+   * (`pagos`), dinero entregado (`entregas_acumulado`) y quien borro que cuenta
+   * (`acciones_superadmin`). Un asiento que el propio actor puede quitar no es
+   * un asiento.
+   *
+   * ⚠️ Esa regla vive en DOS SITIOS y hay que cerrar los dos:
+   *
+   *   1. Las migraciones, que es lo que hay puesto en Neon.
+   *   2. `SOLO_ESCRITURA` del arnes, que es lo que hay puesto en las pruebas.
+   *
+   * ⛔ Olvidarse de cualquiera de las dos mitades **no falla**. Si falta en las
+   * migraciones, produccion concede DELETE y ninguna prueba lo nota. Si falta
+   * en el arnes, las pruebas conceden DELETE y tampoco lo notan: una ruta que
+   * borrara dinero pasaria entera en verde.
+   *
+   * Y paso de verdad. Durante meses el arnes concedio los cuatro permisos sobre
+   * TODAS las tablas —con la advertencia de "un banco de pruebas con mas
+   * privilegios que el entorno real no prueba lo que dice probar" escrita tres
+   * lineas encima— mientras produccion tenia dos de ellas cerradas.
+   */
+  const { SOLO_ESCRITURA } = require('./postgres-en-memoria');
+
+  const dir = path.join('db', 'migraciones');
+  const sql = fs.readdirSync(dir)
+    .filter(f => f.endsWith('.sql'))
+    .map(f => leer(path.join(dir, f)))
+    .join('\n');
+
+  /*
+   * ⚠️ Anclado a inicio de linea (`^` con `m`): en SQL un comentario es `--` al
+   * principio, asi que buscar el REVOKE suelto lo encuentra igual dentro de una
+   * linea comentada. Es la leccion de la Entrada 069, y romper esta prueba
+   * comentando un REVOKE es la forma de comprobar que sigue puesta.
+   */
+  const cerradasEnMigraciones = new Set();
+  for (const linea of sql.split('\n')) {
+    const m = /^\s*REVOKE\s+UPDATE,\s*DELETE\s+ON\s+([a-z_,\s]+?)\s+FROM\s+app_quiniela/i.exec(linea);
+    if (m) for (const t of m[1].split(',')) cerradasEnMigraciones.add(t.trim());
+  }
+
+  assert.deepEqual(
+    [...SOLO_ESCRITURA].sort(),
+    [...cerradasEnMigraciones].sort(),
+    'las dos listas tienen que decir lo mismo: lo que se cierra en Neon y lo que se cierra en las pruebas');
+});

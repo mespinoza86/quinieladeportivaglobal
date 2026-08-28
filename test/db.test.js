@@ -234,3 +234,93 @@ test('⚠️ ninguna tabla con quiniela_id se queda sin aislamiento, salvo la ex
   assert.deepEqual(rows.map(r => r.tabla), EXCEPCIONES,
     'una tabla con quiniela_id y sin RLS devuelve filas de otra quiniela EN SILENCIO');
 });
+
+/* ==================== Lo que no se puede borrar ==================== */
+
+/*
+ * Tres tablas guardan hechos que no se reescriben. Aquí no se comprueba que el
+ * código no lo intente —eso lo mira un centinela leyendo el texto—, sino que
+ * **la base lo impide** aunque el código lo intentara.
+ *
+ * La diferencia importa: un centinela que lee el código protege del código que
+ * hay hoy; el permiso protege del que se escriba mañana.
+ */
+test('⛔ la aplicación no puede borrar ni editar un abono', async () => {
+  const a = await quinielaCon('ana');
+
+  const jugadorId = await db.enQuiniela(a.quiniela, async c => {
+    const { rows: [j] } = await c.query('SELECT id FROM jugadores LIMIT 1');
+    await c.query(
+      `INSERT INTO pagos (quiniela_id, jugador_id, concepto, monto)
+       VALUES ($1, $2, 'jornada', 2000)`, [a.quiniela, j.id]);
+    return j.id;
+  });
+
+  await assert.rejects(
+    () => db.enQuiniela(a.quiniela, c =>
+      c.query('DELETE FROM pagos WHERE jugador_id = $1', [jugadorId])),
+    /permission denied/i,
+    'un abono borrable convierte el historial de dinero en papel mojado');
+
+  await assert.rejects(
+    () => db.enQuiniela(a.quiniela, c =>
+      c.query('UPDATE pagos SET monto = 1 WHERE jugador_id = $1', [jugadorId])),
+    /permission denied/i,
+    'y editable es peor: cambia la cifra sin dejar rastro de que cambió');
+
+  // Y sigue ahí.
+  const quedan = await db.enQuiniela(a.quiniela, async c =>
+    (await c.query('SELECT count(*)::int AS n FROM pagos')).rows[0].n);
+  assert.equal(quedan, 1);
+});
+
+test('⚠️ pero borrar un jugador SÍ se lleva sus abonos', async () => {
+  /*
+   * Es la duda que había antes de quitar el permiso, y la razón de que esta
+   * prueba exista: si la cascada necesitara `DELETE` del rol de la aplicación,
+   * cerrar la tabla dejaría jugadores imposibles de borrar.
+   *
+   * No lo necesita: las cascadas de clave ajena las ejecuta PostgreSQL como
+   * dueño de la tabla, no como quien llama.
+   */
+  const a = await quinielaCon('ana');
+
+  const jugadorId = await db.enQuiniela(a.quiniela, async c => {
+    const { rows: [j] } = await c.query('SELECT id FROM jugadores LIMIT 1');
+    await c.query(
+      `INSERT INTO pagos (quiniela_id, jugador_id, concepto, monto)
+       VALUES ($1, $2, 'jornada', 2000)`, [a.quiniela, j.id]);
+    return j.id;
+  });
+
+  await db.enQuiniela(a.quiniela, c =>
+    c.query('DELETE FROM jugadores WHERE id = $1', [jugadorId]));
+
+  const quedan = await db.enQuiniela(a.quiniela, async c =>
+    (await c.query('SELECT count(*)::int AS n FROM pagos')).rows[0].n);
+  assert.equal(quedan, 0, 'la cascada se los llevó');
+});
+
+test('⛔ ninguna tabla de solo-escritura conserva UPDATE ni DELETE', async () => {
+  /*
+   * La comprobación de arriba prueba una tabla por su comportamiento; ésta
+   * recorre las tres y mira el permiso, que es lo que hace falta saber cuando
+   * se añade una cuarta.
+   */
+  const { SOLO_ESCRITURA } = require('./postgres-en-memoria');
+
+  const { rows } = await db.consulta(`
+    SELECT table_name AS tabla,
+           string_agg(privilege_type, ',' ORDER BY privilege_type) AS permisos
+      FROM information_schema.role_table_grants
+     WHERE grantee = 'app_quiniela' AND table_name = ANY($1)
+     GROUP BY table_name ORDER BY table_name`, [SOLO_ESCRITURA]);
+
+  assert.equal(rows.length, SOLO_ESCRITURA.length,
+    'alguna tabla de la lista no existe o no tiene ningún permiso concedido');
+
+  for (const fila of rows) {
+    assert.equal(fila.permisos, 'INSERT,SELECT',
+      `${fila.tabla} tiene ${fila.permisos}: se le puede borrar el rastro`);
+  }
+});
