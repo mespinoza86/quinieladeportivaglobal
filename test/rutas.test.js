@@ -2472,10 +2472,12 @@ test('⚠️ un abono se corrige con su inverso, y no se puede anular dos veces'
   const abono = await jefe.agente.post('/api/cobros/abonos')
     .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 10000 });
 
-  const primera = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`).send({});
-  assert.equal(primera.status, 200);
+  const primera = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`)
+    .send({ nota: 'pasa a la cuenta de Beto' });
+  assert.equal(primera.status, 200, JSON.stringify(primera.body));
 
-  const segunda = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`).send({});
+  const segunda = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`)
+    .send({ nota: 'otra vez' });
   assert.equal(segunda.status, 409, 'anular dos veces restaría el doble EN SILENCIO');
 
   const cuenta = await jugadorDe(jefe, socio.datos.username);
@@ -3532,4 +3534,94 @@ test('cambiar el precio de una jornada sin mandar el reparto no le vacía el bot
   const botes = await jefe.agente.get('/api/cobros/botes');
   assert.equal(botes.body.jornadas[0].esperado, 4000 * cabezas, '5000 menos los 1000 del bote');
   assert.equal(botes.body.acumulado.esperado, 1000 * cabezas, 'que siguen apartados');
+});
+
+/* ==================== Anular con motivo ==================== */
+
+/*
+ * Anular un abono casi nunca es «me equivoqué»: casi siempre es que el dinero
+ * se movió a otra persona. El administrador anula el de Ana y le anota uno a
+ * Beto, y **esos dos asientos no se conocen entre sí**.
+ *
+ * Lo único que los ata es la nota. Por eso es obligatoria, y por eso se exige
+ * en la ruta y no sólo en la pantalla: la pantalla se cambia, la regla no.
+ */
+
+test('⛔ anular sin motivo se rechaza: es lo único que dice adónde fue el dinero', async () => {
+  const { jefe, socio } = await conCobros('anula-sin-nota');
+  const j = await jugadorDe(jefe, socio.datos.username);
+
+  const abono = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  for (const cuerpo of [{}, { nota: '' }, { nota: '   ' }, { nota: null }]) {
+    const r = await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`)
+      .send(cuerpo);
+    assert.equal(r.status, 400, `${JSON.stringify(cuerpo)} debería rechazarse`);
+  }
+
+  // Y el abono sigue entero: ningún intento a medias dejó un inverso suelto.
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.abonado, 2000);
+
+  const historial = await jefe.agente.get('/api/cobros/abonos');
+  assert.equal(historial.body.length, 1, 'no se anotó ningún inverso');
+});
+
+test('el motivo se guarda tal cual y sale en el historial', async () => {
+  const { jefe, socio } = await conCobros('anula-nota');
+  const j = await jugadorDe(jefe, socio.datos.username);
+
+  const abono = await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`)
+    .send({ nota: '  pasa a la cuenta de Beto  ' });
+
+  const historial = await jefe.agente.get('/api/cobros/abonos');
+  const inverso = historial.body.find(p => p.anula_a);
+
+  assert.ok(inverso, 'tiene que estar el asiento inverso');
+  assert.equal(inverso.nota, 'pasa a la cuenta de Beto', 'sin los espacios de los lados');
+  assert.equal(Number(inverso.monto), -2000);
+});
+
+test('⛔ el historial dice DE QUIÉN es cada asiento', async () => {
+  /*
+   * Sin el nombre, este panel es una lista de importes sin dueño: con cinco
+   * abonos de ₡2.000 no hay forma de saber cuál anularle a quién. No fallaba
+   * —la pantalla se veía perfecta— y por eso no servía.
+   */
+  const { jefe, socio } = await conCobros('historial-nombres');
+
+  const ana = await jugadorDe(jefe, socio.datos.username);
+  const jefeJugador = await jugadorDe(jefe, jefe.datos.username);
+
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: ana.jugadorId, concepto: 'jornada', monto: 2000 });
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: jefeJugador.jugadorId, concepto: 'jornada', monto: 3000 });
+
+  const historial = await jefe.agente.get('/api/cobros/abonos');
+
+  const porNombre = new Map(historial.body.map(p => [p.jugador, Number(p.monto)]));
+  assert.equal(porNombre.get(socio.datos.username), 2000);
+  assert.equal(porNombre.get(jefe.datos.username), 3000);
+});
+
+test('⛔ un asiento del historial no se ve desde otra quiniela, ni con nombre', async () => {
+  /*
+   * El JOIN nuevo con `jugadores` pasa por RLS igual que todo lo demás, pero
+   * conviene comprobarlo: una consulta nueva sobre una tabla con aislamiento es
+   * exactamente donde se cuelan las fugas, y no fallan — devuelven filas de más.
+   */
+  const uno = await conCobros('hist-a');
+  const otro = await conCobros('hist-b');
+
+  const j = await jugadorDe(uno.jefe, uno.socio.datos.username);
+  await uno.jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const ajeno = await otro.jefe.agente.get('/api/cobros/abonos');
+  assert.equal(ajeno.body.length, 0, 'los abonos de otra quiniela no se ven');
 });

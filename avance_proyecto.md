@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 27 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 28 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 486/486
-npm run test:e2e            # 112/112, ~4,7 min
+npm test                    # 490/490
+npm run test:e2e            # 114/114, ~4,9 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **486**, ~75 s |
-| Pruebas de navegador | **112**, ~4,7 min, contra el servidor de verdad |
+| Pruebas rápidas | **490**, ~75 s |
+| Pruebas de navegador | **114**, ~4,9 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 21 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | Migraciones 001 a 006 corridas y verificadas. **La 007 hay que correrla** |
+| Base en Neon | **Al día.** Migraciones 001 a 007 corridas y verificadas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -581,7 +581,7 @@ npm test                   # las 436 pruebas rápidas, ~70 s
 npm run test:postgres      # 355 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 187 del servidor
 npm run test:arquitectura  # solo los 62 centinelas
-npm run test:e2e           # las 112 de navegador (~4,7 min, escritorio y móvil)
+npm run test:e2e           # las 114 de navegador (~4,9 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1128,7 +1128,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 486 pruebas rápidas y 112 de navegador
+### 2.5 `test/` — 490 pruebas rápidas y 114 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -12689,10 +12689,186 @@ rotas a proposito, y las tres caen con el centinela que les toca:
 
 **Pendiente / siguiente paso:**
 
-⚠️ **Correr `db/migraciones/007-abonos-solo-escritura.sql` en Neon con el rol
-propietario.** A diferencia de la 006, **ésta no necesita despliegue**: no
-cambia el código, sólo quita permisos que el código nunca usa. Se puede correr
-en cualquier momento, antes o después de subir.
+✅ **Corrida y verificada contra Neon el 27 de agosto.** Las tres tablas quedaron
+en `INSERT, SELECT`, y comprobado además por comportamiento —intentándolo con el
+rol de la aplicación contra la base de verdad—:
+
+```
+borrar un abono → permission denied for table pagos
+```
+
+⚠️ La comprobación llevaba `jugadores` de control, que sí conserva los cuatro
+permisos. Sin un caso que tenga que salir distinto, una consulta que devuelve
+«todo bien» no distingue entre estar bien y estar rota.
+
+No necesitó despliegue: no cambia el código, sólo quita permisos que el código
+nunca usa.
+
+---
+
+### 📌 Entrada 080 — 28 de agosto de 2026 — El historial de abonos no decía de quién era ninguno
+
+**Objetivo:** un caso real. Una persona había hecho cinco abonos y pidió que uno
+de ellos se le acreditara a otro jugador. El usuario preguntó cómo resolverlo.
+
+## La propuesta que me pasé, y la del usuario que era la buena
+
+Propuse un **traspaso**: una acción, dos asientos atados —negativo en quien lo
+da, positivo en quien lo recibe—, en una transacción, con una columna nueva
+uniéndolos y una guarda para que nadie pudiera anular media transferencia.
+
+El usuario propuso otra cosa:
+
+> «porque mejor no hacemos que si alguien tiene 3 abonos a favor, yo pueda
+> cancelar un abono, y entonces yo manualmente hago el abono de la otra persona.
+> No trasladar nada, sino que yo como administrador lo manejo»
+
+Y al ir a mirarlo resultó que **eso ya estaba construido**. El botón «Corregir
+con asiento inverso» hace exactamente eso, y el servidor ya aceptaba una nota:
+
+```js
+nota: req.body?.nota          // src/rutas/admin.js, ya estaba
+```
+
+Lo único que faltaba era que la pantalla la pidiera: mandaba `{}`.
+
+⚠️ Doce personas y un administrador no necesitan un mecanismo automático de
+partida doble. Mi diseño resolvía un problema de auditoría que esta quiniela no
+tiene, y costaba una migración, una ruta, una guarda y sus pruebas. **Lo caro no
+era escribirlo: era que había que mantenerlo para siempre.**
+
+## ⛔ Y al mirarlo apareció el fallo de verdad
+
+El panel «Historial» pintaba esto:
+
+```
+28/08/2026 · Jornadas · ₡2.000
+Anotó: makin1986
+```
+
+**Sin el nombre de nadie.** Listaba todos los abonos de la quiniela sin decir a
+quién pertenecía ninguno. El dato viajaba en la respuesta (`jugador_id`) y no se
+dibujaba.
+
+Con dos abonos da igual. Con cinco de ₡2.000 y la tarea de anular uno concreto,
+es **imposible de usar**: no hay forma de saber cuál es de quién.
+
+⚠️ Y no fallaba. La pantalla se veía perfecta, cargaba, respondía. Sólo que no
+servía para lo único que hacía falta. Es el mismo tipo de fallo que el panel
+invisible de la Entrada 077: nada da error, y la función no está.
+
+Es lo que llevaba semanas estorbando sin que nadie supiera nombrarlo, y salió
+por preguntar por otra cosa.
+
+## El nombre viene del servidor, no se cruza en el navegador
+
+Se podría haber cruzado en la pantalla: la lista de cuentas ya trae los nombres
+y se pide antes que el historial. Se hizo con un `JOIN` en la consulta.
+
+⚠️ Cruzarlo en el navegador ataría el historial al orden de dos llamadas. El día
+que alguien reordene `cargar()` —por lo que sea, para pintar antes lo que ya
+tiene— el historial se queda sin nombres **y no falla**: sale la lista, sin
+dueños, como estaba antes.
+
+## La nota pasa a ser obligatoria, y se exige en el servidor
+
+Anular casi nunca es «me equivoqué». Casi siempre es que **el dinero se movió**.
+Y los dos asientos que quedan —el que pierde y el que recibe— no se conocen
+entre sí: es la contrapartida de haber elegido el camino sencillo.
+
+**Lo único que los ata es lo que se escriba en la nota.** Así que deja de ser un
+adorno y pasa a ser la pieza que sostiene el mecanismo:
+
+```
+Ana · 12/08/2026 · Jornadas · ₡2.000
+Ana · 28/08/2026 · Jornadas · −₡2.000  (anulado)
+      pasa a la cuenta de Beto
+Beto · 28/08/2026 · Jornadas · ₡2.000
+      viene del abono de Ana del 12
+```
+
+⚠️ Y se exige **en la ruta**, no sólo en la pantalla. Es la misma lección de la
+Entrada 079 con los permisos: la regla tiene que estar donde se aplica, no donde
+se dibuja. La pantalla se cambia; la regla no.
+
+## Y el botón deja de contar una mentira
+
+«Corregir con asiento inverso» → **«Anular este abono»**. La etiqueta
+«(corrección)» → **«(anulado)»**.
+
+Un abono anulado porque el dinero se movió no es un error de nadie, y llamarlo
+corrección deja escrito en el historial que alguien se equivocó cuando no pasó.
+
+## La prueba de navegador cazó el cambio
+
+La e2e hacía `dialogo.accept()` a secas. Con un `confirm()` eso era aceptar; con
+el `prompt()` nuevo, **`accept()` sin argumento acepta con texto VACÍO**, así que
+no se anulaba nada y la cuenta de asientos se quedaba en uno.
+
+Bien cazado: fue la prueba la que avisó de que la interacción había cambiado, no
+el usuario abriendo la pantalla.
+
+⚠️ Y de paso salieron dos defectos míos en la prueba nueva:
+
+1. `toHaveCount(1, 'no se anotó nada')` — el segundo argumento de `toHaveCount`
+   son **opciones**, no un mensaje. El texto no se leía en ninguna parte.
+2. La prueba exigía la redacción del aviso de la pantalla, y con la regla puesta
+   también en el servidor el aviso puede venir de los dos sitios. Ahora acepta
+   las dos redacciones, y lo que sostiene la prueba es **que no se anote el
+   asiento inverso**, venga el aviso de donde venga.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/pagos.js` | `JOIN jugadores` en el historial: cada asiento dice de quién es |
+| `src/rutas/admin.js` | La nota es obligatoria al anular, con `trim` y tope de 500 |
+| `private/js/cobros.js` | El nombre en cada fila, el motivo pedido y exigido, el botón renombrado |
+| `test/rutas.test.js` | Cuatro pruebas: sin motivo se rechaza, el motivo se guarda, el historial lleva nombres, y no se ve desde otra quiniela |
+| `test/e2e/cobros.spec.js` | El motivo en el diálogo, el nombre en pantalla, y una nueva de que sin motivo no se anota nada |
+
+**Verificación:**
+
+```
+npm test         → 490/490
+npm run test:e2e → 114/114
+
+rotas a proposito, y las tres caen:
+  la nota deja de ser obligatoria  → cae "anular sin motivo se rechaza"
+  se quita el trim ('   ' cuela)   → caen dos
+  el historial pierde el nombre    → cae "el historial dice DE QUIEN es cada asiento"
+
+y en navegador, quitando la regla de los DOS sitios:
+  → cae "sin motivo no se anula nada"
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una pantalla puede estar entera, cargar, responder, y no servir.** El
+   historial de abonos llevaba desde la Entrada 061 sin decir de quién era cada
+   asiento. Ninguna prueba lo notó porque todas comprobaban importes.
+2. **La propuesta más pequeña era la correcta.** Propuse un mecanismo de partida
+   doble para doce personas y un administrador que se acuerda de lo que hizo.
+   Lo caro de una función no es escribirla.
+3. ⚠️ **Antes de diseñar algo nuevo, mirar si ya está.** El botón existía y el
+   servidor ya aceptaba la nota: faltaba una casilla. Estuve una conversación
+   entera proponiendo columnas y rutas para algo que era frontend.
+4. **Un dato que se cruza en el navegador depende del orden de las llamadas**, y
+   ese orden no está escrito en ningún sitio. En el servidor es un `JOIN` y no
+   hay orden que respetar.
+5. ⚠️ **`dialog.accept()` sin argumento acepta un `prompt` con texto vacío.**
+   Cambiar un `confirm` por un `prompt` cambia el significado de la prueba que ya
+   existía.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**. No hay migración.
+
+⚠️ Y queda anotado lo que se cede con este camino: si se anula el abono de Ana y
+se olvida anotar el de Beto, **Ana pierde el dinero y nadie avisa**. La nota lo
+deja reconstruible leyendo, que es lo que el usuario eligió a cambio de no
+mantener un mecanismo automático. Si algún día pasa de verdad, la conversación
+del traspaso está en esta misma entrada.
 
 ---
 

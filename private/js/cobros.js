@@ -207,27 +207,54 @@ document.addEventListener('DOMContentLoaded', () => {
       const esCorreccion = Boolean(a.anula_a);
       const monto = Number(a.monto);
 
+      /*
+       * ⚠️ El nombre va PRIMERO y en negrita. Sin él, este panel era una lista
+       * de importes sin dueño: para anularle un abono a alguien había que
+       * adivinar cuál de las cinco filas de ₡2.000 era la suya.
+       */
       return html`<div class="info-card">
         <p class="helper-text">
+          <strong>${a.jugador || '(sin nombre)'}</strong> ·
           ${fecha} · ${a.concepto === 'torneo' ? 'Torneo' : 'Jornadas'} ·
           <strong>${plata(monto)}</strong>
-          ${esCorreccion ? ' (corrección)' : ''}
+          ${esCorreccion ? ' (anulado)' : ''}
         </p>
         ${a.nota ? crudo(html`<p class="helper-text">${a.nota}</p>`) : ''}
         ${a.registrado_por ? crudo(html`<p class="helper-text">Anotó: ${a.registrado_por}</p>`) : ''}
         ${esCorreccion || monto < 0 ? '' : crudo(html`
-          <button class="ghost-button anular" data-pago="${a.id}">Corregir con asiento inverso</button>`)}
+          <button class="ghost-button anular" data-pago="${a.id}">Anular este abono</button>`)}
       </div>`;
     }).join('');
 
     for (const boton of listaHistorial.querySelectorAll('.anular')) {
       boton.addEventListener('click', async () => {
-        if (!confirm('Se anotará un asiento inverso. El abono original queda a la vista. ¿Continuar?')) return;
+        /*
+         * ⚠️ Se pide el motivo y NO se deja seguir sin él.
+         *
+         * Anular casi nunca es «me equivoqué»: casi siempre es que el dinero se
+         * movió a otra persona. Y esos dos asientos —el que pierde y el que
+         * recibe— no se conocen entre sí: esta frase es lo único que los ata.
+         *
+         * El servidor también la exige. Aquí se pide para no hacer un viaje en
+         * balde; allí se exige para que la regla no dependa de esta pantalla.
+         */
+        const motivo = prompt(
+          'El abono original queda a la vista y se le anota uno inverso.\n\n' +
+          '¿Por qué se anula? (por ejemplo: «pasa a la cuenta de Beto»)'
+        );
+
+        if (motivo === null) return;                        // le dio a cancelar
+
+        if (!motivo.trim()) {
+          mensaje.textContent = 'Hace falta el motivo: es lo único que dirá adónde fue ese dinero.';
+          return;
+        }
+
         try {
           await api('/api/cobros/abonos/' + boton.dataset.pago + '/anular', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({ nota: motivo.trim() })
           });
           await cargar();
         } catch (error) {

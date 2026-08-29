@@ -110,7 +110,7 @@ test('la pantalla de cobros avisa cuando no se cobra nada, en vez de quedarse va
   await expect(page.locator('#cuentasPanel')).toBeHidden();
 });
 
-test('un abono mal anotado se corrige, y los dos asientos quedan a la vista', async ({ page, browser }) => {
+test('un abono se anula con su motivo, y los dos asientos quedan a la vista', async ({ page, browser }) => {
   const { socio } = await quinielaQueCobra(page, browser, 'corrige');
 
   await page.request.patch('/api/quiniela-actual/configuracion', {
@@ -126,13 +126,60 @@ test('un abono mal anotado se corrige, y los dos asientos quedan a la vista', as
   await page.locator('#guardarAbono').click();
   await expect(page.locator('#abonoMensaje')).toContainText('anotado', { timeout: 10_000 });
 
-  page.on('dialog', dialogo => dialogo.accept());
+  /*
+   * ⛔ El historial tiene que decir DE QUIÉN es cada asiento. Sin el nombre no
+   * hay forma de saber cuál de cinco filas de ₡2.000 anular, y la pantalla se
+   * ve perfecta igual: es de los fallos que no dan error, sólo inutilidad.
+   */
+  await expect(page.locator('#listaHistorial')).toContainText(socio.username, { timeout: 10_000 });
+
+  /*
+   * ⚠️ `accept()` a secas acepta un `prompt` con texto VACÍO, y entonces no se
+   * anula nada —el motivo es obligatorio—. Hay que pasarle el texto.
+   */
+  page.on('dialog', dialogo => dialogo.accept('pasa a la cuenta de Beto'));
   await page.locator('#listaHistorial .anular').first().click();
 
   /*
-   * No se borra: quedan el abono y su corrección. El día que alguien diga «yo
+   * No se borra: quedan el abono y el que lo anula. El día que alguien diga «yo
    * sí pagué», la discusión se resuelve mirando esto.
    */
   await expect(page.locator('#listaHistorial .info-card')).toHaveCount(2, { timeout: 10_000 });
-  await expect(page.locator('#listaHistorial')).toContainText('corrección');
+  await expect(page.locator('#listaHistorial')).toContainText('anulado');
+
+  /*
+   * Y el motivo, que es lo único que ata este asiento con el abono que se le
+   * anotará a la otra persona: los dos no se conocen entre sí.
+   */
+  await expect(page.locator('#listaHistorial')).toContainText('pasa a la cuenta de Beto');
+});
+
+test('⛔ sin motivo no se anula nada, y se dice por qué', async ({ page, browser }) => {
+  const { socio } = await quinielaQueCobra(page, browser, 'sin-motivo');
+
+  await page.request.patch('/api/quiniela-actual/configuracion', {
+    data: { cobros: { torneo: { activo: false, precio: 0 },
+                      jornada: { activo: true, precio: 2000 } } }
+  });
+
+  await page.goto('/cobros.html');
+  await expect(page.locator('#cuentasPanel')).toBeVisible({ timeout: 10_000 });
+
+  await page.locator('#abonoJugador').selectOption({ label: socio.username });
+  await page.locator('#abonoMonto').fill('2000');
+  await page.locator('#guardarAbono').click();
+  await expect(page.locator('#abonoMensaje')).toContainText('anotado', { timeout: 10_000 });
+
+  // Acepta el diálogo dejándolo en blanco.
+  page.on('dialog', dialogo => dialogo.accept('   '));
+  await page.locator('#listaHistorial .anular').first().click();
+
+  /*
+   * ⚠️ Vale que lo pare la pantalla o que lo pare el servidor —los dos lo
+   * exigen—, así que el texto se comprueba con las dos redacciones. Lo que NO
+   * puede pasar, venga de donde venga, es que se anote el asiento inverso:
+   * ésa es la comprobación que sostiene la prueba.
+   */
+  await expect(page.locator('#mensajeCobros')).toHaveText(/motivo|por qué/i, { timeout: 10_000 });
+  await expect(page.locator('#listaHistorial .info-card')).toHaveCount(1);
 });

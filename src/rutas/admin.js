@@ -416,9 +416,34 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
       return res.status(400).json({ error: 'Ese abono no es válido.' });
     }
 
+    /*
+     * ⚠️ La nota es OBLIGATORIA, y se exige AQUÍ, no sólo en la pantalla.
+     *
+     * Anular un abono no siempre es corregir un error: casi siempre es que el
+     * dinero se movió —«se lo pasó a Beto», «lo retiró»—. Los dos asientos que
+     * quedan, el de quien lo pierde y el de quien lo recibe, **no se conocen
+     * entre sí**: lo único que los ata es lo que se escriba aquí.
+     *
+     * Sin nota, dentro de tres meses hay una anulación sin destino y un abono
+     * sin origen, y nadie puede reconstruir qué pasó. Es la pieza que sostiene
+     * todo el mecanismo, así que no puede quedar en manos de que la pantalla la
+     * pida: la pantalla se cambia, la regla no.
+     */
+    const nota = String(req.body?.nota ?? '').trim();
+
+    if (!nota) {
+      return res.status(400).json({
+        error: 'Escribe por qué se anula: es lo único que explicará adónde fue ese dinero.'
+      });
+    }
+
+    if (nota.length > 500) {
+      return res.status(400).json({ error: 'La nota es demasiado larga.' });
+    }
+
     const r = await pagosMod.anular(req.quiniela.id, req.params.pagoId, {
       registradoPor: req.session.usuarioId,
-      nota: req.body?.nota
+      nota
     });
 
     if (r.motivo === 'no-existe') return res.status(404).json({ error: 'Abono no encontrado.' });

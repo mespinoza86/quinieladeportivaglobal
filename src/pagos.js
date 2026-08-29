@@ -38,10 +38,21 @@ const cobros = require('./cobros');
 async function deQuiniela(quinielaId) {
   return db.enQuiniela(quinielaId, async c => {
     const { rows } = await c.query(
+      /*
+       * ⚠️ El nombre del jugador viene de aquí, no se cruza en la pantalla.
+       *
+       * Cruzarlo contra la lista de cuentas obligaría a pedir las dos cosas y
+       * en ese orden; el día que alguien cambie el orden de las llamadas, el
+       * historial se queda sin nombres **sin fallar**. Y un historial de dinero
+       * que no dice de quién es cada asiento no sirve para nada: era imposible
+       * saber a quién anularle un abono.
+       */
       `SELECT p.id, p.jugador_id, p.concepto, p.monto, p.nota,
               p.anula_a, p.created_at,
+              j.nombre   AS jugador,
               u.username AS registrado_por
          FROM pagos p
+         JOIN jugadores j ON j.id = p.jugador_id
          LEFT JOIN usuarios u ON u.id = p.registrado_por
         ORDER BY p.created_at DESC, p.id`);
     return rows;
