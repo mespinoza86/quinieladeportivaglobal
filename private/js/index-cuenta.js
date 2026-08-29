@@ -57,9 +57,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       const actual = suyas[suyas.length - 1];
 
       if (actual) {
-        bloques.push(actual.pagada
-          ? html`<p class="helper-text"><strong>${actual.nombre}</strong>: pagada ✅</p>`
-          : html`<p class="helper-text"><strong>${actual.nombre}</strong>: sin pagar (${plata(actual.precio)})</p>`);
+        /*
+         * ⛔ Tres estados, no dos. Una jornada que no jugó **no se le cobra y no
+         * se le va a cobrar**, así que decir «sin pagar (₡0)» era mentira dos
+         * veces: ni la debe, ni son cero colones lo que no debe.
+         *
+         * `pagada` llega como `null` —«no aplica»— y eso es distinto de `false`
+         * —«la debe y no la ha pagado»—. Es el mismo cuidado de la Entrada 068
+         * con el marcador en blanco: hay tres respuestas, no dos, y colapsarlas
+         * en un booleano es lo que produce el mensaje absurdo.
+         */
+        if (actual.jugada === false) {
+          bloques.push(html`<p class="helper-text">
+            <strong>${actual.nombre}</strong>: no la jugaste, no se te cobra
+          </p>`);
+        } else {
+          bloques.push(actual.pagada
+            ? html`<p class="helper-text"><strong>${actual.nombre}</strong>: pagada ✅</p>`
+            : html`<p class="helper-text"><strong>${actual.nombre}</strong>: sin pagar (${plata(actual.precio)})</p>`);
+        }
       }
 
       if (cuenta.jornada.saldo > 0) {

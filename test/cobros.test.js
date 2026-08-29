@@ -613,3 +613,174 @@ test('una quiniela sin acumulado se comporta exactamente como antes', () => {
   assert.equal(estado.acumulado.esperado, 0);
   assert.equal(estado.jornadas[0].premio, 2000);
 });
+
+/* ==================== Sólo se paga lo que se jugó ==================== */
+
+/*
+ * Una jornada que alguien no jugó no se le cobra, y no se le va a cobrar nunca:
+ * no es que la deba más tarde, es que no la debe.
+ *
+ * ⛔ Y lo que más se vigila aquí no es la regla —es fácil— sino su borde:
+ * distinguir «no jugó ninguna» de «no me dijeron qué jugó». Los dos dan cero, y
+ * uno de los dos es un fallo que perdona la deuda de toda la quiniela.
+ */
+
+const TRES = [
+  { id: 'a', secuencia: 1, precio: 2000, al_acumulado: 1000 },
+  { id: 'b', secuencia: 2, precio: 2000, al_acumulado: 1000 },
+  { id: 'c', secuencia: 3, precio: 2000, al_acumulado: 1000 }
+];
+
+const COBRA_2000 = { jornada: { activo: true, precio: 2000, alAcumulado: 1000 } };
+
+test('sólo se deben las jornadas jugadas', () => {
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: { jugadas: new Set(['a', 'c']) },
+    jornadas: TRES,
+    pagos: [],
+    cobros: COBRA_2000
+  });
+
+  assert.equal(cuenta.jornada.debe, 4000, 'la primera y la tercera, no la del medio');
+});
+
+test('⛔ una jornada saltada NO se arrastra: nunca se cobra', () => {
+  /*
+   * No es un aplazamiento. Aunque después juegue todas, la que se saltó sigue
+   * sin deberse: si se «recuperara» más tarde, la deuda de alguien crecería
+   * sola sin que nadie hiciera nada.
+   */
+  const antes = cobros.cuentaDeJugador({
+    jugador: { jugadas: new Set(['a']) },
+    jornadas: TRES, pagos: [], cobros: COBRA_2000
+  });
+
+  const despues = cobros.cuentaDeJugador({
+    jugador: { jugadas: new Set(['a', 'c']) },
+    jornadas: TRES, pagos: [], cobros: COBRA_2000
+  });
+
+  assert.equal(antes.debe ?? antes.jornada.debe, 2000);
+  assert.equal(despues.jornada.debe, 4000, 'sube por la tercera, NO por la segunda');
+});
+
+test('⛔ quien no jugó ninguna no debe nada', () => {
+  const cuenta = cobros.cuentaDeJugador({
+    jugador: { jugadas: new Set() },
+    jornadas: TRES, pagos: [], cobros: COBRA_2000
+  });
+
+  assert.equal(cuenta.jornada.debe, 0);
+});
+
+test('⛔⛔ pero si NO SE DICE qué jugó, se cobra todo', () => {
+  /*
+   * ============================================================================
+   * LA PRUEBA MÁS IMPORTANTE DE ESTE ARCHIVO
+   * ============================================================================
+   *
+   * `undefined` significa «nadie me pasó el dato», y eso NO puede leerse como
+   * «no jugó nada». Si se leyera así, una consulta a la que se le olvide traer
+   * los pronósticos pondría a CERO la deuda de toda la quiniela, y la pantalla
+   * se vería perfecta: todo el mundo al día.
+   *
+   * ⛔ La dirección del defecto importa. Cobrar de más lo reclama alguien
+   * mañana; perdonar no lo reclama nadie —¿quién avisa de que debería deber
+   * más?— y se descubriría al final del torneo, con el bote corto y sin forma de
+   * reconstruir el número bueno, porque las cuentas se calculan y no se guardan.
+   */
+  const sinDato = cobros.cuentaDeJugador({
+    jugador: {},                       // sin `jugadas`
+    jornadas: TRES, pagos: [], cobros: COBRA_2000
+  });
+
+  assert.equal(sinDato.jornada.debe, 6000, 'las tres: que falte el dato no perdona nada');
+
+  // Y `null` tampoco es «no jugó nada»: es otra forma de no haber traído el dato.
+  const conNulo = cobros.cuentaDeJugador({
+    jugador: { jugadas: null },
+    jornadas: TRES, pagos: [], cobros: COBRA_2000
+  });
+
+  assert.equal(conNulo.jornada.debe, 6000);
+});
+
+test('la condición está en UN sitio, y responde a las dos preguntas', () => {
+  const j = TRES[1];                                   // secuencia 2
+
+  assert.equal(cobros.leTocaLaJornada(j, {}), true, 'sin condiciones, le toca');
+  assert.equal(cobros.leTocaLaJornada(j, { cobrarDesde: 3 }), false, 'entró después');
+  assert.equal(cobros.leTocaLaJornada(j, { jugadas: new Set(['b']) }), true);
+  assert.equal(cobros.leTocaLaJornada(j, { jugadas: new Set(['a']) }), false, 'no la jugó');
+
+  // Las dos a la vez: basta con que falle una.
+  assert.equal(
+    cobros.leTocaLaJornada(j, { cobrarDesde: 3, jugadas: new Set(['b']) }), false);
+});
+
+test('los abonos sólo se imputan a jornadas jugadas', () => {
+  /*
+   * Si el reparto no lo tuviera en cuenta, el dinero de alguien engordaría el
+   * premio de una jornada que no jugó —y faltaría en la que sí—.
+   */
+  const estado = cobros.botes({
+    jugadores: [{ id: 'p1', jugadas: new Set(['a', 'c']) }],
+    jornadas: TRES,
+    pagosPorJugador: new Map([['p1', [abono('jornada', '4000')]]]),
+    entregado: 0
+  });
+
+  const premios = new Map(estado.jornadas.map(j => [j.id, j.premio]));
+  assert.equal(premios.get('a'), 1000);
+  assert.equal(premios.get('b'), 0, 'no la jugó: su dinero no puede caer aquí');
+  assert.equal(premios.get('c'), 1000);
+  assert.equal(estado.acumulado.cobrado, 2000, 'mil de cada una de las dos');
+});
+
+test('⚠️ el esperado de cada bote sólo cuenta a quien jugó esa jornada', () => {
+  /*
+   * Dos personas: una jugó las tres y la otra sólo la primera. El premio de la
+   * segunda y la tercera no puede anunciarse contando con las dos.
+   */
+  const estado = cobros.botes({
+    jugadores: [
+      { id: 'p1', jugadas: new Set(['a', 'b', 'c']) },
+      { id: 'p2', jugadas: new Set(['a']) }
+    ],
+    jornadas: TRES,
+    pagosPorJugador: new Map(),
+    entregado: 0
+  });
+
+  const esperado = new Map(estado.jornadas.map(j => [j.id, j.esperado]));
+  assert.equal(esperado.get('a'), 2000, 'la jugaron los dos: 1000 + 1000');
+  assert.equal(esperado.get('b'), 1000, 'sólo uno');
+  assert.equal(esperado.get('c'), 1000);
+  assert.equal(estado.acumulado.esperado, 4000, 'cuatro aportes de 1000');
+});
+
+test('una jornada no jugada tampoco cuenta como pagada ni como impagada', () => {
+  /*
+   * `jornadaPagada` se pregunta caminando por las jornadas que le tocan, y la
+   * que no jugó no está en ese camino: ni consume saldo ni bloquea a las
+   * siguientes.
+   */
+  const pagos = [abono('jornada', '2000')];
+
+  assert.equal(cobros.jornadaPagada({
+    jugador: { jugadas: new Set(['a', 'c']) }, jornadas: TRES, pagos, jornadaId: 'a'
+  }), true, 'el abono cubre la primera que le toca');
+
+  assert.equal(cobros.jornadaPagada({
+    jugador: { jugadas: new Set(['b', 'c']) }, jornadas: TRES, pagos, jornadaId: 'b'
+  }), true, 'saltarse la primera no deja a la segunda esperando');
+});
+
+test('el desglose dice cuánto va al premio y cuánto al bote', () => {
+  const suyo = cobros.desgloseParaJugador(TRES[0], true);
+  assert.deepEqual(suyo, { alPremio: 1000, alAcumulado: 1000, total: 2000 });
+
+  const fuera = cobros.desgloseParaJugador(TRES[0], false);
+  assert.deepEqual(fuera, { alPremio: 1000, alAcumulado: 0, total: 1000 },
+    'el premio de la jornada es el mismo para todos; lo que cambia es el bote');
+});

@@ -125,12 +125,92 @@ function normalizarCobros(configuracion) {
  * `alAcumulado` viene congelado en la jornada, no de la configuración de hoy:
  * subir el reparto mañana no puede reescribir lo que costó una jornada vieja.
  */
-function precioParaJugador(jornada, juegaAcumulado = true) {
-  const total = Math.max(0, aMonto(jornada?.precio));
-  if (juegaAcumulado !== false) return total;
+function desgloseParaJugador(jornada, juegaAcumulado = true) {
+  const cuota = Math.max(0, aMonto(jornada?.precio));
 
-  const bote = Math.min(total, Math.max(0, aMonto(jornada?.al_acumulado ?? jornada?.alAcumulado)));
-  return aMonto(total - bote);
+  /*
+   * ⚠️ El premio de la jornada es EL MISMO PARA TODOS: lo que ella apartó para
+   * el bote no depende de quién pague. Lo que cambia es si esta persona pone su
+   * parte del bote o no.
+   *
+   * Calcularlo al revés —poner el bote a cero para quien no participa y decir
+   * que «entonces todo es premio»— le cobraría la jornada entera. Ya pasó una
+   * vez, y lo cazó una prueba que cruzaba las dos formas de contarlo.
+   */
+  const bote = Math.min(cuota, Math.max(0, aMonto(jornada?.al_acumulado ?? jornada?.alAcumulado)));
+  const alPremio = aMonto(cuota - bote);
+  const alAcumulado = juegaAcumulado !== false ? bote : 0;
+
+  return { alPremio, alAcumulado, total: aMonto(alPremio + alAcumulado) };
+}
+
+/** Lo que UNA jornada le cuesta a una persona, sin el desglose. */
+function precioParaJugador(jornada, juegaAcumulado = true) {
+  return desgloseParaJugador(jornada, juegaAcumulado).total;
+}
+
+/**
+ * ¿Le toca a esta persona pagar esta jornada?
+ *
+ * ============================================================================
+ * ⛔ ESTA CONDICIÓN VIVE AQUÍ Y EN NINGÚN OTRO SITIO
+ * ============================================================================
+ *
+ * La misma pregunta se hace en cuatro sitios —lo que debe, cómo se reparten sus
+ * abonos, si una jornada le quedó pagada, y cuánto se espera en cada bote— y
+ * durante un tiempo estuvo copiada en los cuatro. Copiada no falla: **se
+ * desincroniza**. Se le añade una condición a tres y al cuarto no, y entonces
+ * la pantalla dice que debe ₡2.000 y el bote cuenta con ₡4.000 suyos, las dos
+ * sin dar error.
+ *
+ * Dos condiciones, y las dos son de dinero:
+ *
+ *   1. **Desde cuándo se le cobra.** Quien entra en la séptima no estaba en las
+ *      seis anteriores.
+ *
+ *   2. **Que la haya jugado.** Una jornada que no jugó no se le cobra, y no se
+ *      le va a cobrar nunca: no es que la deba más tarde, es que no la debe.
+ *
+ * ============================================================================
+ * ⚠️ «NO JUGÓ NINGUNA» Y «NO ME DIJERON QUÉ JUGÓ» SON COSAS DISTINTAS
+ * ============================================================================
+ *
+ * Y en código se parecen muchísimo: un `Set` vacío y un `undefined` tratado con
+ * descuido dan los dos cero, y cero se lee como «no debe nada».
+ *
+ *   `jugadas` sin pasar   → «nadie me dijo»  → SE COBRA TODO
+ *   `jugadas` = Set vacío → «no jugó nada»   → no se le cobra nada
+ *
+ * ⛔ La dirección del defecto no es un capricho. Si por un fallo se cobra de
+ * más, alguien abre la aplicación mañana y lo dice. Si por un fallo se perdona,
+ * **no lo reclama nadie**: ¿quién escribe para avisar de que debería deber más?
+ * Se descubriría al final del torneo, con el bote corto y sin forma de saber a
+ * quién le faltaba —las cuentas se calculan y no se guardan (Entrada 061), así
+ * que el número bueno no está en ninguna parte—.
+ *
+ * Es el mismo `''` contra `null` de la Entrada 068 y el mismo `DEFAULT true` de
+ * la 076: **que falte información nunca puede perdonar una deuda.**
+ */
+function leTocaLaJornada(jornada, { cobrarDesde = null, jugadas } = {}) {
+  if (!jornada) return false;
+
+  const desde = cobrarDesde === null || cobrarDesde === undefined
+    ? -Infinity
+    : Number(cobrarDesde);
+
+  if (Number(jornada.secuencia) < desde) return false;
+
+  // Ver arriba: sin el dato se cobra. Sólo un `Set` de verdad puede eximir.
+  if (jugadas === undefined || jugadas === null) return true;
+
+  return jugadas.has(String(jornada.id));
+}
+
+/** Las jornadas que le tocan a esta persona, en orden de disputa. */
+function jornadasDe(jornadas = [], jugador = {}) {
+  return jornadas
+    .filter(j => leTocaLaJornada(j, jugador))
+    .sort((a, b) => Number(a.secuencia) - Number(b.secuencia));
 }
 
 /**
@@ -138,18 +218,12 @@ function precioParaJugador(jornada, juegaAcumulado = true) {
  *
  * `jornadas` son las de la quiniela, con su `secuencia` y su `precio` —el que
  * tenía cada una, no el de hoy—. `cobrarDesde` es la secuencia de la primera
- * que se le cobra: quien entró en la jornada 7 no debe las seis anteriores,
- * no estaba. `null` es «desde siempre».
+ * que se le cobra, y `jugadas` el conjunto de las que jugó de verdad; lo que
+ * significa cada uno, y lo que pasa si falta, está en `leTocaLaJornada`.
  */
-function debePorJornadas(jornadas = [], cobrarDesde = null, juegaAcumulado = true) {
-  const desde = cobrarDesde === null || cobrarDesde === undefined
-    ? -Infinity
-    : Number(cobrarDesde);
-
+function debePorJornadas(jornadas = [], cobrarDesde = null, juegaAcumulado = true, jugadas) {
   let total = 0;
-  for (const jornada of jornadas) {
-    if (!jornada) continue;
-    if (Number(jornada.secuencia) < desde) continue;
+  for (const jornada of jornadasDe(jornadas, { cobrarDesde, jugadas })) {
     total += precioParaJugador(jornada, juegaAcumulado);
   }
   return aMonto(total);
@@ -233,8 +307,13 @@ function cuentaDeJugador({ jugador, jornadas = [], pagos = [], cobros } = {}) {
   /* Misma regla que las otras dos: sin el campo, participa. Ver arriba. */
   const juegaAcumulado = jugador?.juegaAcumulado !== false;
 
+  /*
+   * ⚠️ `jugador.jugadas` viaja tal cual, sin `|| new Set()` ni nada parecido.
+   * Ese apaño convertiría «no me dijeron» en «no jugó nada» y perdonaría la
+   * deuda de todo el mundo en silencio. Lo explica `leTocaLaJornada`.
+   */
   const debeJornadas = config.jornada.activo && juegaJornadas
-    ? debePorJornadas(jornadas, jugador?.cobrarDesde ?? null, juegaAcumulado)
+    ? debePorJornadas(jornadas, jugador?.cobrarDesde ?? null, juegaAcumulado, jugador?.jugadas)
     : 0;
 
   const abonadoJornadas = totalAbonado(pagos, 'jornada');
@@ -286,12 +365,7 @@ function cuentaDeJugador({ jugador, jornadas = [], pagos = [], cobros } = {}) {
  * jornadas en orden, que es como se pagan.
  */
 function jornadaPagada({ jugador, jornadas = [], pagos = [], jornadaId } = {}) {
-  const desde = jugador?.cobrarDesde ?? null;
-  const limite = desde === null || desde === undefined ? -Infinity : Number(desde);
-
-  const suyas = jornadas
-    .filter(j => j && Number(j.secuencia) >= limite)
-    .sort((a, b) => Number(a.secuencia) - Number(b.secuencia));
+  const suyas = jornadasDe(jornadas, jugador);
 
   let disponible = totalAbonado(pagos, 'jornada');
   const juegaAcumulado = jugador?.juegaAcumulado !== false;
@@ -339,8 +413,6 @@ function jornadaPagada({ jugador, jornadas = [], pagos = [], jornadaId } = {}) {
  * Devuelve lo aportado por esta persona a cada bote, jornada por jornada.
  */
 function repartoDeAbonos({ jugador, jornadas = [], pagos = [] } = {}) {
-  const desde = jugador?.cobrarDesde ?? null;
-  const limite = desde === null || desde === undefined ? -Infinity : Number(desde);
   const juegaAcumulado = jugador?.juegaAcumulado !== false;
   const juegaJornadas = jugador?.juegaJornadas !== false;
 
@@ -351,9 +423,7 @@ function repartoDeAbonos({ jugador, jornadas = [], pagos = [] } = {}) {
 
   let disponible = totalAbonado(pagos, 'jornada');
 
-  const suyas = jornadas
-    .filter(j => j && Number(j.secuencia) >= limite)
-    .sort((a, b) => Number(a.secuencia) - Number(b.secuencia));
+  const suyas = jornadasDe(jornadas, jugador);
 
   for (const j of suyas) {
     if (disponible <= 0) break;
@@ -427,12 +497,7 @@ function botes({ jugadores = [], jornadas = [], pagosPorJugador = new Map(), ent
      */
     if (jugador.juegaJornadas === false) continue;
 
-    const limite = jugador.cobrarDesde === null || jugador.cobrarDesde === undefined
-      ? -Infinity : Number(jugador.cobrarDesde);
-
-    for (const j of jornadas) {
-      if (Number(j.secuencia) < limite) continue;
-
+    for (const j of jornadasDe(jornadas, jugador)) {
       const total = Math.max(0, aMonto(j.precio));
       const bote = jugador.juegaAcumulado !== false
         ? Math.min(total, Math.max(0, aMonto(j.al_acumulado ?? j.alAcumulado)))
@@ -472,5 +537,6 @@ module.exports = {
   totalAbonado,
   jornadasQueCubre,
   cuentaDeJugador,
-  jornadaPagada, precioParaJugador, repartoDeAbonos, botes
+  jornadaPagada, precioParaJugador, repartoDeAbonos, botes,
+  leTocaLaJornada, jornadasDe, desgloseParaJugador
 };

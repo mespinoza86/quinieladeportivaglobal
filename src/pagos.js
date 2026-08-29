@@ -130,14 +130,15 @@ async function anular(quinielaId, pagoId, { registradoPor, nota } = {}) {
  * pintar una tabla.
  */
 async function cuentas(quinielaId, configuracion) {
-  const { jugadores, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
-    const [j, jo, p] = await Promise.all([
+  const { jugadores, jornadas, pagos, jugadas } = await db.enQuiniela(quinielaId, async c => {
+    const [j, jo, p, ju] = await Promise.all([
       c.query(`SELECT id, nombre, usuario_id, cobrar_desde, juega_torneo, juega_jornadas, juega_acumulado
                  FROM jugadores ORDER BY nombre`),
       c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
-      c.query('SELECT jugador_id, concepto, monto FROM pagos')
+      c.query('SELECT jugador_id, concepto, monto FROM pagos'),
+      jornadasJugadas(c)
     ]);
-    return { jugadores: j.rows, jornadas: jo.rows, pagos: p.rows };
+    return { jugadores: j.rows, jornadas: jo.rows, pagos: p.rows, jugadas: ju };
   });
 
   const porJugador = new Map();
@@ -159,7 +160,13 @@ async function cuentas(quinielaId, configuracion) {
         juegaTorneo: jugador.juega_torneo,
         juegaJornadas: jugador.juega_jornadas,
         juegaAcumulado: jugador.juega_acumulado,
-        cobrarDesde: jugador.cobrar_desde
+        cobrarDesde: jugador.cobrar_desde,
+        /*
+         * ⚠️ `new Set()` y no `undefined` cuando no aparece en el Map: quien no
+         * dejó ningún pronóstico NO JUGÓ NADA, y eso es un hecho, no una duda.
+         * `undefined` significaría «no lo consulté» y le cobraría todo.
+         */
+        jugadas: jugadas.get(jugador.id) || new Set()
       },
       jornadas,
       pagos: porJugador.get(jugador.id) || [],
@@ -176,18 +183,19 @@ async function cuentas(quinielaId, configuracion) {
  * fijado—, a diferencia de la estimación de «te quedan 3».
  */
 async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
-  const { jugador, jornadas, pagos } = await db.enQuiniela(quinielaId, async c => {
+  const { jugador, jornadas, pagos, jugadas } = await db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
       `SELECT id, nombre, cobrar_desde, juega_torneo, juega_jornadas, juega_acumulado
          FROM jugadores WHERE id = $1`,
       [jugadorId]);
-    if (!j) return { jugador: null, jornadas: [], pagos: [] };
+    if (!j) return { jugador: null, jornadas: [], pagos: [], jugadas: new Set() };
 
-    const [jo, p] = await Promise.all([
+    const [jo, p, ju] = await Promise.all([
       c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
-      c.query('SELECT concepto, monto FROM pagos WHERE jugador_id = $1', [jugadorId])
+      c.query('SELECT concepto, monto FROM pagos WHERE jugador_id = $1', [jugadorId]),
+      jornadasJugadas(c)
     ]);
-    return { jugador: j, jornadas: jo.rows, pagos: p.rows };
+    return { jugador: j, jornadas: jo.rows, pagos: p.rows, jugadas: ju.get(j.id) || new Set() };
   });
 
   if (!jugador) return null;
@@ -196,7 +204,8 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
     juegaTorneo: jugador.juega_torneo,
     juegaJornadas: jugador.juega_jornadas,
     juegaAcumulado: jugador.juega_acumulado,
-    cobrarDesde: jugador.cobrar_desde
+    cobrarDesde: jugador.cobrar_desde,
+    jugadas
   };
   const cuenta = cobros.cuentaDeJugador({
     jugador: suyo, jornadas, pagos, cobros: configuracion?.cobros
@@ -208,20 +217,44 @@ async function cuentaDetallada(quinielaId, jugadorId, configuracion) {
     jugadorId: jugador.id,
     nombre: jugador.nombre,
     ...cuenta,
+    /*
+     * El detalle jornada por jornada: es lo que sostiene «tener las cuentas
+     * claras». Cada fila dice si la jugó, cuánto le tocó, y de eso cuánto fue
+     * al premio de esa jornada y cuánto al bote acumulado.
+     */
     jornadas: jornadas
       .filter(j => Number(j.secuencia) >= desde)
-      .map(j => ({
-        id: j.id,
-        nombre: j.nombre,
+      .map(j => {
+        const jugada = jugadas.has(String(j.id));
+
         /*
          * ⚠️ Lo que le toca pagar a ESTA persona, no lo que cuesta la jornada.
          * Quien no juega el acumulado paga sólo la parte de jornada, y ponerle
          * el total sería enseñarle una deuda que no tiene —y que además no
          * cuadraría con el «pagada ✅» de al lado, que sí lo tiene en cuenta—.
          */
-        precio: cobros.precioParaJugador(j, jugador.juega_acumulado !== false),
-        pagada: cobros.jornadaPagada({ jugador: suyo, jornadas, pagos, jornadaId: j.id })
-      }))
+        const desglose = cobros.desgloseParaJugador(j, jugador.juega_acumulado !== false);
+
+        /*
+         * ⛔ Las que no jugó salen en CERO y con `pagada: null`.
+         *
+         * `null` es «no aplica», y es distinto de `false` —«la debe y no la ha
+         * pagado»—. Con `false` aparecerían como pendientes para siempre y la
+         * gente preguntaría por una deuda que no existe. Es el mismo cuidado de
+         * la Entrada 068 con el marcador en blanco: hay tres estados, no dos.
+         */
+        return {
+          id: j.id,
+          nombre: j.nombre,
+          jugada,
+          precio: jugada ? desglose.total : 0,
+          alPremio: jugada ? desglose.alPremio : 0,
+          alAcumulado: jugada ? desglose.alAcumulado : 0,
+          pagada: jugada
+            ? cobros.jornadaPagada({ jugador: suyo, jornadas, pagos, jornadaId: j.id })
+            : null
+        };
+      })
   };
 }
 
@@ -275,6 +308,40 @@ async function proximaSecuencia(cliente) {
   return Number(fila.siguiente);
 }
 
+/* ==================== Quién jugó qué ==================== */
+
+/**
+ * Las jornadas que jugó cada persona: `Map<jugadorId, Set<jornadaId>>`.
+ *
+ * ⛔ **Sólo se paga lo que se jugó.** Una jornada que alguien no jugó no se le
+ * cobra, y no se le va a cobrar nunca: no es que la deba más tarde, es que no
+ * la debe.
+ *
+ * «Jugar» es **haber dejado algún marcador**, y por eso el `JOIN` con
+ * `pronosticos` no es opcional. Abrir la pantalla y guardar sin poner nada crea
+ * la fila de `resultados` igual, así que `resultados` por sí sola diría que jugó
+ * quien sólo miró. Un pronóstico en blanco **borra su fila** en vez de quedarse
+ * con dos nulos —eso se decidió en la Entrada 068, para que no hubiera dos
+ * formas de decir lo mismo—, y gracias a eso esta pregunta tiene una respuesta
+ * exacta: hay fila o no la hay.
+ *
+ * ⚠️ Devuelve un `Map`, y quien no aparezca en él **no jugó ninguna**. Eso es
+ * distinto de no llamar a esta función: ver `cobros.leTocaLaJornada`.
+ */
+async function jornadasJugadas(cliente) {
+  const { rows } = await cliente.query(
+    `SELECT DISTINCT r.jugador_id, r.jornada_id
+       FROM resultados r
+       JOIN pronosticos p ON p.resultado_id = r.id`);
+
+  const porJugador = new Map();
+  for (const f of rows) {
+    if (!porJugador.has(f.jugador_id)) porJugador.set(f.jugador_id, new Set());
+    porJugador.get(f.jugador_id).add(String(f.jornada_id));
+  }
+  return porJugador;
+}
+
 /* ==================== Los botes ==================== */
 
 /**
@@ -288,11 +355,12 @@ async function proximaSecuencia(cliente) {
  */
 async function botes(quinielaId) {
   return db.enQuiniela(quinielaId, async c => {
-    const [j, jo, p, e] = await Promise.all([
+    const [j, jo, p, e, ju] = await Promise.all([
       c.query(`SELECT id, cobrar_desde, juega_jornadas, juega_acumulado FROM jugadores`),
       c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
       c.query('SELECT jugador_id, concepto, monto FROM pagos'),
-      c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado')
+      c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado'),
+      jornadasJugadas(c)
     ]);
 
     const pagosPorJugador = new Map();
@@ -306,7 +374,13 @@ async function botes(quinielaId) {
         id: f.id,
         cobrarDesde: f.cobrar_desde,
         juegaJornadas: f.juega_jornadas,
-        juegaAcumulado: f.juega_acumulado
+        juegaAcumulado: f.juega_acumulado,
+        /*
+         * ⚠️ El esperado de cada bote sólo cuenta a quien JUGÓ esa jornada. Sin
+         * esto el premio se anunciaría contando con doce personas cuando lo
+         * jugaron ocho, y quedaría corto para siempre sin que nada fallara.
+         */
+        jugadas: ju.get(f.id) || new Set()
       })),
       jornadas: jo.rows,
       pagosPorJugador,

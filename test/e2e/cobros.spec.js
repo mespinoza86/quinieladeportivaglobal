@@ -66,6 +66,19 @@ test('encender los cobros, anotar un abono y que el jugador lo vea', async ({ pa
     }
   });
 
+  /*
+   * ---- 2b. Y el socio la JUEGA ----
+   *
+   * ⛔ Sin esto no debe nada: sólo se paga lo jugado. Crear la jornada ya no
+   * basta para que haya cuenta que enseñar.
+   */
+  await otra.request.post('/api/resultados', {
+    data: {
+      jugador: socio.username, jornada: 'J1',
+      pronosticos: [{ marcador1: 1, marcador2: 0 }]
+    }
+  });
+
   /* ---- 3. Anotar un abono de 6000: cubre tres jornadas ---- */
   await page.goto('/cobros.html');
   await expect(page.locator('#cuentasPanel')).toBeVisible({ timeout: 10_000 });
@@ -182,4 +195,35 @@ test('⛔ sin motivo no se anula nada, y se dice por qué', async ({ page, brows
    */
   await expect(page.locator('#mensajeCobros')).toHaveText(/motivo|por qué/i, { timeout: 10_000 });
   await expect(page.locator('#listaHistorial .info-card')).toHaveCount(1);
+});
+
+test('⛔ a quien no jugó la jornada no se le enseña una deuda de ₡0', async ({ page, browser }) => {
+  /*
+   * El mensaje que había era «J1: sin pagar (₡0)», y era mentira dos veces: ni
+   * la debe —no la jugó— ni son cero colones lo que no debe. Alguien que lea
+   * «sin pagar» escribe preguntando qué tiene que pagar.
+   *
+   * Salió de esta misma prueba, que empezó a fallar al cambiar la regla.
+   */
+  const { otra } = await quinielaQueCobra(page, browser, 'nojugo');
+
+  await page.request.patch('/api/quiniela-actual/configuracion', {
+    data: { cobros: { torneo: { activo: false, precio: 0 },
+                      jornada: { activo: true, precio: 2000 } } }
+  });
+
+  await page.request.post('/api/jornadas', {
+    data: {
+      nombre: 'J1',
+      partidos: [{ equipo1: 'Alfa', equipo2: 'Beta', logoEquipo1: '', logoEquipo2: '',
+                   comodin: false, apiFixtureId: '', apiLeagueId: '',
+                   apiDate: '2099-01-01 15:00', apiStatus: '' }]
+    }
+  });
+
+  await otra.goto('/index.html');
+  await expect(otra.locator('#miCuentaCard')).toBeVisible({ timeout: 10_000 });
+
+  await expect(otra.locator('#miCuentaContenido')).toContainText('no la jugaste');
+  await expect(otra.locator('#miCuentaContenido')).not.toContainText('sin pagar');
 });

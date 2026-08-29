@@ -2389,6 +2389,31 @@ async function jugadorDe(jefe, username) {
 const crearJornada = (agente, nombre) => agente.post('/api/jornadas')
   .send({ nombre, partidos: [partido('Alfa', 'Beta')] });
 
+/**
+ * Hace que alguien JUEGUE una jornada, dejando un marcador.
+ *
+ * ⛔ Hace falta en toda prueba que espere una deuda: **sólo se paga lo que se
+ * jugó**. Crear la jornada ya no basta —antes sí—, y una prueba que se olvide
+ * de esto verá cero y parecerá que el cobro está apagado.
+ */
+const jugar = (cuenta, jornada = 'J1') => cuenta.agente.post('/api/resultados')
+  .send({ jugador: cuenta.datos.username, jornada, pronosticos: [{ marcador1: 1, marcador2: 0 }] });
+
+/**
+ * Crea la jornada y la juegan las cuentas que se le pasen. De un tirón.
+ *
+ * ⚠️ Cada quien juega con SU propia sesión: nadie puede guardar los pronósticos
+ * de otro, ni el administrador. Por eso recibe cuentas enteras y no nombres.
+ */
+async function jornadaJugadaPor(jefe, nombre, ...cuentas) {
+  await crearJornada(jefe.agente, nombre);
+  for (const c of cuentas) {
+    const r = await jugar(c, nombre);
+    assert.equal(r.status, 200,
+      `${c.datos.username} no pudo jugar ${nombre}: ${JSON.stringify(r.body)}`);
+  }
+}
+
 test('⚠️ el precio se congela en la jornada: subirlo NO recalcula las viejas', async () => {
   /*
    * Es la decisión que sostiene todo lo demás. "Esta jornada vale 5000 porque
@@ -2397,10 +2422,10 @@ test('⚠️ el precio se congela en la jornada: subirlo NO recalcula las viejas
    */
   const { jefe, socio } = await conCobros('congela');
 
-  await crearJornada(jefe.agente, 'J1');            // a 2000
+  await jornadaJugadaPor(jefe, 'J1', socio);      // a 2000
   await jefe.agente.patch('/api/quiniela-actual/configuracion')
     .send({ cobros: { ...COBRA, jornada: { activo: true, precio: 5000 } } });
-  await crearJornada(jefe.agente, 'J2');            // a 5000
+  await jornadaJugadaPor(jefe, 'J2', socio);      // a 5000
 
   const cuenta = await jugadorDe(jefe, socio.datos.username);
   assert.equal(cuenta.jornada.debe, 7000, '2000 la primera y 5000 la segunda');
@@ -2409,7 +2434,7 @@ test('⚠️ el precio se congela en la jornada: subirlo NO recalcula las viejas
 test('⚠️ editar los partidos de una jornada no cambia lo que costó', async () => {
   const { jefe, socio } = await conCobros('editar');
 
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
   await jefe.agente.patch('/api/quiniela-actual/configuracion')
     .send({ cobros: { ...COBRA, jornada: { activo: true, precio: 9000 } } });
 
@@ -2423,7 +2448,7 @@ test('⚠️ editar los partidos de una jornada no cambia lo que costó', async 
 
 test('un abono deja saldo a favor, y se estima cuántas jornadas cubre', async () => {
   const { jefe, socio } = await conCobros('saldo');
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const antes = await jugadorDe(jefe, socio.datos.username);
 
@@ -2439,7 +2464,7 @@ test('un abono deja saldo a favor, y se estima cuántas jornadas cubre', async (
 
 test('⚠️ lo del torneo no paga jornadas', async () => {
   const { jefe, socio } = await conCobros('bolsas');
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const j = await jugadorDe(jefe, socio.datos.username);
   await jefe.agente.post('/api/cobros/abonos')
@@ -2451,18 +2476,53 @@ test('⚠️ lo del torneo no paga jornadas', async () => {
 });
 
 test('⚠️ quien entra después no debe las jornadas que no jugó', async () => {
+  /*
+   * ⚠️ Desde que sólo se paga lo jugado, esto queda protegido POR PARTIDA
+   * DOBLE: quien entra en la séptima ni estaba (`cobrar_desde`) ni dejó ningún
+   * pronóstico en las seis anteriores. Las dos condiciones dicen que no las
+   * debe.
+   *
+   * La prueba se conserva porque lo que comprueba —que entrar tarde no arrastra
+   * una deuda de meses— es lo que le importa a quien entra, no cuál de las dos
+   * reglas lo impide.
+   */
   const jefe = await admin('tarde');
   await jefe.agente.patch('/api/quiniela-actual/configuracion').send({ cobros: COBRA });
 
-  await crearJornada(jefe.agente, 'J1');
-  await crearJornada(jefe.agente, 'J2');
+  await jornadaJugadaPor(jefe, 'J1', jefe);
+  await jornadaJugadaPor(jefe, 'J2', jefe);
 
-  // Entra ahora, con dos jornadas ya jugadas.
+  // Entra ahora, con dos jornadas ya jugadas, y juega la tercera.
   const socio = await miembroDe(jefe, 'tardesocio');
-  await crearJornada(jefe.agente, 'J3');
+  await jornadaJugadaPor(jefe, 'J3', socio);
 
   const cuenta = await jugadorDe(jefe, socio.datos.username);
   assert.equal(cuenta.jornada.debe, 2000, 'sólo la tercera: no estaba en las dos primeras');
+});
+
+test('⛔ una jornada que no jugó no se le cobra, aunque estuviera en la quiniela', async () => {
+  /*
+   * Es la regla nueva en su forma más pura, y la diferencia con la de arriba:
+   * aquí el socio SÍ estaba desde el principio. Se saltó la segunda jornada y
+   * por eso no la debe —y no la va a deber nunca: no es un aplazamiento—.
+   */
+  const { jefe, socio } = await conCobros('no-jugo');
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  await jornadaJugadaPor(jefe, 'J2', jefe);   // el socio se la salta
+  await jornadaJugadaPor(jefe, 'J3', socio);
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 4000, 'la primera y la tercera, no la segunda');
+
+  const detalle = await socio.agente.get('/api/quiniela-actual/mi-cuenta');
+  const porNombre = new Map(detalle.body.jornadas.map(j => [j.nombre, j]));
+
+  assert.equal(porNombre.get('J2').jugada, false);
+  assert.equal(porNombre.get('J2').precio, 0, 'no le cuesta nada');
+  assert.equal(porNombre.get('J2').pagada, null, '«no aplica», que no es «no pagada»');
+  assert.equal(porNombre.get('J1').jugada, true);
+  assert.equal(porNombre.get('J1').precio, 2000);
 });
 
 test('⚠️ un abono se corrige con su inverso, y no se puede anular dos veces', async () => {
@@ -2528,7 +2588,7 @@ test('quien no juega el torneo no arrastra su cuota', async () => {
 
 test('se puede cambiar el precio de UNA jornada', async () => {
   const { jefe, socio } = await conCobros('finales');
-  await crearJornada(jefe.agente, 'Final');
+  await jornadaJugadaPor(jefe, 'Final', socio);
 
   const res = await jefe.agente.patch('/api/cobros/jornadas/Final/precio').send({ precio: 5000 });
   assert.equal(res.status, 200);
@@ -2550,8 +2610,8 @@ test('si la quiniela no cobra, no hay cuenta que enseñar', async () => {
 
 test('el jugador ve su saldo y qué jornadas le quedaron pagadas', async () => {
   const { jefe, socio } = await conCobros('mia');
-  await crearJornada(jefe.agente, 'J1');
-  await crearJornada(jefe.agente, 'J2');
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  await jornadaJugadaPor(jefe, 'J2', socio);
 
   const j = await jugadorDe(jefe, socio.datos.username);
   await jefe.agente.post('/api/cobros/abonos')
@@ -3297,6 +3357,7 @@ test('⛔ la casilla de jornadas se guarda, y no pisa la del torneo', async () =
   assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
 
   await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });
+  await jugar(jefe, 'J1');           // sin jugarla no la debería, y no habría qué comprobar
 
   const antes = await jefe.agente.get('/api/cobros/cuentas');
   assert.equal(antes.status, 200, JSON.stringify(antes.body));
@@ -3342,11 +3403,11 @@ test('⚠️ el reparto se congela en la jornada, igual que el precio', async ()
    */
   const { jefe, socio } = await conCobros('bote-congela', CON_ACUMULADO);
 
-  await crearJornada(jefe.agente, 'J1');            // 1000 + 1000
+  await jornadaJugadaPor(jefe, 'J1', socio);   // 1000 + 1000
 
   await jefe.agente.patch('/api/quiniela-actual/configuracion')
     .send({ cobros: { ...CON_ACUMULADO, jornada: { activo: true, precio: 2000, alAcumulado: 0 } } });
-  await crearJornada(jefe.agente, 'J2');            // 2000 de premio, nada al bote
+  await jornadaJugadaPor(jefe, 'J2', socio);   // 2000 de premio, nada al bote
 
   const jugador = await jugadorDe(jefe, socio.datos.username);
   await jefe.agente.post('/api/cobros/abonos')
@@ -3363,7 +3424,7 @@ test('⚠️ el reparto se congela en la jornada, igual que el precio', async ()
 
 test('el bote enseña lo cobrado y lo esperado, no sólo uno de los dos', async () => {
   const { jefe, socio } = await conCobros('bote-esperado', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const antes = await jefe.agente.get('/api/cobros/botes');
   assert.equal(antes.body.acumulado.cobrado, 0, 'nadie ha pagado');
@@ -3380,7 +3441,7 @@ test('el bote enseña lo cobrado y lo esperado, no sólo uno de los dos', async 
 
 test('a quien no juega el acumulado se le cobra menos, y su dinero no va al bote', async () => {
   const { jefe, socio } = await conCobros('bote-fuera', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const jugador = await jugadorDe(jefe, socio.datos.username);
   const cambio = await jefe.agente.patch(`/api/cobros/jugadores/${jugador.jugadorId}`)
@@ -3430,7 +3491,7 @@ test('⚠️ las tres casillas son independientes: tocar una no pisa las otras',
 
 test('entregar el acumulado lo deja en cero y queda anotado', async () => {
   const { jefe, socio } = await conCobros('entregar', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const jugador = await jugadorDe(jefe, socio.datos.username);
   await jefe.agente.post('/api/cobros/abonos')
@@ -3456,7 +3517,7 @@ test('⛔ el monto de la entrega NO se acepta del navegador', async () => {
    * mismo dinero—. Se calcula dentro de la transacción que escribe.
    */
   const { jefe, socio } = await conCobros('entrega-monto', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const jugador = await jugadorDe(jefe, socio.datos.username);
   await jefe.agente.post('/api/cobros/abonos')
@@ -3471,7 +3532,7 @@ test('⛔ el monto de la entrega NO se acepta del navegador', async () => {
 
 test('⛔ entregar un bote vacío se rechaza en vez de anotar un cero', async () => {
   const { jefe, socio } = await conCobros('entrega-vacia', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', socio);
 
   const jugador = await jugadorDe(jefe, socio.datos.username);
   const entrega = await jefe.agente.post('/api/cobros/acumulado/entregar')
@@ -3508,7 +3569,7 @@ test('⛔ el bote de una quiniela no se ve desde otra', async () => {
 
 test('una cuota al acumulado mayor que el precio se rechaza con 400', async () => {
   const { jefe } = await conCobros('bote-400', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  await jornadaJugadaPor(jefe, 'J1', jefe);
 
   const res = await jefe.agente.patch('/api/cobros/jornadas/J1/precio')
     .send({ precio: 2000, alAcumulado: 5000 });
@@ -3522,18 +3583,21 @@ test('cambiar el precio de una jornada sin mandar el reparto no le vacía el bot
    * `precio`. Si eso pusiera `al_acumulado` a cero, subir el precio de la final
    * se llevaría por delante el bote de esa jornada sin decir nada.
    */
-  const { jefe } = await conCobros('bote-conserva', CON_ACUMULADO);
-  await crearJornada(jefe.agente, 'J1');
+  const { jefe, socio } = await conCobros('bote-conserva', CON_ACUMULADO);
+
+  /*
+   * ⚠️ La juegan los DOS a propósito. Lo esperado ya no es «por cabeza» sino
+   * «por quien la jugó», así que con uno solo jugando la prueba pasaría con la
+   * mitad de la cifra y no distinguiría un reparto conservado de uno vaciado.
+   */
+  await jornadaJugadaPor(jefe, 'J1', jefe, socio);
 
   const res = await jefe.agente.patch('/api/cobros/jornadas/J1/precio').send({ precio: 5000 });
   assert.equal(res.status, 200, JSON.stringify(res.body));
 
-  /* Lo esperado es por cabeza, y el administrador también es jugador. */
-  const cabezas = (await jefe.agente.get('/api/cobros/cuentas')).body.cuentas.length;
-
   const botes = await jefe.agente.get('/api/cobros/botes');
-  assert.equal(botes.body.jornadas[0].esperado, 4000 * cabezas, '5000 menos los 1000 del bote');
-  assert.equal(botes.body.acumulado.esperado, 1000 * cabezas, 'que siguen apartados');
+  assert.equal(botes.body.jornadas[0].esperado, 8000, 'dos veces 5000 menos los 1000 del bote');
+  assert.equal(botes.body.acumulado.esperado, 2000, 'que siguen apartados');
 });
 
 /* ==================== Anular con motivo ==================== */
@@ -3624,4 +3688,67 @@ test('⛔ un asiento del historial no se ve desde otra quiniela, ni con nombre',
 
   const ajeno = await otro.jefe.agente.get('/api/cobros/abonos');
   assert.equal(ajeno.body.length, 0, 'los abonos de otra quiniela no se ven');
+});
+
+test('⛔ abrir la quiniela y guardarla en blanco NO es jugarla', async () => {
+  /*
+   * ============================================================================
+   * ESTA ES LA QUE DECIDE SI ALGUIEN PAGA O NO
+   * ============================================================================
+   *
+   * Guardar sin poner ningún marcador **crea igualmente la fila de
+   * `resultados`**: se crea antes de mirar los pronósticos. Así que preguntar
+   * «¿tiene fila en resultados?» diría que jugó quien sólo abrió la pantalla, y
+   * le cobraría ₡2.000 por mirar.
+   *
+   * Jugar es haber dejado ALGÚN marcador, y por eso la consulta cruza con
+   * `pronosticos`. Un marcador en blanco borra su fila en vez de quedarse con
+   * dos nulos —Entrada 068—, y gracias a eso la pregunta tiene una respuesta
+   * exacta en vez de una interpretación.
+   *
+   * ⚠️ Esta prueba nació de romper el `JOIN` a propósito y ver que NADIE se
+   * quejaba: relajarlo a `LEFT JOIN` pasaba las 491 pruebas en verde mientras
+   * le cobraba a todo el que hubiera abierto la pantalla.
+   */
+  const { jefe, socio } = await conCobros('abrir-no-es-jugar');
+  await crearJornada(jefe.agente, 'J1');
+
+  // Abre y guarda sin poner nada: la casilla vino, y vino vacía.
+  const guardado = await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username,
+    jornada: 'J1',
+    pronosticos: [{ marcador1: '', marcador2: '' }]
+  });
+  assert.equal(guardado.status, 200, JSON.stringify(guardado.body));
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 0, 'abrir la pantalla no cuesta ₡2.000');
+
+  // Y en cuanto pone un marcador de verdad, sí la debe.
+  await jugar(socio, 'J1');
+
+  const despues = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(despues.jornada.debe, 2000, 'ahora sí la jugó');
+});
+
+test('⛔ borrar todos sus marcadores le quita la deuda de esa jornada', async () => {
+  /*
+   * La otra mitad de lo mismo. Mientras la jornada siga abierta, quien se
+   * arrepiente y borra lo que puso deja de deberla —no jugó—. Si el dato se
+   * quedara pegado, tendríamos una deuda sin partida detrás.
+   */
+  const { jefe, socio } = await conCobros('se-arrepiente');
+  await jornadaJugadaPor(jefe, 'J1', socio);
+
+  assert.equal((await jugadorDe(jefe, socio.datos.username)).jornada.debe, 2000);
+
+  const borrado = await socio.agente.post('/api/resultados').send({
+    jugador: socio.datos.username,
+    jornada: 'J1',
+    pronosticos: [{ marcador1: '', marcador2: '' }]
+  });
+  assert.equal(borrado.status, 200, JSON.stringify(borrado.body));
+
+  const cuenta = await jugadorDe(jefe, socio.datos.username);
+  assert.equal(cuenta.jornada.debe, 0, 'se borró lo que puso: ya no la jugó');
 });

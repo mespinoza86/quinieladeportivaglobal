@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 490/490
-npm run test:e2e            # 114/114, ~4,9 min
+npm test                    # 502/502
+npm run test:e2e            # 116/116, ~5,9 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,8 +53,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **490**, ~75 s |
-| Pruebas de navegador | **114**, ~4,9 min, contra el servidor de verdad |
+| Pruebas rápidas | **502**, ~80 s |
+| Pruebas de navegador | **116**, ~5,9 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -581,7 +581,7 @@ npm test                   # las 436 pruebas rápidas, ~70 s
 npm run test:postgres      # 355 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 187 del servidor
 npm run test:arquitectura  # solo los 62 centinelas
-npm run test:e2e           # las 114 de navegador (~4,9 min, escritorio y móvil)
+npm run test:e2e           # las 116 de navegador (~5,9 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1128,7 +1128,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 490 pruebas rápidas y 114 de navegador
+### 2.5 `test/` — 502 pruebas rápidas y 116 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -12869,6 +12869,194 @@ se olvida anotar el de Beto, **Ana pierde el dinero y nadie avisa**. La nota lo
 deja reconstruible leyendo, que es lo que el usuario eligió a cambio de no
 mantener un mecanismo automático. Si algún día pasa de verdad, la conversación
 del traspaso está en esta misma entrada.
+
+---
+
+### 📌 Entrada 081 — 28 de agosto de 2026 — Sólo se paga la jornada que se jugó
+
+**Objetivo:** el usuario pidió un reporte de pagos y en medio de la petición metió
+un cambio de fondo:
+
+> «si un jugador no juega una jornada, esa jornada no se le cobra ni se le va a
+> cobrar nunca, solo se pagan las jornadas jugadas»
+
+Hasta hoy se cobraba **toda jornada desde que entraste**, la jugaras o no. Eso
+no es un reporte: es cambiar cómo se calcula el dinero, y tenía que ir antes,
+porque si no el reporte enseñaría con mucho detalle unas cifras que no son las
+que se quieren.
+
+Esta entrada es **el paso 1 de cuatro**. Los reportes —el del jugador, el del
+administrador y la hoja de impresión— van encima de esto.
+
+## Lo que las respuestas del usuario simplificaron
+
+Cuatro preguntas, cuatro respuestas, y las cuatro quitaron trabajo:
+
+| Pregunta | Respuesta |
+|---|---|
+| ¿Qué es «jugar» una jornada? | **Poner algún resultado en algún partido** |
+| ¿Y quien pagó una que no jugó? | **Le queda a favor** |
+| ¿Quién ve qué? | Cada quien lo suyo; el administrador, el de todos |
+| ¿Desde cuándo? | **Desde ya**, con la primera jornada en juego |
+
+De ahí salieron tres cosas que no hicieron falta:
+
+- **Ninguna migración.** «Jugó» se sabe mirando si dejó algún pronóstico, y ese
+  dato ya está en la base. Ni columna nueva ni nada que correr en Neon.
+- **Ninguna fecha de corte.** Como las cuentas se calculan y no se guardan
+  (Entrada 061), la regla se aplica a todo por igual; y como detrás no hay nada,
+  «desde ahora» sale solo. Nada de un campo «vigente desde» que arrastrar.
+- **`cobrar_desde` queda casi decorativa.** Quien entra en la séptima no jugó las
+  seis anteriores: la segunda condición cubre a la primera. Se deja puesta, pero
+  ya no sostiene nada.
+
+## ⛔ Primero juntar la condición, y sólo después cambiarla
+
+«¿Le toca esta jornada?» se preguntaba en **cuatro sitios**: lo que debe, cómo se
+reparten sus abonos, si una jornada le quedó pagada, y cuánto se espera en cada
+bote. La misma condición, copiada.
+
+Copiada no falla: **se desincroniza**. Añadirle la regla nueva a tres y olvidar
+el cuarto daría una pantalla que dice que debes ₡2.000 y un bote que cuenta con
+₡4.000 tuyos, las dos sin dar error.
+
+Así que primero se extrajo a `leTocaLaJornada`, **sin cambiar el comportamiento**,
+y se comprobó que las 490 pruebas seguían pasando. Sólo entonces se le añadió la
+segunda condición. Con el orden al revés, un fallo de la extracción y un fallo de
+la regla nueva habrían llegado mezclados.
+
+## ⚠️ «No jugó ninguna» y «no me dijeron qué jugó»
+
+Es lo que más cuidado llevó, y el usuario pidió que se le explicara aparte.
+
+```
+jugadas sin pasar   → «nadie me dijo»  → SE COBRA TODO
+jugadas = Set vacío → «no jugó nada»   → no se le cobra nada
+```
+
+Los dos dan cero, y uno de los dos es un fallo. Si una consulta se olvidara de
+traer los pronósticos y eso se leyera como «no jugó nada», **la deuda de toda la
+quiniela se iría a cero en silencio**: la pantalla cargaría, y todo el mundo
+aparecería al día.
+
+⛔ Y la dirección del defecto no es un capricho:
+
+> Los errores que la gente reporta son los que le cuestan dinero **a ella**. Los
+> que nadie reporta son los que le cuestan dinero **al bote**.
+
+Cobrar de más lo dice alguien mañana. Perdonar no lo reclama nadie —¿quién avisa
+de que debería deber más?— y se descubriría al final del torneo, con el bote
+corto y sin forma de reconstruir el número bueno.
+
+Es el mismo `''` contra `null` de la Entrada 068 y el mismo `DEFAULT true` de la
+076: **que falte información nunca puede perdonar una deuda.**
+
+## ⛔ Una mutación que se escapó de 491 pruebas
+
+Al romper la regla a propósito, tres de cuatro cayeron. La cuarta no:
+
+```
+JOIN pronosticos  →  LEFT JOIN pronosticos     → 491/491 EN VERDE
+```
+
+Con esa sola palabra, **abrir la pantalla y guardarla en blanco contaría como
+jugar** —la fila de `resultados` se crea antes de mirar los marcadores— y se le
+cobraría ₡2.000 a quien sólo miró. Ninguna prueba lo cubría.
+
+Se escribieron las dos que faltaban: que guardar en blanco no es jugar, y que
+borrar lo que se puso quita la deuda. Con ellas, la mutación cae.
+
+⚠️ La lección no es «faltaba una prueba»: es que **romper el código a propósito
+es lo único que dice qué cubren las pruebas de verdad**. Las 491 en verde no
+significaban nada sobre ese `JOIN`.
+
+## Un mensaje malo que encontró la prueba de navegador
+
+A quien no jugaba la jornada, la portada le decía:
+
+```
+J1: sin pagar (₡0)
+```
+
+Mentira dos veces: ni la debe, ni son cero colones lo que no debe. Quien lea
+«sin pagar» escribe preguntando qué tiene que pagar.
+
+Detrás había un booleano donde hacen falta **tres estados**. `pagada` pasa a ser
+`true` / `false` / **`null`** —«no aplica»—, y la portada dice **«no la jugaste,
+no se te cobra»**. Colapsar tres respuestas en dos es lo que produce el mensaje
+absurdo, y es exactamente el cuidado de la Entrada 068.
+
+Lo encontró la prueba de navegador al ponerse roja, no una persona usando la
+aplicación.
+
+## Las 14 pruebas rojas, leídas una a una
+
+Al aplicar la regla se pusieron rojas 14 de ruta. **Las 14 eran del montaje**:
+creaban la jornada y nadie la jugaba, así que nadie debía nada.
+
+Se leyeron una por una igualmente —en la Entrada 074, 7 de 8 rojas resultaron
+regresiones de verdad— y una enseñó algo: la de «cambiar el precio no vacía el
+bote» calculaba lo esperado «por cabeza», y al cambiar la regla eso dejó de
+significar nada. Se habría quedado pasando por casualidad.
+
+Se añadió un ayudante, `jornadaJugadaPor(jefe, nombre, ...cuentas)`, para que una
+prueba que espere una deuda tenga que decir **quién jugó**. ⚠️ Recibe cuentas y
+no nombres porque **nadie puede guardar los pronósticos de otro, ni el
+administrador**: cada quien juega con su sesión, y la ruta lo impide.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/cobros.js` | `leTocaLaJornada` y `jornadasDe` —la condición, en un sitio—, `desgloseParaJugador`, y las cuatro funciones usándolas |
+| `src/pagos.js` | `jornadasJugadas()`: quién jugó qué, con el `JOIN` a `pronosticos`. Pasa el `Set` a cuentas, cuenta detallada y botes. El detalle por jornada ya trae `jugada`, `alPremio` y `alAcumulado` |
+| `private/js/index-cuenta.js` | «No la jugaste, no se te cobra» en vez de «sin pagar (₡0)» |
+| `test/cobros.test.js` | 10 de aritmética, con la del dato que falta como la más importante |
+| `test/rutas.test.js` | El ayudante, 14 pruebas arregladas y 4 nuevas |
+| `test/e2e/cobros.spec.js` | El socio juega la jornada, y una nueva del mensaje |
+
+**Verificación:**
+
+```
+npm test         → 502/502
+npm run test:e2e → 116/116
+
+rotas a proposito:
+  «sin dato» se lee como «no jugó nada»  → caen 6
+  la regla se ignora del todo            → caen 6
+  cuentas() no pasa el dato              → cae 1
+  JOIN → LEFT JOIN                       → NO CAYÓ NINGUNA (491 en verde)
+                                            ...y tras escribir las dos que
+                                            faltaban, caen las dos
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una mutación que no tumba ninguna prueba es la que enseña algo.** Cambiar
+   `JOIN` por `LEFT JOIN` pasaba entero, cobrándole a quien sólo abrió la
+   pantalla. Las pruebas en verde no decían nada sobre esa línea.
+2. **Juntar una condición repetida ANTES de cambiarla, y comprobar que no cambia
+   nada.** Así un fallo de la extracción no llega mezclado con uno de la regla.
+3. ⚠️ **Un booleano donde hacen falta tres estados produce mensajes absurdos**,
+   no errores. «Sin pagar (₡0)» no rompía nada: sólo era mentira.
+4. **Una regla nueva puede hacer redundante a una vieja.** `cobrar_desde` dejó de
+   ser necesaria casi del todo, y el modelo quedó más simple, no más complejo.
+5. ⚠️ **Un ayudante de pruebas que obliga a decir quién jugó** es mejor que uno
+   que lo haga solo: si la prueba no lo dice, es que no lo pensó.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**, no hay migración.
+
+⚠️ **Mirar la jornada real antes de seguir.** Este paso cambia números que se
+están usando esta semana, y quien no haya jugado una jornada verá bajar su deuda.
+Conviene comprobarlo con datos de verdad antes de montarle tres pantallas encima.
+
+Después, los pasos 2 a 4: el reporte del jugador, el del administrador —los dos
+sobre ESTA misma aritmética, no una consulta paralela— y la hoja de impresión
+para el PDF. Se decidió **no meter ninguna librería de PDF**: `@media print` y el
+botón de imprimir del navegador, que no añade dependencias ni gasta memoria en
+Render.
 
 ---
 
