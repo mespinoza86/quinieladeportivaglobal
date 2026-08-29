@@ -227,3 +227,100 @@ test('⛔ a quien no jugó la jornada no se le enseña una deuda de ₡0', async
   await expect(otra.locator('#miCuentaContenido')).toContainText('no la jugaste');
   await expect(otra.locator('#miCuentaContenido')).not.toContainText('sin pagar');
 });
+
+test('el jugador abre su reporte y ve adónde fue su plata', async ({ page, browser }) => {
+  /*
+   * La pregunta que motivó esta pantalla, en palabras del usuario: «tener las
+   * cuentas claras, que no haya duda». No es «cuánto debo» —eso ya salía en la
+   * portada— sino **de mi plata, cuánto al premio y cuánto al acumulado**.
+   */
+  const { socio, otra } = await quinielaQueCobra(page, browser, 'mirep');
+
+  await page.request.patch('/api/quiniela-actual/configuracion', {
+    data: { cobros: { torneo: { activo: false, precio: 0 },
+                      jornada: { activo: true, precio: 2000, alAcumulado: 1000 } } }
+  });
+
+  for (const nombre of ['J1', 'J2']) {
+    await page.request.post('/api/jornadas', {
+      data: {
+        nombre,
+        partidos: [{ equipo1: 'Alfa', equipo2: 'Beta', logoEquipo1: '', logoEquipo2: '',
+                     comodin: false, apiFixtureId: '', apiLeagueId: '',
+                     apiDate: '2099-01-01 15:00', apiStatus: '' }]
+      }
+    });
+  }
+
+  // Juega la primera y se salta la segunda.
+  await otra.request.post('/api/resultados', {
+    data: { jugador: socio.username, jornada: 'J1',
+            pronosticos: [{ marcador1: 1, marcador2: 0 }] }
+  });
+
+  await otra.goto('/index.html');
+  await expect(otra.locator('#miCuentaCard')).toBeVisible({ timeout: 10_000 });
+  await otra.locator('#miCuentaCard a[href="/mi-cuenta.html"]').click();
+
+  await expect(otra.locator('#cuentaPanel')).toBeVisible({ timeout: 10_000 });
+
+  /* La que jugó, con su desglose. */
+  await expect(otra.locator('#tablaJornadas')).toContainText('J1');
+  await expect(otra.locator('#tablaJornadas')).toContainText('al premio');
+  await expect(otra.locator('#tablaJornadas')).toContainText('al acumulado');
+
+  /* Y la que no jugó, dicha, no escondida: un hueco se lee como un error. */
+  await expect(otra.locator('#tablaJornadas')).toContainText('no la jugaste');
+
+  /*
+   * El total sólo cuenta la jugada: ₡2.000, no ₡4.000.
+   *
+   * ⚠️ El separador de miles va como regex a propósito. `toLocaleString('es-CR')`
+   * da un punto en unos entornos y un espacio fino en otros —según la versión de
+   * ICU que traiga el navegador—, y comprobar el carácter sería probar cómo
+   * formatea Node, no cuánto debe esta persona.
+   */
+  await expect(otra.locator('#totales')).toContainText('1 de 2');
+  await expect(otra.locator('#totales')).toContainText(/Te ha tocado pagar:\s*₡\s*2[\s.,  ]?000/);
+  await expect(otra.locator('#totales')).not.toContainText(/₡\s*4[\s.,  ]?000/);
+});
+
+test('el administrador abre el reporte y ve quién falta por pagar, con nombre', async ({ page, browser }) => {
+  const { socio, otra } = await quinielaQueCobra(page, browser, 'adrep');
+
+  await page.request.patch('/api/quiniela-actual/configuracion', {
+    data: { cobros: { torneo: { activo: false, precio: 0 },
+                      jornada: { activo: true, precio: 2000, alAcumulado: 1000 } } }
+  });
+
+  await page.request.post('/api/jornadas', {
+    data: {
+      nombre: 'J1',
+      partidos: [{ equipo1: 'Alfa', equipo2: 'Beta', logoEquipo1: '', logoEquipo2: '',
+                   comodin: false, apiFixtureId: '', apiLeagueId: '',
+                   apiDate: '2099-01-01 15:00', apiStatus: '' }]
+    }
+  });
+
+  await otra.request.post('/api/resultados', {
+    data: { jugador: socio.username, jornada: 'J1',
+            pronosticos: [{ marcador1: 1, marcador2: 0 }] }
+  });
+
+  await page.goto('/cobros.html');
+  await expect(page.locator('#cuentasPanel')).toBeVisible({ timeout: 10_000 });
+  await page.locator('[data-ir-a="/reporte-cobros.html"]').click();
+
+  await expect(page.locator('#jornadasPanel')).toBeVisible({ timeout: 10_000 });
+
+  /*
+   * ⚠️ El nombre de quien falta, no sólo el número. Un total que no cuadra no
+   * dice a quién preguntarle, que es lo único que se puede hacer con eso.
+   */
+  await expect(page.locator('#tablaJornadas')).toContainText('Falta que paguen');
+  await expect(page.locator('#tablaJornadas')).toContainText(socio.username);
+
+  await expect(page.locator('#tablaJornadas')).toContainText('La jugaron');
+  await expect(page.locator('#totalTorneo')).toContainText('Acumulado');
+  await expect(page.locator('#tablaJugadores')).toContainText(socio.username);
+});

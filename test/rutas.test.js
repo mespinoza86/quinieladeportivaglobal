@@ -3752,3 +3752,122 @@ test('⛔ borrar todos sus marcadores le quita la deuda de esa jornada', async (
   const cuenta = await jugadorDe(jefe, socio.datos.username);
   assert.equal(cuenta.jornada.debe, 0, 'se borró lo que puso: ya no la jugó');
 });
+
+/* ==================== El reporte ==================== */
+
+/*
+ * El estado de cuenta de toda la quiniela. Lo que se vigila aquí no es que los
+ * números salgan —eso ya lo prueba la aritmética— sino que sean **los mismos**
+ * que ve cada jugador en su pantalla.
+ *
+ * ⛔ Un reporte que no cuadra con lo que la gente ve en su teléfono es peor que
+ * no tener reporte: convierte una cuenta clara en una discusión.
+ */
+
+test('⛔ el reporte da los MISMOS números que ve el jugador', async () => {
+  const { jefe, socio } = await conCobros('reporte-cuadra', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio, jefe);
+  await jornadaJugadaPor(jefe, 'J2', jefe);          // el socio se la salta
+  await jornadaJugadaPor(jefe, 'J3', socio, jefe);
+
+  const j = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 3000 });
+
+  const reporte = await jefe.agente.get('/api/cobros/reporte');
+  assert.equal(reporte.status, 200, JSON.stringify(reporte.body));
+
+  const suyaEnElReporte = reporte.body.jugadores.find(p => p.nombre === socio.datos.username);
+  const suyaParaEl = (await socio.agente.get('/api/quiniela-actual/mi-cuenta')).body;
+
+  assert.equal(suyaEnElReporte.jornada.debe, suyaParaEl.jornada.debe);
+  assert.equal(suyaEnElReporte.jornada.abonado, suyaParaEl.jornada.abonado);
+  assert.equal(suyaEnElReporte.jornada.saldo, suyaParaEl.jornada.saldo);
+
+  // Y jornada por jornada, incluida la que no jugó.
+  const enReporte = new Map(suyaEnElReporte.jornadasDetalle.map(d => [d.nombre, d]));
+  const paraEl = new Map(suyaParaEl.jornadas.map(d => [d.nombre, d]));
+
+  for (const nombre of ['J1', 'J2', 'J3']) {
+    assert.deepEqual(enReporte.get(nombre), paraEl.get(nombre), `no cuadra en ${nombre}`);
+  }
+
+  assert.equal(enReporte.get('J2').jugada, false, 'la que se saltó, en los dos sitios igual');
+});
+
+test('el reporte dice quién jugó cada jornada y quién falta por pagar', async () => {
+  const { jefe, socio } = await conCobros('reporte-falta', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio, jefe);
+
+  const j = await jugadorDe(jefe, socio.datos.username);
+  await jefe.agente.post('/api/cobros/abonos')
+    .send({ jugadorId: j.jugadorId, concepto: 'jornada', monto: 2000 });
+
+  const reporte = await jefe.agente.get('/api/cobros/reporte');
+  const [j1] = reporte.body.jornadas;
+
+  assert.equal(j1.jugaron, 2, 'la jugaron los dos');
+  assert.equal(j1.alPremio, 1000);
+  assert.equal(j1.alAcumulado, 1000);
+  assert.equal(j1.premio, 1000, 'sólo pagó uno: mil al premio');
+
+  /*
+   * ⚠️ Los NOMBRES de quien falta, no sólo cuántos. Un total que no cuadra no
+   * dice a quién hay que preguntarle, que es lo único que se puede hacer con
+   * esa información.
+   */
+  assert.deepEqual(j1.sinPagar, [jefe.datos.username]);
+});
+
+test('⚠️ a quien no jugó una jornada no se le cuenta como que la debe', async () => {
+  const { jefe, socio } = await conCobros('reporte-nojugo', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', jefe);          // el socio no la juega
+
+  const reporte = await jefe.agente.get('/api/cobros/reporte');
+  const [j1] = reporte.body.jornadas;
+
+  assert.equal(j1.jugaron, 1);
+  assert.deepEqual(j1.sinPagar, [jefe.datos.username],
+    'el socio no sale: no la jugó, no la debe');
+
+  const suya = reporte.body.jugadores.find(p => p.nombre === socio.datos.username);
+  assert.equal(suya.jugadas, 0);
+  assert.equal(suya.jornada.debe, 0);
+  assert.equal(suya.alPremio, 0);
+  assert.equal(suya.alAcumulado, 0);
+});
+
+test('el reporte desglosa, por persona, cuánto fue al premio y cuánto al acumulado', async () => {
+  /*
+   * Es la pregunta que motivó todo esto: «de mi plata, adónde fue».
+   */
+  const { jefe, socio } = await conCobros('reporte-desglose', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  await jornadaJugadaPor(jefe, 'J2', socio);
+
+  const reporte = await jefe.agente.get('/api/cobros/reporte');
+  const suya = reporte.body.jugadores.find(p => p.nombre === socio.datos.username);
+
+  assert.equal(suya.jugadas, 2);
+  assert.equal(suya.alPremio, 2000, 'mil de cada jornada');
+  assert.equal(suya.alAcumulado, 2000);
+  assert.equal(suya.jornada.debe, 4000, 'y las dos partes suman lo que le tocó');
+});
+
+test('⛔ el reporte es sólo del administrador, y no cruza quinielas', async () => {
+  const uno = await conCobros('rep-a', CON_ACUMULADO);
+  const otro = await conCobros('rep-b', CON_ACUMULADO);
+
+  assert.equal((await uno.socio.agente.get('/api/cobros/reporte')).status, 403);
+
+  await jornadaJugadaPor(uno.jefe, 'J1', uno.socio);
+
+  const ajeno = await otro.jefe.agente.get('/api/cobros/reporte');
+  assert.equal(ajeno.body.jornadas.length, 0, 'las jornadas de la otra no se ven');
+  assert.ok(!ajeno.body.jugadores.some(p => p.nombre === uno.socio.datos.username),
+    'ni sus jugadores');
+});

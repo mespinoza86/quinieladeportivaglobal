@@ -1942,3 +1942,89 @@ button + button {
   background: rgba(96, 165, 250, 0.18);
   color: #60a5fa;
 }
+
+/* =====================================================================
+ * IMPRESION - el "PDF bonito" sin una sola libreria
+ * =====================================================================
+ *
+ * El usuario pidio poder generar un reporte para compartir. Se resuelve con
+ * el dialogo de impresion del navegador ("Guardar como PDF"), no con una
+ * libreria.
+ *
+ * Por que asi:
+ *
+ *   - CERO dependencias. El proyecto tiene once y todas pequenas; jsPDF o
+ *     puppeteer serian con diferencia la mas pesada, y para hacer un papel.
+ *   - Lo genera el aparato de quien mira, no el servidor. Con 200 personas,
+ *     levantar un navegador en Render por cada PDF es memoria que no sobra.
+ *   - Y no hace falta abrir la politica de seguridad a ningun CDN. La de este
+ *     sitio ya esta abierta a cdnjs por `generar_reporte.html`, que carga
+ *     jsPDF de fuera: si ese dominio no responde, esa pantalla no genera nada
+ *     y no lo dice. Aqui no hay nada que pueda fallar de fuera.
+ *
+ * En el movil tambien sale: Compartir -> Imprimir -> Guardar como PDF.
+ * =====================================================================
+ */
+@media print {
+  /*
+   * Fondo blanco y letra negra. La pantalla es oscura, y en papel eso son
+   * paginas enteras de tinta -o, en PDF, un documento ilegible impreso-.
+   */
+  body.app-body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  .mobile-shell {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /*
+   * Nada que no se pueda tocar en papel: botones, menus y el pie de
+   * navegacion. `.no-imprimir` es para marcar lo que sobra caso por caso.
+   */
+  button,
+  .ghost-button,
+  .secondary-button,
+  .danger-button,
+  .no-imprimir,
+  nav,
+  .nav-bar,
+  .app-logo {
+    display: none !important;
+  }
+
+  /* Las tarjetas pierden el relieve: en papel, un borde fino basta. */
+  .app-panel,
+  .info-card,
+  .hero-card {
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    /* ⚠️ Que una fila no se parta entre dos paginas: media fila no se lee. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .helper-text,
+  .hero-text,
+  .eyebrow,
+  h1, h2, h3, p, span, strong {
+    color: #111 !important;
+  }
+
+  /* El titulo de cada bloque no se queda solo al final de una pagina. */
+  h1, h2, h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  a[href]::after { content: ''; }   /* sin la URL detras de cada enlace */
+
+  @page {
+    margin: 1.5cm;
+  }
+}

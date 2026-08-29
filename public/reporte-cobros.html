@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reporte de pagos</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/html-seguro.js" defer></script>
+  <script src="/js/reporte-cobros.js" defer></script>
+</head>
+<body class="app-body">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow" id="reporteQuiniela">Administración</p><h1>Reporte de pagos</h1></div>
+        <div class="app-logo">📋</div>
+      </div>
+      <p id="reporteFecha" class="hero-text"></p>
+    </section>
+
+    <section class="app-panel" id="apagadoPanel" hidden>
+      <p class="helper-text">
+        Esta quiniela no está cobrando nada todavía, así que no hay reporte que
+        generar.
+      </p>
+      <button data-ir-a="/configuracion-quiniela.html">Ir a la configuración</button>
+    </section>
+
+    <section class="app-panel" id="totalPanel" hidden>
+      <h2>El torneo, en total</h2>
+      <div id="totalTorneo"></div>
+    </section>
+
+    <section class="app-panel" id="jornadasPanel" hidden>
+      <h2>Por jornada</h2>
+      <p class="helper-text">
+        Cuánto se ha cobrado de cuánto se espera, y quién falta. Sólo cuenta a
+        quien jugó esa jornada.
+      </p>
+      <div id="tablaJornadas"></div>
+    </section>
+
+    <section class="app-panel" id="jugadoresPanel" hidden>
+      <h2>Por persona</h2>
+      <div id="tablaJugadores"></div>
+    </section>
+
+    <section class="app-panel no-imprimir">
+      <button id="imprimir" type="button">Imprimir o guardar en PDF</button>
+      <p class="helper-text">
+        Se abre el diálogo de impresión del aparato. Desde ahí puedes elegir
+        «Guardar como PDF» y compartirlo.
+      </p>
+    </section>
+
+    <p id="reporteMensaje" class="form-message"></p>
+    <button data-ir-a="/cobros.html" class="ghost-button no-imprimir">Volver a Cobros</button>
+  </main>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mis pagos</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/html-seguro.js" defer></script>
+  <script src="/js/mi-cuenta.js" defer></script>
+</head>
+<body class="app-body">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow" id="reporteQuiniela">Mis pagos</p><h1 id="reporteTitulo">Mis pagos</h1></div>
+        <div class="app-logo">🧾</div>
+      </div>
+      <p id="reporteResumen" class="hero-text"></p>
+    </section>
+
+    <section class="app-panel" id="apagadoPanel" hidden>
+      <p class="helper-text">Esta quiniela no está cobrando nada, así que no hay cuenta que enseñar.</p>
+    </section>
+
+    <section class="app-panel" id="cuentaPanel" hidden>
+      <h2>Jornada por jornada</h2>
+      <p class="helper-text">
+        Sólo se pagan las jornadas que jugaste. Una que no jugaste no se te cobra,
+        y no se te va a cobrar después.
+      </p>
+      <div id="tablaJornadas"></div>
+    </section>
+
+    <section class="app-panel" id="totalesPanel" hidden>
+      <h2>El total</h2>
+      <div id="totales"></div>
+    </section>
+
+    <section class="app-panel no-imprimir">
+      <button id="imprimir" type="button">Imprimir o guardar en PDF</button>
+      <p class="helper-text">
+        Se abre el diálogo de impresión del aparato. Desde ahí puedes elegir
+        «Guardar como PDF».
+      </p>
+    </section>
+
+    <p id="reporteMensaje" class="form-message"></p>
+    <button data-ir-a="/index.html" class="ghost-button no-imprimir">Volver</button>
+  </main>
+</body>
+</html>

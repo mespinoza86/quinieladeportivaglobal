@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 502/502
-npm run test:e2e            # 116/116, ~5,9 min
+npm test                    # 508/508
+npm run test:e2e            # 120/120, ~5,4 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,8 +53,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **502**, ~80 s |
-| Pruebas de navegador | **116**, ~5,9 min, contra el servidor de verdad |
+| Pruebas rápidas | **508**, ~80 s |
+| Pruebas de navegador | **120**, ~5,4 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -581,7 +581,7 @@ npm test                   # las 436 pruebas rápidas, ~70 s
 npm run test:postgres      # 355 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 187 del servidor
 npm run test:arquitectura  # solo los 62 centinelas
-npm run test:e2e           # las 116 de navegador (~5,9 min, escritorio y móvil)
+npm run test:e2e           # las 120 de navegador (~5,4 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1128,7 +1128,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 502 pruebas rápidas y 116 de navegador
+### 2.5 `test/` — 508 pruebas rápidas y 120 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -13057,6 +13057,206 @@ sobre ESTA misma aritmética, no una consulta paralela— y la hoja de impresió
 para el PDF. Se decidió **no meter ninguna librería de PDF**: `@media print` y el
 botón de imprimir del navegador, que no añade dependencias ni gasta memoria en
 Render.
+
+---
+
+### 📌 Entrada 082 — 28 de agosto de 2026 — Los reportes, y el PDF sin una sola librería
+
+**Objetivo:** los pasos 2 a 4 de lo pedido en la Entrada 081. El jugador ve su
+propio estado de cuenta, el administrador ve el de todos, y los dos se pueden
+imprimir o guardar en PDF para compartir.
+
+Lo que el usuario quería resolver, con sus palabras: **«tener las cuentas
+claras, que no haya duda»**. La pregunta no es «cuánto debo» —eso ya salía en la
+portada— sino **«de mi plata, cuánto fue al premio y cuánto al acumulado»**.
+
+## ⛔ Una sola aritmética, dos pantallas
+
+Es la decisión que sostiene los dos reportes: **ninguno calcula nada**. Los dos
+salen de `cobros.cuentaDeJugador` y `cobros.jornadaPagada`, las mismas funciones
+que ya usaba la pantalla de cobros.
+
+No hay una consulta paralela que sume esto por su cuenta, y no la hay a
+propósito: si la hubiera, el día que las dos discreparan —y discreparían, en
+cuanto se le añada una regla a una y no a la otra— **el reporte enseñaría una
+cifra distinta de la que la gente ve en su teléfono**. Y ése es justo el día en
+que un reporte deja de servir para lo único que sirve.
+
+Hay prueba que compara, campo por campo y jornada por jornada, lo que devuelve
+el reporte del administrador con lo que ve el jugador en su pantalla.
+
+## El PDF: cero dependencias
+
+Se resuelve con `@media print` y el botón de imprimir del navegador —«Guardar
+como PDF»—, no con una librería. Tres razones:
+
+1. **El proyecto tiene once dependencias y todas pequeñas.** `puppeteer` sería
+   con diferencia la más pesada, y para hacer un papel.
+2. **Lo genera el aparato de quien mira, no el servidor.** Con 200 personas,
+   levantar un navegador en Render por cada PDF es memoria que no sobra.
+3. **No hace falta abrir nada.**
+
+⚠️ Y ese tercer punto tiene nombre. El proyecto **ya tenía** un generador de PDF:
+`generar_reporte.html`, que carga jsPDF desde `cdnjs.cloudflare.com`. Para que
+funcione, la política de seguridad **del sitio entero** lleva:
+
+```js
+scriptSrc: ["'self'", 'https://cdnjs.cloudflare.com'],
+```
+
+Una pantalla amplía la superficie de todas. Y si ese dominio no responde, esa
+pantalla no genera nada y no lo dice. Los reportes nuevos no dependen de nadie.
+
+📌 Queda anotado como pendiente: convertir `generar_reporte.html` a impresión
+permitiría **cerrar esa línea de la CSP**.
+
+## Lo que enseña cada reporte
+
+**El jugador**, en `/mi-cuenta.html`:
+
+```
+J1 — ₡2.000 (₡1.000 al premio + ₡1.000 al acumulado)   Pagada ✅
+J2 — no la jugaste, no se te cobra
+J3 — ₡2.000 (₡1.000 al premio + ₡1.000 al acumulado)   Sin pagar
+
+Jornadas jugadas: 2 de 3
+Te ha tocado pagar: ₡4.000
+De eso, ₡2.000 a los premios y ₡2.000 al bote acumulado
+```
+
+⚠️ **Las que no jugó se dicen, no se omiten.** Un hueco en la numeración se lee
+como un error y genera justo la pregunta que este reporte existe para evitar.
+
+**El administrador**, en `/reporte-cobros.html`: lo mismo de cada persona, más la
+vista por jornada y el total del torneo. Con una cosa que no estaba en ninguna
+pantalla:
+
+```
+J1 · Cuota ₡2.000 (₡1.000 premio + ₡1.000 acumulado)
+  La jugaron 8 persona(s)
+  Premio de la jornada: ₡6.000 de ₡8.000
+  Falta que paguen: Beto, Carlos
+```
+
+**Los nombres de quien falta, no sólo el número.** Un total que no cuadra no dice
+a quién hay que preguntarle, que es lo único que se puede hacer con eso.
+
+## Un botón mío que no llevaba a ninguna parte
+
+Puse en la portada `<button data-ir-a="/mi-cuenta.html">`, como en el resto de la
+aplicación. **No hacía nada**: `index.html` es de las pocas pantallas que NO
+cargan `navegacion.js`, así que ese atributo ahí es decorativo.
+
+Se pintaba perfecto. Lo cazó la prueba de navegador al no poder llegar a la
+pantalla, no una lectura del código. Ahora es un `<a href>`, que es como navega
+esa portada.
+
+## ⛔ Y un fallo mío de lectura, peor que el anterior
+
+Corrí la suite de navegador, vi `118 passed` al final y **di por buenas dos
+líneas que eran fallos**. Playwright lista al final los nombres de las pruebas
+que fallaron; yo leí esa lista como si fuera el rastro de las últimas que
+pasaron.
+
+Se lo dije al usuario como si estuviera todo verde. **No lo estaba**: el barrido
+de navegación llevaba rojo desde que añadí el botón del reporte.
+
+⚠️ La lección se parece a la de las sondas de la Entrada 078 —«una sonda rota no
+dice no sé: dice no»— pero es peor, porque aquí la herramienta **sí decía la
+verdad** y quien la leyó mal fui yo. La forma de no repetirlo es mirar la línea
+de resultado (`N failed`), no el final de la lista:
+
+```
+npx playwright test 2>&1 | grep -E "passed|failed|flaky"
+```
+
+## El barrido de navegación tenía razón, y mi panel no
+
+El botón del reporte estaba dentro de un panel con `hidden` que sólo aparece con
+los cobros encendidos. El barrido exige que **todo botón sea pulsable en el
+estado por defecto**, y en una quiniela recién creada no lo era.
+
+La regla del barrido es buena —acababa de cazar el botón muerto de la portada—,
+así que el que se movió fue el botón: ahora está al pie de la pantalla de
+cobros, siempre visible. El reporte ya dice por sí solo cuando no hay nada que
+reportar.
+
+## Un centinela que faltaba: las pantallas de administración
+
+`PAGINAS_ADMIN` es una lista escrita a mano en `src/servidor.js`. Añadir una
+pantalla de administración y olvidarse de meterla ahí **no falla**: se sirve a
+cualquiera con sesión, carga entera, y luego va fallando petición por petición.
+
+No es fuga de datos —las rutas exigen `requireAdmin`— pero sí de superficie.
+
+El centinela nuevo no repite la lista: **la deduce**. Toda ruta bajo
+`/api/cobros/` lleva `requireAdmin`, así que la pantalla cuyo script llame ahí es
+de administración, y punto. Repetir la lista sólo la dejaría desincronizarse en
+dos sitios en vez de en uno.
+
+## Y una prueba mía que comprobaba el formato de Node
+
+Una aserción esperaba `₡2.000` y recibía `₡2 000`: `toLocaleString('es-CR')` usa
+punto o espacio fino según la versión de ICU del navegador. Comprobaba **cómo
+formatea Node**, no cuánto debe una persona. Ahora va como expresión regular
+tolerante al separador, y además comprueba que NO aparezca ₡4.000 —que era el
+número malo—.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/mi-cuenta.html` + `private/js/mi-cuenta.js` | **Nuevos.** El reporte del jugador |
+| `public/reporte-cobros.html` + `private/js/reporte-cobros.js` | **Nuevos.** El del administrador |
+| `src/pagos.js` | `reporte()`: la matriz completa sobre la misma aritmética |
+| `src/rutas/admin.js` | `GET /api/cobros/reporte` |
+| `src/servidor.js` | `/reporte-cobros.html` en `PAGINAS_ADMIN` |
+| `private/css/styles.css` | El bloque `@media print` |
+| `public/index.html` | Enlace al reporte, en `<a>` y no en botón |
+| `public/cobros.html` | El botón del reporte, al pie y siempre visible |
+| `test/architecture.test.js` | El centinela de `PAGINAS_ADMIN` |
+| `test/rutas.test.js` | 5 del reporte, incluida la que lo cuadra con la pantalla del jugador |
+| `test/e2e/cobros.spec.js` | Los dos recorridos, de punta a punta |
+
+**Verificación:**
+
+```
+npm test         → 508/508
+npm run test:e2e → 120/120     (mirando la linea de resultado, no el final de la lista)
+
+rotas a proposito, y las cuatro caen:
+  el reporte inventa que todo esta pagado   → caen 3
+  quien no jugo sale como moroso            → cae 1
+  el desglose pierde el acumulado           → cae 1
+  la pantalla fuera de PAGINAS_ADMIN        → cae el centinela nuevo
+  el enlace de la portada, como boton       → cae la e2e del jugador Y el barrido
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Leer «N passed» al final no es leer el resultado.** Playwright lista los
+   nombres de las pruebas FALLIDAS al final, y las tomé por el rastro de las
+   últimas que pasaron. Le dije al usuario que estaba verde y no lo estaba.
+2. ⚠️ **`data-ir-a` no funciona en `index.html`**: esa pantalla no carga
+   `navegacion.js`. Un botón así se pinta igual de bien y no lleva a ninguna
+   parte.
+3. **Un botón dentro de un panel oculto no se puede probar**, y el barrido tiene
+   razón en quejarse. Cuando choca una regla de pruebas con una decisión de
+   maquetación mía, la que suele estar mal es la mía.
+4. ⚠️ **El proyecto ya tenía una dependencia de CDN** que amplía la CSP del sitio
+   entero por una sola pantalla. No lo sabía hasta buscar cómo hacer el PDF.
+5. **Una prueba que espera `₡2.000` comprueba la versión de ICU**, no la cuenta.
+
+**Pendiente / siguiente paso:**
+
+Redesplegar; **no toca la base**, no hay migración.
+
+Queda para más adelante, y por este orden:
+
+- Convertir `generar_reporte.html` a impresión y **quitar `cdnjs` de la CSP**.
+- Paginar el diario de abonos (`GET /api/cobros/abonos` no tiene `LIMIT`).
+  Con el reporte hecho ya no corre prisa: nadie necesita mirar los asientos en
+  bruto para entender las cuentas.
 
 ---
 

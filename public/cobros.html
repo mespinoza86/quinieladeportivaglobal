@@ -91,6 +91,17 @@
       <div id="listaHistorial"></div>
     </section>
 
+    <!--
+      ⚠️ El reporte va aquí abajo y SIEMPRE visible, no en un panel que aparece
+      con los cobros encendidos.
+
+      Estuvo en un panel con `hidden` y el barrido de navegación lo cazó: un
+      botón que no se puede pulsar en el estado por defecto no se puede probar,
+      y esa regla es la que acababa de encontrar otro botón mío que no llevaba a
+      ninguna parte. La pantalla del reporte ya dice por sí sola cuando no hay
+      nada que reportar.
+    -->
+    <button data-ir-a="/reporte-cobros.html">Ver el reporte de pagos</button>
     <button data-ir-a="/adminmode.html" class="ghost-button">Volver</button>
   </main>
 </body>

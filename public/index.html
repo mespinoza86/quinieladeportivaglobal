@@ -46,6 +46,13 @@
     <section class="app-panel" id="miCuentaCard" hidden>
       <h2>Mis pagos</h2>
       <div id="miCuentaContenido"></div>
+      <!--
+        ⚠️ Un enlace, no un botón con `data-ir-a`: esta portada NO carga
+        `navegacion.js`, así que ese atributo aquí no hace nada. El botón se
+        pintaba igual de bien y no llevaba a ninguna parte; lo cazó la prueba
+        de navegador, no una lectura del código.
+      -->
+      <a href="/mi-cuenta.html" class="ghost-button">Ver el detalle</a>
     </section>
 
     <section class="home-rotator">

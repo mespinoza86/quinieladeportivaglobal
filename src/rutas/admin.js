@@ -481,6 +481,20 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /**
+   * El estado de cuenta de toda la quiniela, para llevar orden y compartirlo.
+   *
+   * ⚠️ Sale de la MISMA aritmética que la pantalla de cada jugador. Un reporte
+   * que no cuadra con lo que ve la gente es peor que no tenerlo: convierte una
+   * cuenta clara en una discusión.
+   */
+  app.get('/api/cobros/reporte', requireAdmin, async (req, res) => {
+    res.json({
+      quiniela: { nombre: req.quiniela.nombre },
+      ...await pagosMod.reporte(req.quiniela.id, req.quiniela.configuracion)
+    });
+  });
+
+  /**
    * Cuánto hay en el premio de cada jornada y en el bote acumulado.
    *
    * Se calcula sobre lo COBRADO, y se devuelve también lo esperado: sin el

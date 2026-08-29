@@ -342,6 +342,170 @@ async function jornadasJugadas(cliente) {
   return porJugador;
 }
 
+/* ==================== El reporte ==================== */
+
+/**
+ * El estado de cuenta de TODA la quiniela: cada persona, jornada por jornada.
+ *
+ * ============================================================================
+ * ⚠️ LOS MISMOS NÚMEROS QUE VE EL JUGADOR
+ * ============================================================================
+ *
+ * Sale de `cobros.cuentaDeJugador` y `cobros.jornadaPagada`, exactamente igual
+ * que la pantalla de cada jugador. **No hay una consulta paralela que sume esto
+ * por su cuenta.**
+ *
+ * Si la hubiera, el día que las dos discreparan —y discreparían: se le añade una
+ * regla a una y no a la otra— el reporte dejaría de servir para lo único que
+ * sirve, que es que no haya duda. Un reporte que no cuadra con la pantalla es
+ * peor que no tener reporte: convierte una cuenta clara en una discusión.
+ *
+ * ============================================================================
+ * TRES CONSULTAS, NO TRES POR JUGADOR
+ * ============================================================================
+ *
+ * Se trae todo de golpe y se cruza en memoria, igual que `cuentas` y `botes`.
+ * Con 200 personas y 40 jornadas la aritmética entera son unos milisegundos; lo
+ * que no aguanta es una consulta por cabeza.
+ */
+async function reporte(quinielaId, configuracion) {
+  const { jugadores, jornadas, pagos, jugadas, entregado } =
+    await db.enQuiniela(quinielaId, async c => {
+      const [j, jo, p, ju, e] = await Promise.all([
+        c.query(`SELECT id, nombre, usuario_id, cobrar_desde,
+                        juega_torneo, juega_jornadas, juega_acumulado
+                   FROM jugadores ORDER BY nombre`),
+        c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
+        c.query('SELECT jugador_id, concepto, monto FROM pagos'),
+        jornadasJugadas(c),
+        c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado')
+      ]);
+      return {
+        jugadores: j.rows, jornadas: jo.rows, pagos: p.rows,
+        jugadas: ju, entregado: cobros.aMonto(e.rows[0].total)
+      };
+    });
+
+  const pagosPorJugador = new Map();
+  for (const pago of pagos) {
+    if (!pagosPorJugador.has(pago.jugador_id)) pagosPorJugador.set(pago.jugador_id, []);
+    pagosPorJugador.get(pago.jugador_id).push(pago);
+  }
+
+  /* ---- Cada persona, jornada por jornada ---- */
+
+  const filas = jugadores.map(f => {
+    const suyo = {
+      juegaTorneo: f.juega_torneo,
+      juegaJornadas: f.juega_jornadas,
+      juegaAcumulado: f.juega_acumulado,
+      cobrarDesde: f.cobrar_desde,
+      jugadas: jugadas.get(f.id) || new Set()
+    };
+    const suyos = pagosPorJugador.get(f.id) || [];
+
+    const cuenta = cobros.cuentaDeJugador({
+      jugador: suyo, jornadas, pagos: suyos, cobros: configuracion?.cobros
+    });
+
+    const desde = f.cobrar_desde === null || f.cobrar_desde === undefined
+      ? -Infinity : Number(f.cobrar_desde);
+
+    let alPremio = 0;
+    let alAcumulado = 0;
+
+    const detalle = jornadas
+      .filter(j => Number(j.secuencia) >= desde)
+      .map(j => {
+        const jugada = suyo.jugadas.has(String(j.id));
+        const d = cobros.desgloseParaJugador(j, f.juega_acumulado !== false);
+
+        if (jugada) {
+          alPremio = cobros.aMonto(alPremio + d.alPremio);
+          alAcumulado = cobros.aMonto(alAcumulado + d.alAcumulado);
+        }
+
+        return {
+          id: j.id,
+          nombre: j.nombre,
+          jugada,
+          precio: jugada ? d.total : 0,
+          alPremio: jugada ? d.alPremio : 0,
+          alAcumulado: jugada ? d.alAcumulado : 0,
+          /* `null` es «no aplica», que no es «no pagada». Ver `cuentaDetallada`. */
+          pagada: jugada
+            ? cobros.jornadaPagada({ jugador: suyo, jornadas, pagos: suyos, jornadaId: j.id })
+            : null
+        };
+      });
+
+    return {
+      jugadorId: f.id,
+      nombre: f.nombre,
+      tieneCuenta: Boolean(f.usuario_id),
+      juegaTorneo: f.juega_torneo,
+      juegaJornadas: f.juega_jornadas,
+      juegaAcumulado: f.juega_acumulado,
+      torneo: cuenta.torneo,
+      jornada: cuenta.jornada,
+      jugadas: detalle.filter(d => d.jugada).length,
+      alPremio,
+      alAcumulado,
+      jornadasDetalle: detalle
+    };
+  });
+
+  /* ---- Y la vista por jornada: quién jugó, cuánto se juntó, quién falta ---- */
+
+  const estado = cobros.botes({
+    jugadores: jugadores.map(f => ({
+      id: f.id,
+      cobrarDesde: f.cobrar_desde,
+      juegaJornadas: f.juega_jornadas,
+      juegaAcumulado: f.juega_acumulado,
+      jugadas: jugadas.get(f.id) || new Set()
+    })),
+    jornadas,
+    pagosPorJugador,
+    entregado
+  });
+
+  const porBote = new Map(estado.jornadas.map(b => [String(b.id), b]));
+
+  const porJornada = jornadas.map(j => {
+    const id = String(j.id);
+    const quienes = filas.filter(f => f.jornadasDetalle.some(d => String(d.id) === id && d.jugada));
+
+    return {
+      id: j.id,
+      nombre: j.nombre,
+      secuencia: Number(j.secuencia),
+      precio: cobros.aMonto(j.precio),
+      alAcumulado: cobros.aMonto(j.al_acumulado),
+      alPremio: cobros.aMonto(cobros.aMonto(j.precio) - cobros.aMonto(j.al_acumulado)),
+      jugaron: quienes.length,
+      premio: porBote.get(id)?.premio ?? 0,
+      premioEsperado: porBote.get(id)?.esperado ?? 0,
+      /*
+       * ⚠️ Quién falta por pagar ESTA jornada, por nombre. Es lo que quien
+       * cobra necesita de verdad: un total que no cuadra no dice a quién hay
+       * que preguntarle.
+       */
+      sinPagar: quienes
+        .filter(f => f.jornadasDetalle.some(d => String(d.id) === id && d.pagada === false))
+        .map(f => f.nombre)
+    };
+  });
+
+  return {
+    generadoEn: new Date().toISOString(),
+    cobros: cobros.normalizarCobros(configuracion),
+    jugadores: filas,
+    jornadas: porJornada,
+    acumulado: estado.acumulado
+  };
+}
+
 /* ==================== Los botes ==================== */
 
 /**
@@ -442,5 +606,5 @@ module.exports = {
   registrar, anular,
   cuentas, cuentaDetallada,
   ajustarJugador, proximaSecuencia,
-  botes, entregas, entregarAcumulado
+  botes, entregas, entregarAcumulado, reporte
 };

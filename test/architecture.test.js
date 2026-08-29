@@ -2000,3 +2000,47 @@ test('⛔ las tablas de solo-escritura estan cerradas en las migraciones Y en el
     [...cerradasEnMigraciones].sort(),
     'las dos listas tienen que decir lo mismo: lo que se cierra en Neon y lo que se cierra en las pruebas');
 });
+
+test('⛔ toda pantalla que llame a las rutas de cobros esta en PAGINAS_ADMIN', () => {
+  /*
+   * `PAGINAS_ADMIN` es una lista escrita a mano en `src/servidor.js`. Anadir una
+   * pantalla de administracion y olvidarse de meterla ahi **no falla**: la
+   * pagina se sirve a cualquiera con sesion, carga entera, y luego va fallando
+   * peticion por peticion con 403.
+   *
+   * No es una fuga de datos —las rutas de datos exigen `requireAdmin`— pero si
+   * de superficie, y una experiencia pesima. Ya paso: la guardia antes solo
+   * comprobaba que hubiera sesion.
+   *
+   * ⚠️ La condicion que se comprueba es mecanica, no una lista repetida: TODA
+   * ruta bajo `/api/cobros/` lleva `requireAdmin`, asi que la pantalla que la
+   * llame es de administracion, y punto. Repetir la lista aqui solo la dejaria
+   * desincronizarse en dos sitios en vez de en uno.
+   */
+  const servidor = leer(path.join('src', 'servidor.js'));
+  const bloque = servidor.match(/const PAGINAS_ADMIN = \[([\s\S]*?)\];/)?.[1] || '';
+
+  assert.ok(bloque, 'no se encontro PAGINAS_ADMIN en src/servidor.js');
+
+  const declaradas = new Set([...bloque.matchAll(/'(\/[^']+\.html)'/g)].map(m => m[1]));
+
+  const faltan = [];
+
+  for (const archivo of fs.readdirSync('public').filter(f => f.endsWith('.html'))) {
+    const pagina = leer(path.join('public', archivo));
+
+    /* Los scripts propios que carga esa pagina. */
+    const scripts = [...pagina.matchAll(/src="\/js\/([\w.-]+\.js)"/g)].map(m => m[1]);
+
+    const llamaACobros = scripts.some(s => {
+      const ruta = path.join('private', 'js', s);
+      if (!fs.existsSync(ruta)) return false;
+      return /['"`]\/api\/cobros\//.test(leer(ruta));
+    });
+
+    if (llamaACobros && !declaradas.has('/' + archivo)) faltan.push(archivo);
+  }
+
+  assert.deepEqual(faltan, [],
+    'estas pantallas llaman a rutas de administracion y se sirven a cualquiera con sesion');
+});
