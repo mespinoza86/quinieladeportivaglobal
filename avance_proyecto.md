@@ -463,9 +463,11 @@ escribirla (080).
   barato de toda la vida del proyecto para cambiarla: no hay nada detrás que
   recalcular.
 
-⚠️ **Sin confirmar:** si Marco llegó a poner las dos cuotas (₡1.000 de jornada
-y ₡1.000 al acumulado) en *Configurar quiniela*. Es lo primero que conviene
-preguntarle o mirar en la pantalla.
+- ✅ **Las dos cuotas están puestas**: ₡1.000 de jornada y ₡1.000 al acumulado,
+  confirmado por Marco el 31 de agosto. Así que el bote acumulado **ya está
+  juntando dinero desde la primera jornada**, que es exactamente lo que se
+  quería: nadie pagó antes por un acumulado que no existía.
+
 ### 🌅 Lo siguiente
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
@@ -485,9 +487,9 @@ preguntarle o mirar en la pantalla.
 sobre dinero— quedó cerrado: el acumulado, quién paga qué, los reportes y el
 análisis de crecimiento.
 
-⚠️ **Lo único sin confirmar** es si Marco llegó a poner las dos cuotas en
-*Configurar quiniela* (₡1.000 de jornada y ₡1.000 al acumulado). Se está jugando
-la primera jornada de verdad y los abonos se dejaron en cero el 28.
+✅ **Y no queda nada por confirmar.** La quiniela real está corriendo con las dos
+cuotas puestas —₡1.000 de jornada y ₡1.000 al acumulado—, los abonos en cero
+desde el 28, y la primera jornada de verdad en juego.
 
 **Si quiere seguir con algo**, esto es lo que hay sobre la mesa, en orden de
 valor y con su entrada:
