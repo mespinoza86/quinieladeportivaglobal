@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 28 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 31 de agosto de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -339,17 +339,197 @@ prueba podía.** Un `GRANT` sólo suma: conceder `SELECT, INSERT` no quitó el
 propio rastro de auditoría. PGlite no tiene `app_quiniela` ni privilegios por
 defecto, de modo que **eso no existe en el arnés** (069, migración 003).
 
+### Lo que se hizo del 26 al 31 de agosto — el dinero
+
+Del 26 en adelante **todo el trabajo es sobre dinero**: cómo se cobra, quién lo
+debe, adónde va y cómo se demuestra. Entradas 074 a 082.
+
+Es un bloque con una dirección propia, y conviene leerlo como tal: cada entrada
+salió de una pregunta de Marco usando la aplicación de verdad, y varias
+cambiaron decisiones de las anteriores.
+
+| Entrada | Qué entró |
+|---|---|
+| **074** | Un resultado oficial guardado a mano gana sobre el API **sólo si el partido ya terminó** |
+| **075** | Quien crea la quiniela no existía como jugador en ella |
+| **076** | Casilla por persona: a quién se le cobran las jornadas |
+| **077** | Un panel invisible que ocupaba 189 píxeles en la portada |
+| **078** | **El acumulado**: dos cuotas, dos botes, y la entrega al ganador |
+| **079** | Que la base impida borrar un abono, y que las pruebas lo sepan |
+| **080** | El historial de abonos no decía de quién era ninguno |
+| **081** | **Sólo se paga la jornada que se jugó** |
+| **082** | Los reportes del jugador y del administrador, y el PDF sin librería |
+
+#### El modelo de cobros, tal como quedó
+
+Es lo que hay que entender para tocar cualquier cosa de dinero:
+
+```
+Cuota de TORNEO          (opcional, un pago único para el premio final)
+Cuota por JORNADA        (opcional, y se parte en dos)
+   ├── parte de jornada  → premio que se reparte ESA semana
+   └── parte al acumulado → se junta para el ganador de la tabla general
+```
+
+Y **cinco reglas** que no se pueden romper sin romper las cuentas:
+
+1. **El precio y el reparto se congelan al crear la jornada.** Cambiarlos hoy no
+   reinterpreta lo que ya se jugó (`jornadas.precio`, `jornadas.al_acumulado`).
+2. **Sólo se paga lo jugado.** «Jugar» es haber dejado algún marcador. Una
+   jornada no jugada no se cobra, y no se cobrará nunca (081).
+3. **Las cuentas se calculan, no se guardan.** No hay ninguna columna «saldo».
+4. **El libro sólo crece.** `pagos` no admite `UPDATE` ni `DELETE` ni desde la
+   aplicación ni desde la base (079). Se corrige con un asiento inverso.
+5. **Una sola aritmética.** `src/cobros.js` es pura y la usan la pantalla de
+   cobros, la del jugador y los dos reportes. No hay consultas paralelas que
+   sumen dinero por su cuenta.
+
+Tres casillas por persona, y las tres independientes: **juega el torneo**, **se
+le cobran las jornadas**, **participa en el acumulado**.
+
+#### ⛔ Lo que hay que llevarse de estos seis días
+
+**1. El valor por defecto de una duda sobre dinero es COBRAR.**
+
+Aparece tres veces con formas distintas y es la misma decisión:
+
+- `jugadores.juega_jornadas` y `juega_acumulado` nacen en `true`: un `DEFAULT
+  false` habría dejado exenta a toda la quiniela **sin dar ningún error** (076,
+  078).
+- La aritmética pregunta con `!== false` y no con `=== true`: un jugador que
+  llegue sin el campo tiene que pagar (076).
+- `jugadas` sin pasar significa «no me dijeron» y **se cobra todo**; sólo un
+  `Set` de verdad puede eximir (081).
+
+⚠️ La razón no es simetría, es asimetría: **cobrar de más lo reclama alguien
+mañana; perdonar no lo reclama nadie.** Se descubriría al final del torneo, con
+el bote corto, y como las cuentas no se guardan, el número bueno ya no está en
+ninguna parte.
+
+**2. Romper el código a propósito es lo único que dice qué cubren las pruebas.**
+
+En estas nueve entradas se hizo sistemáticamente, y dos veces encontró un hueco
+que 490 pruebas en verde no veían:
+
+- Cambiar `JOIN pronosticos` por `LEFT JOIN` **pasaba entero** mientras le
+  cobraba ₡2.000 a quien sólo abrió la pantalla (081).
+- Romper `entregarAcumulado` para que aceptara un monto de fuera no tumbó nada:
+  la guarda estaba en **la ruta**, y había que romper la ruta (078).
+
+⚠️ Y de ahí sale la otra mitad: **una mutación que el código no puede alcanzar
+no prueba nada**. Si romper algo no tumba una prueba, hay que preguntarse
+primero si esa línea se ejecuta.
+
+**3. Una regla escrita en un comentario no es una regla** (079).
+
+`pagos` llevaba desde la 001 con «los abonos no se editan ni se borran» escrito
+al lado, y la base concedía `DELETE`. La vigilaba un centinela que leía el texto
+del módulo: **eso protege del código de hoy, no del que se escriba mañana**.
+
+Y el banco de pruebas era peor: concedía los cuatro permisos sobre todas las
+tablas mientras producción tenía tres cerradas, **con la advertencia de que eso
+no se puede hacer escrita tres líneas encima**. Escribir la lección no es
+aplicarla.
+
+**4. Cuando una condición vive en dos sitios, hace falta un centinela de ida y
+vuelta.** Comprobar sólo un lado deja el otro libre para desincronizarse, y la
+desincronización **no falla**: deja todo verde con el agujero abierto (079).
+
+Y cuando vive en cuatro —«¿le toca esta jornada?»— lo que hay que hacer es
+juntarla en uno **antes** de cambiarla, comprobando que la unificación no cambia
+ningún número (081).
+
+**5. Tres estados, no dos.** `pagada` es `true`, `false` o **`null`** —«no
+aplica»—. Colapsarlos en un booleano producía «J1: sin pagar (₡0)» en la portada
+de quien no había jugado: mentira dos veces, y sin dar error (081). Es el mismo
+cuidado del `''` contra `null` de la Entrada 068.
+
+**6. Una pantalla puede estar entera, cargar, responder y no servir.** El
+historial de abonos llevaba desde la Entrada 061 sin decir de quién era cada
+asiento; ninguna prueba lo notó porque todas comprobaban importes (080).
+
+**7. Y dos veces la propuesta más pequeña era la correcta.** Propuse un
+mecanismo de traspaso atado con migración y guardas para mover un abono entre
+personas; Marco propuso anular y volver a anotar a mano, **que ya estaba
+construido**. Faltaba una casilla de texto. Lo caro de una función no es
+escribirla (080).
+
+#### El estado de la quiniela real, a 31 de agosto
+
+- Los **abonos se dejaron en cero** el 28 en Neon: eran de prueba. Se borraron
+  `pagos` y `entregas_acumulado` de esa quiniela, con el rol dueño.
+- Se está jugando **la primera jornada de verdad**.
+- La regla de «sólo lo jugado» entró **desde esa jornada**, que es el momento más
+  barato de toda la vida del proyecto para cambiarla: no hay nada detrás que
+  recalcular.
+
+⚠️ **Sin confirmar:** si Marco llegó a poner las dos cuotas (₡1.000 de jornada
+y ₡1.000 al acumulado) en *Configurar quiniela*. Es lo primero que conviene
+preguntarle o mirar en la pantalla.
 ### 🌅 Lo siguiente
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### ✅ 1. El despliegue NO es un pendiente: Render lo hace solo
+#### 📍 Dónde quedó todo el 31 de agosto de 2026
 
-⛔ **Durante diez entradas este documento dijo «hay que redesplegar a mano», y
-era falso.** Render tiene el despliegue automático: cada empujón a `main` sale a
-producción sin que nadie toque nada. Se comprobó el 23 de agosto (Entrada 066) y
-hasta entonces se venía copiando el aviso de una entrada a la siguiente.
+| | |
+|---|---|
+| Último commit | `c4df1e9` — «Reporte de pagos para el jugador y para el administrador» |
+| Árbol | Limpio. Nada sin subir |
+| Base de datos | **Migraciones 001 a 007 corridas y verificadas.** Ninguna pendiente |
+| Producción | Todo desplegado y en uso |
+| Pruebas | 508 rápidas + 120 de navegador, todas en verde |
+
+**No hay nada a medias.** El último bloque de trabajo —Entradas 074 a 083, todo
+sobre dinero— quedó cerrado: el acumulado, quién paga qué, los reportes y el
+análisis de crecimiento.
+
+⚠️ **Lo único sin confirmar** es si Marco llegó a poner las dos cuotas en
+*Configurar quiniela* (₡1.000 de jornada y ₡1.000 al acumulado). Se está jugando
+la primera jornada de verdad y los abonos se dejaron en cero el 28.
+
+**Si quiere seguir con algo**, esto es lo que hay sobre la mesa, en orden de
+valor y con su entrada:
+
+1. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
+   (082). Es la única dependencia externa del proyecto y amplía la política de
+   seguridad del sitio entero por una sola pantalla.
+2. **Paginar el diario de abonos** — `GET /api/cobros/abonos` no tiene `LIMIT`
+   (083). No corre prisa desde que hay reportes, pero es lo primero que revienta
+   al crecer.
+3. **Crear una trivia de punta a punta**: esa pantalla estuvo rota semanas y
+   nadie ha comprobado el recorrido entero desde que se arregló (072).
+4. Lo demás de la tabla de la Entrada 083, cuando toque.
+
+#### ⚠️ 1. El despliegue: PREGUNTA, no lo des por hecho
+
+Este apartado ha dicho las dos cosas contrarias, y las dos con seguridad. Así
+que la instrucción para quien retome es **no afirmar nada sobre el despliegue
+sin haberlo mirado**:
+
+| Cuándo | Qué se creía | Qué pasaba |
+|---|---|---|
+| Hasta el 23 ago | «hay que redesplegar a mano» | Se copiaba el aviso de una entrada a otra sin comprobarlo |
+| Del 23 al 27 ago | «Render lo hace solo» (Entrada 066) | **Falso.** El servicio no seguía la rama |
+| Desde el 27 ago | Marco lo puso a seguir la última versión | Debería salir solo; **compruébalo igual** |
+
+⛔ El 27 le dije a Marco «Render redespliega solo en cuanto empuje» como un
+hecho, y me pasé dieciséis minutos vigilando una versión que nadie había mandado
+desplegar. El problema no estaba ni en el código ni en el empujón (Entrada 078).
+
+**La forma de saberlo de verdad no es esperar: es preguntar QUÉ versión hay
+puesta**, comparando un archivo servido contra el historial de git.
+
+```bash
+# ¿De qué commit es lo que está sirviendo?
+curl -s https://quinieladeportivaglobal.onrender.com/js/cobros.js | wc -c
+git show <commit>:private/js/cobros.js | wc -c        # hasta que cuadre
+```
+
+Eso da una respuesta —«hay puesto el commit X»— en vez de una espera. Si no
+cambia en unos minutos, **pregúntale a Marco si lo subió** en vez de seguir
+mirando.
 
 **Cómo comprobar qué hay desplegado**, en dos comandos y sin entrar a Render:
 
@@ -377,6 +557,22 @@ base de equivocarse:
    muestra puede traer el JS nuevo y el CSS viejo. Conviene **confirmar con dos
    lecturas seguidas** antes de dar un despliegue por bueno.
 
+⛔ **Y una cuarta, del 27 de agosto: comprueba que la URL que sondeas se sirve
+de verdad.** Una sonda buscaba marcas en `/cobros.html` y `/configuracion-quiniela.html`,
+que **redirigen a login sin sesión**: leía el cuerpo del redirect y respondió
+«no» treinta veces con total seguridad. La pista estaba delante y no la miré —
+**dos páginas distintas pesaban exactamente lo mismo, 1.486 bytes**, y eso no
+pasa nunca. Lo único que se sirve sin sesión es `/js/*.js` y `/css/*.css`.
+
+⚠️ **Y una quinta, del 28: leer «N passed» al final de Playwright no es leer el
+resultado.** Playwright lista al final los NOMBRES de las pruebas que fallaron,
+y las tomé por el rastro de las últimas que pasaron; le dije a Marco que estaba
+todo verde y el barrido llevaba rojo. La forma correcta:
+
+```bash
+npx playwright test 2>&1 | grep -E "passed|failed|flaky"
+```
+
 ⚠️ Y si el cambio es **sólo de backend** no hay archivo servido que delate la
 versión: la única señal desde fuera es que el `tiempoActivoSegundos` de
 `/readyz` **baje**, señal de que el proceso reinició.
@@ -386,23 +582,31 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **Las migraciones 002 a 006 están corridas y verificadas contra Neon.** Las
-002, 003 y 004 el 25 de agosto —igual que `SUPERADMIN_EMAILS` en Render—, la 005
-y la 006 el 27.
+✅ **TODAS las migraciones, de la 001 a la 007, están corridas y verificadas
+contra Neon.** No queda ninguna pendiente.
 
-La 005 añadió `jugadores.juega_jornadas` (Entrada 076) y la 006 trajo
-`jornadas.al_acumulado`, `jugadores.juega_acumulado` y la tabla
-`entregas_acumulado` (Entrada 078). Comprobado contra Neon el 27: las columnas
-con su valor por defecto, los dos `CHECK`, RLS forzada en la tabla nueva y
-`app_quiniela` con `INSERT, SELECT` únicamente.
+| # | Qué trajo | Corrida |
+|---|---|---|
+| 001 | `pagos`, `jornadas.precio` | antes del 25 ago |
+| 002 | `acciones_superadmin` (auditoría del superadministrador) | 25 ago |
+| 003 | El `REVOKE` que la 002 necesitaba y no llevaba | 25 ago |
+| 004 | La acción `verificar` en el CHECK de la auditoría | 25 ago |
+| 005 | `jugadores.juega_jornadas` (Entrada 076) | 27 ago |
+| 006 | `jornadas.al_acumulado`, `jugadores.juega_acumulado`, `entregas_acumulado` (078) | 27 ago |
+| 007 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos (079) | 27 ago |
 
-⛔ **La 007 está PENDIENTE**: `db/migraciones/007-abonos-solo-escritura.sql`, con
-el rol dueño. Quita `UPDATE` y `DELETE` sobre `pagos` (Entrada 079), que los
-tenía aunque el diseño dijera desde la 001 que un abono no se edita ni se borra.
+Comprobado el 27 contra la base de verdad: las columnas con su valor por
+defecto, los dos `CHECK` de la 006, RLS forzada en `entregas_acumulado`, y las
+tres tablas de sólo-escritura con `INSERT, SELECT` **únicamente**. Y además por
+comportamiento, que es lo que de verdad cierra la duda:
 
-✅ **A diferencia de las demás, ésta NO necesita despliegue**: no cambia el
-código, sólo quita permisos que el código nunca usa. Se puede correr en
-cualquier momento.
+```
+borrar un abono → permission denied for table pagos
+```
+
+⚠️ Esa comprobación llevaba `jugadores` **de control**, que sí conserva los
+cuatro permisos. Sin un caso que tenga que salir distinto, una consulta que
+devuelve «todo bien» no distingue entre estar bien y estar rota.
 
 ⚠️ Después de cualquier migración conviene comprobar la base con el rol dueño,
 porque estas consultas **no valen desde la aplicación**: `jugadores` y `jornadas`
@@ -577,10 +781,10 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 436 pruebas rápidas, ~70 s
-npm run test:postgres      # 355 de los módulos ⚠️ NO incluye cobros.test.js
-npm run test:rutas         # solo las 187 del servidor
-npm run test:arquitectura  # solo los 62 centinelas
+npm test                   # las 508 pruebas rápidas, ~80 s
+npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
+npm run test:rutas         # solo las 212 del servidor
+npm run test:arquitectura  # solo los 70 centinelas
 npm run test:e2e           # las 120 de navegador (~5,4 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
@@ -778,6 +982,13 @@ Lo que sigue abierto:
 7. **`script-src` permite `cdnjs.cloudflare.com`**, que es de donde sale jsPDF.
    Si ese CDN se viera comprometido, ejecutaría código en las pantallas. Es el
    compromiso habitual de usar un CDN, pero conviene tenerlo escrito.
+
+   ⚠️ **Y ahora hay una salida concreta** (Entrada 082): los reportes de cobros
+   generan su PDF con `@media print` y el diálogo del navegador, **sin ninguna
+   librería**. `generar_reporte.html` es la ÚNICA pantalla que sigue usando
+   jsPDF; convertirla igual permitiría **borrar esa línea de la CSP**. Es la
+   única dependencia externa que le queda al proyecto, y además silenciosa: si
+   cdnjs no responde, esa pantalla no genera nada y no lo dice.
 8. ⚠️ **`llenar_jornada_user.js` tiene dos carreras entre la carga de los
    partidos y la de los pronósticos** (Entrada 068). Si la contraseña se valida
    antes de que los partidos estén pintados, **los pronósticos guardados no se
@@ -793,6 +1004,24 @@ Lo que sigue abierto:
    dejó por no ser el asunto de aquel día. **Es un arreglo de un minuto**, pero
    conviene mirar la pantalla después: el marcado remendado puede estar
    apoyándose en el remiendo.
+10. **`GET /api/cobros/abonos` no tiene `LIMIT`** (Entrada 083). Devuelve todos
+    los asientos de la quiniela: con 200 personas y 40 jornadas son ~8.000
+    tarjetas y 1,4 MB en una sola respuesta, y revienta desde el móvil con
+    datos. Empieza a doler sobre las 50 personas. La ruta ya acepta `?jugador=`,
+    así que falta el tope y un «ver más».
+11. **Marcar una casilla en Cobros repinta la pantalla entera.** Hay cuatro
+    `await cargar()` en `private/js/cobros.js`, y cada uno vuelve a pedir cuentas
+    + abonos + botes. Con 200 jugadores son 600 casillas y 600 escuchadores
+    nuevos por clic (083).
+12. **`cuentaDetallada` es O(jornadas²)**: llama a `jornadaPagada` dentro de un
+    bucle sobre jornadas, y esa función recorre y **ordena** todas las jornadas
+    cada vez. A 80 jornadas no se nota. Se anota porque **la forma está mal, no
+    el número**: cuando se note, será tarde para descubrirlo (083).
+13. ⚠️ **`PAGINAS_ADMIN` es una lista a mano en `src/servidor.js`.** Ya hay
+    centinela que la vigila (082), pero sólo deduce las pantallas que llaman a
+    `/api/cobros/`. Una pantalla de administración que use OTRAS rutas puede
+    seguir olvidándose, y el síntoma es que se sirve a cualquiera con sesión y
+    luego falla petición por petición.
 
 
 ### B.3 Decisiones del usuario — cómo quedaron
@@ -1173,7 +1402,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `portada.spec.js` | 83 | La tarjeta nueva y que ninguna se estire |
 | `csp.spec.js` | 76 | Recorre las pantallas buscando violaciones de CSP. Hace falta porque una violación **no da error visible**: el botón carga, se pulsa y no pasa nada |
 
-### 2.6 `public/` — 35 pantallas HTML
+### 2.6 `public/` — 38 pantallas HTML
 
 Servidas con `express.static`.
 
@@ -1187,22 +1416,29 @@ Servidas con `express.static`.
 `clasificacion-jornada.html`, `ver-resultados-oficiales.html`,
 `ver_resultados_trivias.html`, `ver_resultados_totales_de_jugadores.html`
 
-**De administración (las 14 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
+**De administración (las 15 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
 `jugadores.html`, `jornadas.html`, `resultados.html`,
 `agregar-resultados-oficiales.html`, `generar_reporte.html`,
 `enviarresultados.html`, `copiarresultadojugador.html`, `admin_trivias.html`,
 `enviarresultadostrivias.html`, `enviarresultadospartido.html`,
 `enviarresultadostriviaspartido.html`, `miembros.html`,
-`configuracion-quiniela.html`, `cobros.html`
+`configuracion-quiniela.html`, `cobros.html`, `reporte-cobros.html`
+
+**Del jugador, sobre su dinero:** `mi-cuenta.html` (Entrada 082). NO es de
+administración: cada quien ve lo suyo, resuelto desde la sesión.
 
 ⚠️ **La guardia compara `req.path` contra esa lista.** Una pantalla nueva de
 administración que no se añada ahí **se sirve a cualquiera con sesión**. No es
 fuga de datos —las APIs sí exigen `requireAdmin`— pero sí de superficie.
 
+✅ Desde la Entrada 082 hay **centinela** que lo vigila: deduce que una pantalla
+es de administración si su script llama a `/api/cobros/`, y exige que esté en la
+lista. No cubre las que usen otras rutas.
+
 ⛔ **`importar_partidos.html` ya no existe:** su buscador se integró en
 `jornadas.html` en la Fase D, y los partidos salen sólo del API.
 
-### 2.7 `private/js/` — 44 scripts
+### 2.7 `private/js/` — 48 scripts
 
 Servidos por `GET /js/:filename`. Es un pseudo-ocultamiento: el navegador los
 descarga igual. **No hay ningún secreto ahí, pero tampoco protección real** — la
@@ -1300,6 +1536,95 @@ Sólo para `scripts/migrate-legacy.js`: `MONGO_URI_MULTIQUINIELA`,
 `MIGRATION_OWNER_EMAIL`, `MIGRATION_POOL_NAME`.
 
 ---
+### 2.12 🗺️ Mapa del dinero — dónde vive cada cosa
+
+El bloque de cobros es el más grande y el más delicado del sistema, y está
+repartido en once archivos. Esto es el índice: **antes de tocar dinero, mira
+aquí qué pieza hace qué.**
+
+#### Las tres capas, y la regla que las separa
+
+```
+src/cobros.js      ARITMÉTICA PURA. No consulta la base, no conoce Express.
+                   Recibe los datos ya resueltos y devuelve números.
+      ▲
+src/pagos.js       LOS DATOS. Va a buscar a la base y llama a la de arriba.
+      ▲
+src/rutas/admin.js LAS RUTAS. Valida lo que llega y decide quién puede.
+```
+
+⛔ **La aritmética no se duplica NUNCA.** Las cuatro pantallas que enseñan dinero
+—cobros, la cuenta del jugador, y los dos reportes— salen de las mismas
+funciones de `src/cobros.js`. Una consulta paralela que sume por su cuenta
+acabaría dando una cifra distinta, y ése es el día en que las cuentas dejan de
+servir.
+
+#### Las piezas de `src/cobros.js`
+
+| Función | Qué contesta |
+|---|---|
+| `normalizarCobros` | La configuración de la quiniela, venga como venga. Parte la cuota en `alAcumulado` + `aLaJornada` |
+| **`leTocaLaJornada`** | **¿Le toca a esta persona pagar esta jornada?** Las dos condiciones —desde cuándo se le cobra y si la jugó— viven AQUÍ y en ningún otro sitio |
+| `jornadasDe` | Las que le tocan, en orden |
+| `desgloseParaJugador` | De lo que paga por una jornada, cuánto al premio y cuánto al bote |
+| `precioParaJugador` | Lo mismo, sin desglosar |
+| `debePorJornadas` | La suma de todas las que le tocan |
+| `repartoDeAbonos` | Adónde va cada colón que puso: premio primero, bote después |
+| `jornadaPagada` | Si UNA jornada concreta le quedó cubierta |
+| `cuentaDeJugador` | Su cuenta entera: torneo, jornadas, saldo |
+| `botes` | Cuánto hay en cada premio y en el acumulado, cobrado y esperado |
+
+#### Las piezas de `src/pagos.js`
+
+| Función | Qué trae |
+|---|---|
+| `jornadasJugadas` | `Map<jugadorId, Set<jornadaId>>`. **El `JOIN` con `pronosticos` no es opcional**: sin él, abrir la pantalla contaría como jugar |
+| `cuentas` | La cuenta de todos, para la pantalla de cobros |
+| `cuentaDetallada` | La de uno, con el detalle por jornada. Es lo que ve el jugador |
+| `reporte` | La matriz completa: cada persona × cada jornada, más la vista por jornada |
+| `botes` / `entregas` / `entregarAcumulado` | El bote acumulado y su entrega |
+| `registrar` / `anular` | Anotar un abono y anularlo con su inverso |
+
+#### Las pantallas
+
+| Pantalla | Quién la ve | Qué enseña |
+|---|---|---|
+| `cobros.html` | Administrador | Quién debe qué, anotar abonos, los botes, el diario |
+| `reporte-cobros.html` | Administrador | El estado de cuenta de todos, imprimible |
+| `mi-cuenta.html` | Cada jugador | El suyo, jornada por jornada, imprimible |
+| La tarjeta de `index.html` | Cada jugador | El resumen, con enlace al detalle |
+
+#### Las columnas que guardan dinero
+
+| Dónde | Qué | Congelado |
+|---|---|---|
+| `jornadas.precio` | Lo que costó ESA jornada | ✅ al crearla |
+| `jornadas.al_acumulado` | Cuánto de eso fue al bote | ✅ al crearla |
+| `jugadores.juega_torneo` | Si paga la cuota de torneo | `DEFAULT true` |
+| `jugadores.juega_jornadas` | Si se le cobran las jornadas | `DEFAULT true` |
+| `jugadores.juega_acumulado` | Si aporta al bote | `DEFAULT true` |
+| `jugadores.cobrar_desde` | Desde qué jornada se le cobra | Casi decorativa desde la 081 |
+| `pagos` | Los abonos. **Sólo INSERT y SELECT** | Libro que sólo crece |
+| `entregas_acumulado` | A quién se entregó el bote. **Sólo INSERT y SELECT** | Ídem |
+
+⚠️ **No hay ninguna columna «saldo».** Se calcula. Si alguna vez alguien propone
+guardarlo «para ir más rápido», la respuesta está medida en la Entrada 083: la
+aritmética entera para 200 personas y dos temporadas son **12 milisegundos**.
+
+#### Dónde están sus pruebas
+
+| Archivo | Qué cubre |
+|---|---|
+| `test/cobros.test.js` | 48 de aritmética pura, sin base |
+| `test/rutas.test.js` | Las de ruta: permisos, aislamiento entre quinielas, congelado |
+| `test/e2e/cobros.spec.js` | Los recorridos completos por el navegador |
+| `test/architecture.test.js` | Los centinelas: el `REVOKE`, los `CHECK`, `PAGINAS_ADMIN` |
+
+⚠️ `npm run test:postgres` **NO incluye `cobros.test.js`** — está en la lista de
+deuda desde hace tiempo. Con `npm test` sí corre.
+
+---
+
 
 ## 3. Arquitectura actual
 
@@ -13257,6 +13582,144 @@ Queda para más adelante, y por este orden:
 - Paginar el diario de abonos (`GET /api/cobros/abonos` no tiene `LIMIT`).
   Con el reporte hecho ya no corre prisa: nadie necesita mirar los asientos en
   bruto para entender las cuentas.
+
+---
+
+### 📌 Entrada 083 — 31 de agosto de 2026 — Qué aguanta con 200 personas, medido
+
+**Objetivo:** Marco preguntó, pensando en crecer:
+
+> «pensando en que esto creciera, de manera que tuviéramos 100 personas o 200
+> personas. ¿Cómo ves esta solución? ¿La ves compleja de mantener a largo plazo?
+> ¿qué cambio harías?»
+
+No se escribió código. Es un análisis, y queda anotado porque **las mediciones
+se pierden si no se guardan** y la próxima vez habría que repetirlas.
+
+## La aritmética no es el problema, ni de lejos
+
+Medido con un guion de un solo uso sobre `src/cobros.js`, que es aritmética pura
+y se puede medir sin levantar nada:
+
+```
+ 12 jugadores ×  20 jornadas → cuentas   1,7 ms · botes   1,4 ms
+ 50 jugadores ×  40 jornadas → cuentas   0,9 ms · botes   5,2 ms
+100 jugadores ×  40 jornadas → cuentas   1,0 ms · botes   4,6 ms
+200 jugadores ×  40 jornadas → cuentas   3,4 ms · botes   6,3 ms
+200 jugadores ×  80 jornadas → cuentas   2,3 ms · botes  11,6 ms
+```
+
+**Doce milisegundos** para 200 personas y dos temporadas. Y las consultas son
+tres fijas, no tres por jugador —eso se resolvió en la Entrada 061—. Por ese
+lado se puede crecer un orden de magnitud sin tocar nada.
+
+## Lo que sí se rompe, en el orden en que morderá
+
+**1. El historial de abonos no tiene tope. Ninguno.** No hay un solo `LIMIT` en
+`src/pagos.js`:
+
+```
+100 jugadores →  4.000 asientos (~700 KB,  4.000 tarjetas en el DOM)
+200 jugadores →  8.000 asientos (~1,4 MB,  8.000 tarjetas)
++ dos temporadas → 16.000 asientos (~2,8 MB, 16.000 tarjetas)
+```
+
+Es lo primero que revienta, y revienta **desde el móvil, con datos**. Empieza a
+doler sobre las 50 personas.
+
+⚠️ Con los reportes de la Entrada 082 ya no corre prisa: nadie necesita mirar
+los asientos en bruto para entender las cuentas. Pero sigue ahí.
+
+**2. Cada casilla que se marca repinta la pantalla entera.** Hay cuatro
+`await cargar()` en `private/js/cobros.js`, y `cargar()` vuelve a pedir cuentas +
+abonos + botes y lo repinta todo. Con 200 jugadores son 200 tarjetas, 600
+casillas y 600 escuchadores nuevos **por cada clic**.
+
+**3. El selector de jugador son 200 opciones sin buscar.** Menor, pero diario.
+
+**4. `cuentaDetallada` es O(jornadas²).** Llama a `jornadaPagada` dentro de un
+bucle sobre jornadas, y esa función recorre y **ordena** todas las jornadas cada
+vez. A 80 jornadas no se nota. Se anota porque **la forma está mal, no el
+número**: si algún día se nota, ya será tarde para descubrirlo.
+
+## ⛔ El cuello de botella real no es el código
+
+Con 200 personas y 40 jornadas son **8.000 abonos al año escritos a mano por una
+persona**. A quince segundos cada uno, más de treinta horas de teclear.
+
+Ahí el sistema deja de servir, y **ninguna optimización lo arregla**. Las dos
+salidas son de producto:
+
+- Que **cada jugador declare su pago** —subiendo el comprobante— y el
+  administrador sólo confirme. Convierte 8.000 escrituras en 8.000
+  confirmaciones de un toque, repartidas entre quienes ya están.
+- Integrar el medio de pago (SINPE y similares) y que el abono se anote solo.
+
+Si de verdad hay 200 personas en el horizonte, **esto es lo que hay que planear**,
+no el historial paginado.
+
+## Lo que NO hay que tocar, porque mejora con el tamaño
+
+Es la parte más importante de la respuesta:
+
+- **El aislamiento lo aplica la base** (RLS). Con más quinielas y más gente, es
+  justo lo que impide el accidente que no perdona.
+- **El precio y el reparto congelados en la jornada.** Con 12 personas es una
+  comodidad; con 200 y un torneo de un año es lo único que hace que las cuentas
+  viejas sigan siendo ciertas.
+- **Las cuentas se calculan, no se guardan.** Cuanta más gente, más caro sería
+  mantener saldos sincronizados y más barato recalcular 12 ms.
+- **El libro que sólo crece** (migración 007). Con varios administradores esto
+  pasa de higiene a imprescindible.
+
+## Y la señal para volver sobre el traspaso
+
+En la Entrada 080 se eligió el camino manual —anular y volver a anotar— porque
+«yo como administrador lo manejo» funciona **cuando el administrador es uno y se
+acuerda**.
+
+⛔ **La señal de que hay que construir el traspaso atado no es llegar a 100
+personas: es que aparezca un SEGUNDO administrador anotando dinero.** Ahí la
+nota en texto libre deja de ser un rastro y pasa a ser una nota de alguien.
+
+## El orden recomendado
+
+| Cuándo | Qué |
+|---|---|
+| **~50 personas** | Paginar el historial (`LIMIT` + «ver más») y filtrarlo por jugador — la ruta ya acepta `?jugador=` |
+| **~50 personas** | Que marcar una casilla actualice esa tarjeta, no las 200 |
+| **Al 2.º administrador** | El traspaso atado, con su guarda de no anular media transferencia |
+| **~100 personas** | Buscador en el selector de jugador |
+| **Antes de 200** | Que el jugador declare su propio pago. Es lo único que quita las treinta horas |
+
+Nada de esto es refactorizar: son cinco cosas puntuales sobre una base que
+aguanta.
+
+**Archivos modificados:** ninguno. Es análisis.
+
+**Verificación:**
+
+```
+guion de medicion de un solo uso sobre src/cobros.js (borrado despues)
+grep de LIMIT en src/pagos.js  → ninguno
+grep de await cargar()          → cuatro
+```
+
+**Hallazgos nuevos:**
+
+1. **La aritmética de dinero no es el problema de escala; el DOM sí.** 12 ms
+   contra 2,8 MB de tarjetas.
+2. ⛔ **El límite real de este sistema es una persona tecleando**, no el
+   servidor. Y eso no se arregla con código más rápido.
+3. **Las decisiones caras de cambiar ya están bien tomadas.** Lo que hay es un
+   poco más de lo necesario en algunos sitios y bastante menos en otros.
+4. ⚠️ **Un umbral útil se define por un hecho, no por un número.** «Cuando haya
+   un segundo administrador» es accionable; «cuando lleguemos a 100» no dice
+   nada sobre por qué.
+
+**Pendiente / siguiente paso:**
+
+Nada inmediato. Los cinco puntos de la tabla, cuando toque.
 
 ---
 
