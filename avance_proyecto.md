@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 31 de agosto de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 1 de septiembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -57,8 +57,8 @@ entradas de bitácora (040 a 052).
 | Pruebas de navegador | **120**, ~5,4 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
-| `arrancar.js` | 90 líneas: abre el puerto, comprueba el rol, arranca los relojes |
-| `src/` | 21 módulos + `src/rutas/` (6) |
+| `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
+| `src/` | 27 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | **Al día.** Migraciones 001 a 007 corridas y verificadas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
@@ -477,7 +477,7 @@ escribirla (080).
 
 | | |
 |---|---|
-| Último commit | `c4df1e9` — «Reporte de pagos para el jugador y para el administrador» |
+| Último commit | `f7716af` — «Las dos cuotas quedaron puestas: 1.000 y 1.000» |
 | Árbol | Limpio. Nada sin subir |
 | Base de datos | **Migraciones 001 a 007 corridas y verificadas.** Ninguna pendiente |
 | Producción | Todo desplegado y en uso |
@@ -1289,48 +1289,56 @@ migraciones**), `public/` (35 pantallas), `private/` (CSS y JS servidos),
 
 ### 2.2 `src/` — la aplicación
 
-**24 módulos y 5 archivos de rutas.** La regla que los ordena: `src/db.js` es el
-**único** sitio que abre transacciones y fija el contexto de quiniela; todo lo
-demás recibe la conexión ya preparada.
+**27 módulos y 6 archivos de rutas**, medidos el 1 de septiembre de 2026. La
+regla que los ordena: `src/db.js` es el **único** sitio que abre transacciones y
+fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `servidor.js` | 764 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
-| `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
+| `servidor.js` | 878 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
+| `superadmin.js` | 715 | El superadministrador **del sistema, no de una quiniela**: la lista de correos con poder, las ataduras de una cuenta y sus cuatro acciones (Entrada 069) |
+| `pagos.js` | 610 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
+| `cobros.js` | 542 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
+| `jornadas.js` | 518 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
+| `sincronizador.js` | 486 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
+| `eventos.js` | 469 | La lectura del JSON del proveedor, en un solo sitio |
 | `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
-| `eventos.js` | 445 | Bitácora de eventos del dominio |
-| `sincronizador.js` | 440 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
+| `oficiales.js` | 373 | Resultados oficiales, con `SAVEPOINT` por partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
-| `jornadas.js` | 480 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
-| `pronosticos.js` | 287 | Pronósticos, y la tabla comparativa en **una sola consulta** |
-| `membresias.js` | 248 | Quién pertenece a qué quiniela y con qué papel |
+| `pronosticos.js` | 340 | Pronósticos, y la tabla comparativa en **una sola consulta** |
+| `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
+| `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
+| `membresias.js` | 260 | Quién pertenece a qué quiniela y con qué papel |
 | `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
-| `oficiales.js` | 238 | Resultados oficiales |
 | `respuestas-trivia.js` | 223 | Respuestas de los participantes |
 | `proveedor.js` | 221 | Cliente de APIFootball, con tiempo de espera propio |
 | `correo.js` | 215 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria |
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
-| `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
-| `pagos.js` | 238 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
-| `cobros.js` | 234 | **La aritmética del dinero, sin efectos.** Las dos cuentas, el saldo y la estimación |
-| `quinielas.js` | 161 | Alta, archivado y configuración (puntuación y **ligas favoritas**) |
+| `quinielas.js` | 193 | Alta, archivado y configuración (puntuación, cobros y **ligas favoritas**) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
-| `jugadores.js` | 128 | Participantes |
+| `jugadores.js` | 154 | Participantes |
 | `planificador.js` | 116 | Los relojes: cada cuánto corre el sincronizador |
 | `tokens.js` | 101 | Tokens de un solo uso, **guardados sólo en SHA-256** |
 | `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 | `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
 
-**`src/rutas/` — las 81 rutas, repartidas por tema:**
+**`src/rutas/` — 93 rutas, repartidas por tema:**
 
 | Archivo | Líneas | Rutas |
 |---|---:|---|
-| `puntuacion.js` | 377 | 10 — resultados, totales, clasificación por jornada |
+| `admin.js` | 572 | 21 — administración, sincronizador y **cobros** |
+| `puntuacion.js` | 398 | 11 — resultados, totales, clasificación por jornada |
 | `plataforma.js` | 387 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
-| `admin.js` | 470 | 20 — administración, sincronizador y **cobros** |
-| `dominio.js` | 268 | 16 — jornadas, partidos, pronósticos |
+| `dominio.js` | 334 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 235 | 14 — trivias y sus respuestas |
+| `superadmin.js` | 181 | 11 — cuentas de todo el sistema. ⚠️ Se montan **antes** del guardia de quiniela: no dependen de tener una seleccionada |
+
+⚠️ **Y `servidor.js` registra otras 15 por su cuenta**: las dos sondas, registro,
+login, logout, verificación de correo, recuperación de contraseña, la cuenta
+propia y los estáticos —una de ellas es un bucle sobre las pantallas HTML, así
+que la cuenta exacta de pantallas servidas no sale de ahí—. Las 81 de la
+migración eran las de agosto; el número de arriba está medido.
 
 ### 2.3 `db/` — el esquema
 
@@ -1349,9 +1357,23 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-| Archivo | Líneas | Qué trae |
-|---|---:|---|
-| `001-cobros.sql` | 220 | `jornadas.precio`, `jugadores.cobrar_desde` y `juega_torneo`, la tabla `pagos` con su RLS |
+✅ **Las siete están corridas y verificadas contra Neon.** Ninguna pendiente.
+
+| Archivo | Líneas | Qué trae | Entrada |
+|---|---:|---|---|
+| `001-cobros.sql` | 220 | `jornadas.precio`, `jugadores.cobrar_desde` y `juega_torneo`, la tabla `pagos` con su RLS | 061 |
+| `002-superadmin.sql` | 137 | `acciones_superadmin`: la auditoría del superadministrador | 069 |
+| `003-auditoria-solo-lectura.sql` | 80 | El `REVOKE` que la 002 necesitaba y no llevaba. ⚠️ **Un `GRANT` sólo suma** | 069 |
+| `004-accion-verificar.sql` | 66 | La acción `verificar` en el `CHECK` de la auditoría | 071 |
+| `005-cobro-por-jugador.sql` | 71 | `jugadores.juega_jornadas`, con su `DEFAULT true` | 076 |
+| `006-acumulado.sql` | 180 | `jornadas.al_acumulado`, `jugadores.juega_acumulado` y `entregas_acumulado` con su RLS | 078 |
+| `007-abonos-solo-escritura.sql` | 87 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos tablas de sólo escritura | 079 |
+
+⛔ **Después de cada migración hay que preguntarle a la base qué permisos
+quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
+descubrir que `acciones_superadmin` tenía `DELETE`, y la 007 de que `pagos` lo
+llevaba **desde la 001** con la regla escrita en un comentario al lado. La
+consulta está en «Lo siguiente».
 
 ### 2.4 `scripts/`
 
@@ -13722,6 +13744,115 @@ grep de await cargar()          → cuatro
 **Pendiente / siguiente paso:**
 
 Nada inmediato. Los cinco puntos de la tabla, cuando toque.
+
+---
+
+
+### 📌 Entrada 084 — 1 de septiembre de 2026 — El inventario volvió a envejecer, y esta vez en tres sitios
+
+**Objetivo:** Marco pidió leer el documento entero para saber dónde está el
+proyecto. Al cotejarlo contra el árbol —que es lo único que encuentra algo,
+según la Entrada 058— aparecieron **tres cifras desfasadas en §2**, la sección
+que se lee primero al retomar.
+
+## Lo que estaba mal
+
+| Dónde | Decía | Es |
+|---|---|---|
+| Cabecera y §2.2 | `src/` tiene **21/24 módulos** y **5** archivos de rutas | **27 y 6** |
+| §2.2 | «las **81** rutas», con las líneas de cada archivo de agosto | **93** en `src/rutas/`, más 15 en `servidor.js` |
+| §2.3 | La tabla de `db/migraciones/` listaba **sólo la 001** | Son **siete**, las siete corridas |
+| «Dónde quedó todo» | Último commit `c4df1e9` | `f7716af`, dos por delante |
+| Cabecera | `arrancar.js` son 90 líneas | **88**, como ya decía §2.1 |
+
+⚠️ **Ninguna es un fallo de código y todas engañan al retomar.** Quien abriera
+§2.2 buscando `superadmin.js` —715 líneas, el segundo módulo más grande del
+proyecto— no lo habría encontrado, y habría concluido que no existe.
+
+**Lo que faltaba en la tabla no era una línea perdida: era un módulo entero.**
+`src/superadmin.js` y `src/rutas/superadmin.js` entraron en la Entrada 069 y
+nadie los añadió al inventario. Es exactamente lo que pasó con `server.js` en la
+Entrada 058: la sección se actualizó por campos sueltos y no por sentido.
+
+## Qué se hizo
+
+1. **Las cifras, medidas una a una** con `wc -l` y un recuento de rutas por
+   archivo, no recordadas. La tabla de `src/` va ahora ordenada de mayor a
+   menor, que es lo que intentaba estar y había dejado de estarlo.
+2. **`superadmin.js` entra en las dos tablas**, con la nota de que sus rutas se
+   montan **antes** del guardia de quiniela — que es lo que las hace distintas de
+   todas las demás.
+3. **§2.3 lista las siete migraciones** con lo que trae cada una y su entrada, y
+   con el aviso de comprobar los permisos en **todas** las tablas de sólo
+   escritura después de cada una, no sólo en la que se acaba de tocar.
+4. **Las rutas de `servidor.js` quedan contadas aparte**, porque una de ellas es
+   un bucle sobre las pantallas y sumarla como una engañaría igual.
+
+## ⚠️ Y la nota de §C sobre CRLF, que es más rara de lo que parece
+
+§C avisa de que `avance_proyecto.md` es CRLF y que una búsqueda con `\n` no
+encuentra nada en él. **Hoy el archivo en disco es LF** —`grep -c $'\r'` da
+**0**— y el blob guardado en git también.
+
+Pero la nota **no está caducada, está incompleta**, y por poco la doy por
+falsa:
+
+```
+git config core.autocrlf   → true
+.gitattributes             → no hay
+```
+
+Con eso, git guarda LF y **entrega CRLF en cada checkout**. Es decir: el archivo
+es LF ahora porque lo acaban de escribir herramientas que usan LF, y **volverá a
+ser CRLF en cuanto alguien haga un checkout limpio**. El propio git lo avisa al
+mirar el diff: *«LF will be replaced by CRLF the next time Git touches it»*.
+
+⛔ **Así que la regla que sirve no es «es CRLF» ni «es LF», sino: compruébalo
+antes de editar, porque cambia según de dónde venga el archivo.** Un comando
+`grep -c $'\r'` lo dice en un segundo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Cabecera (fecha, módulos, `arrancar.js`, commit), §2.2 reescrita con cifras medidas y `superadmin.js`, §2.3 con las siete migraciones. Esta entrada |
+
+**Verificación:**
+
+```
+wc -l src/*.js                  → 27 archivos
+wc -l src/rutas/*.js            → 6 archivos, 93 rutas contadas una a una
+wc -l db/migraciones/*.sql      → 7 archivos
+git log --oneline -1            → f7716af
+git status --porcelain          → limpio antes de tocar nada
+grep -c $'\r' avance_proyecto.md → 0, pero core.autocrlf=true: volverá a CRLF
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una sección de inventario envejece por adición, no por corrección.** Nadie
+   escribió nada falso: se añadieron dos archivos en la Entrada 069 y no se
+   añadió su fila. El resultado es el mismo que mentir, y **es la segunda vez que
+   le pasa a §2** después de la Entrada 058.
+2. ⚠️ **Un número que se copia de una entrada vieja se vuelve decorativo.** «Las
+   81 rutas» era cierto el 21 de agosto y se arrastró por §2 sin que nadie lo
+   volviera a contar. Contarlas costó un comando.
+3. **La tabla estaba ordenada por tamaño y había dejado de estarlo**, así que
+   ordenarla ya no era cosmética: leerla de arriba abajo daba una idea falsa de
+   dónde está el peso del proyecto. Hoy el peso está en el dinero y en el
+   superadministrador, y ahora se ve.
+4. ⚠️ **Una trampa documentada puede ser condicional sin decirlo.** §C avisa de
+   que este archivo es CRLF; hoy es LF, y con `core.autocrlf=true` volverá a ser
+   CRLF en el próximo checkout. **Estuve a punto de anotar que la nota era
+   falsa**, que habría sido peor que dejarla como estaba: la regla útil no es de
+   qué tipo es el archivo, sino comprobarlo antes de editar.
+
+**Pendiente / siguiente paso:**
+
+Nada de código: no se tocó ni una línea de la aplicación. Lo que sigue sobre la
+mesa es lo de «Lo siguiente», sin cambios: `generar_reporte.html` a impresión
+para quitar `cdnjs` de la CSP, paginar el diario de abonos, y crear una trivia de
+punta a punta.
 
 ---
 
