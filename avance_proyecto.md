@@ -477,7 +477,7 @@ escribirla (080).
 
 | | |
 |---|---|
-| Último commit | `b508f09` — «adding correo enviar pronosticos» (Entrada 086) |
+| Último commit | `cd9eff9` — «actualizando md…». Encima, sin subir: la Entrada 087 |
 | Árbol | ✅ Limpio, y `main` está al día con `origin/main` |
 | Base de datos | ✅ **Las nueve migraciones corridas.** La 008 y la 009 las corrió Marco el 3 de septiembre y las comprobó |
 | Producción | ✅ **Al día**: `b508f09` desplegado el 3 de septiembre por la tarde |
@@ -14452,6 +14452,150 @@ era el relevo de instancias.
 
 Y después, **encender el interruptor a mano** en Configurar quiniela: nace
 apagado a propósito, así que hasta que Marco lo encienda no sale ningún correo.
+
+---
+
+
+
+### 📌 Entrada 087 — 4 de septiembre de 2026 — El CI en rojo, y no eran las pruebas
+
+**Objetivo:** a Marco le llegaban correos de GitHub diciendo que la corrida
+fallaba, y los leyó como *«fallaron algunas pruebas»*. Pasó dos enlaces del
+Actions y preguntó qué pasaba.
+
+## ⛔ Lo primero: NO fallaba ninguna prueba
+
+Y esto costó dos intentos de averiguarlo, que es la parte que merece quedar
+escrita.
+
+**La página de GitHub mintió.** Al abrirla, el resumen decía que habían fallado
+los DOS trabajos —la suite rápida y la de navegador—. Era falso: la página no
+cargaba los registros («Sign in to view logs») y el resumen se armó a medias con
+lo poco que había.
+
+**La API pública sí lo dice sin ambigüedad**, y `gh` no hace falta —sigue sin
+estar instalado en esta máquina—:
+
+```bash
+curl -s "https://api.github.com/repos/<usuario>/<repo>/actions/runs?per_page=6"
+curl -s ".../actions/runs/<id>/jobs"    # trabajo por trabajo y paso por paso
+```
+
+| Commit | Suite rápida | Navegador |
+|---|---|---|
+| `f7716af` (31 ago) | ✅ | ✅ |
+| `b37c1b9` | ❌ **paso 7: Auditoría** | ✅ |
+| `b508f09` | ❌ **paso 7: Auditoría** | ✅ |
+| `cd9eff9` | ❌ **paso 7: Auditoría** | ✅ |
+
+Las 536 rápidas y las 126 de navegador pasaban en el CI las tres veces. El paso
+6 —`npm test`— nunca falló. Lo que fallaba era el paso 7, `npm audit --omit=dev`.
+
+## Qué era, y por qué empezó justo entonces
+
+```
+qs  2.2.5 - 6.15.3     3 vulnerabilidades moderadas
+  └─ body-parser  └─ express 4.22.2
+```
+
+⚠️ **No lo causó ningún cambio nuestro.** Se comprobó que entre `f7716af` y hoy
+**no se tocaron `package.json` ni `package-lock.json`**. Lo que cambió fue el
+mundo: se publicaron los avisos de seguridad de `qs` entre el 31 de agosto y el
+3 de septiembre, y `npm audit` sale con código 1 en cuanto encuentra algo.
+
+La corrida del 31 pasó y las tres siguientes no, **con el mismo código**. Es
+justo para lo que está ese paso.
+
+## El arreglo: un *override*, porque la dependencia es de tercer nivel
+
+`qs@6.16.0` ya está publicada y no está afectada, pero **express 4.22.2 es la
+última 4.x** y todavía apunta a la vieja. No se puede esperar sentado, y tampoco
+había que aflojar la auditoría:
+
+```json
+"overrides": { "qs": "^6.16.0" }
+```
+
+El *lockfile* se movió **en un solo paquete**, de 6.15.3 a 6.16.0, y `qs` queda
+en 6.16.0 en las tres ramas del árbol —express, body-parser y superagent—.
+
+⛔ **Lo que se descartó, y por qué:** aflojar el paso con `--audit-level=high`
+para que los moderados no tumben la corrida. Habría puesto el CI en verde sin
+arreglar nada, y es el patrón que este proyecto ya ha pagado varias veces: una
+red que no puede fallar deja de ser una red, y dentro de tres meses un aviso
+grave pasa desapercibido porque nadie mira ya ese paso.
+
+## ⛔ Y una sonda mía que volvió a decir «no» queriendo decir «no sé»
+
+Van cuatro. Al comprobar el arreglo se escribió esto:
+
+```bash
+npm audit --omit=dev 2>&1 | tail -5; echo "codigo de salida: $?"
+```
+
+Dijo **«código de salida: 0»** y era mentira: `$?` recoge el código de `tail`,
+que siempre sale bien, **no el de `npm audit`**. Y en esa misma corrida `npm
+audit` se había caído por un tiempo de espera de la red, así que ni siquiera
+había medido nada.
+
+La forma que sí vale:
+
+```bash
+npm audit --omit=dev > /tmp/audit.txt 2>&1; codigo=$?
+echo "CODIGO REAL: $codigo"; cat /tmp/audit.txt
+```
+
+⚠️ **Una tubería tapa el código de salida del primer comando.** Y una sonda que
+sale por la red puede fallar por la red y parecer una respuesta.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `package.json` | `overrides` con `qs: ^6.16.0` |
+| `package-lock.json` | `qs` 6.15.3 → 6.16.0. **Un solo paquete** |
+| `avance_proyecto.md` | Esta entrada |
+
+**Verificación:**
+
+```
+npm audit --omit=dev  → found 0 vulnerabilities, CODIGO 0   (era 3 moderadas, codigo 1)
+npm audit             → found 0 vulnerabilities
+npm ci --dry-run      → sin error de sincronia con el lockfile
+npm test              → 536/536
+TZ=UTC CI=true npx playwright test → 126/126
+npm ls qs             → 6.16.0 en las tres ramas
+git diff package-lock.json → una sola entrada, la de qs
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **«El CI falló» no es «las pruebas fallaron».** Aquí el paso rojo era la
+   auditoría de dependencias, y las 662 pruebas estaban verdes. El correo de
+   GitHub no distingue, así que hay que mirar QUÉ paso.
+2. ⛔ **La página de Actions puede resumir mal cuando no carga los registros.**
+   Dijo que también habían fallado las de navegador, y era falso. La API pública
+   da trabajo por trabajo y paso por paso, y no necesita `gh`.
+3. ⚠️ **Un CI puede ponerse rojo sin que nadie cambie nada.** `npm audit` mira
+   una lista que crece sola: el mismo código pasa un día y falla al siguiente.
+   Al ver rojo, lo primero es preguntarse si cambió el código **o el mundo**, y
+   `git diff` sobre `package.json` lo responde en un comando.
+4. ⛔ **`cmd | tail; echo $?` mide el `tail`.** La cuarta vez que una sonda dice
+   «no» queriendo decir «no sé» en este proyecto. Para leer un código de salida,
+   nada de tuberías.
+5. **Un aviso sobre una dependencia de tercer nivel se cierra con `overrides`**,
+   sin esperar a que el paquete de en medio publique. Es la salida cuando la
+   corrección existe arriba y no ha bajado.
+
+**Pendiente / siguiente paso:**
+
+Ninguno. No toca la base, no cambia comportamiento y no hace falta redesplegar
+por esto —aunque conviene que entre con el siguiente empujón, para que el CI
+vuelva a verde y los correos paren—.
+
+⚠️ Y queda dicho para la próxima: **este paso volverá a ponerse rojo solo** el
+día que se publique otro aviso. No será un fallo del código, y la respuesta
+correcta seguirá siendo actualizar, no bajar el listón de la auditoría.
 
 ---
 
