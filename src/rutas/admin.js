@@ -35,6 +35,7 @@ const { normalizarMarcador } = require('../validacion');
 const ligas = require('../ligas');
 const pagosMod = require('../pagos');
 const cobros = require('../cobros');
+const compartirMod = require('../compartir');
 const { invalidarCacheRanking } = require('./puntuacion');
 
 /*
@@ -52,6 +53,16 @@ function requireDebug(req, res, next) {
 function sinClave(res) {
   return res.status(500).json({ error: 'Falta configurar APIFOOTBALL_COM_KEY en el .env' });
 }
+
+/*
+ * Tope de partidos que una sola llamada puede marcar como compartidos.
+ *
+ * Un mensaje del grupo son los partidos de una hora de inicio —cinco o seis un
+ * domingo—, así que cincuenta sobra de largo. Está para que una petición
+ * malformada no llegue a la base con un arreglo de cualquier tamaño, no para
+ * limitar un uso normal.
+ */
+const MAX_PARTIDOS_A_MARCAR = 50;
 
 module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
 
@@ -566,6 +577,59 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
 
     if (!j) return res.status(404).json({ error: 'Jornada no encontrada.' });
     res.json({ success: true, jornada: j });
+  });
+
+  /* ==================== Compartir pronósticos al grupo ==================== */
+
+  /*
+   * ⛔ ESTAS RUTAS NO MANDAN NADA A NINGUNA PARTE.
+   *
+   * No hay forma oficial de que un programa escriba en un grupo de WhatsApp, y
+   * las librerías que lo consiguen arriesgan el bloqueo del número. Lo que hay
+   * aquí es la mitad del trabajo que sí se puede automatizar: saber QUÉ falta
+   * por compartir y dejar constancia de lo que ya salió. El envío lo hace una
+   * persona con un toque, desde la pantalla.
+   */
+
+  /** Lo que está listo para salir al grupo, agrupado por hora de inicio. */
+  app.get('/api/compartir/pendientes', requireAdmin, async (req, res) => {
+    res.json(await compartirMod.paraCompartir(req.quiniela.id));
+  });
+
+  /*
+   * Los identificadores llegan del navegador y se comprueban ANTES de tocar la
+   * base: un uuid mal formado hace que PostgreSQL rechace la consulta entera, y
+   * eso sale como un 500 que ni explica qué pasó ni deja el registro limpio.
+   * Es la misma comprobación que hacen las rutas de abonos.
+   */
+  function partidosDelCuerpo(req) {
+    const ids = req.body?.partidoIds;
+    if (!Array.isArray(ids) || !ids.length) return null;
+    if (ids.length > MAX_PARTIDOS_A_MARCAR) return null;
+    return ids.every(id => cobros.esUuid(id)) ? ids : null;
+  }
+
+  /**
+   * Deja constancia de que estos partidos ya salieron al grupo.
+   *
+   * ⚠️ Se marca DESPUÉS de abrir WhatsApp y sin saber si el mensaje llegó a
+   * enviarse: eso WhatsApp no lo cuenta. Por eso existe la ruta de al lado.
+   */
+  app.post('/api/compartir/marcar', requireAdmin, async (req, res) => {
+    const ids = partidosDelCuerpo(req);
+    if (!ids) return res.status(400).json({ error: 'Faltan los partidos, o no son válidos.' });
+
+    const marcados = await compartirMod.marcar(req.quiniela.id, ids);
+    res.json({ success: true, marcados });
+  });
+
+  /** Deshace la marca: vuelve a estar pendiente. Para quien canceló el envío. */
+  app.post('/api/compartir/desmarcar', requireAdmin, async (req, res) => {
+    const ids = partidosDelCuerpo(req);
+    if (!ids) return res.status(400).json({ error: 'Faltan los partidos, o no son válidos.' });
+
+    const desmarcados = await compartirMod.desmarcar(req.quiniela.id, ids);
+    res.json({ success: true, desmarcados });
   });
 };
 

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compartir al grupo</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/html-seguro.js" defer></script>
+  <script src="/js/marcador-visible.js" defer></script>
+  <script src="/js/compartir.js" defer></script>
+</head>
+<body class="app-body">
+  <main class="mobile-shell">
+    <section class="hero-card">
+      <div class="hero-top">
+        <div><p class="eyebrow">Administración</p><h1>Compartir al grupo</h1></div>
+        <div class="app-logo">📣</div>
+      </div>
+      <p id="resumenCompartir" class="hero-text">Buscando partidos que ya empezaron…</p>
+    </section>
+
+    <section class="app-panel" id="pendientesPanel" hidden>
+      <h2>Listos para mandar</h2>
+      <p class="helper-text">
+        Se agrupan por hora de inicio: los partidos que arrancaron a la misma
+        hora son <strong>un solo mensaje</strong>.
+      </p>
+      <div id="listaPendientes"></div>
+    </section>
+
+    <section class="app-panel" id="vacioPanel" hidden>
+      <p class="helper-text">
+        No hay nada pendiente. Aquí van apareciendo solos los partidos según van
+        arrancando, con los pronósticos de todos ya escritos.
+      </p>
+      <p class="helper-text" id="notaVentana"></p>
+    </section>
+
+    <section class="app-panel" id="compartidosPanel" hidden>
+      <h2>Ya mandados</h2>
+      <p class="helper-text">
+        Si alguno no llegó a salir, <strong>Volver a pendientes</strong> lo
+        devuelve arriba.
+      </p>
+      <div id="listaCompartidos"></div>
+    </section>
+
+    <p id="mensajeCompartir" class="form-message"></p>
+
+    <section class="app-panel">
+      <div class="button-stack">
+        <button id="recargarButton" class="secondary-button">Volver a mirar</button>
+        <button data-ir-a="adminmode.html" class="ghost-button">Volver</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">🏠<span>Inicio</span></a>
+    <a href="ver_jornadas.html">📅<span>Jornadas</span></a>
+    <a href="resultados-totales.html">🏆<span>Tabla</span></a>
+    <a href="adminmode.html" class="active">⚙️<span>Admin</span></a>
+  </nav>
+</body>
+</html>

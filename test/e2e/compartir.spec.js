@@ -1,0 +1,130 @@
+/*
+ * Compartir al grupo, por la interfaz.
+ *
+ * Lo que se fija aquí y no en las pruebas de ruta: que el mensaje que la
+ * persona va a pegar en WhatsApp **diga lo que tiene que decir**. Las pruebas
+ * de ruta comprueban los datos; el texto se arma en el navegador, así que sólo
+ * desde aquí se ve lo que de verdad sale.
+ *
+ * ⚠️ No se pulsa «Enviar por WhatsApp» a propósito: abre `wa.me`, que es un
+ * sitio de fuera. Ninguna prueba de este proyecto sale a la red. Lo que se
+ * recorre es el resto del camino, que es todo lo que este proyecto controla.
+ */
+'use strict';
+
+const { test, expect } = require('@playwright/test');
+const { registrarse, crearQuiniela, activarAdminMode } = require('./ayudas');
+const { comoApiDate } = require('../../src/compartir');
+
+const haceHoras = h => comoApiDate(new Date(Date.now() - h * 60 * 60 * 1000));
+const enHoras = h => comoApiDate(new Date(Date.now() + h * 60 * 60 * 1000));
+
+const partido = (equipo1, equipo2, apiFixtureId, apiDate) => ({
+  equipo1, equipo2, logoEquipo1: '', logoEquipo2: '',
+  comodin: false, apiFixtureId, apiLeagueId: '', apiDate, apiStatus: ''
+});
+
+test('el partido que arrancó aparece solo, con el mensaje ya escrito', async ({ page, browser }) => {
+  const jefa = await registrarse(page, 'compjefa');
+  await crearQuiniela(page, 'Quiniela comp');
+  await activarAdminMode(page, jefa.password);
+
+  const quiniela = await page.request.get('/api/quiniela-actual').then(r => r.json());
+
+  /* Un socio en su propio contexto: dos pestañas comparten cookies. */
+  const contextoSocio = await browser.newContext();
+  const otra = await contextoSocio.newPage();
+  const socio = await registrarse(otra, 'compsocio');
+
+  await otra.request.post('/api/quinielas/unirse',
+    { data: { codigoIngreso: quiniela.codigoIngreso } });
+
+  const miembros = await page.request.get('/api/quiniela-actual/miembros').then(r => r.json());
+  const pendiente = miembros.find(m => m.username === socio.username);
+  await page.request.patch(`/api/quiniela-actual/miembros/${pendiente.id}/aprobar`, { data: {} });
+  await otra.request.post(`/api/quinielas/${quiniela.id}/seleccionar`, { data: {} });
+
+  /*
+   * ⚠️ La jornada se crea EN EL FUTURO y luego se trae al pasado.
+   *
+   * Un partido que ya empezó no admite pronósticos —es el cierre por partido—
+   * así que creándola directamente en el pasado no habría nada que compartir y
+   * la prueba comprobaría una lista vacía creyendo que comprueba otra cosa.
+   */
+  const partidos = cuando => [
+    partido('Alfa', 'Beta', '111', cuando),
+    partido('Gamma', 'Delta', '222', cuando)
+  ];
+
+  await page.request.post('/api/jornadas',
+    { data: { nombre: 'J1', partidos: partidos(enHoras(48)) } });
+
+  await otra.request.post('/api/resultados', {
+    data: {
+      jugador: socio.username, jornada: 'J1',
+      pronosticos: [{ marcador1: 2, marcador2: 1 }, { marcador1: 0, marcador2: 0 }]
+    }
+  });
+
+  await page.request.post('/api/jornadas',
+    { data: { nombre: 'J1', partidos: partidos(haceHoras(2)) } });
+
+  /* ---- La pantalla ---- */
+  await page.goto('/compartir.html');
+  await expect(page.locator('#pendientesPanel')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#resumenCompartir')).toContainText('1 mensaje listo');
+
+  /* Los dos partidos de la misma hora van en UNA tarjeta, no en dos. */
+  const tarjetas = page.locator('#listaPendientes article');
+  await expect(tarjetas).toHaveCount(1);
+  await expect(tarjetas.first()).toContainText('2 partidos');
+
+  /* ---- Y el mensaje, que es lo que de verdad sale ---- */
+  const texto = await page.locator('#listaPendientes textarea').inputValue();
+
+  expect(texto).toContain('Jornada: J1');
+  expect(texto).toContain('Alfa vs Beta');
+  expect(texto).toContain('Gamma vs Delta');
+  expect(texto).toContain(`${socio.username}: 2 - 1`);
+
+  /*
+   * ⛔ El 0-0 de verdad sale como 0-0, y quien no pronosticó sale dicho con
+   * palabras. Es la Entrada 068 en el sitio donde importa: este texto es el
+   * papel que alguien saca el día de la discusión.
+   */
+  expect(texto).toContain(`${socio.username}: 0 - 0`);
+  expect(texto).toContain(`${jefa.username}: sin pronóstico`);
+  expect(texto).not.toContain('🔒');
+
+  /* ---- Marcarlo lo pasa al otro lado, y se puede deshacer ---- */
+  await page.getByRole('button', { name: 'Ya lo mandé' }).click();
+
+  await expect(page.locator('#compartidosPanel')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#listaCompartidos article')).toHaveCount(1);
+  await expect(page.locator('#listaPendientes article')).toHaveCount(0);
+  await expect(page.locator('#vacioPanel')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Volver a pendientes' }).click();
+
+  await expect(page.locator('#listaPendientes article')).toHaveCount(1);
+  await expect(page.locator('#listaCompartidos article')).toHaveCount(0);
+
+  await contextoSocio.close();
+});
+
+test('sin nada que arrancara, la pantalla lo dice en vez de quedarse vacía', async ({ page }) => {
+  const jefa = await registrarse(page, 'compvacio');
+  await crearQuiniela(page, 'Quiniela vacia');
+  await activarAdminMode(page, jefa.password);
+
+  await page.request.post('/api/jornadas', {
+    data: { nombre: 'J1', partidos: [partido('Alfa', 'Beta', '111', enHoras(5))] }
+  });
+
+  await page.goto('/compartir.html');
+
+  await expect(page.locator('#vacioPanel')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#resumenCompartir')).toContainText('Todo al día');
+  await expect(page.locator('#notaVentana')).toContainText('últimas 12 horas');
+  await expect(page.locator('#pendientesPanel')).toBeHidden();
+});

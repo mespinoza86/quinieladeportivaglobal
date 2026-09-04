@@ -306,6 +306,12 @@ CREATE TABLE partidos (
   api_date       text,
   api_status     text,
   /*
+   * Cuando salieron al grupo los pronosticos de este partido (migracion 008).
+   * NULL = todavia no. Es lo unico que impide que la pantalla de compartir
+   * vuelva a proponer lo ya enviado despues de un reinicio de Render.
+   */
+  compartido_en  timestamptz,
+  /*
    * DEFERRABLE porque renumerar hace falta: al borrar el partido de la posicion
    * 2, los de despues bajan una. Si la unicidad se comprobara fila a fila, la
    * renumeracion chocaria consigo misma a mitad. Diferida, se comprueba al

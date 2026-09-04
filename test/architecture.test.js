@@ -867,7 +867,7 @@ test('⛔ las acciones del superadministrador caben en el CHECK de la base', () 
   }
 });
 
-test('⚠️ el superadministrador no consulta tablas con RLS sin contexto', () => {
+test('⚠️ nadie consulta tablas con RLS fuera del contexto de quiniela', () => {
   /*
    * ⛔ ESTO YA MORDIO, y el fallo no se veia leyendo el codigo.
    *
@@ -877,11 +877,23 @@ test('⚠️ el superadministrador no consulta tablas con RLS sin contexto', () 
    * el borrado seguia adelante y reventaba contra la clave ajena. Justo el
    * error criptico que este modulo promete evitar.
    *
-   * La regla: en este archivo, toda consulta a una tabla de dominio va dentro
-   * de `enQuiniela`. Las de plataforma -usuarios, quinielas, membresias- no
-   * llevan RLS y pueden ir sueltas.
+   * La regla: toda consulta a una tabla de dominio va dentro de `enQuiniela`.
+   * Las de plataforma -usuarios, quinielas, membresias- no llevan RLS y pueden
+   * ir sueltas.
+   *
+   * ⚠️ Y el barrido va sobre TODOS los modulos, no solo sobre superadmin.js.
+   * Vigilar un archivo protege de lo que ese archivo haga hoy, no de lo que se
+   * escriba manana en el de al lado: cuando entro `src/compartir.js` -que
+   * escribe en `partidos`- este guardian no lo miraba siquiera.
    */
   const mod = quitarComentarios(leer(path.join('src', 'superadmin.js')));
+
+  const modulosYRutas = [
+    ...fs.readdirSync(path.join(root, 'src'))
+      .filter(f => f.endsWith('.js')).map(f => path.join('src', f)),
+    ...fs.readdirSync(path.join(root, 'src', 'rutas'))
+      .filter(f => f.endsWith('.js')).map(f => path.join('src', 'rutas', f))
+  ];
 
   const CON_RLS = [
     'jugadores', 'jornadas', 'partidos', 'resultados', 'pronosticos',
@@ -890,11 +902,15 @@ test('⚠️ el superadministrador no consulta tablas con RLS sin contexto', () 
   ];
 
   // Las llamadas a `db.consulta(...)`: las que van FUERA de un contexto.
-  for (const llamada of mod.match(/db\.consulta\(\s*`[^`]*`/g) || []) {
-    for (const tabla of CON_RLS) {
-      assert.doesNotMatch(llamada, new RegExp(`\\b(FROM|UPDATE|INTO|JOIN)\\s+${tabla}\\b`, 'i'),
-        `db.consulta() toca "${tabla}", que lleva RLS: sin contexto devuelve cero filas `
-        + 'en silencio. Tiene que ir dentro de db.enQuiniela()');
+  for (const relativo of modulosYRutas) {
+    const codigo = quitarComentarios(leer(relativo));
+
+    for (const llamada of codigo.match(/db\.consulta\(\s*`[^`]*`/g) || []) {
+      for (const tabla of CON_RLS) {
+        assert.doesNotMatch(llamada, new RegExp(`\\b(FROM|UPDATE|INTO|JOIN)\\s+${tabla}\\b`, 'i'),
+          `${relativo}: db.consulta() toca "${tabla}", que lleva RLS: sin contexto `
+          + 'devuelve cero filas en silencio. Tiene que ir dentro de db.enQuiniela()');
+      }
     }
   }
 
@@ -914,6 +930,26 @@ test('⛔ ningún marcador en blanco se enseña como un cero', () => {
    * un 0-0 de verdad desapareceria. Por eso la regla no es "usa otro valor por
    * defecto" sino **no uses `||` sobre un marcador**: hay que comprobar null y
    * cadena vacia por separado, que es lo que hace `marcadorVisible`.
+   *
+   * ⛔ Y `??` TAMBIEN, desde el 3 de septiembre, pero NO con la misma lista.
+   *
+   * Hasta entonces esto solo miraba `||`, asi que `p.marcador1 ?? 0` pasaba en
+   * verde haciendo exactamente el dano que la prueba dice impedir. Se descubrio
+   * rompiendolo a proposito al escribir la pantalla de compartir: el centinela
+   * no se movio y quien lo cazo fue la prueba de navegador.
+   *
+   * ⚠️ Las dos listas son distintas porque los dos operadores lo son:
+   *
+   *   - `||` se dispara con el 0 y con la cadena vacia, asi que le hacen dano
+   *     los DOS valores por defecto: `|| '0'` convierte un blanco en cero, y
+   *     `|| '-'` hace desaparecer un 0-0 de verdad.
+   *   - `??` solo se dispara con null y undefined, asi que `?? '-'` no puede
+   *     comerse un cero: es aceptable, y `ver-resultados.js` lo usa. El unico
+   *     que miente es `?? 0`, que convierte "no pronostico" en "pronostico 0".
+   *
+   * Meter `?? '-'` en la lista fue el primer intento y flagueaba codigo
+   * correcto. Un centinela que acusa al inocente se acaba desactivando, y
+   * entonces deja de vigilar tambien lo que si importaba.
    */
   const scripts = listar(path.join('private', 'js'));
   const nombres = fs.readdirSync(path.join(root, 'private', 'js')).filter(f => f.endsWith('.js'));
@@ -921,11 +957,15 @@ test('⛔ ningún marcador en blanco se enseña como un cero', () => {
   nombres.forEach((nombre, i) => {
     const codigo = quitarComentarios(scripts[i]);
 
-    const sospechosas = codigo.match(/marcador\w*\s*\|\|\s*(['"]?)[-0–]\1/gi) || [];
+    const sospechosas = [
+      ...(codigo.match(/marcador\w*\s*\|\|\s*(['"]?)[-0–]\1/gi) || []),
+      ...(codigo.match(/marcador\w*\s*\?\?\s*(['"]?)0\1/gi) || [])
+    ];
 
     assert.deepEqual(sospechosas, [],
-      `${nombre}: un marcador no se resuelve con "||". Un blanco saldria como 0 `
-      + '(o un 0 real desapareceria). Usa marcadorVisible() de marcador-visible.js');
+      `${nombre}: un marcador no se resuelve con "||", ni con "?? 0". Un blanco `
+      + 'saldria como 0 (o un 0 real desapareceria). Usa marcadorVisible() de '
+      + 'marcador-visible.js');
   });
 
   // Y el ayudante tiene que seguir distinguiendo los tres estados.
@@ -946,13 +986,28 @@ test('⛔ quien imprime pronósticos ajenos mira si todavía son secretos', () =
    * texto en el que los treinta jugadores habian pronosticado 0-0: el dato
    * secreto no se filtraba, pero se sustituia por uno inventado y creible.
    */
-  const consumidores = ['enviarresultados.js', 'copiarresultadojugador.js', 'enviarresultadospartido.js'];
+  /*
+   * Cada uno con la ruta de la que saca los pronosticos ajenos. La ruta se
+   * comprueba para que el guardian se entere si la pantalla deja de leerla:
+   * sin eso seguiria en verde vigilando un archivo que ya no hace lo que dice.
+   *
+   * `compartir.js` entro el 3 de septiembre. Es la unica que no lee
+   * `resultados-con-equipos`: los pronosticos le llegan ya cruzados desde
+   * `src/compartir.js`, pero imprime exactamente lo mismo y por el mismo
+   * WhatsApp, asi que le toca la misma regla.
+   */
+  const consumidores = {
+    'enviarresultados.js': 'resultados-con-equipos',
+    'copiarresultadojugador.js': 'resultados-con-equipos',
+    'enviarresultadospartido.js': 'resultados-con-equipos',
+    'compartir.js': 'compartir/pendientes'
+  };
 
-  for (const nombre of consumidores) {
+  for (const [nombre, ruta] of Object.entries(consumidores)) {
     const codigo = quitarComentarios(leer(path.join('private', 'js', nombre)));
 
-    assert.match(codigo, /resultados-con-equipos/,
-      `${nombre}: si dejo de leer esa ruta, revisa esta prueba`);
+    assert.ok(codigo.includes(ruta),
+      `${nombre}: si dejo de leer ${ruta}, revisa esta prueba`);
 
     /*
      * ⚠️ Se cuentan TODAS las llamadas, no se busca una.
@@ -2001,7 +2056,66 @@ test('⛔ las tablas de solo-escritura estan cerradas en las migraciones Y en el
     'las dos listas tienen que decir lo mismo: lo que se cierra en Neon y lo que se cierra en las pruebas');
 });
 
-test('⛔ toda pantalla que llame a las rutas de cobros esta en PAGINAS_ADMIN', () => {
+test('⛔ el hueco que pasa a ser otro partido pierde su marca de compartido', () => {
+  /*
+   * En el camino de reconciliacion POR POSICION, la fila conserva su `id`
+   * aunque ya sea otro partido -por eso sus pronosticos se borran ahi mismo,
+   * que es el arreglo de M-02-. La marca `compartido_en` tiene que irse con
+   * ellos por la misma razon.
+   *
+   * ⛔ Si se quedara, el partido nuevo naceria con "ya se compartio" puesto y
+   * la pantalla de compartir NO LO PROPONDRIA NUNCA: el grupo se quedaria sin
+   * sus pronosticos y no habria error, ni aviso, ni forma de notarlo.
+   *
+   * ⚠️ Es una condicion que vive en DOS sitios -el borrado de pronosticos y la
+   * limpieza de la marca- y las dos tienen que moverse juntas. Comprobar solo
+   * una deja la otra libre para desincronizarse, y la desincronizacion no
+   * falla: deja todo verde con el agujero abierto (Entrada 079).
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'jornadas.js')));
+
+  assert.match(mod, /borrarDePartidos\(c, cambiaronDePartido\)/,
+    'si el borrado por posicion cambio de forma, revisa esta prueba entera');
+
+  /*
+   * ⚠️ ESTA MITAD ES UN CABLE, NO UNA RED, y conviene tenerlo escrito.
+   *
+   * Comprueba que la linea SIGUE ESCRITA, asi que caza el refactor que se la
+   * lleva por delante -que es la regresion probable- pero NO caza que deje de
+   * ejecutarse: se rompio a proposito metiendola dentro de un `if (false)` y
+   * esta prueba paso en verde.
+   *
+   * La conducta la cubre "si el hueco pasa a ser OTRO partido, la marca no se
+   * hereda", en test/rutas.test.js, que si cae con esa misma mutacion. Se deja
+   * dicho porque creer que esto vigila la conducta seria peor que no tenerlo:
+   * es la clase de centinela decorativo que la Entrada 072 encontro a montones.
+   */
+  assert.match(mod, /UPDATE partidos SET compartido_en = NULL[\s\S]{0,120}cambiaronDePartido/,
+    'los partidos sustituidos pierden sus pronosticos pero conservan la marca de '
+    + 'compartido: el partido nuevo no se propondria nunca');
+
+  /*
+   * Y la vuelta: el camino por IDENTIDAD no debe limpiarla. Alli la fila que se
+   * reutiliza es el mismo partido -se emparejo por api_fixture_id- asi que su
+   * marca sigue siendo cierta, y borrarla haria repetir mensajes ya mandados.
+   */
+  /*
+   * ⚠️ El corte se ancla a CODIGO, no a un comentario: `quitarComentarios` los
+   * borra, asi que un `indexOf` sobre el rotulo del camino devolvia -1 y el
+   * trozo examinado pasaba a ser el archivo entero. La prueba fallaba senalando
+   * al inocente, que es como se descubrio.
+   */
+  const porIdentidad = mod.slice(
+    mod.indexOf('if (hayIdentidad)'),
+    mod.indexOf('const cambiaronDePartido = []'));
+
+  assert.ok(porIdentidad.length > 200, 'el corte del camino por identidad se quedo vacio');
+  assert.doesNotMatch(porIdentidad, /compartido_en/,
+    'el camino por identidad reutiliza el MISMO partido: limpiar su marca haria '
+    + 'que se volviera a proponer un mensaje ya mandado');
+});
+
+test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_ADMIN', () => {
   /*
    * `PAGINAS_ADMIN` es una lista escrita a mano en `src/servidor.js`. Anadir una
    * pantalla de administracion y olvidarse de meterla ahi **no falla**: la
@@ -2012,10 +2126,18 @@ test('⛔ toda pantalla que llame a las rutas de cobros esta en PAGINAS_ADMIN', 
    * de superficie, y una experiencia pesima. Ya paso: la guardia antes solo
    * comprobaba que hubiera sesion.
    *
-   * ⚠️ La condicion que se comprueba es mecanica, no una lista repetida: TODA
-   * ruta bajo `/api/cobros/` lleva `requireAdmin`, asi que la pantalla que la
-   * llame es de administracion, y punto. Repetir la lista aqui solo la dejaria
-   * desincronizarse en dos sitios en vez de en uno.
+   * ⚠️ La condicion que se comprueba es mecanica, no una lista repetida.
+   *
+   * ⛔ Y hasta el 3 de septiembre lo mecanico se quedaba corto: solo miraba
+   * `/api/cobros/`, escrito a mano aqui. Una pantalla de administracion que
+   * usara OTRAS rutas seguia pudiendo olvidarse, y era deuda anotada en §B.2.13
+   * antes de que existiera ningun caso. El primero fue `compartir.html`.
+   *
+   * Ahora los prefijos se DEDUCEN de las rutas: se agrupan por `/api/<x>/` y se
+   * queda con aquellos en los que TODAS las rutas llevan `requireAdmin`. Si un
+   * prefijo tiene una sola ruta abierta no cuenta, porque entonces una pantalla
+   * de jugador puede llamarlo con toda razon —es el caso de `/api/jornadas/`,
+   * que mezcla lectura publica con escritura de administracion—.
    */
   const servidor = leer(path.join('src', 'servidor.js'));
   const bloque = servidor.match(/const PAGINAS_ADMIN = \[([\s\S]*?)\];/)?.[1] || '';
@@ -2023,6 +2145,42 @@ test('⛔ toda pantalla que llame a las rutas de cobros esta en PAGINAS_ADMIN', 
   assert.ok(bloque, 'no se encontro PAGINAS_ADMIN en src/servidor.js');
 
   const declaradas = new Set([...bloque.matchAll(/'(\/[^']+\.html)'/g)].map(m => m[1]));
+
+  /*
+   * Que rutas hay bajo cada prefijo, y cuales exigen administrador.
+   *
+   * El corte del `(?=async|\(req|\n)` es para quedarse con lo que va ENTRE la
+   * ruta y el manejador, que es donde se enganchan las guardias. Sin el, el
+   * cuerpo entero de la ruta entraria en la comparacion y cualquier mencion a
+   * requireAdmin en un comentario la daria por protegida.
+   */
+  const porPrefijo = new Map();
+
+  for (const nombre of fs.readdirSync(path.join(root, 'src', 'rutas')).filter(f => f.endsWith('.js'))) {
+    const codigo = leer(path.join('src', 'rutas', nombre));
+    const re = /app\.(get|post|put|patch|delete)\(\s*'([^']+)'\s*(,[^)]*?)?(?=async|\(req|\r?\n)/g;
+
+    let m;
+    while ((m = re.exec(codigo))) {
+      const segmentos = m[2].split('/').filter(Boolean);
+      if (segmentos[0] !== 'api' || segmentos.length < 3) continue;
+
+      const prefijo = `/api/${segmentos[1]}/`;
+      if (!porPrefijo.has(prefijo)) porPrefijo.set(prefijo, []);
+      porPrefijo.get(prefijo).push(/requireAdmin/.test(m[3] || ''));
+    }
+  }
+
+  const soloAdmin = [...porPrefijo.entries()]
+    .filter(([, guardias]) => guardias.length && guardias.every(Boolean))
+    .map(([prefijo]) => prefijo);
+
+  /*
+   * ⚠️ Si esto se queda vacio la prueba pasaria sin comprobar nada, que es la
+   * forma exacta en que un centinela deja de servir sin avisar (Entrada 072).
+   */
+  assert.ok(soloAdmin.includes('/api/cobros/') && soloAdmin.includes('/api/compartir/'),
+    `la deduccion de prefijos dejo de funcionar: ${soloAdmin.join(', ')}`);
 
   const faltan = [];
 
@@ -2032,13 +2190,14 @@ test('⛔ toda pantalla que llame a las rutas de cobros esta en PAGINAS_ADMIN', 
     /* Los scripts propios que carga esa pagina. */
     const scripts = [...pagina.matchAll(/src="\/js\/([\w.-]+\.js)"/g)].map(m => m[1]);
 
-    const llamaACobros = scripts.some(s => {
+    const llamaAAdmin = scripts.some(s => {
       const ruta = path.join('private', 'js', s);
-      if (!fs.existsSync(ruta)) return false;
-      return /['"`]\/api\/cobros\//.test(leer(ruta));
+      if (!fs.existsSync(path.join(root, ruta))) return false;
+      const codigo = leer(ruta);
+      return soloAdmin.some(prefijo => codigo.includes(prefijo));
     });
 
-    if (llamaACobros && !declaradas.has('/' + archivo)) faltan.push(archivo);
+    if (llamaAAdmin && !declaradas.has('/' + archivo)) faltan.push(archivo);
   }
 
   assert.deepEqual(faltan, [],

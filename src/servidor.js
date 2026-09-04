@@ -679,7 +679,8 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
     '/enviarresultados.html', '/copiarresultadojugador.html', '/admin_trivias.html',
     '/enviarresultadostrivias.html', '/enviarresultadospartido.html',
     '/enviarresultadostriviaspartido.html', '/miembros.html',
-    '/configuracion-quiniela.html', '/cobros.html', '/reporte-cobros.html'
+    '/configuracion-quiniela.html', '/cobros.html', '/reporte-cobros.html',
+    '/compartir.html'
   ];
 
   /*

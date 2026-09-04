@@ -373,6 +373,27 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
 
       partidosReemplazados = cambiaronDePartido.length;
       pronosticosBorrados = await pronosticos.borrarDePartidos(c, cambiaronDePartido);
+
+      /*
+       * ⛔ Y LA MARCA DE COMPARTIDO SE VA CON ELLOS (migración 008).
+       *
+       * Esta fila conserva su `id` pero ya es OTRO partido: sus pronósticos
+       * acaban de borrarse en la línea de arriba justo por eso. Si se le dejara
+       * el `compartido_en` del anterior, el partido nuevo nacería con «ya se
+       * compartió» puesto y **la pantalla de compartir no lo propondría nunca**,
+       * sin dar ningún error: el grupo se quedaría sin los pronósticos de ese
+       * partido y no habría forma de notarlo.
+       *
+       * ⚠️ El camino por identidad de arriba NO necesita esto, y ponérselo sería
+       * un error: allí la fila que se reutiliza es el MISMO partido —se emparejó
+       * por `api_fixture_id`— así que su marca sigue siendo cierta. Las que dejan
+       * de estar se borran enteras y se llevan la marca con ellas.
+       */
+      if (cambiaronDePartido.length) {
+        await c.query(
+          'UPDATE partidos SET compartido_en = NULL WHERE id = ANY($1::uuid[])',
+          [cambiaronDePartido]);
+      }
     }
 
     return { nombre, partidosReemplazados, pronosticosBorrados };

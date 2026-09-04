@@ -3871,3 +3871,367 @@ test('⛔ el reporte es sólo del administrador, y no cruza quinielas', async ()
   assert.ok(!ajeno.body.jugadores.some(p => p.nombre === uno.socio.datos.username),
     'ni sus jugadores');
 });
+
+/* ==================== Compartir pronósticos al grupo ==================== */
+
+const compartirMod = require('../src/compartir');
+
+/*
+ * Las horas se escriben en el formato y la zona de `api_date` —Costa Rica—
+ * pasando por la misma función que usa el módulo. Escribirlas a mano con
+ * `getHours()` haría que estas pruebas pasaran en esta máquina y fallaran en
+ * CI, que va en UTC: exactamente el fallo que la conversión viene a evitar.
+ */
+const haceHoras = h => compartirMod.comoApiDate(new Date(Date.now() - h * 60 * 60 * 1000));
+const enHoras = h => compartirMod.comoApiDate(new Date(Date.now() + h * 60 * 60 * 1000));
+
+/**
+ * Una jornada cuyos partidos YA ARRANCARON y que además tiene pronósticos.
+ *
+ * ⚠️ Hacen falta dos pasos, y el motivo es una regla de verdad: un partido que
+ * ya empezó **no admite pronósticos** —es el cierre por partido— así que si se
+ * creara directamente en el pasado, `guardar` los rechazaría todos y la prueba
+ * comprobaría una lista vacía creyendo que comprueba otra cosa.
+ *
+ * Así que se crea en el futuro, se pronostica, y sólo entonces se mueve la hora
+ * hacia atrás. Mover la hora conserva los pronósticos porque la reconciliación
+ * empareja por `api_fixture_id` y la fila mantiene su `id` (Entrada 063).
+ */
+async function jornadaArrancada(jefe, nombre, partidos, apuestas = []) {
+  const conHora = cuando => partidos.map(p =>
+    partido(p.e1, p.e2, { apiFixtureId: p.id, apiDate: cuando(p) }));
+
+  const alta = await jefe.agente.post('/api/jornadas')
+    .send({ nombre, partidos: conHora(() => enHoras(48)) });
+  assert.equal(alta.status, 200, `no se creó la jornada: ${JSON.stringify(alta.body)}`);
+
+  for (const { agente, jugador, pronosticos } of apuestas) {
+    const r = await agente.post('/api/resultados').send({ jugador, jornada: nombre, pronosticos });
+    assert.equal(r.status, 200, `no se guardó el pronóstico: ${JSON.stringify(r.body)}`);
+  }
+
+  const mover = await jefe.agente.post('/api/jornadas')
+    .send({ nombre, partidos: conHora(p => p.cuando) });
+  assert.equal(mover.status, 200, `no se movió la hora: ${JSON.stringify(mover.body)}`);
+  assert.equal(mover.body.pronosticosBorrados ?? 0, 0,
+    'mover la hora no puede llevarse los pronósticos por delante');
+}
+
+const pendientesDe = async agente =>
+  (await agente.get('/api/compartir/pendientes')).body;
+
+test('⛔ la hora de la ventana se escribe en hora de Costa Rica, no en la del servidor', () => {
+  /*
+   * Es la inversa de `parseFechaPartidoCostaRica`, y si dejan de serlo la
+   * ventana queda corrida seis horas en Render —que va en UTC— **sin fallar**:
+   * la lista seguiría saliendo, con menos partidos de los que debe.
+   *
+   * La ida y vuelta se comprueba sobre textos fijos justamente para que el
+   * resultado no dependa de dónde corra la prueba.
+   */
+  const { parseFechaPartidoCostaRica } = require('../src/fechas');
+
+  for (const texto of ['2026-09-03 15:00', '2026-01-01 00:00', '2026-12-31 23:59']) {
+    assert.equal(compartirMod.comoApiDate(parseFechaPartidoCostaRica(texto)), texto,
+      `no volvió igual: ${texto}`);
+  }
+});
+
+test('un partido que ya arrancó sale listo para compartir, con lo de todos', async () => {
+  const jefe = await admin('comp');
+  const socio = await miembroDe(jefe, 'comp-socio');
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }],
+    [{ agente: socio.agente, jugador: socio.datos.username, pronosticos: [{ marcador1: 2, marcador2: 1 }] }]);
+
+  const { grupos } = await pendientesDe(jefe.agente);
+
+  assert.equal(grupos.length, 1);
+  assert.equal(grupos[0].compartido, false);
+  assert.equal(grupos[0].jornada, 'J1');
+  assert.equal(grupos[0].partidos.length, 1);
+
+  const suyo = grupos[0].partidos[0].pronosticos.find(p => p.jugador === socio.datos.username);
+  assert.deepEqual([suyo.marcador1, suyo.marcador2], [2, 1]);
+  assert.equal(suyo.oculto, false, 'un partido que empezó ya es público');
+});
+
+test('⛔ quien no pronosticó sale sin marcadores, nunca con ceros', async () => {
+  /*
+   * Es la Entrada 068 vista desde aquí: el texto que circula por el grupo es
+   * justo el papel que alguien saca el día de la discusión. Un blanco que se
+   * imprime como 0 dice que esa persona pronosticó 0-0, y no es verdad.
+   */
+  const jefe = await admin('cero');
+  const socio = await miembroDe(jefe, 'cero-socio');
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }],
+    [{ agente: socio.agente, jugador: socio.datos.username, pronosticos: [{ marcador1: 0, marcador2: 0 }] }]);
+
+  const { grupos } = await pendientesDe(jefe.agente);
+  const pronosticos = grupos[0].partidos[0].pronosticos;
+
+  const quienJugo = pronosticos.find(p => p.jugador === socio.datos.username);
+  const quienNo = pronosticos.find(p => p.jugador === jefe.datos.username);
+
+  assert.deepEqual([quienJugo.marcador1, quienJugo.marcador2], [0, 0],
+    'el 0-0 de verdad tiene que seguir siendo un cero');
+  assert.ok(quienNo, 'quien no pronosticó también sale en la lista');
+  assert.deepEqual([quienNo.marcador1, quienNo.marcador2], [null, null],
+    'y sale con nulos, para que la pantalla lo distinga de un cero');
+});
+
+test('un partido que todavía no empieza no se propone', async () => {
+  const jefe = await admin('futuro');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [partido('Alfa', 'Beta', { apiFixtureId: '111', apiDate: enHoras(3) })]
+  });
+
+  const { grupos } = await pendientesDe(jefe.agente);
+  assert.deepEqual(grupos, [], 'sus pronósticos todavía son secretos');
+});
+
+test('los partidos de la misma hora son UN mensaje, no uno por partido', async () => {
+  /*
+   * Es el grueso del trabajo que se ahorra: un domingo con cinco partidos a las
+   * 15:00 eran cinco recorridos completos por la pantalla vieja.
+   */
+  const jefe = await admin('grupo');
+  const cuando = haceHoras(2);
+
+  await jornadaArrancada(jefe, 'J1', [
+    { e1: 'Alfa', e2: 'Beta', id: '111', cuando },
+    { e1: 'Gamma', e2: 'Delta', id: '222', cuando },
+    { e1: 'Eps', e2: 'Zeta', id: '333', cuando: haceHoras(5) }
+  ]);
+
+  const { grupos } = await pendientesDe(jefe.agente);
+
+  assert.equal(grupos.length, 2, 'dos horas de inicio, dos mensajes');
+
+  const deDos = grupos.find(g => g.partidos.length === 2);
+  assert.ok(deDos, 'los dos de la misma hora van juntos');
+  assert.deepEqual(deDos.partidos.map(p => p.equipo1).sort(), ['Alfa', 'Gamma']);
+  assert.equal(deDos.partidoIds.length, 2);
+});
+
+test('⚠️ un partido de hace más de la ventana ya no se propone', async () => {
+  /*
+   * Sin esto, el día del estreno la pantalla propondría la temporada entera:
+   * `compartido_en` nace en NULL para todos los partidos que ya existen.
+   */
+  const jefe = await admin('ventana');
+
+  await jornadaArrancada(jefe, 'J1', [
+    { e1: 'Viejo', e2: 'Antiguo', id: '111', cuando: haceHoras(30) },
+    { e1: 'Alfa', e2: 'Beta', id: '222', cuando: haceHoras(2) }
+  ]);
+
+  const { grupos, ventanaHoras } = await pendientesDe(jefe.agente);
+
+  assert.equal(ventanaHoras, 12);
+  assert.equal(grupos.length, 1, 'el de hace treinta horas ya no es noticia');
+  assert.equal(grupos[0].partidos[0].equipo1, 'Alfa');
+});
+
+test('marcar lo pasa a mandados, y desmarcar lo devuelve a pendientes', async () => {
+  const jefe = await admin('marca');
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const antes = await pendientesDe(jefe.agente);
+  const ids = antes.grupos[0].partidoIds;
+
+  const marcado = await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal(marcado.status, 200);
+  assert.equal(marcado.body.marcados, 1);
+
+  const medio = await pendientesDe(jefe.agente);
+  assert.equal(medio.grupos.length, 1, 'sigue viéndose, pero del otro lado');
+  assert.equal(medio.grupos[0].compartido, true);
+  assert.ok(medio.grupos[0].compartidoEn, 'y con la hora en que salió');
+
+  const vuelto = await jefe.agente.post('/api/compartir/desmarcar').send({ partidoIds: ids });
+  assert.equal(vuelto.status, 200);
+
+  const despues = await pendientesDe(jefe.agente);
+  assert.equal(despues.grupos[0].compartido, false,
+    'quien canceló el envío tiene que poder devolverlo');
+});
+
+test('marcar dos veces no mueve la hora en que salió', async () => {
+  const jefe = await admin('idem');
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const ids = (await pendientesDe(jefe.agente)).grupos[0].partidoIds;
+
+  await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  const primera = (await pendientesDe(jefe.agente)).grupos[0].compartidoEn;
+
+  const otra = await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal(otra.body.marcados, 0, 'no había nada nuevo que marcar');
+
+  const segunda = (await pendientesDe(jefe.agente)).grupos[0].compartidoEn;
+  assert.equal(primera, segunda, 'la lista no puede bailar por abrir el mensaje dos veces');
+});
+
+test('⛔ un partido añadido después devuelve el mensaje entero a pendientes', async () => {
+  /*
+   * Si «compartido» fuera «alguno de sus partidos lo está», el partido añadido
+   * a las 15:00 después de haber mandado el mensaje quedaría tapado por la
+   * marca de sus compañeros: no se compartiría nunca y nada lo diría.
+   */
+  const jefe = await admin('anade');
+  const cuando = haceHoras(2);
+
+  await jornadaArrancada(jefe, 'J1', [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando }]);
+
+  const ids = (await pendientesDe(jefe.agente)).grupos[0].partidoIds;
+  await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal((await pendientesDe(jefe.agente)).grupos[0].compartido, true);
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [
+      partido('Alfa', 'Beta', { apiFixtureId: '111', apiDate: cuando }),
+      partido('Gamma', 'Delta', { apiFixtureId: '222', apiDate: cuando })
+    ]
+  });
+
+  const { grupos } = await pendientesDe(jefe.agente);
+  assert.equal(grupos[0].partidos.length, 2);
+  assert.equal(grupos[0].compartido, false,
+    'con uno sin mandar, el mensaje vuelve a estar pendiente');
+});
+
+test('⛔ si el hueco pasa a ser OTRO partido, la marca no se hereda', async () => {
+  /*
+   * Al reconciliar por posición la fila conserva su `id` aunque ya sea otro
+   * partido —por eso sus pronósticos se borran ahí mismo—. Si además heredara
+   * el `compartido_en`, el partido nuevo nacería dado por compartido y **no se
+   * propondría nunca**, sin ningún error de por medio.
+   *
+   * ⚠️ El camino por posición sólo se usa cuando NO todos los partidos tienen
+   * identificador, así que la jornada lleva uno sin él a propósito.
+   */
+  const jefe = await admin('hereda');
+  const cuando = haceHoras(2);
+
+  const conYSin = fixture => [
+    partido('Alfa', 'Beta', { apiFixtureId: fixture, apiDate: cuando }),
+    partido('SinId', 'Tampoco', { apiFixtureId: '', apiDate: cuando })
+  ];
+
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: conYSin('111') });
+
+  const ids = (await pendientesDe(jefe.agente)).grupos[0].partidoIds;
+  await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal((await pendientesDe(jefe.agente)).grupos[0].compartido, true);
+
+  // La posición 0 pasa a ser un partido distinto.
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: conYSin('999') });
+
+  const { grupos } = await pendientesDe(jefe.agente);
+  assert.equal(grupos[0].compartido, false,
+    'el partido nuevo tiene que salir a compartir como cualquier otro');
+});
+
+test('⛔ volver a guardar la jornada no reabre un mensaje ya mandado', async () => {
+  /*
+   * El reverso del anterior, y hace falta que sea una prueba de conducta y no
+   * de texto: al reconciliar por IDENTIDAD la fila reutilizada es el MISMO
+   * partido —se emparejó por `api_fixture_id`— así que su marca sigue siendo
+   * cierta y limpiarla haría proponer otra vez un mensaje que ya salió.
+   *
+   * ⚠️ Guardar la jornada es lo que hace el sincronizador cada minuto para
+   * actualizar estados y marcadores, así que esto no es un caso raro: si la
+   * marca se perdiera aquí, el grupo recibiría el mismo mensaje cada minuto.
+   */
+  const jefe = await admin('reabre');
+  const cuando = haceHoras(2);
+
+  const mismos = estado => [
+    partido('Alfa', 'Beta', { apiFixtureId: '111', apiDate: cuando, apiStatus: estado }),
+    partido('Gamma', 'Delta', { apiFixtureId: '222', apiDate: cuando, apiStatus: estado })
+  ];
+
+  await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: mismos('NS') });
+
+  const ids = (await pendientesDe(jefe.agente)).grupos[0].partidoIds;
+  await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal((await pendientesDe(jefe.agente)).grupos[0].compartido, true);
+
+  // Lo que hace el sincronizador: reescribe la jornada con los mismos partidos.
+  const otra = await jefe.agente.post('/api/jornadas')
+    .send({ nombre: 'J1', partidos: mismos('FT') });
+  assert.equal(otra.body.pronosticosBorrados ?? 0, 0);
+
+  assert.equal((await pendientesDe(jefe.agente)).grupos[0].compartido, true,
+    'el mensaje ya salió: reabrirlo lo repetiría en el grupo cada minuto');
+});
+
+test('⛔ lo que hay para compartir no cruza de una quiniela a otra', async () => {
+  const uno = await admin('cruz-a');
+  const otro = await admin('cruz-b');
+
+  await jornadaArrancada(uno, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const ajeno = await pendientesDe(otro.agente);
+  assert.deepEqual(ajeno.grupos, [], 'los partidos de la otra quiniela no se ven');
+
+  const ids = (await pendientesDe(uno.agente)).grupos[0].partidoIds;
+
+  /*
+   * Y tampoco se pueden marcar a ciegas conociendo el identificador: el UPDATE
+   * va dentro del contexto de quiniela, así que RLS no encuentra la fila.
+   *
+   * ⚠️ LOS DOS CASOS, Y EN ESTE ORDEN. Comprobar sólo que el ajeno marca cero
+   * no distingue «RLS lo paró» de «marcar está roto y no marca nunca»: las dos
+   * cosas dan cero. Se descubrió rompiendo `marcar` a propósito —salía verde—.
+   * Es la lección de la migración 007: sin un caso que tenga que salir
+   * distinto, una comprobación que dice «todo bien» no sabe si lo está.
+   */
+  const intento = await otro.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal(intento.body.marcados, 0, 'RLS no deja tocar la fila de otra quiniela');
+
+  const propio = await uno.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+  assert.equal(propio.body.marcados, 1,
+    'el control: desde su propia quiniela la misma llamada SÍ marca');
+
+  assert.equal((await pendientesDe(uno.agente)).grupos[0].compartido, true,
+    'y es la de dentro la que lo movió, no la de fuera');
+});
+
+test('compartir es sólo del administrador', async () => {
+  const jefe = await admin('guardia');
+  const socio = await miembroDe(jefe, 'guardia-socio');
+
+  assert.equal((await socio.agente.get('/api/compartir/pendientes')).status, 403);
+  assert.equal((await socio.agente.post('/api/compartir/marcar')
+    .send({ partidoIds: [] })).status, 403);
+  assert.equal((await socio.agente.post('/api/compartir/desmarcar')
+    .send({ partidoIds: [] })).status, 403);
+});
+
+test('⚠️ un identificador que no es uuid se rechaza antes de tocar la base', async () => {
+  /*
+   * Un uuid mal formado hace que PostgreSQL rechace la consulta entera, y eso
+   * salía como un 500 «error interno»: ni dice qué pasó ni deja el registro
+   * limpio. Es la misma comprobación que hacen las rutas de abonos.
+   */
+  const jefe = await admin('valida');
+
+  for (const cuerpo of [{}, { partidoIds: [] }, { partidoIds: 'no-es-lista' },
+    { partidoIds: ['esto-no-es-uuid'] }, { partidoIds: new Array(51).fill('x') }]) {
+    const res = await jefe.agente.post('/api/compartir/marcar').send(cuerpo);
+    assert.equal(res.status, 400, `debió rechazar: ${JSON.stringify(cuerpo)}`);
+  }
+});

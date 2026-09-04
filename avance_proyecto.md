@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 1 de septiembre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 3 de septiembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 508/508
-npm run test:e2e            # 120/120, ~5,4 min
+npm test                    # 523/523
+npm run test:e2e            # 124/124, ~5,4 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **508**, ~80 s |
-| Pruebas de navegador | **120**, ~5,4 min, contra el servidor de verdad |
+| Pruebas rápidas | **523**, ~107 s |
+| Pruebas de navegador | **124**, ~5,4 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
-| `src/` | 27 módulos + `src/rutas/` (6) |
+| `src/` | 28 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | **Al día.** Migraciones 001 a 007 corridas y verificadas |
+| Base en Neon | ⛔ **La 008 está SIN CORRER.** Las 001 a 007, corridas y verificadas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -473,36 +473,54 @@ escribirla (080).
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 31 de agosto de 2026
+#### 📍 Dónde quedó todo el 3 de septiembre de 2026
 
 | | |
 |---|---|
-| Último commit | `f7716af` — «Las dos cuotas quedaron puestas: 1.000 y 1.000» |
-| Árbol | Limpio. Nada sin subir |
-| Base de datos | **Migraciones 001 a 007 corridas y verificadas.** Ninguna pendiente |
-| Producción | Todo desplegado y en uso |
-| Pruebas | 508 rápidas + 120 de navegador, todas en verde |
+| Último commit de código | `c4df1e9` — «Reporte de pagos» (28 ago). Los tres siguientes son sólo documento |
+| Árbol | ⛔ **Con cambios sin subir**: la Entrada 085, compartir al grupo |
+| Base de datos | ⛔ **La migración 008 está SIN CORRER.** Las 001 a 007, hechas |
+| Producción | Corriendo `c4df1e9`. Lo de la 085 **no** está desplegado |
+| Pruebas | 523 rápidas + 124 de navegador, todas en verde |
 
-**No hay nada a medias.** El último bloque de trabajo —Entradas 074 a 083, todo
-sobre dinero— quedó cerrado: el acumulado, quién paga qué, los reportes y el
-análisis de crecimiento.
+⛔ **Hay trabajo a medias, y el orden importa.** La Entrada 085 —compartir los
+pronósticos al grupo— está escrita y probada pero **no desplegada**, y necesita
+un paso manual **antes** del empujón:
 
-✅ **Y no queda nada por confirmar.** La quiniela real está corriendo con las dos
-cuotas puestas —₡1.000 de jornada y ₡1.000 al acumulado—, los abonos en cero
-desde el 28, y la primera jornada de verdad en juego.
+1. Correr `db/migraciones/008-compartir-pronosticos.sql` en Neon **con el rol
+   dueño**. Al revés, el código consulta una columna que no existe.
+2. Comprobar que no marcó nada por su cuenta (la consulta está en el pie del
+   propio archivo de migración).
+3. Empujar y redesplegar.
+
+✅ **La quiniela real sigue corriendo con las dos cuotas** —₡1.000 de jornada y
+₡1.000 al acumulado—, los abonos en cero desde el 28, y las jornadas en juego.
+Nada de la 085 cambia eso: sólo añade una pantalla de administración.
 
 **Si quiere seguir con algo**, esto es lo que hay sobre la mesa, en orden de
 valor y con su entrada:
 
-1. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
+1. **Desplegar la 085**, con su migración delante. Es lo único a medias.
+2. **Que el sistema AVISE cuando hay algo que compartir** (085). Hoy hay que
+   entrar a la pantalla para enterarse. El enganche está listo —Brevo funciona y
+   el planificador ya corre cada minuto—; falta decidir si se quiere y con qué
+   frecuencia, para no acabar con un correo por partido.
+3. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
    (082). Es la única dependencia externa del proyecto y amplía la política de
    seguridad del sitio entero por una sola pantalla.
-2. **Paginar el diario de abonos** — `GET /api/cobros/abonos` no tiene `LIMIT`
+4. **Paginar el diario de abonos** — `GET /api/cobros/abonos` no tiene `LIMIT`
    (083). No corre prisa desde que hay reportes, pero es lo primero que revienta
    al crecer.
-3. **Crear una trivia de punta a punta**: esa pantalla estuvo rota semanas y
+5. **Crear una trivia de punta a punta**: esa pantalla estuvo rota semanas y
    nadie ha comprobado el recorrido entero desde que se arregló (072).
-4. Lo demás de la tabla de la Entrada 083, cuando toque.
+6. Lo demás de la tabla de la Entrada 083, cuando toque.
+
+⛔ **Y lo que NO se va a poder hacer, para no volver a preguntarlo** (085):
+mandar el mensaje al grupo **solo**. WhatsApp no tiene forma oficial de que un
+programa escriba en un grupo, y `wa.me` no admite apuntar a uno concreto. Las
+librerías que lo consiguen incumplen sus términos y arriesgan el bloqueo del
+número; Marco lo descartó por eso el 3 de septiembre. Lo automatizado es todo lo
+de antes del envío.
 
 #### ⚠️ 1. El despliegue: PREGUNTA, no lo des por hecho
 
@@ -584,8 +602,13 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **TODAS las migraciones, de la 001 a la 007, están corridas y verificadas
-contra Neon.** No queda ninguna pendiente.
+⛔ **LA 008 ESTÁ SIN CORRER.** Es la de `partidos.compartido_en` (Entrada 085), y
+tiene que ir **antes** del empujón que la necesita: al revés, la versión nueva
+llega a producción y consulta una columna que no existe. La comprobación de que
+quedó bien está en el pie del propio archivo.
+
+✅ **Las anteriores, de la 001 a la 007, están corridas y verificadas
+contra Neon.**
 
 | # | Qué trajo | Corrida |
 |---|---|---|
@@ -596,6 +619,7 @@ contra Neon.** No queda ninguna pendiente.
 | 005 | `jugadores.juega_jornadas` (Entrada 076) | 27 ago |
 | 006 | `jornadas.al_acumulado`, `jugadores.juega_acumulado`, `entregas_acumulado` (078) | 27 ago |
 | 007 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos (079) | 27 ago |
+| **008** | `partidos.compartido_en` (Entrada 085) | ⛔ **SIN CORRER** |
 
 Comprobado el 27 contra la base de verdad: las columnas con su valor por
 defecto, los dos `CHECK` de la 006, RLS forzada en `entregas_acumulado`, y las
@@ -1019,11 +1043,17 @@ Lo que sigue abierto:
     bucle sobre jornadas, y esa función recorre y **ordena** todas las jornadas
     cada vez. A 80 jornadas no se nota. Se anota porque **la forma está mal, no
     el número**: cuando se note, será tarde para descubrirlo (083).
-13. ⚠️ **`PAGINAS_ADMIN` es una lista a mano en `src/servidor.js`.** Ya hay
-    centinela que la vigila (082), pero sólo deduce las pantallas que llaman a
-    `/api/cobros/`. Una pantalla de administración que use OTRAS rutas puede
-    seguir olvidándose, y el síntoma es que se sirve a cualquiera con sesión y
-    luego falla petición por petición.
+13. ✅ **`PAGINAS_ADMIN` sigue siendo una lista a mano, pero su centinela ya no.**
+    Hasta el 3 de septiembre sólo deducía las pantallas que llaman a
+    `/api/cobros/`, escrito a mano dentro del propio centinela; el primer caso
+    que se le escapaba fue `compartir.html` (085). Ahora los prefijos se deducen
+    de las rutas —`/api/<x>/` en el que TODAS lleven `requireAdmin`— y vigila **8
+    pantallas en vez de 2**, sin falsos positivos. La lista sigue a mano; lo que
+    ya no puede es quedarse corta en silencio.
+14. ⚠️ **La pantalla de compartir avisa sólo si entras a mirarla** (085). No hay
+    aviso ni correo cuando un partido arranca. El enganche está listo —Brevo
+    funciona y el planificador corre cada minuto— pero falta decidir la
+    frecuencia para no acabar con un correo por partido.
 
 
 ### B.3 Decisiones del usuario — cómo quedaron
@@ -1295,17 +1325,18 @@ fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `servidor.js` | 878 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
+| `servidor.js` | 879 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
 | `superadmin.js` | 715 | El superadministrador **del sistema, no de una quiniela**: la lista de correos con poder, las ataduras de una cuenta y sus cuatro acciones (Entrada 069) |
 | `pagos.js` | 610 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
 | `cobros.js` | 542 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
-| `jornadas.js` | 518 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
+| `jornadas.js` | 539 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
 | `sincronizador.js` | 486 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
 | `eventos.js` | 469 | La lectura del JSON del proveedor, en un solo sitio |
 | `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
 | `oficiales.js` | 373 | Resultados oficiales, con `SAVEPOINT` por partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
 | `pronosticos.js` | 340 | Pronósticos, y la tabla comparativa en **una sola consulta** |
+| `compartir.js` | 284 | Qué pronósticos están listos para salir al grupo, agrupados por hora de inicio, y la marca de lo ya mandado (Entrada 085). **No da formato al texto**: eso es `private/js/compartir.js` |
 | `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
 | `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
 | `membresias.js` | 260 | Quién pertenece a qué quiniela y con qué papel |
@@ -1323,12 +1354,12 @@ fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 | `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 | `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
 
-**`src/rutas/` — 93 rutas, repartidas por tema:**
+**`src/rutas/` — 95 rutas, repartidas por tema:**
 
 | Archivo | Líneas | Rutas |
 |---|---:|---|
-| `admin.js` | 572 | 21 — administración, sincronizador y **cobros** |
-| `puntuacion.js` | 398 | 11 — resultados, totales, clasificación por jornada |
+| `admin.js` | 636 | 24 — administración, sincronizador, **cobros** y **compartir al grupo** |
+| `puntuacion.js` | 398 | 10 — resultados, totales, clasificación por jornada |
 | `plataforma.js` | 387 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
 | `dominio.js` | 334 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 235 | 14 — trivias y sus respuestas |
@@ -1340,11 +1371,22 @@ propia y los estáticos —una de ellas es un bucle sobre las pantallas HTML, as
 que la cuenta exacta de pantallas servidas no sale de ahí—. Las 81 de la
 migración eran las de agosto; el número de arriba está medido.
 
+⚠️ **Y el 3 de septiembre volvió a estar mal por uno**: decía 11 rutas en
+`puntuacion.js` y son 10, así que el total era 93 en vez de 92. Venía del
+recuento «una a una» de la Entrada 084 —contar a mano se equivoca—. Ahora sale
+de un solo comando, que es lo que conviene repetir cuando toque:
+
+```bash
+# Rutas por archivo, y el total. Sin contar a ojo.
+grep -cE "app\.(get|post|put|patch|delete)\(" src/rutas/*.js
+grep -hoE "app\.(get|post|put|patch|delete)\(" src/rutas/*.js | wc -l
+```
+
 ### 2.3 `db/` — el esquema
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `esquema.sql` | 351 | **19 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
+| `esquema.sql` | 538 | **19 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
 | `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055). **Desde que hay datos en Neon ya no sirve**: los cambios van por `migraciones/` |
 
 **`db/migraciones/` — los cambios de esquema, uno por archivo numerado.** Nació
@@ -1357,7 +1399,8 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-✅ **Las siete están corridas y verificadas contra Neon.** Ninguna pendiente.
+⛔ **Son ocho, y la 008 está SIN CORRER** (Entrada 085). Las siete primeras,
+corridas y verificadas contra Neon.
 
 | Archivo | Líneas | Qué trae | Entrada |
 |---|---:|---|---|
@@ -1368,6 +1411,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 | `005-cobro-por-jugador.sql` | 71 | `jugadores.juega_jornadas`, con su `DEFAULT true` | 076 |
 | `006-acumulado.sql` | 180 | `jornadas.al_acumulado`, `jugadores.juega_acumulado` y `entregas_acumulado` con su RLS | 078 |
 | `007-abonos-solo-escritura.sql` | 87 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos tablas de sólo escritura | 079 |
+| **`008-compartir-pronosticos.sql`** | 104 | `partidos.compartido_en`: cuándo salieron al grupo los pronósticos de ese partido. ⛔ **SIN CORRER** | 085 |
 
 ⛔ **Después de cada migración hay que preguntarle a la base qué permisos
 quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
@@ -13853,6 +13897,276 @@ Nada de código: no se tocó ni una línea de la aplicación. Lo que sigue sobre
 mesa es lo de «Lo siguiente», sin cambios: `generar_reporte.html` a impresión
 para quitar `cdnjs` de la CSP, paginar el diario de abonos, y crear una trivia de
 punta a punta.
+
+---
+
+
+
+### 📌 Entrada 085 — 3 de septiembre de 2026 — Compartir al grupo: lo que se puede automatizar y lo que no
+
+**Objetivo:** Marco preguntó por el «Enviar resultados por partido» del Admin
+Mode:
+
+> «la idea de esto es que cuando un partido cierra, enviar en un grupo de
+> whatsapp específico los resultados que pusieron los jugadores para ese
+> partido. Pero es un poco tedioso estar haciendo eso para cada partido a mano,
+> ¿existe alguna manera de que podamos automatizar esto?»
+
+## ⛔ La respuesta honesta empieza por un «no», y era lo importante
+
+**No hay forma oficial de que un programa escriba en un grupo de WhatsApp.** La
+API de Meta —WhatsApp Cloud API— manda a números de teléfono, no a grupos, y los
+revendedores (Twilio, 360dialog) heredan la misma limitación porque son la misma
+API por debajo. Y `wa.me` tampoco sirve: **no existe un enlace que apunte a un
+grupo concreto con el texto ya puesto**, que es exactamente por lo que hoy hay
+que elegir el grupo a mano.
+
+Las tres salidas, dichas con su precio:
+
+| | Cómo | Cuesta | El riesgo |
+|---|---|---|---|
+| **A. Bot propio** | Una librería no oficial (`Baileys`) que se conecta como WhatsApp Web | Programar bastante + un número aparte | **Incumple los términos.** Pueden bloquear el número |
+| **B. Pasarela de pago** | Un servicio que sí manda a grupos | ~$20–60 al mes | El mismo incumplimiento, con la infraestructura ajena |
+| **C. Semiautomático** | El sistema arma el mensaje; una persona da un toque | Poco código | **Ninguno** |
+
+⛔ **Marco eligió la C, y por el motivo correcto**: *«no quiero arriesgar mi
+número de teléfono en whatsapp»*. Si el número que se bloquea es el suyo, pierde
+WhatsApp entero, no la quiniela.
+
+⚠️ Y conviene apuntar que la C **no es media solución**: construye los tres
+cimientos que la A necesitaría —saber qué falta por compartir, armar el texto, y
+dejar constancia de lo que salió—. Si algún día se quiere el bot, lo único que
+cambia es el último tramo.
+
+## Los cinco pasos, y cuáles se quitan
+
+Antes: abrir la pantalla, elegir jornada, elegir partido, copiar, enviar.
+**Repetido partido por partido**: un domingo con cinco partidos, veinticinco
+pasos, y lo que se olvidaba no dejaba ninguna señal de que se olvidó.
+
+Ahora: la pantalla se abre con la lista ya hecha y un toque por mensaje.
+
+**Y son los partidos de la misma hora en UN mensaje, no uno por partido.** Ése
+es el grueso del ahorro, y no el ahorro de teclas: cinco partidos a las 15:00 son
+un mensaje.
+
+## Dónde se enganchó, que ya estaba casi todo
+
+No hubo que inventar el disparador:
+
+- `partidoYaInicio` en `src/fechas.js` ya dice si un partido arrancó, y es **la
+  misma regla** que cierra los pronósticos y los hace públicos.
+- Por eso **la privacidad sale gratis**: se comparte justo en el instante en que
+  los pronósticos dejan de ser secretos. El mensaje no puede filtrar nada.
+- `db.enQuiniela` y RLS para el aislamiento, como todo lo demás.
+
+Lo único nuevo en la base es una columna: `partidos.compartido_en` (migración
+008). `NULL` = todavía no salió.
+
+## ⛔ La ventana de doce horas, que no es un adorno
+
+`compartido_en` nace en `NULL` para **todos** los partidos que ya existen. Si
+«pendiente» fuera sólo «sin marca», el día del estreno la pantalla habría
+propuesto la temporada entera y habría sido inservible **justo en su primer
+uso**.
+
+Así que pendiente es «sin marca **y** arrancó hace poco». Un partido de hace tres
+semanas no es noticia aunque nunca se compartiera.
+
+## ⛔ Dos fallos encontrados antes de que llegaran a producción
+
+**1. La hora se formateaba en la zona del servidor, y los datos están en otra.**
+
+`api_date` guarda **siempre** hora de Costa Rica; Render corre en **UTC**. La
+primera versión leía las partes con `getHours()`, así que el borde de la ventana
+quedaba corrido **seis horas**.
+
+⚠️ Y no habría fallado. La lista habría salido igual, con los partidos de las
+últimas seis horas en vez de las últimas doce: el que arrancó por la mañana no se
+habría propuesto nunca y nada lo explicaría. Es el mismo error que en su día
+cerró los pronósticos a destiempo.
+
+La corrección es la inversa exacta de `parseFechaPartidoCostaRica`, y hay una
+prueba de ida y vuelta sobre textos fijos —para que no dependa de dónde corra—.
+
+**2. La marca se heredaba cuando el hueco pasaba a ser OTRO partido.**
+
+Al reconciliar **por posición**, la fila conserva su `id` aunque ya sea otro
+partido: por eso sus pronósticos se borran ahí mismo, que es el arreglo de M-02.
+La marca de compartido tenía que irse con ellos y no se iba.
+
+⛔ El partido nuevo habría nacido con «ya se compartió» puesto y **la pantalla no
+lo habría propuesto nunca**: el grupo se queda sin sus pronósticos, sin error y
+sin forma de notarlo.
+
+⚠️ Y el camino por **identidad** no debe limpiarla, que es lo contrario y también
+importa: allí la fila reutilizada es el MISMO partido —se emparejó por
+`api_fixture_id`— así que su marca sigue siendo cierta. Como el sincronizador
+reescribe la jornada **cada minuto**, limpiarla ahí habría hecho que el grupo
+recibiera el mismo mensaje sesenta veces por hora.
+
+Las dos direcciones tienen su prueba de conducta.
+
+## Romper a propósito, otra vez, y otra vez pagó
+
+Cinco mutaciones. Tres cayeron donde tenían que caer. Las otras dos enseñaron
+algo:
+
+**⚠️ Una mutación que el código no puede alcanzar no prueba nada.** Cambiar
+`c.query` por `db.consulta` dentro de `marcar` no rompió ninguna prueba, y no
+porque faltara red: `db.consulta` **lee el mismo contexto** por
+`AsyncLocalStorage`, así que las dos formas son idénticas. No estaba mutando
+nada. La mutación de verdad —quitar el `enQuiniela` entero— tumbó cuatro.
+
+**⛔ Y mi prueba de aislamiento era decoración.** Comprobaba que la quiniela
+ajena marcaba cero… que es exactamente lo que también da si marcar está roto del
+todo. Las dos cosas dan cero. Se le puso un **control**: la misma llamada desde
+la quiniela propia tiene que marcar uno. Con el control puesto, la mutación la
+tumba; sin él pasaba en verde.
+
+Es la lección de la migración 007, otra vez: *sin un caso que tenga que salir
+distinto, una comprobación que dice «todo bien» no sabe si lo está.*
+
+## ⛔ Y el centinela de los marcadores en blanco tenía una rendija
+
+Al romper la pantalla nueva con `p.marcador1 ?? 0` —un blanco convertido en
+cero, que es **el fallo de la Entrada 068 exacto**— el centinela **no se movió**.
+Sólo miraba `||`. Quien lo cazó fue la prueba de navegador.
+
+Se amplió, pero **no con la misma lista para los dos operadores**, y esa
+distinción es el hallazgo:
+
+- `||` se dispara con el 0 y con la cadena vacía, así que le hacen daño los dos
+  valores por defecto: `|| '0'` convierte un blanco en cero y `|| '-'` hace
+  desaparecer un 0-0 de verdad.
+- `??` sólo se dispara con nulos, así que `?? '-'` **no puede comerse un cero**:
+  es aceptable, y `ver-resultados.js` lo usa. El único que miente es `?? 0`.
+
+⚠️ Meter `?? '-'` en la lista fue el primer intento y **acusaba a código
+correcto**. Un centinela que señala al inocente se acaba desactivando, y entonces
+deja de vigilar también lo que sí importaba.
+
+## Y se cerró la deuda §B.2.13, que llevaba anotada desde la Entrada 082
+
+`PAGINAS_ADMIN` es una lista a mano, y su centinela sólo deducía las pantallas
+que llaman a `/api/cobros/` —escrito a mano **dentro del propio centinela**—. La
+deuda estaba anotada antes de que existiera ningún caso; **el primero fue esta
+pantalla**, que llama a `/api/compartir/`.
+
+Ahora los prefijos se **deducen de las rutas**: se agrupan por `/api/<x>/` y se
+queda con aquellos en los que TODAS llevan `requireAdmin`. Si un prefijo tiene
+una sola ruta abierta no cuenta, porque entonces una pantalla de jugador puede
+llamarlo con toda razón —es el caso de `/api/jornadas/`, que mezcla lectura
+pública con escritura de administración—.
+
+Pasó de vigilar **2 pantallas a vigilar 8**, sin un solo falso positivo.
+
+Y de paso, el barrido de «nadie consulta tablas con RLS sin contexto» dejó de
+mirar sólo `superadmin.js` y ahora recorre **los 28 módulos y las 6 rutas**.
+Vigilar un archivo protege de lo que ese archivo haga hoy, no de lo que se
+escriba mañana en el de al lado: cuando entró `src/compartir.js` —que escribe en
+`partidos`— ese guardián no lo miraba siquiera.
+
+## Lo que la pantalla hace, y una cosa que no puede hacer
+
+Cada tarjeta es un mensaje: jornada, hora, cuántos partidos, el texto plegado, y
+tres botones —enviar, copiar, «ya lo mandé»—. Lo mandado baja a su propia
+sección con **«Volver a pendientes»**.
+
+⚠️ **Esa vuelta atrás no es un adorno.** Se marca al abrir WhatsApp y **sin saber
+si el mensaje llegó a enviarse**: eso WhatsApp no lo cuenta. Quien cancele a
+mitad se quedaría con un mensaje dado por mandado que nunca salió, y sin la
+vuelta atrás el remedio sería peor que la enfermedad: hoy al menos uno se acuerda
+de que no lo mandó; con una marca falsa, la pantalla afirmaría que sí.
+
+⚠️ Y un detalle del navegador que se ve poco: **la ventana de WhatsApp se abre
+ANTES del `await`**. Pasado el gesto de la persona, el navegador bloquea la
+apertura **sin decir nada**. Por eso el texto se arma en el navegador y no se
+pide al pulsar: si hubiera que ir a buscarlo, el `await` llegaría antes que la
+ventana.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/008-compartir-pronosticos.sql` | **Nuevo.** `partidos.compartido_en` |
+| `db/esquema.sql` | La columna, para que el arnés la tenga |
+| `src/compartir.js` | **Nuevo** (284 líneas). Qué está pendiente, marcar y desmarcar |
+| `src/rutas/admin.js` | Tres rutas `/api/compartir/*` y el tope de la lista |
+| `src/servidor.js` | `compartir.html` en `PAGINAS_ADMIN` |
+| `src/jornadas.js` | La marca se limpia cuando el hueco pasa a ser otro partido |
+| `public/compartir.html` | **Nueva** pantalla |
+| `private/js/compartir.js` | **Nuevo** (260 líneas). Arma el texto y abre WhatsApp |
+| `public/adminmode.html` | La tarjeta de entrada |
+| `test/rutas.test.js` | 15 pruebas nuevas |
+| `test/architecture.test.js` | `PAGINAS_ADMIN` deducido, RLS en todos los módulos, `?? 0`, y el centinela de la marca |
+| `test/e2e/compartir.spec.js` | **Nuevo.** El recorrido y el texto que de verdad sale |
+
+**Verificación:**
+
+```
+npm test                          → 523/523  (eran 508)
+npx playwright test               → 124/124, 5,4 min  (eran 120)
+
+Rotas a proposito, una a una:
+  ventana sin filtro de fecha     → cae "un partido de hace mas de la ventana"
+  no limpiar la marca             → cae "si el hueco pasa a ser OTRO partido"
+  grupo compartido con "alguno"   → cae "un partido anadido despues"
+  quitar enQuiniela de marcar     → caen 4, incluida la de aislamiento
+  camino por identidad la limpia  → cae "no reabre un mensaje ya mandado"
+  marcadorVisible(p.marcador1 ?? 0) → cae el centinela (tras ampliarlo) y la e2e
+  compartir.html fuera de PAGINAS_ADMIN → cae el centinela deducido
+  quitar el oculto de una llamada → cae "quien imprime pronosticos ajenos"
+
+comoApiDate(parseFechaPartidoCostaRica(t)) === t, con TZ=UTC y con TZ local
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **La pregunta «¿se puede automatizar?» tenía un «no» dentro, y decirlo era
+   la mitad del trabajo.** WhatsApp no deja escribir en grupos desde un
+   programa; lo que se automatiza es todo lo de antes del envío.
+2. ⛔ **Formatear una fecha en la zona del servidor cuando el dato está en otra
+   no falla: da una lista más corta.** Seis horas de partidos que no se
+   proponen, sin un solo error.
+3. ⚠️ **Una fila que conserva su `id` no conserva su significado.** Los
+   pronósticos ya se borraban al cambiar de partido; la marca nueva hacía falta
+   borrarla por lo mismo, y no se deduce leyendo: hay que ir a mirar qué más
+   cuelga de esa fila.
+4. ⛔ **Una mutación que el código no puede alcanzar no prueba nada.** `db.consulta`
+   dentro de un `enQuiniela` ES `c.query`. Si romper algo no tumba una prueba,
+   lo primero es preguntarse si esa línea se ejecuta.
+5. ⛔ **Una comprobación negativa sin control no distingue «lo impedí» de «no
+   hago nada».** La de aislamiento pasaba en verde con `marcar` roto entero.
+6. ⚠️ **Ampliar un centinela puede empeorarlo.** `?? '-'` es correcto y `?? 0` no;
+   meterlos en la misma lista acusaba a código sano, y un centinela que señala al
+   inocente se termina desactivando.
+7. **Una deuda anotada sin caso se cobra el día que aparece el primero.**
+   §B.2.13 llevaba desde la Entrada 082 diciendo exactamente lo que iba a pasar.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/008-compartir-pronosticos.sql` en Neon con el rol
+dueño ANTES de empujar.** Al revés, el código consulta una columna que no existe.
+
+Y comprobar después, con el rol dueño, que no marcó nada por su cuenta:
+
+```sql
+SELECT count(*) FILTER (WHERE compartido_en IS NOT NULL) AS ya_compartidos
+  FROM partidos;
+-- 0 justo despues de la migracion
+```
+
+Después, redesplegar. **La pantalla vieja no se toca**: «Enviar resultados por
+partido» sigue donde estaba, y es la que sirve para un partido suelto de hace
+tres semanas, que la nueva ya no propone.
+
+⚠️ **Lo que queda por decidir, y es de producto:** hoy hay que ENTRAR a la
+pantalla para enterarse de que hay algo que mandar. Que el sistema avise
+—un correo por Brevo, que ya funciona, disparado desde el ciclo del planificador
+que ya corre cada minuto— es lo que convertiría esto en «me entero solo». No se
+hizo porque no se pidió y añade su propia configuración; el enganche está listo
+si se quiere.
 
 ---
 
