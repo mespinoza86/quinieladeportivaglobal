@@ -112,6 +112,41 @@ test('el partido que arrancó aparece solo, con el mensaje ya escrito', async ({
   await contextoSocio.close();
 });
 
+test('el interruptor del aviso nace apagado, se enciende y se queda', async ({ page }) => {
+  /*
+   * ⚠️ Que nazca apagado es la decisión, no un detalle de la pantalla: un correo
+   * que nadie pidió es un problema y uno que falta es una molestia. Se comprueba
+   * aquí porque es lo que ve quien lo usa, y porque el guardado tiene que
+   * sobrevivir a recargar —lo contrario se ve bien y no guarda nada—.
+   */
+  const jefa = await registrarse(page, 'compsw');
+  await crearQuiniela(page, 'Quiniela sw');
+  await activarAdminMode(page, jefa.password);
+
+  await page.goto('/configuracion-quiniela.html');
+
+  const casilla = page.locator('#avisarAlCompartir');
+  await expect(casilla).toBeVisible({ timeout: 10_000 });
+  await expect(casilla).not.toBeChecked();
+
+  await casilla.check();
+  await page.getByRole('button', { name: 'Guardar configuración' }).click();
+  await expect(page.locator('#configMensaje')).toContainText('guardada', { timeout: 10_000 });
+
+  await page.reload();
+  await expect(page.locator('#avisarAlCompartir')).toBeChecked({ timeout: 10_000 });
+
+  /* Y la puntuación no se fue por delante al fundir el bloque de configuración. */
+  await expect(page.locator('#marcadorExacto')).not.toHaveValue('');
+
+  await page.locator('#avisarAlCompartir').uncheck();
+  await page.getByRole('button', { name: 'Guardar configuración' }).click();
+  await expect(page.locator('#configMensaje')).toContainText('guardada', { timeout: 10_000 });
+
+  await page.reload();
+  await expect(page.locator('#avisarAlCompartir')).not.toBeChecked({ timeout: 10_000 });
+});
+
 test('sin nada que arrancara, la pantalla lo dice en vez de quedarse vacía', async ({ page }) => {
   const jefa = await registrarse(page, 'compvacio');
   await crearQuiniela(page, 'Quiniela vacia');

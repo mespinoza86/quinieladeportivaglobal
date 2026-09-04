@@ -120,7 +120,8 @@ async function paraCompartir(quinielaId, { ahora = new Date(), ventanaHoras = VE
      * `partidoYaInicio` tampoco sabría decir si empezó.
      */
     const { rows: candidatos } = await c.query(`
-      SELECT p.id, p.orden, p.equipo1, p.equipo2, p.api_date, p.compartido_en,
+      SELECT p.id, p.orden, p.equipo1, p.equipo2, p.api_date,
+             p.compartido_en, p.avisado_en,
              jor.id AS jornada_id, jor.nombre AS jornada, jor.secuencia,
              rop.estado AS oficial_estado
         FROM partidos p
@@ -186,6 +187,7 @@ async function paraCompartir(quinielaId, { ahora = new Date(), ventanaHoras = VE
         apiDate: f.api_date,
         compartido: true,
         compartidoEn: null,
+        avisado: true,
         partidoIds: [],
         partidos: []
       });
@@ -206,6 +208,17 @@ async function paraCompartir(quinielaId, { ahora = new Date(), ventanaHoras = VE
     } else if (grupo.compartido) {
       grupo.compartidoEn = f.compartido_en;
     }
+
+    /*
+     * Y lo mismo con el aviso, por la misma razón: si un partido se añade a un
+     * grupo del que ya se avisó, hay algo nuevo de lo que avisar.
+     *
+     * ⚠️ `avisado` y `compartido` son hechos DISTINTOS y ninguno implica al
+     * otro: se avisa antes de compartir —para eso sirve— y se puede compartir
+     * sin que nadie avisara, que es lo que pasa cuando el interruptor del
+     * correo está apagado.
+     */
+    if (!f.avisado_en) grupo.avisado = false;
 
     grupo.partidoIds.push(f.id);
     grupo.partidos.push({
@@ -281,4 +294,123 @@ async function desmarcar(quinielaId, partidoIds) {
   });
 }
 
-module.exports = { VENTANA_HORAS, comoApiDate, paraCompartir, marcar, desmarcar };
+/* ==================== El aviso por correo ==================== */
+
+/**
+ * Deja constancia de que ya se avisó de estos partidos.
+ *
+ * ⚠️ Idempotente por la misma razón que `marcar`, y aquí importa más: sin el
+ * `IS NULL`, un fallo a mitad del barrido volvería a mover la hora y no habría
+ * forma de distinguir «avisado hace un minuto» de «avisado hace una hora».
+ */
+async function marcarAvisados(quinielaId, partidoIds, ahora = new Date()) {
+  if (!partidoIds?.length) return 0;
+
+  return db.enQuiniela(quinielaId, async c => {
+    const { rowCount } = await c.query(
+      `UPDATE partidos SET avisado_en = $2
+        WHERE id = ANY($1::uuid[]) AND avisado_en IS NULL`,
+      [partidoIds, ahora]);
+    return rowCount;
+  });
+}
+
+/**
+ * ¿Esta quiniela quiere que se avise por correo?
+ *
+ * ⛔ La comprobación es `=== true`, no `!== false`, y va al revés que la del
+ * dinero **a propósito**.
+ *
+ * En los cobros el valor por defecto de la duda es COBRAR, porque cobrar de más
+ * lo reclama alguien mañana y perdonar no lo reclama nadie. Aquí la asimetría
+ * es la contraria: **un correo que nadie pidió es un problema, y uno que falta
+ * es una molestia**. Así que sin una respuesta explícita, no se manda nada.
+ *
+ * Es también lo que hace que esto no despierte a nadie el día que se despliegue:
+ * ninguna quiniela existente tiene el campo puesto.
+ */
+function quiereAviso(configuracion) {
+  return configuracion?.avisarAlCompartir === true;
+}
+
+/**
+ * Avisa por correo, en TODAS las quinielas activas que lo hayan pedido.
+ *
+ * Es el gemelo de `resolverTriviasDeTodas`, y comparte su forma por la misma
+ * razón: quiniela por quiniela, cada una en su propio contexto, y el fallo de
+ * una no interrumpe el barrido de las demás. Recorrerlas de una vez sería más
+ * corto y sería la forma exacta del hallazgo C-02.
+ *
+ * `enviarAviso` se recibe de fuera —no se importa `correo` aquí— para que las
+ * pruebas no dependan del transporte, igual que `trivias.resolverPendientes`
+ * recibe su intérprete.
+ */
+async function avisarDeTodas({ ahora = new Date(), enviarAviso, destinatariosDe }) {
+  const { rows: quinielas } = await db.consulta(
+    `SELECT id, nombre, configuracion FROM quinielas WHERE estado = 'activa'`);
+
+  let avisos = 0;
+  let correos = 0;
+
+  for (const quiniela of quinielas) {
+    if (!quiereAviso(quiniela.configuracion)) continue;
+
+    try {
+      const { grupos } = await paraCompartir(quiniela.id, { ahora });
+
+      /*
+       * ⚠️ Lo ya compartido NO se avisa, aunque nadie hubiera avisado de ello.
+       * Si alguien entró a la pantalla y lo mandó por su cuenta, el aviso
+       * llegaría tarde y a decir algo que ya no hay que hacer.
+       */
+      const nuevos = grupos.filter(g => !g.avisado && !g.compartido);
+      if (!nuevos.length) continue;
+
+      const destinatarios = await destinatariosDe(quiniela.id);
+
+      /*
+       * Sin nadie a quien avisar no se marca nada: si mañana hay un
+       * administrador con correo, el aviso sigue pendiente y le llegará.
+       */
+      if (!destinatarios.length) continue;
+
+      const partidoIds = nuevos.flatMap(g => g.partidoIds);
+
+      const enviados = await Promise.allSettled(destinatarios.map(d =>
+        enviarAviso({ destinatario: d, quiniela, grupos: nuevos })));
+
+      const salio = enviados.filter(r => r.status === 'fulfilled').length;
+
+      for (const fallo of enviados.filter(r => r.status === 'rejected')) {
+        console.error(`[aviso] no salió el correo de "${quiniela.nombre}":`,
+          fallo.reason?.message || fallo.reason);
+      }
+
+      /*
+       * ⛔ SE MARCA DESPUÉS DE ENVIAR, Y SÓLO SI SALIÓ ALGUNO.
+       *
+       * Al revés —marcar primero— un fallo del proveedor de correo se comería
+       * el aviso para siempre y en silencio: nadie volvería a intentarlo.
+       * Marcando después, un fallo se reintenta al minuto siguiente.
+       *
+       * ⚠️ Y «alguno» y no «todos» a propósito: con un solo destinatario
+       * fallando de forma persistente, exigir todos dejaría al resto recibiendo
+       * el mismo aviso cada minuto. Prefiere perder un aviso a inundar a tres.
+       */
+      if (!salio) continue;
+
+      await marcarAvisados(quiniela.id, partidoIds, ahora);
+      avisos += nuevos.length;
+      correos += salio;
+    } catch (error) {
+      console.error(`[aviso] error avisando en "${quiniela.nombre}":`, error.message);
+    }
+  }
+
+  return { avisos, correos };
+}
+
+module.exports = {
+  VENTANA_HORAS, comoApiDate, quiereAviso,
+  paraCompartir, marcar, desmarcar, marcarAvisados, avisarDeTodas
+};

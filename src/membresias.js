@@ -252,9 +252,38 @@ async function transferirPropiedad(quinielaId, propietarioActualId, nuevoUsuario
   });
 }
 
+/**
+ * A quién se le puede escribir por cosas de administración de esta quiniela.
+ *
+ * Propietario y administradores que estén DENTRO, con el correo ya confirmado.
+ *
+ * ⛔ Lo de confirmado no es un detalle: una dirección sin verificar puede no ser
+ * de quien dice serlo, y mandarle avisos de una quiniela ajena sería filtrarle
+ * a un desconocido quién juega y qué jornadas hay. Es la misma razón por la que
+ * sin confirmar no se entra (Fase E).
+ *
+ * ⚠️ `membresias` y `usuarios` son tablas de PLATAFORMA: no llevan RLS, así que
+ * esto va con `db.consulta` y sin contexto de quiniela. El filtro por quiniela
+ * lo pone el `WHERE`, y por eso está escrito y no se puede olvidar.
+ */
+async function correosDeAdministradores(quinielaId) {
+  const { rows } = await db.consulta(
+    `SELECT u.email, u.username
+       FROM membresias m
+       JOIN usuarios u ON u.id = m.usuario_id
+      WHERE m.quiniela_id = $1
+        AND m.rol IN ('propietario', 'admin')
+        AND m.estado = 'activo'
+        AND u.email_verificado = true
+      ORDER BY m.created_at`,
+    [quinielaId]);
+
+  return rows;
+}
+
 module.exports = {
   DENTRO,
-  de, porId, listar,
+  de, porId, listar, correosDeAdministradores,
   solicitarIngreso, aprobarIngreso, rechazar, cambiarRol,
   solicitarRetiro, aprobarRetiro, expulsar, transferirPropiedad
 };

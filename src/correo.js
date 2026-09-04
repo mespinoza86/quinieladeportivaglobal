@@ -209,7 +209,54 @@ async function enviarRestablecer({ para, nombre, url, horas }) {
   await enviar({ para, asunto: 'Restablece tu contraseña de Quiniela Deportiva Global', texto, html });
 }
 
+/**
+ * El aviso de que hay pronósticos listos para mandar al grupo (Entrada 086).
+ *
+ * ============================================================================
+ * ⛔ EL CORREO NO LLEVA LOS PRONÓSTICOS DENTRO
+ * ============================================================================
+ *
+ * Lleva CUÁNTOS y de qué partido, y un enlace. Podría llevarlos —a esa hora ya
+ * son públicos, así que no habría filtración— y aun así no debe:
+ *
+ *   - Un correo se reenvía, se queda en bandejas ajenas y no se puede corregir.
+ *     El mensaje bueno es el de la pantalla, que se arma con lo que hay AHORA.
+ *   - Si el proveedor se adelantó y el partido no había arrancado, este correo
+ *     llevaría marcadores que todavía no tocaba enseñar. El enlace no: la
+ *     pantalla vuelve a mirar y enseña la verdad del momento.
+ *
+ * La regla corta: **el correo avisa, la pantalla informa.**
+ */
+async function enviarAvisoDeCompartir({ para, nombre, quiniela, resumen, cuantos, url }) {
+  const plural = cuantos === 1 ? 'un partido' : `${cuantos} partidos`;
+
+  const { texto, html } = plantilla({
+    titulo: 'Hay pronósticos listos para el grupo',
+    saludo: `Hola ${nombre}:`,
+    parrafo: `Acaba de arrancar ${plural} en «${quiniela}», así que los pronósticos `
+      + `de todos ya son públicos y están listos para mandar: ${resumen}. `
+      + 'Abre la pantalla y el mensaje ya está escrito.',
+    boton: 'Ver lo que hay que mandar',
+    url,
+    /*
+     * ⚠️ Quien reciba esto tiene que saber cómo hacer que deje de llegar sin
+     * tener que preguntarle a nadie. Un aviso recurrente sin salida visible
+     * acaba en la carpeta de correo no deseado, y ahí se lleva por delante
+     * también los de confirmar la cuenta.
+     */
+    pie: 'Puedes apagar estos avisos en Configurar quiniela, en el Admin Mode.'
+  });
+
+  await enviar({
+    para,
+    asunto: `Pronósticos listos para el grupo — ${quiniela}`,
+    texto,
+    html
+  });
+}
+
 module.exports = {
   TRANSPORTE, bandeja,
-  escapar, plantilla, enviarVerificacion, enviarRestablecer, intentar
+  escapar, plantilla, intentar,
+  enviarVerificacion, enviarRestablecer, enviarAvisoDeCompartir
 };

@@ -312,6 +312,12 @@ CREATE TABLE partidos (
    */
   compartido_en  timestamptz,
   /*
+   * Cuando se AVISO por correo de que habia que compartirlo (migracion 009).
+   * NULL = todavia no. Es la memoria del aviso, y es distinta de la de haberlo
+   * compartido: sin ella el aviso se repetiria cada minuto hasta compartir.
+   */
+  avisado_en     timestamptz,
+  /*
    * DEFERRABLE porque renumerar hace falta: al borrar el partido de la posicion
    * 2, los de despues bajan una. Si la unicidad se comprobara fila a fila, la
    * renumeracion chocaria consigo misma a mitad. Diferida, se comprueba al

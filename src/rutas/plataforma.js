@@ -290,6 +290,19 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     }
 
     /*
+     * El aviso por correo de que hay pronósticos listos para el grupo.
+     *
+     * ⛔ Nace APAGADO, y esa es la decisión: quien lee la configuración de una
+     * quiniela vieja no encuentra el campo, y `compartir.quiereAviso` exige
+     * `=== true`. Va al revés que el valor por defecto de los cobros —allí la
+     * duda se resuelve COBRANDO— porque la asimetría es la contraria: un correo
+     * que nadie pidió es un problema, y uno que falta es una molestia.
+     */
+    if (req.body.avisarAlCompartir !== undefined) {
+      parcial.avisarAlCompartir = Boolean(req.body.avisarAlCompartir);
+    }
+
+    /*
      * Las ligas favoritas se sustituyen enteras, no se funden: son una lista, y
      * fundir listas no significa nada. Mandar `[]` es la forma de no tener
      * ninguna, y por eso se distingue «no vino» de «vino vacía».

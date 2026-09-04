@@ -375,7 +375,8 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
       pronosticosBorrados = await pronosticos.borrarDePartidos(c, cambiaronDePartido);
 
       /*
-       * ⛔ Y LA MARCA DE COMPARTIDO SE VA CON ELLOS (migración 008).
+       * ⛔ Y LAS MARCAS DE COMPARTIDO Y DE AVISADO SE VAN CON ELLOS
+       * (migraciones 008 y 009).
        *
        * Esta fila conserva su `id` pero ya es OTRO partido: sus pronósticos
        * acaban de borrarse en la línea de arriba justo por eso. Si se le dejara
@@ -391,7 +392,7 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
        */
       if (cambiaronDePartido.length) {
         await c.query(
-          'UPDATE partidos SET compartido_en = NULL WHERE id = ANY($1::uuid[])',
+          'UPDATE partidos SET compartido_en = NULL, avisado_en = NULL WHERE id = ANY($1::uuid[])',
           [cambiaronDePartido]);
       }
     }

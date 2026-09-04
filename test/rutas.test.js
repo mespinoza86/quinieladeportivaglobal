@@ -4235,3 +4235,283 @@ test('⚠️ un identificador que no es uuid se rechaza antes de tocar la base',
     assert.equal(res.status, 400, `debió rechazar: ${JSON.stringify(cuerpo)}`);
   }
 });
+
+
+/* ==================== El aviso por correo (Entrada 086) ==================== */
+
+/* `planificador` ya está requerido arriba, en el bloque del ciclo. */
+
+/** Enciende el interruptor del aviso en la quiniela activa del agente. */
+async function encenderAviso(agente, encendido = true) {
+  const r = await agente.patch('/api/quiniela-actual/configuracion')
+    .send({ avisarAlCompartir: encendido });
+  assert.equal(r.status, 200, `no se pudo guardar: ${JSON.stringify(r.body)}`);
+}
+
+/** Los correos de aviso que hay en la bandeja, por asunto. */
+const avisosEnBandeja = () =>
+  correo.bandeja.filter(m => m.asunto.startsWith('Pronósticos listos para el grupo'));
+
+test('⛔ con el interruptor apagado no se manda ningún correo', async () => {
+  /*
+   * Es el valor por defecto, y va al revés que el de los cobros a propósito: un
+   * correo que nadie pidió es un problema; uno que falta es una molestia.
+   */
+  const jefe = await admin('apagado');
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const r = await planificador.avisarDeCompartir();
+
+  assert.equal(r.avisos, 0);
+  assert.deepEqual(avisosEnBandeja(), [], 'nadie pidió que le escribieran');
+});
+
+test('con el interruptor encendido, el aviso llega a los administradores', async () => {
+  const jefe = await admin('aviso');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const r = await planificador.avisarDeCompartir();
+
+  assert.equal(r.avisos, 1);
+  assert.equal(r.correos, 1);
+
+  const [mensaje] = avisosEnBandeja();
+  assert.ok(mensaje, 'no salió ningún correo');
+  assert.equal(mensaje.para, jefe.datos.email);
+  assert.match(mensaje.texto, /J1/, 'dice de qué jornada es');
+  assert.match(mensaje.texto, /compartir\.html/, 'y lleva el enlace a la pantalla');
+});
+
+test('⛔ del mismo partido se avisa UNA vez, no una por minuto', async () => {
+  /*
+   * Sin la marca `avisado_en`, la condición del aviso sería «hay algo
+   * pendiente», que es cierta cada minuto desde que el partido arranca hasta que
+   * alguien comparte: sesenta correos por hora.
+   *
+   * ⚠️ Y la marca tiene que vivir en la BASE. En memoria del proceso se perdería
+   * en cada despliegue de Render, y con dos instancias habría dos recuerdos.
+   */
+  const jefe = await admin('unavez');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  assert.equal((await planificador.avisarDeCompartir()).correos, 1);
+  assert.equal(avisosEnBandeja().length, 1);
+
+  // Tres pasadas más del reloj, sin que nadie haya compartido nada.
+  await planificador.avisarDeCompartir();
+  await planificador.avisarDeCompartir();
+  await planificador.avisarDeCompartir();
+
+  assert.equal(avisosEnBandeja().length, 1, 'el aviso ya se dio; repetirlo es ruido');
+});
+
+test('un partido añadido después del aviso vuelve a avisar', async () => {
+  const jefe = await admin('anadido');
+  await encenderAviso(jefe.agente);
+  const cuando = haceHoras(2);
+
+  await jornadaArrancada(jefe, 'J1', [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando }]);
+  await planificador.avisarDeCompartir();
+  assert.equal(avisosEnBandeja().length, 1);
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [
+      partido('Alfa', 'Beta', { apiFixtureId: '111', apiDate: cuando }),
+      partido('Gamma', 'Delta', { apiFixtureId: '222', apiDate: cuando })
+    ]
+  });
+
+  await planificador.avisarDeCompartir();
+  assert.equal(avisosEnBandeja().length, 2, 'hay algo nuevo de lo que avisar');
+});
+
+test('⛔ el correo avisa, pero NO lleva los pronósticos dentro', async () => {
+  /*
+   * A esa hora los pronósticos ya son públicos, así que meterlos no filtraría
+   * nada. Aun así no se hace: un correo se reenvía, se queda en bandejas ajenas
+   * y no se puede corregir. Si el proveedor se hubiera adelantado, ese correo
+   * llevaría marcadores que todavía no tocaba enseñar; el enlace no, porque la
+   * pantalla vuelve a mirar y enseña la verdad del momento.
+   */
+  const jefe = await admin('sinmarcadores');
+  const socio = await miembroDe(jefe, 'sinmarc-socio');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }],
+    [{ agente: socio.agente, jugador: socio.datos.username, pronosticos: [{ marcador1: 7, marcador2: 3 }] }]);
+
+  await planificador.avisarDeCompartir();
+
+  const [mensaje] = avisosEnBandeja();
+  const cuerpo = `${mensaje.texto}\n${mensaje.html || ''}`;
+
+  assert.doesNotMatch(cuerpo, /7\s*-\s*3/, 'el marcador no viaja en el correo');
+  assert.ok(!cuerpo.includes(socio.datos.username),
+    'ni el nombre de quien pronosticó: para eso está la pantalla');
+});
+
+test('no se avisa de lo que alguien ya compartió por su cuenta', async () => {
+  const jefe = await admin('yacompartido');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const ids = (await pendientesDe(jefe.agente)).grupos[0].partidoIds;
+  await jefe.agente.post('/api/compartir/marcar').send({ partidoIds: ids });
+
+  await planificador.avisarDeCompartir();
+
+  assert.deepEqual(avisosEnBandeja(), [],
+    'el aviso llegaría tarde y a pedir algo que ya está hecho');
+});
+
+test('⛔ el aviso es sólo para administradores, no para quien juega', async () => {
+  const jefe = await admin('soloadmin');
+  const socio = await miembroDe(jefe, 'soloadmin-socio');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  await planificador.avisarDeCompartir();
+
+  const destinos = avisosEnBandeja().map(m => m.para);
+
+  assert.deepEqual(destinos, [jefe.datos.email]);
+  assert.ok(!destinos.includes(socio.datos.email),
+    'quien juega no tiene nada que compartir con el grupo');
+});
+
+test('⛔ el aviso no cruza de una quiniela a otra', async () => {
+  const uno = await admin('avicruz-a');
+  const otro = await admin('avicruz-b');
+
+  await encenderAviso(uno.agente);
+  await encenderAviso(otro.agente);
+
+  // Sólo la primera tiene un partido arrancado.
+  await jornadaArrancada(uno, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  await planificador.avisarDeCompartir();
+
+  const destinos = avisosEnBandeja().map(m => m.para);
+
+  /*
+   * ⚠️ El control: la de al lado tiene el aviso ENCENDIDO igual, así que si
+   * saliera un correo para ella no sería por falta de interruptor sino por un
+   * cruce de datos. Sin este segundo caso, la prueba no distinguiría las dos.
+   */
+  assert.deepEqual(destinos, [uno.datos.email]);
+});
+
+test('⛔ si el correo falla, el aviso NO se da por hecho: se reintenta', async () => {
+  /*
+   * Es el orden de dos líneas: marcar DESPUÉS de enviar, y sólo si salió.
+   *
+   * Al revés —marcar primero— un fallo del proveedor de correo se comería el
+   * aviso para siempre y en silencio: la marca diría «avisado», nadie lo habría
+   * recibido, y nada volvería a intentarlo.
+   *
+   * ⚠️ El envío se inyecta justamente para poder hacerlo fallar. Con el
+   * transporte de verdad no hay forma de provocar el fallo, y esta propiedad se
+   * quedaría escrita en un comentario y sin comprobar.
+   */
+  const jefe = await admin('reintento');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  const destinatariosDe = () => Promise.resolve([{ email: 'a@ejemplo.com', username: 'a' }]);
+
+  const roto = await compartirMod.avisarDeTodas({
+    destinatariosDe,
+    enviarAviso: () => Promise.reject(new Error('el proveedor de correo está caído'))
+  });
+
+  assert.equal(roto.correos, 0, 'no salió ninguno');
+
+  // Y al minuto siguiente, con el correo ya en pie, el aviso sigue pendiente.
+  const intentos = [];
+  const bien = await compartirMod.avisarDeTodas({
+    destinatariosDe,
+    enviarAviso: aviso => { intentos.push(aviso); return Promise.resolve(); }
+  });
+
+  assert.equal(bien.correos, 1, 'el aviso no se había perdido');
+  assert.equal(intentos.length, 1);
+
+  // Y una vez que salió, ya no se repite.
+  const tercera = await compartirMod.avisarDeTodas({
+    destinatariosDe,
+    enviarAviso: aviso => { intentos.push(aviso); return Promise.resolve(); }
+  });
+
+  assert.equal(tercera.correos, 0);
+  assert.equal(intentos.length, 1, 'una vez dado, el aviso no vuelve');
+});
+
+test('el interruptor se guarda, se lee y se puede volver a apagar', async () => {
+  const jefe = await admin('interruptor');
+
+  const inicial = await jefe.agente.get('/api/quiniela-actual');
+  assert.notEqual(inicial.body.configuracion.avisarAlCompartir, true,
+    'nace apagado: nadie recibe correos que no pidió');
+
+  await encenderAviso(jefe.agente, true);
+  const encendida = await jefe.agente.get('/api/quiniela-actual');
+  assert.equal(encendida.body.configuracion.avisarAlCompartir, true);
+
+  /*
+   * ⚠️ Y guardar el interruptor no puede llevarse por delante la puntuación:
+   * `jsonb ||` es superficial y fundir un bloque sustituye el objeto entero.
+   */
+  assert.equal(encendida.body.configuracion.puntuacion.marcadorExacto,
+    inicial.body.configuracion.puntuacion.marcadorExacto,
+    'la puntuación sigue donde estaba');
+
+  await encenderAviso(jefe.agente, false);
+  const apagada = await jefe.agente.get('/api/quiniela-actual');
+  assert.equal(apagada.body.configuracion.avisarAlCompartir, false);
+});
+
+test('⚠️ sin administradores con el correo confirmado, el aviso queda pendiente', async () => {
+  /*
+   * No se marca nada: si mañana hay alguien a quien escribir, el aviso sigue
+   * ahí y le llegará. Marcarlo «avisado» sin haber avisado sería perderlo.
+   *
+   * Se fuerza el caso quitándole la confirmación al único administrador, que es
+   * la condición que `correosDeAdministradores` exige —una dirección sin
+   * verificar puede no ser de quien dice ser—.
+   */
+  const jefe = await admin('sindestino');
+  await encenderAviso(jefe.agente);
+
+  await jornadaArrancada(jefe, 'J1',
+    [{ e1: 'Alfa', e2: 'Beta', id: '111', cuando: haceHoras(2) }]);
+
+  await db.consulta('UPDATE usuarios SET email_verificado = false WHERE id = $1',
+    [jefe.usuarioId]);
+
+  assert.equal((await planificador.avisarDeCompartir()).correos, 0);
+  assert.deepEqual(avisosEnBandeja(), []);
+
+  // Y en cuanto hay a quién escribir, el aviso sale: no se había perdido.
+  await db.consulta('UPDATE usuarios SET email_verificado = true WHERE id = $1',
+    [jefe.usuarioId]);
+
+  assert.equal((await planificador.avisarDeCompartir()).correos, 1);
+  assert.equal(avisosEnBandeja().length, 1);
+});

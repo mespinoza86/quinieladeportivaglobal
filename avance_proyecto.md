@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 523/523
-npm run test:e2e            # 124/124, ~5,4 min
+npm test                    # 536/536
+npm run test:e2e            # 126/126, ~6 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **523**, ~107 s |
-| Pruebas de navegador | **124**, ~5,4 min, contra el servidor de verdad |
+| Pruebas rápidas | **536**, ~110 s |
+| Pruebas de navegador | **126**, ~6 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 28 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ⛔ **La 008 está SIN CORRER.** Las 001 a 007, corridas y verificadas |
+| Base en Neon | ⛔ **La 008 y la 009, SIN CORRER.** Las 001 a 007, hechas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -478,20 +478,25 @@ escribirla (080).
 | | |
 |---|---|
 | Último commit de código | `c4df1e9` — «Reporte de pagos» (28 ago). Los tres siguientes son sólo documento |
-| Árbol | ⛔ **Con cambios sin subir**: la Entrada 085, compartir al grupo |
-| Base de datos | ⛔ **La migración 008 está SIN CORRER.** Las 001 a 007, hechas |
-| Producción | Corriendo `c4df1e9`. Lo de la 085 **no** está desplegado |
-| Pruebas | 523 rápidas + 124 de navegador, todas en verde |
+| Árbol | ⛔ **Con cambios sin subir**: Entradas 085 y 086, compartir al grupo y su aviso |
+| Base de datos | ⛔ **Las migraciones 008 y 009, SIN CORRER.** Las 001 a 007, hechas |
+| Producción | Corriendo `c4df1e9`. Lo de las 085 y 086 **no** está desplegado |
+| Pruebas | 536 rápidas + 126 de navegador, todas en verde |
 
 ⛔ **Hay trabajo a medias, y el orden importa.** La Entrada 085 —compartir los
 pronósticos al grupo— está escrita y probada pero **no desplegada**, y necesita
 un paso manual **antes** del empujón:
 
-1. Correr `db/migraciones/008-compartir-pronosticos.sql` en Neon **con el rol
-   dueño**. Al revés, el código consulta una columna que no existe.
-2. Comprobar que no marcó nada por su cuenta (la consulta está en el pie del
-   propio archivo de migración).
+1. Correr **las dos migraciones** en Neon, **con el rol dueño**:
+   `008-compartir-pronosticos.sql` y `009-aviso-de-compartir.sql`. El orden
+   entre ellas da igual y las dos son idempotentes, así que no pasa nada por
+   correr otra vez la que ya estuviera hecha. Al revés, el código consulta
+   columnas que no existen.
+2. Comprobar que las dos columnas están y que no marcaron nada por su cuenta:
+   la consulta está en el pie de la 009.
 3. Empujar y redesplegar.
+4. ⚠️ **Encender el aviso a mano** en Configurar quiniela, si se quiere. Nace
+   apagado a propósito: hasta encenderlo no sale ningún correo.
 
 ✅ **La quiniela real sigue corriendo con las dos cuotas** —₡1.000 de jornada y
 ₡1.000 al acumulado—, los abonos en cero desde el 28, y las jornadas en juego.
@@ -500,11 +505,8 @@ Nada de la 085 cambia eso: sólo añade una pantalla de administración.
 **Si quiere seguir con algo**, esto es lo que hay sobre la mesa, en orden de
 valor y con su entrada:
 
-1. **Desplegar la 085**, con su migración delante. Es lo único a medias.
-2. **Que el sistema AVISE cuando hay algo que compartir** (085). Hoy hay que
-   entrar a la pantalla para enterarse. El enganche está listo —Brevo funciona y
-   el planificador ya corre cada minuto—; falta decidir si se quiere y con qué
-   frecuencia, para no acabar con un correo por partido.
+1. **Desplegar las 085 y 086**, con sus dos migraciones delante. Es lo único a
+   medias.
 3. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
    (082). Es la única dependencia externa del proyecto y amplía la política de
    seguridad del sitio entero por una sola pantalla.
@@ -602,10 +604,11 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-⛔ **LA 008 ESTÁ SIN CORRER.** Es la de `partidos.compartido_en` (Entrada 085), y
-tiene que ir **antes** del empujón que la necesita: al revés, la versión nueva
-llega a producción y consulta una columna que no existe. La comprobación de que
-quedó bien está en el pie del propio archivo.
+⛔ **LA 008 Y LA 009 ESTÁN SIN CORRER.** Son `partidos.compartido_en` (Entrada
+085) y `partidos.avisado_en` (086), y las dos tienen que ir **antes** del empujón
+que las necesita: al revés, la versión nueva llega a producción y consulta
+columnas que no existen. Las dos son idempotentes, así que correr otra vez la que
+ya estuviera hecha no rompe nada. La comprobación está en el pie de la 009.
 
 ✅ **Las anteriores, de la 001 a la 007, están corridas y verificadas
 contra Neon.**
@@ -620,6 +623,7 @@ contra Neon.**
 | 006 | `jornadas.al_acumulado`, `jugadores.juega_acumulado`, `entregas_acumulado` (078) | 27 ago |
 | 007 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos (079) | 27 ago |
 | **008** | `partidos.compartido_en` (Entrada 085) | ⛔ **SIN CORRER** |
+| **009** | `partidos.avisado_en`, la memoria del aviso (Entrada 086) | ⛔ **SIN CORRER** |
 
 Comprobado el 27 contra la base de verdad: las columnas con su valor por
 defecto, los dos `CHECK` de la 006, RLS forzada en `entregas_acumulado`, y las
@@ -1329,27 +1333,27 @@ fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 | `superadmin.js` | 715 | El superadministrador **del sistema, no de una quiniela**: la lista de correos con poder, las ataduras de una cuenta y sus cuatro acciones (Entrada 069) |
 | `pagos.js` | 610 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
 | `cobros.js` | 542 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
-| `jornadas.js` | 539 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
+| `jornadas.js` | 540 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
 | `sincronizador.js` | 486 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
 | `eventos.js` | 469 | La lectura del JSON del proveedor, en un solo sitio |
 | `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
+| `compartir.js` | 416 | Qué está listo para salir al grupo, agrupado por hora de inicio, las dos marcas —compartido y avisado— y el barrido del aviso (Entradas 085 y 086). **No da formato al texto**: eso es `private/js/compartir.js` |
 | `oficiales.js` | 373 | Resultados oficiales, con `SAVEPOINT` por partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
 | `pronosticos.js` | 340 | Pronósticos, y la tabla comparativa en **una sola consulta** |
-| `compartir.js` | 284 | Qué pronósticos están listos para salir al grupo, agrupados por hora de inicio, y la marca de lo ya mandado (Entrada 085). **No da formato al texto**: eso es `private/js/compartir.js` |
+| `membresias.js` | 289 | Quién pertenece a qué quiniela y con qué papel |
 | `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
 | `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
-| `membresias.js` | 260 | Quién pertenece a qué quiniela y con qué papel |
+| `correo.js` | 262 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria. Tres correos: confirmar, restablecer y el aviso de compartir |
 | `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
 | `respuestas-trivia.js` | 223 | Respuestas de los participantes |
 | `proveedor.js` | 221 | Cliente de APIFootball, con tiempo de espera propio |
-| `correo.js` | 215 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria |
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
+| `planificador.js` | 198 | **Tres relojes**: el sincronizador (1 min), la resolución de trivias (5 min) y el aviso de compartir (1 min). ⚠️ El del aviso lleva **cerrojo propio**: un correo no es idempotente y dos instancias mandarían dos (Entrada 086) |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
 | `quinielas.js` | 193 | Alta, archivado y configuración (puntuación, cobros y **ligas favoritas**) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
 | `jugadores.js` | 154 | Participantes |
-| `planificador.js` | 116 | Los relojes: cada cuánto corre el sincronizador |
 | `tokens.js` | 101 | Tokens de un solo uso, **guardados sólo en SHA-256** |
 | `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 | `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
@@ -1399,8 +1403,8 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-⛔ **Son ocho, y la 008 está SIN CORRER** (Entrada 085). Las siete primeras,
-corridas y verificadas contra Neon.
+⛔ **Son nueve, y la 008 y la 009 están SIN CORRER** (Entradas 085 y 086). Las
+siete primeras, corridas y verificadas contra Neon.
 
 | Archivo | Líneas | Qué trae | Entrada |
 |---|---:|---|---|
@@ -1412,6 +1416,7 @@ corridas y verificadas contra Neon.
 | `006-acumulado.sql` | 180 | `jornadas.al_acumulado`, `jugadores.juega_acumulado` y `entregas_acumulado` con su RLS | 078 |
 | `007-abonos-solo-escritura.sql` | 87 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos tablas de sólo escritura | 079 |
 | **`008-compartir-pronosticos.sql`** | 104 | `partidos.compartido_en`: cuándo salieron al grupo los pronósticos de ese partido. ⛔ **SIN CORRER** | 085 |
+| **`009-aviso-de-compartir.sql`** | 112 | `partidos.avisado_en`: la memoria del AVISO, que no es la de haber compartido. Sin ella el correo se repetiría cada minuto. ⛔ **SIN CORRER** | 086 |
 
 ⛔ **Después de cada migración hay que preguntarle a la base qué permisos
 quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
@@ -14167,6 +14172,219 @@ pantalla para enterarse de que hay algo que mandar. Que el sistema avise
 que ya corre cada minuto— es lo que convertiría esto en «me entero solo». No se
 hizo porque no se pidió y añade su propia configuración; el enganche está listo
 si se quiere.
+
+---
+
+
+
+### 📌 Entrada 086 — 3 de septiembre de 2026 — Enterarse sin entrar a mirar
+
+**Objetivo:** la Entrada 085 dejó un hueco dicho en voz alta: la pantalla arma
+el mensaje sola, pero **hay que acordarse de entrar a mirarla**. Marco lo pidió
+con las cuatro decisiones ya tomadas:
+
+> «que llegue a los administradores, que se mande al pitido inicial, que no haya
+> horas de silencio, en vez de eso que tenga un interruptor en la configuración»
+
+Y una pregunta, que resultó ser la buena: *«no entendí eso de que si el proveedor
+marca un partido como iniciado antes de tiempo llega un correo de más»*.
+
+## La respuesta a esa pregunta, que además explica por qué la regla no se toca
+
+`partidoYaInicio` dice que un partido empezó si **cualquiera** de estas dos cosas
+es cierta: el proveedor lo reporta en juego / en el descanso / terminado, **o**
+ya pasó la hora prevista.
+
+La segunda es un reloj y no tiene vuelta atrás. La primera depende del
+proveedor, y el proveedor puede adelantarse: reportar `LIVE` a las 14:52 un
+partido de las 15:00, y corregirse un minuto después. En esa ventana el sistema
+diría «ya empezó», mandaría el correo, y al abrir el enlace el partido ya no
+estaría en la lista.
+
+**Es estrecho y se arregla solo**: sólo puede pasar ANTES de la hora prevista,
+porque en cuanto el reloj llega, la segunda condición lo hace cierto para
+siempre. Y la pantalla siempre enseña la verdad del momento; el que se equivoca
+es el correo.
+
+⛔ **Y por eso la regla no se toca**: es la misma que cierra los pronósticos. Si
+el proveedor dice que el balón rueda, los pronósticos tienen que cerrarse — no se
+puede dejar pronosticar un partido que va por el minuto 10. Tener dos respuestas
+a «¿ya empezó?» sería mucho peor que un correo raro de vez en cuando.
+
+## ⛔ Pero al explicarlo apareció lo de verdad: el aviso necesita memoria
+
+Si la condición fuera «manda correo cuando haya algo pendiente», eso es cierto
+**cada minuto** desde que el partido arranca hasta que alguien comparte:
+
+```
+15:00  arranca, hay 1 pendiente  -> correo
+15:01  sigue habiendo 1          -> correo
+15:02  sigue habiendo 1          -> correo
+```
+
+**Sesenta correos por hora.** Y no se arregla recordando en memoria del proceso:
+Render reinicia en cada despliegue —el recuerdo se pierde y vuelve a avisar— y
+puede correr dos instancias —dos recuerdos, dos correos—. Es la misma razón por
+la que `compartido_en` vive en la base.
+
+Así que hace falta una **segunda columna**, `partidos.avisado_en`, y por tanto
+una segunda migración.
+
+⚠️ **«Compartido» no puede servir de memoria del aviso**: se avisa ANTES de
+compartir, que es justo para lo que sirve. Son dos hechos distintos y ninguno
+implica al otro — se puede compartir sin que nadie avisara, que es lo que pasa
+con el interruptor apagado.
+
+## La migración va APARTE, y eso también fue una decisión
+
+La 008 podía estar ya corrida en Neon o no —Marco estaba justo preguntando cómo
+correrla—. Meter la columna dentro habría obligado a acordarse de cuál era el
+caso. **Dos archivos numerados no obligan a acordarse de nada**: se corre el que
+falte, y las dos son idempotentes.
+
+## ⛔ El interruptor nace APAGADO, y va al revés que el del dinero
+
+En los cobros, el valor por defecto de la duda es **cobrar**: cobrar de más lo
+reclama alguien mañana, perdonar no lo reclama nadie (Entrada 076).
+
+Aquí la asimetría es la contraria: **un correo que nadie pidió es un problema, y
+uno que falta es una molestia.** Así que `quiereAviso` pregunta con `=== true` y
+no con `!== false`, y ninguna quiniela existente tiene el campo puesto. El día
+del despliegue no se despierta el teléfono de nadie.
+
+## ⛔ El cerrojo aquí no es opcional, y es la diferencia con las trivias
+
+`resolverTriviasDeTodas` corre **sin** cerrojo y no pasa nada: resolver dos veces
+la misma trivia da el mismo resultado. **Un correo no es idempotente.**
+
+Con dos instancias en Render —que es un estado normal, no una avería— las dos
+leerían «sin avisar», las dos mandarían, y sólo después una marcaría: dos correos
+por partido.
+
+⚠️ **Y el `AND avisado_en IS NULL` de `marcarAvisados` NO cierra esa carrera**:
+protege de marcar dos veces, no de **enviar** dos veces, y el envío va antes. Es
+fácil mirar esa línea y creer que ya está resuelto. Hay un centinela que
+comprueba que el envío queda **entre** el `tomar` y el `soltar`, porque un
+cerrojo que se suelta antes de trabajar es decoración.
+
+## ⛔ Y el orden de dos líneas: marcar DESPUÉS de enviar
+
+Al revés, un fallo del proveedor de correo se comería el aviso **para siempre y
+en silencio**: la marca diría «avisado», nadie lo habría recibido, y nada
+volvería a intentarlo. Marcando después, un fallo se reintenta al minuto
+siguiente.
+
+⚠️ Y «si salió **alguno**», no «todos»: con un destinatario fallando de forma
+persistente, exigir todos dejaría al resto recibiendo el mismo aviso cada minuto.
+Prefiere perder un aviso a inundar a tres.
+
+**Esa propiedad sólo se puede probar si el envío se puede romper**, y por eso
+`avisarDeTodas` recibe `enviarAviso` de fuera en vez de importar `correo`. Es el
+mismo patrón que `trivias.resolverPendientes` con su intérprete.
+
+## El correo avisa; la pantalla informa
+
+El mensaje lleva **cuántos y de qué jornada**, y un enlace. No lleva los
+marcadores, y no por privacidad —a esa hora ya son públicos— sino por dos cosas:
+
+- un correo se reenvía, se queda en bandejas ajenas y **no se puede corregir**;
+- si el proveedor se adelantó, ese correo llevaría marcadores que todavía no
+  tocaba enseñar. El enlace no: la pantalla vuelve a mirar.
+
+Hay un centinela que comprueba que el aviso no menciona `marcador1`, `marcador2`,
+`pronosticos` ni `marcadorVisible`.
+
+⚠️ Y el pie dice **cómo apagarlo**. Un aviso recurrente sin salida visible acaba
+en la carpeta de correo no deseado, y ahí se lleva por delante también los de
+confirmar la cuenta.
+
+## Quién recibe
+
+Propietario y administradores **activos y con el correo confirmado**. Lo de
+confirmado no es adorno: una dirección sin verificar puede no ser de quien dice
+ser, y mandarle avisos de una quiniela ajena le filtraría a un desconocido qué
+jornadas hay y quién juega.
+
+⚠️ Y si no hay nadie a quien escribir, **no se marca nada**: el aviso sigue
+pendiente y saldrá el día que haya un administrador con correo. Marcarlo
+«avisado» sin haber avisado sería perderlo.
+
+## Romper a propósito, cuatro veces
+
+| Mutación | Qué cayó |
+|---|---|
+| El aviso pierde su memoria (`avisado_en` no se consulta) | 6 pruebas |
+| Se manda pero no se marca | **sólo** «se avisa UNA vez, no una por minuto» |
+| `quiereAviso` con `!== false` | **sólo** «con el interruptor apagado no se manda» |
+| Marcar ANTES de enviar | **sólo** «si el correo falla, se reintenta» |
+| Quitar el cerrojo | el centinela del cerrojo |
+| Meter un marcador en el correo | el centinela del contenido |
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/009-aviso-de-compartir.sql` | **Nuevo.** `partidos.avisado_en` |
+| `db/esquema.sql` | La columna, para el arnés |
+| `src/compartir.js` | `avisado` por grupo, `marcarAvisados`, `quiereAviso` y `avisarDeTodas` |
+| `src/planificador.js` | El reloj del aviso, con su cerrojo propio |
+| `src/correo.js` | `enviarAvisoDeCompartir`. ⚠️ `enviar` sigue siendo interno |
+| `src/membresias.js` | `correosDeAdministradores`, sólo con el correo confirmado |
+| `src/rutas/plataforma.js` | `avisarAlCompartir` en la configuración |
+| `src/jornadas.js` | La marca del aviso se limpia con la de compartido |
+| `public/configuracion-quiniela.html` | La casilla y su explicación |
+| `private/js/configuracion-quiniela.js` | Leerla y guardarla |
+| `test/rutas.test.js` | 11 pruebas nuevas |
+| `test/architecture.test.js` | Dos centinelas nuevos; el de las marcas pide las dos |
+| `test/e2e/compartir.spec.js` | El interruptor por la interfaz |
+
+**Verificación:**
+
+```
+npm test                          → 536/536  (eran 523)
+npx playwright test               → 126/126  (eran 124)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un aviso necesita su propia memoria, y no puede ser la del trabajo que
+   anuncia.** «Ya lo compartí» no sirve para saber si ya avisé: se avisa antes
+   de compartir, que es para lo que sirve.
+2. ⛔ **Lo idempotente no necesita cerrojo; lo que sale al mundo, sí.** Resolver
+   una trivia dos veces da lo mismo. Mandar un correo dos veces, no. Es el
+   criterio para decidirlo, y no «es un trabajo periódico».
+3. ⚠️ **Un `IS NULL` en el `UPDATE` protege de marcar dos veces, no de actuar dos
+   veces.** Si la acción va antes de la marca, esa guarda no cierra la carrera —y
+   se lee como si lo hiciera.
+4. ⛔ **El orden entre actuar y anotar decide qué se pierde.** Anotar primero
+   pierde el aviso en silencio; anotar después lo repite. Con correo, repetir es
+   recuperable y perder no.
+5. ⚠️ **Una propiedad sólo se puede probar si se puede provocar el fallo.** El
+   envío se inyecta por eso: con el transporte de verdad, «se reintenta si falla»
+   se habría quedado escrito en un comentario y sin comprobar.
+6. **El valor por defecto se decide por qué duele más, no por simetría.** En
+   dinero la duda se resuelve cobrando; en correo, callando. Las dos salen de la
+   misma pregunta con respuestas contrarias.
+7. ⚠️ **Una pregunta del usuario sobre un detalle destapó el problema grande.**
+   Marco preguntó por el correo de más del proveedor —que es menor— y al
+   escribir la respuesta apareció el de los sesenta correos por hora, que no
+   estaba en ninguna lista.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Ahora son DOS migraciones, y las dos antes de empujar**, con el rol dueño en
+el editor SQL de Neon:
+
+1. `db/migraciones/008-compartir-pronosticos.sql`
+2. `db/migraciones/009-aviso-de-compartir.sql`
+
+Da igual el orden entre ellas y da igual si la 008 ya estaba corrida: las dos
+llevan `IF NOT EXISTS`. La comprobación de que quedaron las dos está en el pie de
+la 009.
+
+Después, redesplegar. Y **encender el interruptor a mano** en Configurar
+quiniela: nace apagado a propósito, así que hasta que Marco lo encienda no sale
+ningún correo.
 
 ---
 

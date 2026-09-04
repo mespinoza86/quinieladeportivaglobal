@@ -2090,9 +2090,15 @@ test('⛔ el hueco que pasa a ser otro partido pierde su marca de compartido', (
    * dicho porque creer que esto vigila la conducta seria peor que no tenerlo:
    * es la clase de centinela decorativo que la Entrada 072 encontro a montones.
    */
-  assert.match(mod, /UPDATE partidos SET compartido_en = NULL[\s\S]{0,120}cambiaronDePartido/,
-    'los partidos sustituidos pierden sus pronosticos pero conservan la marca de '
-    + 'compartido: el partido nuevo no se propondria nunca');
+  /*
+   * ⚠️ LAS DOS MARCAS, no una. `compartido_en` (008) y `avisado_en` (009) son
+   * hechos distintos y las dos cuelgan de esa fila, asi que las dos dejan de ser
+   * ciertas cuando la fila pasa a ser otro partido. Limpiar solo una deja el
+   * caso a medias: el partido nuevo se propondria pero nadie avisaria de el.
+   */
+  assert.match(mod, /UPDATE partidos SET compartido_en = NULL, avisado_en = NULL[\s\S]{0,120}cambiaronDePartido/,
+    'los partidos sustituidos pierden sus pronosticos pero conservan las marcas '
+    + 'de compartido y avisado: el partido nuevo no se propondria ni se avisaria');
 
   /*
    * Y la vuelta: el camino por IDENTIDAD no debe limpiarla. Alli la fila que se
@@ -2113,6 +2119,72 @@ test('⛔ el hueco que pasa a ser otro partido pierde su marca de compartido', (
   assert.doesNotMatch(porIdentidad, /compartido_en/,
     'el camino por identidad reutiliza el MISMO partido: limpiar su marca haria '
     + 'que se volviera a proponer un mensaje ya mandado');
+});
+
+test('⛔ el aviso por correo toma el cerrojo antes de mandar nada', () => {
+  /*
+   * ============================================================
+   * POR QUE ESTE TRABAJO SI NECESITA CERROJO Y LAS TRIVIAS NO
+   * ============================================================
+   *
+   * `resolverTriviasDeTodas` corre sin cerrojo y no pasa nada: resolver dos
+   * veces la misma trivia da el mismo resultado. Un correo NO es idempotente.
+   *
+   * Con dos instancias en Render -que es un estado normal, no una averia- las
+   * dos leerian "sin avisar", las dos mandarian, y solo despues una marcaria:
+   * dos correos por partido, y nadie sabria por que.
+   *
+   * ⛔ Y el `AND avisado_en IS NULL` de `marcarAvisados` NO cierra esa carrera:
+   * protege de marcar dos veces, no de ENVIAR dos veces, y el envio va antes.
+   * Es facil mirar esa linea y creer que ya esta resuelto.
+   */
+  const plan = quitarComentarios(leer(path.join('src', 'planificador.js')));
+
+  assert.match(plan, /cerrojos\.tomar\(CERROJO_AVISO/,
+    'el aviso manda correos: sin cerrojo, dos instancias mandan dos');
+
+  assert.match(plan, /cerrojos\.soltar\(CERROJO_AVISO/,
+    'y hay que soltarlo, o el aviso se apaga hasta que caduque');
+
+  /*
+   * El envio tiene que quedar DENTRO del cerrojo. Tomarlo y soltarlo antes de
+   * mandar seria un cerrojo decorativo: se comprueba que `avisarDeTodas` cae
+   * entre el `tomar` y el `finally` que suelta.
+   */
+  const tomar = plan.indexOf('cerrojos.tomar(CERROJO_AVISO');
+  const envio = plan.indexOf('avisarDeTodas(');
+  const soltar = plan.indexOf('cerrojos.soltar(CERROJO_AVISO');
+
+  assert.ok(tomar >= 0 && envio > tomar && soltar > envio,
+    'el envio tiene que ir entre tomar y soltar el cerrojo, no fuera');
+
+  /*
+   * Y el trabajo vive en su propio reloj, no colgado del ciclo del proveedor:
+   * un ciclo abandonado por tiempo -hay metrica que los cuenta- se llevaria el
+   * aviso con el, y avisar no necesita salir a la red.
+   */
+  assert.match(plan, /setInterval\([\s\S]{0,200}avisarDeCompartir\(\)/,
+    'el aviso necesita su propio reloj');
+});
+
+test('⛔ el aviso por correo no lleva marcadores dentro', () => {
+  /*
+   * El correo avisa; la pantalla informa. Meter los pronosticos dentro no
+   * filtraria nada -a esa hora ya son publicos- y aun asi esta mal: un correo
+   * se reenvia, se queda en bandejas ajenas y no se puede corregir. Si el
+   * proveedor se adelanto y el partido no habia arrancado, el correo llevaria
+   * marcadores que no tocaba enseñar; el enlace no, porque la pantalla vuelve a
+   * mirar.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'correo.js')));
+  const aviso = mod.slice(mod.indexOf('async function enviarAvisoDeCompartir'));
+
+  assert.ok(aviso.length > 200, 'no se encontro el aviso; revisa esta prueba');
+
+  for (const prohibido of ['marcador1', 'marcador2', 'pronosticos', 'marcadorVisible']) {
+    assert.ok(!aviso.includes(prohibido),
+      `el aviso menciona "${prohibido}": el correo avisa, la pantalla informa`);
+  }
 });
 
 test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_ADMIN', () => {
