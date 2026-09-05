@@ -477,10 +477,11 @@ escribirla (080).
 
 | | |
 |---|---|
-| Último commit | `cd9eff9` — «actualizando md…». Encima, sin subir: la Entrada 087 |
-| Árbol | ✅ Limpio, y `main` está al día con `origin/main` |
+| Último commit | `38bdeb1` — «Cerrar el aviso de qs…» (Entrada 087), empujado a `origin/main` |
+| Árbol | ✅ Limpio, y `main` al día con `origin/main` |
 | Base de datos | ✅ **Las nueve migraciones corridas.** La 008 y la 009 las corrió Marco el 3 de septiembre y las comprobó |
-| Producción | ✅ **Al día**: `b508f09` desplegado el 3 de septiembre por la tarde |
+| CI | ✅ **Verde otra vez** con `38bdeb1`. Las tres corridas anteriores fallaban por la auditoría, nunca por las pruebas (087) |
+| Producción | ✅ Corriendo lo de las 085 y 086. ⚠️ El arreglo de `qs` **todavía no**: ver abajo |
 | Pruebas | 536 rápidas + 126 de navegador, todas en verde |
 
 ✅ **No queda nada a medias.** El despliegue tardó unos minutos en entrar y se
@@ -506,7 +507,18 @@ es exactamente lo servido. Los dos archivos son idénticos.
 contenido. Lo que sí vale es buscar una MARCA que sólo exista en la versión
 nueva, que es lo que hizo `grep -c avisarAlCompartir`.
 
-**Lo único que queda, y no es código:**
+**Lo que queda, y no es código:**
+
+⚠️ **El arreglo de `qs` está empujado pero no desplegado.** Medido el 4 de
+septiembre a las 21:16: `/readyz` daba `tiempoActivoSegundos: 79396` —22 horas—,
+así que el proceso **no ha reiniciado** desde el despliegue de la 086 la noche
+anterior. `38bdeb1` está en `origin/main` y su corrida de CI salió en verde, pero
+Render todavía no lo ha cogido.
+
+No corre prisa —son tres avisos moderados sobre el análisis de la *query
+string*, sin fuga de datos— y entrará con el siguiente empujón que toque código.
+Se sabrá porque `tiempoActivoSegundos` **baje**: es la única señal desde fuera
+cuando el cambio no toca ningún archivo servido.
 
 ⚠️ **Encender el aviso a mano** en Configurar quiniela → Avisos. Nace apagado a
 propósito: hasta encenderlo no sale ningún correo a nadie.
@@ -14589,9 +14601,15 @@ git diff package-lock.json → una sola entrada, la de qs
 
 **Pendiente / siguiente paso:**
 
-Ninguno. No toca la base, no cambia comportamiento y no hace falta redesplegar
-por esto —aunque conviene que entre con el siguiente empujón, para que el CI
-vuelva a verde y los correos paren—.
+✅ **Confirmado el 4 de septiembre: la corrida de `38bdeb1` salió en VERDE**, los
+dos trabajos y los siete pasos. Es la primera desde el 31 de agosto, y cierra el
+asunto: el arreglo era el correcto y los correos de fallo paran.
+
+⚠️ **Lo que sí queda es que Render lo coja.** No toca la base ni cambia
+comportamiento, así que no urge, pero hasta que el proceso reinicie **producción
+sigue sirviendo con el `qs` viejo**. Y como este cambio no toca ningún archivo
+servido, desde fuera no hay forma de verlo en el contenido: la única señal es que
+`tiempoActivoSegundos` de `/readyz` **baje**.
 
 ⚠️ Y queda dicho para la próxima: **este paso volverá a ponerse rojo solo** el
 día que se publique otro aviso. No será un fallo del código, y la respuesta
