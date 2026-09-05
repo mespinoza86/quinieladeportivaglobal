@@ -483,6 +483,7 @@ escribirla (080).
 | CI | ✅ **Verde otra vez** con `38bdeb1`. Las tres corridas anteriores fallaban por la auditoría, nunca por las pruebas (087) |
 | Producción | ✅ Corriendo lo de las 085 y 086. ⚠️ El arreglo de `qs` **todavía no**: ver abajo |
 | Pruebas | 536 rápidas + 126 de navegador, todas en verde |
+| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Bloqueado por dos preguntas para Marco: el plan de Render y cuántos usan iPhone |
 
 ✅ **No queda nada a medias.** El despliegue tardó unos minutos en entrar y se
 comprobó preguntando qué versión había puesta, que es la forma que funciona:
@@ -532,15 +533,53 @@ en producción. El aviso, en cuanto se encienda.
 Nada de las 085 y 086 cambia eso: añaden una pantalla de administración y un
 correo que hay que encender.
 
-**Si quiere seguir con algo**, esto es lo que hay sobre la mesa, en orden de
-valor y con su entrada:
+### ⭐ Lo que Marco quiere de verdad, y está decidido a medias
+
+**Notificaciones en el teléfono 15 minutos antes de que arranque un partido**,
+para todos los jugadores: *«el partido va a iniciar, revisa tus resultados para
+asegurarte de que están bien»*. Lo pidió el 4 de septiembre y dijo, con esas
+palabras, **«eso es lo que más quiero»**.
+
+⛔ **Y NO necesita la Play Store.** Las notificaciones web funcionan en Android
+sin publicar nada. Todo está contado en la **Entrada 088**; lo esencial:
+
+| | |
+|---|---|
+| Android / Chrome | ✅ Funciona sin nada especial |
+| iPhone / Safari | ⚠️ Sólo si antes **añaden el sitio a la pantalla de inicio** |
+| Disparador | ✅ Ya existe: el planificador corre cada 60 s |
+| Falta | Tabla de suscripciones, una marca por partido, *service worker*, botón de activar, `web-push` y dos claves VAPID |
+| Tamaño | Como las Entradas 085 y 086 **juntas** |
+
+⛔ **Antes de escribir una línea hay que responder DOS preguntas, y las dos son
+de Marco:**
+
+1. **¿En qué plan está Render de verdad?** `render.yaml` dice `free`, y el plan
+   gratuito **duerme el servicio**. Si está dormido a las 14:45 el reloj no corre
+   y la notificación **no sale nunca** — y una notificación que no llega es peor
+   que no tener la función. Con el correo de la 086 daba igual; aquí es el
+   cimiento.
+2. **¿Cuántos de los doce jugadores usan iPhone?** Decide si con las
+   notificaciones web basta o si la Play Store empieza a tener sentido.
+
+Y luego tres decisiones suyas: **¿a todos o sólo a quien no llenó?**, **¿15
+minutos fijos o configurables?**, y **¿qué hacer si la ventana ya pasó?** (la
+recomendación: callarse).
+
+### Lo demás que hay sobre la mesa
+
+En orden de valor, y con su entrada:
 
 1. ⚠️ **Decidir si el cierre de un partido pasa a ser SÓLO por reloj** (086).
    Marco lo pidió el 3 de septiembre y está **medido, no hecho**: cambiar
    `partidoYaInicio` para que ignore el estado del proveedor rompe **2 pruebas
    de 536**, y las dos son las que hoy protegen de algo que él no había mirado.
-   Está contado entero al final de la Entrada 086.
-2. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
+   Está contado entero al final de la Entrada 086, con tres salidas y lo que
+   cuesta cada una.
+2. **La Play Store**, si se retoma. El plan entero está en `play_store_app.md`
+   (416 líneas). ⛔ Su paso 1 **no es programar**: es preguntarle a Google por la
+   política de juego con dinero real, que es lo único que puede tumbarlo todo.
+3. **Convertir `generar_reporte.html` a impresión** y quitar `cdnjs` de la CSP
    (082). Es la única dependencia externa del proyecto y amplía la política de
    seguridad del sitio entero por una sola pantalla.
 4. **Paginar el diario de abonos** — `GET /api/cobros/abonos` no tiene `LIMIT`
@@ -14614,6 +14653,228 @@ servido, desde fuera no hay forma de verlo en el contenido: la única señal es 
 ⚠️ Y queda dicho para la próxima: **este paso volverá a ponerse rojo solo** el
 día que se publique otro aviso. No será un fallo del código, y la respuesta
 correcta seguirá siendo actualizar, no bajar el listón de la auditoría.
+
+---
+
+
+
+### 📌 Entrada 088 — 4 de septiembre de 2026 — La Play Store, y lo que Marco quería de verdad
+
+**Objetivo:** Marco preguntó qué haría falta para llevar esto a una aplicación de
+Android publicada en Google Play. Al desglosarlo apareció que **lo que más quiere
+es otra cosa**, y que esa otra cosa no necesita la tienda.
+
+> «yo lo que quiero hacer es que salga una notificación 15 minutos antes de que
+> inicie un partido, que diga el partido va a iniciar, revisa tus resultados para
+> asegurarte de que están bien. Eso es lo que más quiero.»
+
+**No se escribió código.** Es análisis, y queda anotado entero porque la próxima
+vez la pregunta va a ser «¿dónde estábamos?».
+
+## 📄 El plan de la Play Store vive en `play_store_app.md`
+
+Se escribió un documento aparte, de 416 líneas, con los pasos, los programas a
+instalar y lo que hay que cambiar. Aquí queda **lo que no se puede perder**.
+
+### ⛔ El riesgo principal no es técnico
+
+**Una quiniela con cuotas y bote roza la política de juego con dinero real de
+Google.** Es lo único que puede tumbar el proyecto entero, y por eso el paso 1 del
+plan **no es programar: es preguntarle a Google** por su canal de consulta de
+políticas.
+
+Lo que juega a favor, y es bastante:
+
+- La aplicación **no cobra ni paga nada**. No hay pasarela ni tarjeta; el dinero
+  va por SINPE entre gente que se conoce. La aplicación **anota**, no **mueve**.
+- No hay cuotas de apuesta ni casa que gane: el premio es lo que pusieron los
+  jugadores.
+- Es un grupo cerrado, con código de ingreso.
+- Y todo lo del dinero **ya está detrás de Admin Mode**. Eso no hubo que hacerlo
+  para esto: ya era así.
+
+En contra: en una captura de pantalla, «cuota» y «bote acumulado» se leen como
+una porra. Y Google mira la ficha de la tienda tanto como el código.
+
+⛔ **Y el riesgo que hay que decir en voz alta**: un rechazo por política no
+siempre se queda en «vuelve a intentarlo». Puede acabar en cierre de la cuenta de
+desarrollador. Preguntar antes es gratis; construir y que lo rechacen, no.
+
+### El camino técnico sería una TWA, y por un motivo de ESTE código
+
+No es sólo que sea la más barata de las tres. Es que **las otras rompen la
+sesión**:
+
+| | Qué pasa con la sesión |
+|---|---|
+| **TWA** | Por dentro es Chrome sobre el mismo origen: **cookie y CSP funcionan hoy sin tocar nada** |
+| **Capacitor** | Sirve desde el teléfono, así que las peticiones son de **otro origen**: haría falta CORS, `SameSite=None; Secure` y repasar la CSP entera |
+| **Reescribir** | Meses para llegar a lo que ya funciona |
+
+⚠️ Y un segundo motivo que pesa más a la larga: **con una TWA cada despliegue en
+Render llega al teléfono al instante**. Con Capacitor, cada cambio de pantalla es
+una versión nueva en la tienda.
+
+### Lo que se midió contra el código, para no repetirlo
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Hay manifiesto, *service worker* o iconos? | **Nada.** Ni una imagen en todo el proyecto |
+| Pantallas que habría que tocar | **39** archivos en `public/` |
+| ¿Se sirve `/.well-known/assetlinks.json`? | ✅ **Sí**, con el `express.static` de hoy |
+| ¿La CSP estorba a una TWA? | No. Mismo origen |
+| ¿Y a Capacitor? | ⛔ Sí: `connectSrc: 'self'` y la cookie de sesión |
+
+⚠️ Lo del `.well-known` se comprobó **con un archivo de control al lado**, porque
+`serve-static` ignora por defecto lo que empieza por punto y la excepción que
+salva el caso es lo bastante rara como para no fiarse de leerla.
+
+⛔ Y la primera medición dio **404 y era mentira**: en Git Bash `/tmp` no es el
+`/tmp` que ve Node en Windows, así que el archivo se creó en un sitio y se buscó
+en otro. La quinta vez que una sonda dice «no» queriendo decir «no sé». El control
+es lo que lo destapó: si el archivo normal tampoco se sirve, el problema es la
+prueba.
+
+## ⭐ Lo que de verdad quiere: notificaciones 15 minutos antes
+
+Y aquí está el hallazgo que cambia el orden de todo:
+
+⛔ **Esto NO necesita la Play Store.** Las notificaciones web funcionan en
+Android desde hace años sin publicar nada. Mucha gente cree que hace falta una
+aplicación en la tienda, y no.
+
+### Cómo funcionaría
+
+```
+El reloj del planificador ve que un partido arranca en 15 min
+   → manda el aviso al servicio de Google
+   → llega al teléfono aunque la aplicación esté cerrada
+   → "⚽ Jornada 5 arranca en 15 minutos.
+      Revisa tus pronósticos antes de que se cierren"
+   → al tocarlo, abre la pantalla de llenar la quiniela
+```
+
+### ⚠️ La pega seria: los iPhone
+
+| | Funciona |
+|---|---|
+| **Android / Chrome** | ✅ Sin nada especial |
+| **iPhone / Safari** | ⚠️ **Sólo si primero añaden el sitio a la pantalla de inicio** |
+
+En iPhone no llegan desde una pestaña normal. Hay que abrir el sitio, Compartir →
+«Añadir a pantalla de inicio», y **entonces** activarlas.
+
+⚠️ **Queda una pregunta sin responder para Marco: cuántos de los doce jugadores
+usan iPhone.** Si son la mitad, cambia el cálculo — y ahí sí empieza a tener
+sentido la Play Store, porque una aplicación instalada se salta ese paso.
+
+### Lo que ya está, y lo que falta
+
+**A favor:** el disparador existe. El planificador corre **cada 60 segundos** y ya
+conoce la hora de cada partido; el cerrojo distribuido también está.
+
+**Lo que habría que construir:**
+
+1. **Una tabla de suscripciones.** Cada teléfono deja una dirección de entrega;
+   hay que guardarla y **borrarla cuando caduque** —el servicio responde 404 o
+   410 y eso significa «esta ya no vale»—.
+2. ⛔ **Una marca de «ya avisé de este partido»**, otra columna. Sin ella pasa
+   exactamente lo de la Entrada 086: «arranca en menos de 15 minutos» es cierto
+   durante **quince minutos seguidos**, así que serían **15 notificaciones** en
+   vez de una. Es la tercera vez que aparece el mismo patrón —`compartido_en`,
+   `avisado_en` y ésta—: **todo aviso necesita su propia memoria, y en la base**.
+3. **El *service worker***, que es lo que recibe el aviso con la aplicación
+   cerrada. Es el mismo archivo que haría falta para la Play Store, así que no se
+   tira nada.
+4. **Un botón «Activar avisos»** en la portada. Los navegadores exigen un gesto
+   de la persona; no se puede activar por su cuenta.
+5. **Una dependencia nueva: `web-push`.** ⚠️ Se anota porque este proyecto tiene
+   once y presume de no añadir, pero el cifrado que exige el estándar no es algo
+   que convenga escribir a mano.
+6. **Dos claves VAPID** en Render, como las de Brevo.
+
+Y los partidos de la misma hora, **una** notificación y no cinco, igual que el
+correo.
+
+### ⛔ El bloqueante que hay que resolver ANTES de escribir nada
+
+**`render.yaml` dice `plan: free`, y el plan gratuito duerme el servicio.**
+
+Si el servidor está dormido a las 14:45, el reloj no corre y **la notificación no
+sale nunca**. Y una notificación que no llega es **peor que no tener la función**:
+la gente deja de mirar la aplicación porque «ya me avisará».
+
+⚠️ Con el correo de la Entrada 086 esto daba igual —Marco entraba a mirar de
+todas formas—. Aquí es el cimiento. **Hay que confirmar en qué plan está de
+verdad**, no leerlo de `render.yaml`, que ya se sabe que Render no aplica solo.
+
+### Las tres decisiones abiertas
+
+Son de Marco y ninguna se puede deducir del código:
+
+1. **¿A quién le llega?** ¿A todos los que se apunten, o **sólo a quien tenga
+   pronósticos sin llenar**? Lo segundo es menos ruido y más útil —al que ya está
+   listo no le dices nada— pero es más lógica que se puede equivocar. La
+   recomendación fue empezar por todos, que es lo que pidió.
+2. **¿15 minutos fijos, o configurable por quiniela?** Fijo es más simple.
+3. **¿Y si el partido ya arrancó** porque el servidor estuvo caído y se pasó la
+   ventana? La recomendación es **callarse**: «arranca en 15 minutos» cuando ya
+   lleva media hora jugándose es peor que nada.
+
+### Lo que costaría
+
+Es la función más grande hasta ahora: **parecida a las Entradas 085 y 086
+juntas**. Tabla nueva, migración, *service worker*, pantalla, rutas, el trabajo
+del reloj y sus pruebas.
+
+Y es la que más valor tiene de todo lo que queda sobre la mesa.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `play_store_app.md` | **Nuevo.** 416 líneas: el plan de la Play Store entero |
+| `avance_proyecto.md` | Esta entrada y «Lo siguiente» reordenado |
+
+**Verificación:**
+
+```
+ls public/*.html                        → 39 pantallas
+find public private -iname "*.png" ...  → 0 imagenes
+find ... -iname "*manifest*" -o "sw.js" → 0
+express.static + /.well-known/          → 200 (con control al lado)
+grep connectSrc src/servidor.js         → ["'self'"]
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Lo que pedía y lo que quería no eran lo mismo.** Preguntó por la Play
+   Store; lo que más quería eran las notificaciones, **y eso no necesita la
+   tienda**. Desglosar la petición antes de estimarla ahorró el proyecto entero.
+2. ⛔ **El obstáculo de publicar no es técnico, es de política.** Y la respuesta
+   correcta a eso es preguntar antes de construir, no construir y esperar.
+3. ⚠️ **La elección de tecnología la decidió la SESIÓN, no la comodidad.** TWA
+   contra Capacitor se resuelve mirando `connectSrc` y la cookie: una funciona
+   hoy sin tocar nada y la otra obliga a rehacer la parte más delicada.
+4. **Tercera vez que aparece «todo aviso necesita su propia memoria».**
+   `compartido_en`, `avisado_en`, y ahora la de los 15 minutos. Ya no es un
+   hallazgo: es una regla del proyecto.
+5. ⛔ **Una notificación que no llega es peor que no tener notificaciones**, y por
+   eso el plan de Render pasa de detalle de infraestructura a requisito previo.
+6. ⚠️ **Quinta sonda que dice «no» queriendo decir «no sé».** Esta vez por las
+   rutas de Git Bash contra las de Node en Windows. Lo destapó tener un caso de
+   control que tenía que salir distinto.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Nada de código hasta responder dos cosas**, y las dos son de Marco:
+
+1. **¿En qué plan está Render de verdad?** Si es el gratuito, las notificaciones
+   no se sostienen y eso hay que resolverlo primero.
+2. **¿Cuántos de los doce jugadores usan iPhone?** Determina si con las
+   notificaciones web basta o si la Play Store empieza a tener sentido.
+
+Y después, las tres decisiones de arriba.
 
 ---
 
