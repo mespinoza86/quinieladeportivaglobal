@@ -483,7 +483,7 @@ escribirla (080).
 | CI | ✅ **Verde otra vez** con `38bdeb1`. Las tres corridas anteriores fallaban por la auditoría, nunca por las pruebas (087) |
 | Producción | ✅ Corriendo lo de las 085 y 086. ⚠️ El arreglo de `qs` **todavía no**: ver abajo |
 | Pruebas | 536 rápidas + 126 de navegador, todas en verde |
-| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Bloqueado por dos preguntas para Marco: el plan de Render y cuántos usan iPhone |
+| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). ✅ **Desbloqueado el 11 de septiembre**: Render es de pago y lo del iPhone lo resuelve la propia pantalla |
 
 ✅ **No queda nada a medias.** El despliegue tardó unos minutos en entrar y se
 comprobó preguntando qué versión había puesta, que es la forma que funciona:
@@ -551,20 +551,36 @@ sin publicar nada. Todo está contado en la **Entrada 088**; lo esencial:
 | Falta | Tabla de suscripciones, una marca por partido, *service worker*, botón de activar, `web-push` y dos claves VAPID |
 | Tamaño | Como las Entradas 085 y 086 **juntas** |
 
-⛔ **Antes de escribir una línea hay que responder DOS preguntas, y las dos son
-de Marco:**
+✅ **Las dos preguntas que bloqueaban esto están resueltas** (11 de septiembre):
 
-1. **¿En qué plan está Render de verdad?** `render.yaml` dice `free`, y el plan
-   gratuito **duerme el servicio**. Si está dormido a las 14:45 el reloj no corre
-   y la notificación **no sale nunca** — y una notificación que no llega es peor
-   que no tener la función. Con el correo de la 086 daba igual; aquí es el
-   cimiento.
-2. **¿Cuántos de los doce jugadores usan iPhone?** Decide si con las
-   notificaciones web basta o si la Play Store empieza a tener sentido.
+1. **El plan de Render es DE PAGO.** Lo confirmó Marco, y cuadra con la medición:
+   `/readyz` daba **4,3 días seguidos** de proceso. El servicio no se duerme, así
+   que el reloj corre siempre y el aviso saldrá a su hora. Era el cimiento: una
+   notificación que no llega es peor que no tener la función.
 
-Y luego tres decisiones suyas: **¿a todos o sólo a quien no llenó?**, **¿15
-minutos fijos o configurables?**, y **¿qué hacer si la ventana ya pasó?** (la
-recomendación: callarse).
+   ⚠️ `render.yaml` sigue diciendo `plan: free`, y eso **no es lo que hay
+   puesto**. Es la trampa de siempre con este archivo: Render no lo aplica solo
+   (§B.3), así que el archivo describe una intención vieja, no la realidad.
+
+2. **Lo del iPhone no hace falta saberlo, y por eso deja de bloquear.** Marco no
+   sabe cuántos lo usan, y da igual: en vez de contarlos, **la pantalla se entera
+   sola**.
+
+   ⛔ No por husmear el `User-Agent` —que en iPad miente— sino por **detección de
+   capacidad**: si `PushManager` no existe en ese navegador, las notificaciones
+   no se pueden activar ahí y punto. En iPhone eso ocurre exactamente mientras el
+   sitio esté en una pestaña; en cuanto lo añaden a la pantalla de inicio,
+   `PushManager` aparece y el botón funciona.
+
+   Así que la pantalla enseña **el botón** a quien puede, y **las instrucciones
+   para añadir a la pantalla de inicio** a quien no. Nadie tiene que saber de
+   antemano qué teléfono usa nadie, y el día que Apple lo cambie, esto se entera
+   solo.
+
+**Las tres decisiones que quedan** —pequeñas, con recomendación—: **¿a todos o
+sólo a quien no llenó?** (a todos, que es lo que pidió), **¿15 minutos fijos o
+configurables?** (fijos), y **¿qué hacer si la ventana ya pasó?** (callarse:
+«arranca en 15 minutos» cuando lleva media hora jugándose es peor que nada).
 
 ### Lo demás que hay sobre la mesa
 
@@ -14867,14 +14883,18 @@ grep connectSrc src/servidor.js         → ["'self'"]
 
 **Pendiente / siguiente paso:**
 
-⛔ **Nada de código hasta responder dos cosas**, y las dos son de Marco:
+✅ **Resuelto el 11 de septiembre. Ya no hay nada que bloquee:**
 
-1. **¿En qué plan está Render de verdad?** Si es el gratuito, las notificaciones
-   no se sostienen y eso hay que resolverlo primero.
-2. **¿Cuántos de los doce jugadores usan iPhone?** Determina si con las
-   notificaciones web basta o si la Play Store empieza a tener sentido.
+1. **Render es de pago**, confirmado por Marco y coherente con los 4,3 días de
+   proceso que daba `/readyz`. El servicio no se duerme. ⚠️ `render.yaml` sigue
+   diciendo `free` y **no es lo que hay puesto**.
+2. **Lo del iPhone deja de importar.** Marco no lo sabe, y no hace falta: la
+   pantalla lo detecta por capacidad —si `PushManager` no existe en ese
+   navegador, ahí no se puede activar— y enseña el botón a quien puede y las
+   instrucciones de «añadir a la pantalla de inicio» a quien no. Contar teléfonos
+   habría sido resolver a mano algo que el navegador ya sabe decir.
 
-Y después, las tres decisiones de arriba.
+Quedan las tres decisiones de arriba, las tres con recomendación.
 
 ---
 
