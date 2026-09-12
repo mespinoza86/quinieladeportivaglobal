@@ -473,31 +473,48 @@ escribirla (080).
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 3 de septiembre de 2026
+#### 📍 Dónde quedó todo el 12 de septiembre de 2026
 
 | | |
 |---|---|
-| Último commit | `38bdeb1` — «Cerrar el aviso de qs…» (Entrada 087), empujado a `origin/main` |
+| Último commit | `76d65e6` — «Mis quinielas: primero la tuya…» (Entrada 089) |
 | Árbol | ✅ Limpio, y `main` al día con `origin/main` |
-| Base de datos | ✅ **Las nueve migraciones corridas.** La 008 y la 009 las corrió Marco el 3 de septiembre y las comprobó |
-| CI | ✅ **Verde otra vez** con `38bdeb1`. Las tres corridas anteriores fallaban por la auditoría, nunca por las pruebas (087) |
-| Producción | ✅ Corriendo lo de las 085 y 086. ⚠️ El arreglo de `qs` **todavía no**: ver abajo |
+| Base de datos | ✅ **Las diez migraciones corridas.** La 010 la corrió Marco el 12 de septiembre |
+| CI | ✅ En verde desde `38bdeb1`. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
+| Producción | ✅ **Al día.** `76d65e6` desplegado el 12 de septiembre a las 09:35 |
 | Pruebas | 543 rápidas + 132 de navegador, todas en verde |
-| ⛔ Antes que nada | **Redesplegar** (089). La migración 010 ya la corrió Marco el 12 de septiembre |
-| ⭐ Y después | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado: Render es de pago y lo del iPhone lo resuelve la propia pantalla |
+| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y sin empezar |
 
-✅ **No queda nada a medias.** El despliegue tardó unos minutos en entrar y se
-comprobó preguntando qué versión había puesta, que es la forma que funciona:
+✅ **No queda nada a medias, ni en la base ni en producción.**
+
+Y el orden salió bien esta vez, que es lo que hay que repetir: **la migración
+010 se corrió ANTES de empujar**, así que el código llegó a una base que ya
+tenía la columna. Al revés, la pantalla de quinielas habría dejado de cargar —y
+es la primera que ve cualquiera al entrar—.
+
+**Cómo se comprobó el despliegue**, que es la forma que funciona:
 
 ```bash
-# La marca elegida existe SÓLO desde la 086.
-curl -s https://quinieladeportivaglobal.onrender.com/js/configuracion-quiniela.js | grep -c avisarAlCompartir
-# 0  → lo desplegado es de antes de la 086
-wc -c < private/js/configuracion-quiniela.js
-# 10385 en local contra 9873 servidos
+# `panelUnirse` sólo existe desde la Entrada 089.
+curl -s https://quinieladeportivaglobal.onrender.com/js/quinielas.js | grep -c panelUnirse
+# 1 en dos lecturas seguidas  → está puesto
+curl -s https://quinieladeportivaglobal.onrender.com/readyz
+# tiempoActivoSegundos: 249  → el proceso acababa de reiniciar
 ```
 
-Un rato después el mismo `grep -c` daba **2** y el despliegue estaba puesto.
+⚠️ **Dos lecturas seguidas, no una**: durante el relevo de instancias conviven
+la vieja y la nueva, y una sola muestra puede engañar (Entrada 072).
+
+⛔ **Y lo que NO vale en este repositorio es comparar tamaños** entre el archivo
+local y el servido. Con `core.autocrlf=true`, git guarda LF y entrega CRLF, así
+que el local pesa una unidad más por línea. El 3 de septiembre eso pareció «falta
+contenido» —10.385 contra 9.873— y era sólo el final de línea: 10.385 − 211
+líneas = 10.174, exactamente lo servido. Lo que sí vale es **buscar una marca que
+sólo exista en la versión nueva**.
+
+⚠️ Render **sí cogió solo** los dos últimos empujones, y tardó unos minutos. Aun
+así, la costumbre sigue siendo comprobarlo: este apartado ha dicho las dos cosas
+contrarias en el pasado, y el aviso de §«El despliegue: PREGUNTA» sigue vigente.
 
 ⛔ **Y la diferencia de bytes era una falsa alarma que casi me engaña.** Local
 10.385 contra 9.873 servidos parecía «falta contenido», y no: el archivo local
@@ -511,19 +528,16 @@ nueva, que es lo que hizo `grep -c avisarAlCompartir`.
 
 **Lo que queda, y no es código:**
 
-⚠️ **El arreglo de `qs` está empujado pero no desplegado.** Medido el 4 de
-septiembre a las 21:16: `/readyz` daba `tiempoActivoSegundos: 79396` —22 horas—,
-así que el proceso **no ha reiniciado** desde el despliegue de la 086 la noche
-anterior. `38bdeb1` está en `origin/main` y su corrida de CI salió en verde, pero
-Render todavía no lo ha cogido.
+✅ **El arreglo de `qs` ya entró.** El 4 de septiembre estaba empujado y sin
+desplegar; llegó con uno de los reinicios posteriores. Quedó anotado cómo se
+mide un cambio así, porque es el caso raro: **no toca ningún archivo servido**,
+así que la única señal desde fuera es que `tiempoActivoSegundos` de `/readyz`
+baje. Buscar una marca en un `.js` no sirve para éste.
 
-No corre prisa —son tres avisos moderados sobre el análisis de la *query
-string*, sin fuga de datos— y entrará con el siguiente empujón que toque código.
-Se sabrá porque `tiempoActivoSegundos` **baje**: es la única señal desde fuera
-cuando el cambio no toca ningún archivo servido.
-
-⚠️ **Encender el aviso a mano** en Configurar quiniela → Avisos. Nace apagado a
-propósito: hasta encenderlo no sale ningún correo a nadie.
+⚠️ **Encender el aviso por correo a mano** en Configurar quiniela → Avisos. Nace
+apagado a propósito: hasta que Marco lo encienda no sale ningún correo a nadie.
+**Sigue pendiente a 12 de septiembre**, y es lo único que separa a la Entrada 086
+de estar funcionando de verdad.
 
 ✅ **Y no hay nada pendiente en la base.** Las dos migraciones nuevas están
 corridas y comprobadas, así que la pantalla de compartir y el aviso ya funcionan
@@ -15080,8 +15094,15 @@ cualquiera al entrar.
 del pie del archivo dice la verdad desde cualquier rol. Con `partidos` o
 `jugadores` haría falta el rol dueño (Entrada 069).
 
-Queda **redesplegar**, y nada más: la columna se va llenando sola conforme la
-gente entre, y mientras tanto el orden es el de siempre.
+✅ **Y ya está desplegado.** `76d65e6` entró el 12 de septiembre a las 09:35,
+unos minutos después del empujón —Render lo cogió solo—. Comprobado con dos
+lecturas seguidas de `grep -c panelUnirse` sobre el archivo servido, más el
+`tiempoActivoSegundos` recién reiniciado.
+
+⚠️ **El orden por última vez usada arranca desde cero hoy**, y conviene saberlo
+para no darlo por roto: la columna nace vacía, así que hasta que cada persona
+entre a cada una de sus quinielas siguen apareciendo en el orden de antes. No es
+que no funcione; es que todavía no hay nada que ordenar. Se llena sola.
 
 Y después de esto, lo de las **notificaciones 15 minutos antes** (088), que era
 lo siguiente y quedó desbloqueado esta misma mañana.
