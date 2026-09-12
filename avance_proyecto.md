@@ -483,7 +483,8 @@ escribirla (080).
 | CI | ✅ En verde desde `38bdeb1`. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
 | Producción | ✅ **Al día.** `76d65e6` desplegado el 12 de septiembre a las 09:35 |
 | Pruebas | 543 rápidas + 132 de navegador, todas en verde |
-| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y sin empezar |
+| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 al principio de «Lo siguiente» |
+| ⚠️ Y algo suyo | **Encender el aviso por correo** en Configurar quiniela → Avisos. Nace apagado: hoy no le llega nada a nadie (086) |
 
 ✅ **No queda nada a medias, ni en la base ni en producción.**
 
@@ -547,6 +548,42 @@ en producción. El aviso, en cuanto se encienda.
 ₡1.000 al acumulado—, los abonos en cero desde el 28, y las jornadas en juego.
 Nada de las 085 y 086 cambia eso: añaden una pantalla de administración y un
 correo que hay que encender.
+
+### 🛑 SI MARCO VUELVE Y PREGUNTA «¿DÓNDE ESTAMOS?», ESTO ES LA RESPUESTA
+
+> Escrito el **12 de septiembre de 2026**, cuando Marco tuvo que salir. Está
+> aquí, arriba del todo, porque es exactamente lo que pidió que se recordara:
+> dónde estamos, qué se propone, y qué hace falta de él.
+
+**Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
+funcionando, las diez migraciones corridas, 543 + 132 pruebas en verde, el árbol
+limpio y `main` al día con `origin`. **No hay ninguna tarea empezada sin
+terminar.**
+
+**Lo que se propone hacer a continuación**, y está sin empezar —ni una línea de
+código—: las **notificaciones al teléfono 15 minutos antes de que arranque un
+partido**, para todos los jugadores. Lo pidió el 4 de septiembre con estas
+palabras: *«eso es lo que más quiero»*. El análisis entero está en la Entrada
+088; el resumen, justo debajo de este recuadro.
+
+⛔ **LO QUE HACE FALTA DE MARCO PARA SEGUIR.** Son tres decisiones pequeñas, y
+las tres tienen recomendación. Con un «dale» a las tres, se empieza:
+
+| Pregunta | Recomendación | Por qué |
+|---|---|---|
+| ¿A quién le llega? | **A todos** los que se apunten | Es lo que pidió: «revisa tus resultados» vale para cualquiera |
+| ¿Cuándo? | **15 minutos fijos** | Configurable es una casilla más para algo que ya nombró él |
+| ¿Y si la ventana ya pasó? | **Callarse** | «Arranca en 15 minutos» cuando lleva media hora jugándose es peor que nada |
+
+⚠️ **Y una cosa que le toca a él, independiente de lo anterior: ENCENDER EL AVISO
+POR CORREO.** Está en Configurar quiniela → Avisos. Se construyó en la Entrada
+086, está desplegado desde el 3 de septiembre y **nace apagado a propósito**, así
+que ahora mismo **no le llega ningún correo a nadie**. Es lo único que separa esa
+función de estar funcionando de verdad — y además le sirve para ver si con el
+correo ya le basta antes de meterse en las notificaciones, que son bastante más
+grandes.
+
+---
 
 ### ⭐ Lo que Marco quiere de verdad, y está decidido a medias
 
