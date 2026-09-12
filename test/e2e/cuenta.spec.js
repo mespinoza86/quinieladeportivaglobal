@@ -12,7 +12,19 @@ test('una cuenta nueva puede registrarse, crear quiniela y entrar', async ({ pag
 
   // La pantalla de quinielas saluda con el nombre de la cuenta.
   await expect(page.locator('#cuentaActual')).toHaveText(datos.username);
-  await expect(page.getByText('Todavía no tienes quinielas.')).toBeVisible();
+
+  /*
+   * ⚠️ Antes esto esperaba el texto «Todavía no tienes quinielas», de un panel
+   * vacío que se enseñaba siempre. Desde la Entrada 089 ese panel no aparece
+   * cuando no hay nada que poner en él: los dos formularios están justo ahí y
+   * dicen lo mismo, pero además ofrecen qué hacer.
+   *
+   * Lo que sí tiene que verse es que a quien llega sin nada se le ofrece
+   * UNIRSE antes que crear — que es el asunto entero de aquella entrada.
+   */
+  await expect(page.locator('#panelUnirse')).toBeVisible();
+  await expect(page.locator('#panelLista')).toBeHidden();
+  await expect(page.locator('#heroTexto')).toContainText('pide el código');
 
   const nombre = await crearQuiniela(page, 'Mi Quiniela');
 

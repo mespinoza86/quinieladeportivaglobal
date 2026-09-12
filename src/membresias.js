@@ -253,6 +253,30 @@ async function transferirPropiedad(quinielaId, propietarioActualId, nuevoUsuario
 }
 
 /**
+ * Deja constancia de que esta persona acaba de entrar a esta quiniela.
+ *
+ * Es lo que ordena «Mis quinielas»: arriba, la última que usó. Sin esto, la
+ * lista se ordenaba por `updated_at` —cuándo cambió la membresía— que para un
+ * grupo estable no vuelve a moverse nunca: el orden quedaba congelado en el día
+ * en que cada uno entró al grupo (migración 010).
+ *
+ * ⛔ Y NO se toca `updated_at` para esto, aunque sería una línea menos. Ese
+ * campo responde «¿cuándo cambió mi relación con esta quiniela?», y machacarlo
+ * en cada visita dejaría esa pregunta sin respuesta para siempre. Son dos
+ * hechos, y por eso son dos columnas.
+ *
+ * ⚠️ No devuelve nada ni falla si no encuentra la fila: esto acompaña a una
+ * navegación, y que la ordenación de una lista tumbe la entrada a la quiniela
+ * sería cambiar algo importante por algo cosmético.
+ */
+async function marcarAcceso(quinielaId, usuarioId, ahora = new Date()) {
+  const { rowCount } = await db.consulta(
+    'UPDATE membresias SET ultimo_acceso = $3 WHERE quiniela_id = $1 AND usuario_id = $2',
+    [quinielaId, usuarioId, ahora]);
+  return rowCount;
+}
+
+/**
  * A quién se le puede escribir por cosas de administración de esta quiniela.
  *
  * Propietario y administradores que estén DENTRO, con el correo ya confirmado.
@@ -283,7 +307,7 @@ async function correosDeAdministradores(quinielaId) {
 
 module.exports = {
   DENTRO,
-  de, porId, listar, correosDeAdministradores,
+  de, porId, listar, correosDeAdministradores, marcarAcceso,
   solicitarIngreso, aprobarIngreso, rechazar, cambiarRol,
   solicitarRetiro, aprobarRetiro, expulsar, transferirPropiedad
 };

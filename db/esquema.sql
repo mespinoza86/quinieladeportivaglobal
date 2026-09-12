@@ -135,7 +135,18 @@ CREATE TABLE membresias (
   aprobado_en   timestamptz,
   retirado_en   timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
+  /*
+   * ⚠️ `updated_at` es cuando cambio ESTA MEMBRESIA -aprobacion, rol, retiro-,
+   * NO cuando la persona paso por aqui. Para eso esta `ultimo_acceso`, que es
+   * otro hecho y por eso es otra columna (migracion 010).
+   */
   updated_at    timestamptz NOT NULL DEFAULT now(),
+  /*
+   * Cuando esta persona entro por ultima vez a esta quiniela. Ordena "Mis
+   * quinielas" para que arriba salga la ultima que uso. NULL = todavia no ha
+   * entrado, y el orden tiene que llevar NULLS LAST o saldran las primeras.
+   */
+  ultimo_acceso timestamptz,
   UNIQUE (quiniela_id, usuario_id)
 );
 

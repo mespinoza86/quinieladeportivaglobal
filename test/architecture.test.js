@@ -2121,6 +2121,76 @@ test('⛔ el hueco que pasa a ser otro partido pierde su marca de compartido', (
     + 'que se volviera a proponer un mensaje ya mandado');
 });
 
+test('⛔ «Mis quinielas» no pinta los formularios antes de saber el orden', () => {
+  /*
+   * La pantalla ensena la lista, unirse y crear en un orden que depende de si
+   * la persona pertenece a alguna quiniela (Entrada 089). Hasta el 11 de
+   * septiembre el orden estaba escrito en el HTML y era el mismo para todos:
+   * quien entraba a jugar se topaba con CREAR como primera cosa, y hubo gente
+   * que, intentando entrar a su quiniela, creo otras.
+   *
+   * ⛔ POR QUE ESTO ES UN CENTINELA DE TEXTO Y NO UNA PRUEBA DE NAVEGADOR.
+   *
+   * El fallo que vigila es un DESTELLO: si los paneles no nacen `hidden`, se
+   * pintan en el orden del archivo y el script los recoloca un instante
+   * despues. Medio segundo con "Crear quiniela" arriba, que es justo donde la
+   * gente toca.
+   *
+   * Playwright NO lo caza: mira el estado final, cuando el script ya coloco
+   * todo. Se comprobo quitando un `hidden` a proposito y las seis pruebas de
+   * `quinielas-orden.spec.js` siguieron en verde. Asi que este guardian es lo
+   * unico que hay, y por eso esta escrito lo que cubre y lo que no.
+   */
+  const pagina = leer(path.join('public', 'quinielas.html'));
+
+  for (const panel of ['panelLista', 'panelUnirse', 'panelCrear']) {
+    assert.match(pagina, new RegExp(`id="${panel}"[^>]*\\shidden`),
+      `#${panel} tiene que nacer oculto: si se pinta antes de que el script `
+      + 'decida el orden, hay un instante con «Crear quiniela» arriba');
+  }
+
+  /*
+   * Y el script tiene que ser quien decide. Si dejara de colocar, los paneles
+   * se quedarian ocultos para siempre y la pantalla saldria vacia -que es peor
+   * que el fallo original, asi que conviene que salte aqui-.
+   */
+  const script = quitarComentarios(leer(path.join('private', 'js', 'quinielas.js')));
+
+  assert.match(script, /function colocar\(orden\)/,
+    'si la colocacion cambio de forma, revisa esta prueba entera');
+  assert.match(script, /hidden = false/,
+    'alguien tiene que volver a ensenar los paneles que nacen ocultos');
+});
+
+test('⛔ el orden de «Mis quinielas» lleva NULLS LAST', () => {
+  /*
+   * `ultimo_acceso` es NULL en toda membresia que no se haya estrenado, y en un
+   * `DESC` PostgreSQL pone los nulos PRIMERO. Sin `NULLS LAST`, el dia del
+   * despliegue -cuando la columna esta vacia en TODAS las filas- la lista sale
+   * justo al reves de lo que se pretende, y sin dar ningun error.
+   *
+   * ⚠️ Es un cable, no una red: comprueba que la clausula sigue escrita, no que
+   * ordene bien. La conducta la cubre «una quiniela sin estrenar va DESPUES de
+   * las usadas», en test/rutas.test.js, que si cae al quitarla.
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'quinielas.js')));
+
+  assert.match(mod, /ORDER BY m\.ultimo_acceso DESC NULLS LAST/,
+    'sin NULLS LAST, las quinielas sin estrenar se ponen delante de las usadas');
+
+  /*
+   * Y la vuelta: `updated_at` NO se escribe al entrar. Son dos hechos -«cambio
+   * mi membresia» y «pase por aqui»- y meterlos en la misma columna dejaria la
+   * primera pregunta sin respuesta para siempre.
+   */
+  const membresias = quitarComentarios(leer(path.join('src', 'membresias.js')));
+  const marcar = membresias.slice(membresias.indexOf('async function marcarAcceso'));
+
+  assert.ok(marcar.length > 100, 'no se encontro marcarAcceso; revisa esta prueba');
+  assert.ok(!marcar.slice(0, 400).includes('updated_at'),
+    'marcarAcceso no puede tocar updated_at: visitar no es cambiar la membresia');
+});
+
 test('⛔ el aviso por correo toma el cerrojo antes de mandar nada', () => {
   /*
    * ============================================================

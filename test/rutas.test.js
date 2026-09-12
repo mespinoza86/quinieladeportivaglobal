@@ -4515,3 +4515,125 @@ test('⚠️ sin administradores con el correo confirmado, el aviso queda pendie
   assert.equal((await planificador.avisarDeCompartir()).correos, 1);
   assert.equal(avisosEnBandeja().length, 1);
 });
+
+
+/* ============ El orden de «Mis quinielas» (Entrada 089) ============ */
+
+/** Los nombres de las quinielas del agente, en el orden en que los manda el servidor. */
+const misQuinielas = async agente =>
+  (await agente.get('/api/quinielas')).body.map(q => q.nombre);
+
+/** Lee la fila de membresía directa de la base. `membresias` es de plataforma: sin RLS. */
+async function membresiaDe(quinielaId, usuarioId) {
+  const { rows: [m] } = await db.consulta(
+    'SELECT ultimo_acceso, updated_at FROM membresias WHERE quiniela_id = $1 AND usuario_id = $2',
+    [quinielaId, usuarioId]);
+  return m;
+}
+
+test('crear una quiniela cuenta como entrar en ella', async () => {
+  /*
+   * Crear deja `quinielaActivaId` en la sesión y manda a la portada, así que
+   * es una entrada. Sin anotarlo, la recién creada saldría la ÚLTIMA de la
+   * lista —sin acceso, con NULLS LAST— justo cuando más se la busca.
+   *
+   * ⛔ Y va con `cuentaNueva` A PROPÓSITO, no con el ayudante `admin()`.
+   *
+   * La primera versión usaba `admin()`, que crea la quiniela **y la selecciona
+   * justo después**. Así que la marca la ponía el `seleccionar`, no el `crear`,
+   * y la prueba pasaba en verde con el `now()` de la creación quitado: decía
+   * comprobar una cosa y comprobaba otra. Lo destapó romper el código a
+   * propósito, que es exactamente para lo que sirve.
+   */
+  const { agente, usuarioId } = await cuentaNueva('crea-acceso');
+
+  const creada = await agente.post('/api/quinielas').send({ nombre: 'Recién creada' });
+  assert.equal(creada.status, 201);
+
+  const m = await membresiaDe(creada.body.quiniela.id, usuarioId);
+  assert.ok(m.ultimo_acceso,
+    'crear la quiniela tiene que dejar constancia del acceso, sin pasar por seleccionar');
+});
+
+test('entrar a una quiniela la sube al primer puesto', async () => {
+  const jefe = await admin('orden');
+
+  const segunda = await jefe.agente.post('/api/quinielas').send({ nombre: 'La segunda' });
+  assert.equal(segunda.status, 201);
+
+  // Recién creada la segunda, es la última que se usó.
+  assert.equal((await misQuinielas(jefe.agente))[0], 'La segunda');
+
+  // Y al volver a la primera, manda la primera.
+  await jefe.agente.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+
+  assert.equal((await misQuinielas(jefe.agente))[0], 'Mi quiniela',
+    'arriba va la última que se usó, no la última que se creó');
+});
+
+test('⛔ una quiniela sin estrenar va DESPUÉS de las usadas, no antes', async () => {
+  /*
+   * Es el `NULLS LAST`, y sin él esto sale al revés **sin dar ningún error**:
+   * en un `DESC`, PostgreSQL pone los nulos PRIMERO. El día del despliegue
+   * todas las membresías tienen `ultimo_acceso` vacío, así que el fallo saldría
+   * en la primera pantalla que viera cualquiera.
+   */
+  const jefe = await admin('nulos');
+  const socio = await miembroDe(jefe, 'nulos-socio');
+
+  // El socio entra a la del jefe: esa queda con acceso anotado.
+  await socio.agente.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+
+  // Y tiene otra en la que nunca ha entrado, con el acceso a nulo a mano.
+  const suya = await socio.agente.post('/api/quinielas').send({ nombre: 'Sin estrenar' });
+  await db.consulta(
+    'UPDATE membresias SET ultimo_acceso = NULL WHERE quiniela_id = $1 AND usuario_id = $2',
+    [suya.body.quiniela.id, socio.usuarioId]);
+
+  const orden = await misQuinielas(socio.agente);
+
+  assert.equal(orden[0], 'Mi quiniela', 'la usada va primero');
+  assert.equal(orden.at(-1), 'Sin estrenar', 'la que nunca se abrió, al final');
+});
+
+test('⛔ entrar a una quiniela NO toca `updated_at` de la membresía', async () => {
+  /*
+   * Son dos hechos distintos y por eso son dos columnas: `updated_at` responde
+   * «¿cuándo cambió mi relación con esta quiniela?» —aprobación, rol, retiro— y
+   * `ultimo_acceso` responde «¿cuándo pasé por aquí?».
+   *
+   * Machacar el primero en cada visita habría sido una línea menos y dejaría la
+   * primera pregunta sin respuesta para siempre, sin que nada fallara.
+   */
+  const jefe = await admin('dos-hechos');
+
+  const antes = await membresiaDe(jefe.quiniela.id, jefe.usuarioId);
+
+  await jefe.agente.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+
+  const despues = await membresiaDe(jefe.quiniela.id, jefe.usuarioId);
+
+  assert.deepEqual(despues.updated_at, antes.updated_at,
+    'visitar no es cambiar la membresía');
+  assert.notDeepEqual(despues.ultimo_acceso, null,
+    'pero el acceso sí queda anotado');
+});
+
+test('el acceso se anota por PERSONA, no por quiniela', async () => {
+  /*
+   * Dos personas en la misma quiniela tienen cada una su propio «última vez que
+   * entré». Si se guardara en `quinielas` en vez de en `membresias`, la visita
+   * de uno movería la lista del otro.
+   */
+  const jefe = await admin('por-persona');
+  const socio = await miembroDe(jefe, 'por-persona-socio');
+
+  await socio.agente.post(`/api/quinielas/${jefe.quiniela.id}/seleccionar`).send({});
+
+  const delSocio = await membresiaDe(jefe.quiniela.id, socio.usuarioId);
+  const delJefe = await membresiaDe(jefe.quiniela.id, jefe.usuarioId);
+
+  assert.ok(delSocio.ultimo_acceso, 'el socio entró y consta');
+  assert.notDeepEqual(delJefe.ultimo_acceso, delSocio.ultimo_acceso,
+    'y no se pisan: cada uno lleva el suyo');
+});

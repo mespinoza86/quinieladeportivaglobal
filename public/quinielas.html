@@ -2,13 +2,57 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mis quinielas</title><link rel="stylesheet" href="/css/styles.css" /><script defer src="/js/html-seguro.js"></script>
-  <title>Mis quinielas</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/quinielas.js" defer></script>
+  <title>Mis quinielas</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script defer src="/js/html-seguro.js"></script>
+  <script src="/js/quinielas.js" defer></script>
 </head>
-<body class="app-body"><main class="mobile-shell">
-  <section class="hero-card"><div class="hero-top"><div><p class="eyebrow" id="cuentaActual">Mi cuenta</p><h1>Mis quinielas</h1></div><div class="app-logo">⚽</div></div><p class="hero-text">Selecciona una quiniela o comienza una nueva.</p></section>
-  <section class="app-panel"><h2>Crear quiniela</h2><form id="crearQuinielaForm"><label class="field-label" for="nombreQuiniela">Nombre</label><input id="nombreQuiniela" minlength="3" maxlength="80" required /><button type="submit">Crear quiniela</button></form></section>
-  <section class="app-panel"><h2>Unirme a una quiniela</h2><form id="unirseForm"><label class="field-label" for="codigoIngreso">Código de ingreso</label><input id="codigoIngreso" autocomplete="off" required /><button type="submit">Solicitar ingreso</button></form></section>
-  <section class="app-panel"><h2>Quinielas y solicitudes</h2><div id="listaQuinielas" class="quick-actions"></div><p id="mensajeQuinielas" class="form-message" role="alert"></p></section>
+<body class="app-body"><main class="mobile-shell" id="shell">
+  <section class="hero-card"><div class="hero-top"><div><p class="eyebrow" id="cuentaActual">Mi cuenta</p><h1>Mis quinielas</h1></div><div class="app-logo">⚽</div></div><p class="hero-text" id="heroTexto">Cargando…</p></section>
+
+  <!--
+    ⛔ EL ORDEN DE ESTAS TRES SECCIONES LO DECIDE EL SCRIPT, NO ESTE ARCHIVO.
+
+    Hasta el 11 de septiembre el orden estaba escrito aquí —crear, unirse,
+    lista— y era el mismo para todo el mundo. Quien entraba a jugar se
+    encontraba un formulario de CREAR como primera cosa de la pantalla, y hubo
+    gente que, intentando entrar a su quiniela, creó otras.
+
+    ⚠️ Y por eso los dos formularios nacen `hidden`. Pintarlos y reordenarlos
+    después dejaría un instante en el que «Crear quiniela» está arriba, que es
+    exactamente donde la gente toca: sería recrear el fallo que esto viene a
+    quitar, sólo que durante medio segundo.
+
+    ⛔ Ese destello NO lo puede cazar una prueba de navegador —Playwright mira
+    el estado final, cuando el script ya colocó todo— así que lo vigila un
+    centinela de `test/architecture.test.js`. Si quitas un `hidden` de aquí, es
+    esa prueba la que se pone roja, no las de la pantalla.
+  -->
+  <section class="app-panel" id="panelLista" hidden>
+    <h2>Mis quinielas</h2>
+    <div id="listaQuinielas" class="quick-actions"></div>
+  </section>
+
+  <section class="app-panel" id="panelUnirse" hidden>
+    <h2>Unirme a una quiniela</h2>
+    <p class="helper-text">Pide el código a quien la administra.</p>
+    <form id="unirseForm">
+      <label class="field-label" for="codigoIngreso">Código de ingreso</label>
+      <input id="codigoIngreso" autocomplete="off" required />
+      <button type="submit">Solicitar ingreso</button>
+    </form>
+  </section>
+
+  <section class="app-panel" id="panelCrear" hidden>
+    <h2>Crear una quiniela nueva</h2>
+    <p class="helper-text">Sólo si vas a administrarla tú. Para jugar en una que ya existe, usa el código de ingreso.</p>
+    <form id="crearQuinielaForm">
+      <label class="field-label" for="nombreQuiniela">Nombre</label>
+      <input id="nombreQuiniela" minlength="3" maxlength="80" required />
+      <button type="submit">Crear quiniela</button>
+    </form>
+  </section>
+
+  <p id="mensajeQuinielas" class="form-message" role="alert"></p>
   <button id="cerrarSesion" class="ghost-button" type="button">Cerrar sesión</button>
 </main></body></html>

@@ -57,9 +57,16 @@ async function crear({ nombre, propietarioId, intentos = 5 }) {
            RETURNING id, nombre, codigo_ingreso, propietario_id, estado, configuracion`,
           [nombre, generarCodigoIngreso(), propietarioId, CONFIGURACION_POR_DEFECTO]);
 
+        /*
+         * `ultimo_acceso` nace puesto porque crear una quiniela ES entrar en
+         * ella: la ruta deja `quinielaActivaId` en la sesión y manda a la
+         * portada. Sin esto, la recién creada saldría la ÚLTIMA de «Mis
+         * quinielas» —sin acceso, con `NULLS LAST`— justo después de crearla,
+         * que es cuando más se la busca (migración 010).
+         */
         await cliente.query(
-          `INSERT INTO membresias (quiniela_id, usuario_id, rol, estado, aprobado_en)
-           VALUES ($1, $2, 'propietario', 'activo', now())`,
+          `INSERT INTO membresias (quiniela_id, usuario_id, rol, estado, aprobado_en, ultimo_acceso)
+           VALUES ($1, $2, 'propietario', 'activo', now(), now())`,
           [quiniela.id, propietarioId]);
 
         /*
@@ -135,8 +142,26 @@ async function porCodigo(codigo) {
  * El código de ingreso sólo va para quien puede repartirlo: propietario y
  * administradores. Un miembro normal no debe poder invitar a nadie.
  *
- * Las eliminadas no salen. Se ordenan por lo último que se tocó de la
- * membresía, que es lo que hacía `sort({ updatedAt: -1 })`.
+ * Las eliminadas no salen.
+ *
+ * ============================================================================
+ * ⚠️ EL ORDEN ES «LA ÚLTIMA QUE USÉ», Y ANTES NO LO ERA
+ * ============================================================================
+ *
+ * Hasta la migración 010 esto ordenaba por `updated_at`, heredado del
+ * `sort({ updatedAt: -1 })` de Mongo. Parecía «la más reciente» y no lo era:
+ * `updated_at` se mueve cuando cambia LA MEMBRESÍA —al aprobarte, al cambiarte
+ * el rol, al pedir el retiro— y **entrar a la quiniela no lo tocaba**. Para un
+ * grupo estable no vuelve a moverse nunca, así que el orden quedaba congelado
+ * en el día en que cada uno entró al grupo.
+ *
+ * ⛔ Y el `NULLS LAST` no es adorno: en un `DESC`, PostgreSQL pone los nulos
+ * PRIMERO por defecto. Sin él, el día del despliegue —cuando `ultimo_acceso`
+ * está vacío en todas las filas— la lista saldría **justo al revés** de lo que
+ * se pretende, y sin dar ningún error.
+ *
+ * El segundo criterio conserva el orden viejo para quien todavía no ha entrado,
+ * así que la columna se va llenando sola sin que nadie vea un salto raro.
  */
 async function deUsuario(usuarioId) {
   const { rows } = await db.consulta(
@@ -149,7 +174,7 @@ async function deUsuario(usuarioId) {
        FROM membresias m
        JOIN quinielas  q ON q.id = m.quiniela_id
       WHERE m.usuario_id = $1 AND q.estado <> 'eliminada'
-      ORDER BY m.updated_at DESC`,
+      ORDER BY m.ultimo_acceso DESC NULLS LAST, m.updated_at DESC`,
     [usuarioId]);
   return rows;
 }

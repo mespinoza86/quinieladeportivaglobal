@@ -22,13 +22,13 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 536/536
-npm run test:e2e            # 126/126, ~6 min
+npm test                    # 543/543
+npm run test:e2e            # 132/132, ~7 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
 la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
-`src/servidor.js`, `src/rutas/` y 22 módulos de `src/`.
+`src/servidor.js`, `src/rutas/` y 28 módulos de `src/`.
 
 ✅ **Fundida en `main` el 22 de agosto**, y el esquema de Neon está al día:
 `npm start` conecta, arranca y responde. Se comprobó de punta a punta contra la
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **536**, ~110 s |
-| Pruebas de navegador | **126**, ~6 min, contra el servidor de verdad |
+| Pruebas rápidas | **543**, ~110 s |
+| Pruebas de navegador | **132**, ~7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 28 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ✅ **Al día.** Las nueve migraciones corridas y verificadas |
+| Base en Neon | ✅ **Al día.** Las diez migraciones corridas y verificadas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -482,8 +482,9 @@ escribirla (080).
 | Base de datos | ✅ **Las nueve migraciones corridas.** La 008 y la 009 las corrió Marco el 3 de septiembre y las comprobó |
 | CI | ✅ **Verde otra vez** con `38bdeb1`. Las tres corridas anteriores fallaban por la auditoría, nunca por las pruebas (087) |
 | Producción | ✅ Corriendo lo de las 085 y 086. ⚠️ El arreglo de `qs` **todavía no**: ver abajo |
-| Pruebas | 536 rápidas + 126 de navegador, todas en verde |
-| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). ✅ **Desbloqueado el 11 de septiembre**: Render es de pago y lo del iPhone lo resuelve la propia pantalla |
+| Pruebas | 543 rápidas + 132 de navegador, todas en verde |
+| ⛔ Antes que nada | **Redesplegar** (089). La migración 010 ya la corrió Marco el 12 de septiembre |
+| ⭐ Y después | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado: Render es de pago y lo del iPhone lo resuelve la propia pantalla |
 
 ✅ **No queda nada a medias.** El despliegue tardó unos minutos en entrar y se
 comprobó preguntando qué versión había puesta, que es la forma que funciona:
@@ -692,9 +693,8 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **LAS NUEVE ESTÁN CORRIDAS Y VERIFICADAS contra Neon.** La 008 y la 009 las
-corrió Marco el 3 de septiembre y comprobó que las dos columnas quedaron puestas.
-No queda ninguna pendiente.
+✅ **LAS DIEZ ESTÁN CORRIDAS Y VERIFICADAS contra Neon.** La 008 y la 009 las
+corrió Marco el 3 de septiembre, y la 010 el 12. No queda ninguna pendiente.
 
 | # | Qué trajo | Corrida |
 |---|---|---|
@@ -707,6 +707,7 @@ No queda ninguna pendiente.
 | 007 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos (079) | 27 ago |
 | 008 | `partidos.compartido_en` (Entrada 085) | 3 sep |
 | 009 | `partidos.avisado_en`, la memoria del aviso (086) | 3 sep |
+| 010 | `membresias.ultimo_acceso`, el orden de «Mis quinielas» (089) | 12 sep |
 
 Comprobado el 27 contra la base de verdad: las columnas con su valor por
 defecto, los dos `CHECK` de la 006, RLS forzada en `entregas_acumulado`, y las
@@ -1486,7 +1487,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-✅ **Son nueve, y las nueve están corridas y verificadas contra Neon.**
+✅ **Son diez, y las diez están corridas y verificadas contra Neon.**
 
 | Archivo | Líneas | Qué trae | Entrada |
 |---|---:|---|---|
@@ -1499,6 +1500,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 | `007-abonos-solo-escritura.sql` | 87 | `REVOKE UPDATE, DELETE` sobre `pagos` y las otras dos tablas de sólo escritura | 079 |
 | `008-compartir-pronosticos.sql` | 104 | `partidos.compartido_en`: cuándo salieron al grupo los pronósticos de ese partido | 085 |
 | `009-aviso-de-compartir.sql` | 112 | `partidos.avisado_en`: la memoria del AVISO, que no es la de haber compartido. Sin ella el correo se repetiría cada minuto | 086 |
+| `010-ultimo-acceso.sql` | 105 | `membresias.ultimo_acceso`: cuándo entraste por última vez a cada quiniela. **No es `updated_at`**, que dice cuándo cambió la membresía | 089 |
 
 ⛔ **Después de cada migración hay que preguntarle a la base qué permisos
 quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
@@ -14895,6 +14897,194 @@ grep connectSrc src/servidor.js         → ["'self'"]
    habría sido resolver a mano algo que el navegador ya sabe decir.
 
 Quedan las tres decisiones de arriba, las tres con recomendación.
+
+---
+
+
+
+### 📌 Entrada 089 — 11 de septiembre de 2026 — Quien iba a jugar, acababa creando quinielas
+
+**Objetivo:** Marco reportó un problema de la pantalla de después de entrar, y
+lo reportó con el síntoma, que es como se reportan los buenos:
+
+> «hay gente que tratando de entrar a la quiniela, crear otras quinielas»
+
+La pantalla enseñaba **Crear**, luego **Unirme**, y al final **las quinielas de
+la persona**. Siempre en ese orden, para todo el mundo. Quien entraba a jugar se
+topaba con un formulario de crear como primera cosa.
+
+## Lo que pidió, y lo que hacía falta para dárselo
+
+1. Sin ninguna quiniela → **Unirme** primero, **Crear** después.
+2. Con quinielas → **las quinielas primero**.
+3. Con varias → arriba **la última con la que interactuó**.
+
+Las dos primeras son mover cosas. La tercera **no se podía hacer**, y ése fue el
+hallazgo al ir a mirar.
+
+## ⛔ «La última con la que interactuó» no existía, y parecía que sí
+
+La consulta ya ordenaba —`ORDER BY m.updated_at DESC`, heredado del
+`sort({ updatedAt: -1 })` de Mongo— y eso **parece** «la más reciente».
+
+No lo es. `updated_at` se mueve cuando cambia **la membresía**: al aprobarte, al
+cambiarte el rol, al pedir el retiro, al expulsarte. Lo escriben ocho sitios de
+`src/membresias.js`. Y **entrar a la quiniela no lo tocaba**.
+
+⚠️ Así que para un grupo estable el orden quedaba **congelado en el día en que
+cada uno entró al grupo**, y no volvía a moverse nunca. Ordenaba, y ordenaba mal,
+sin que nada fallara.
+
+## Y por qué NO se reutilizó esa columna
+
+Era una línea menos: poner `updated_at = now()` al entrar y listo.
+
+⛔ Y habría dejado la pregunta original sin respuesta **para siempre**: después
+del cambio, ya no se podría saber cuándo te aprobaron, porque cada visita lo
+habría machacado.
+
+Son dos hechos —«cambió mi relación con esta quiniela» y «pasé por aquí»— y por
+eso son dos columnas. Es la misma familia que `''` contra `NULL` (068) y que los
+tres estados de `pagada` (081): **confundir dos significados en un campo sale
+caro y no da ningún error el día que se hace**.
+
+Migración 010: `membresias.ultimo_acceso`.
+
+## ⛔ El `NULLS LAST`, que es donde estaba el fallo silencioso
+
+`ultimo_acceso` nace en `NULL` en **todas** las membresías que ya existen. Y en
+un `ORDER BY … DESC`, PostgreSQL pone los nulos **primero**.
+
+⚠️ Sin `NULLS LAST`, el día del despliegue —cuando la columna está vacía en todas
+las filas— la lista de todo el mundo saldría **justo al revés** de lo que se
+pretende. Sin error, sin aviso, y en la primera pantalla que ve cualquiera.
+
+El segundo criterio, `updated_at DESC`, conserva el orden viejo para quien
+todavía no ha entrado: la columna se llena sola y nadie ve un salto raro.
+
+## ⚠️ El destello, que es un fallo que dura medio segundo
+
+Si los paneles se pintan en el orden del archivo y el script los recoloca
+después, hay un instante con «Crear quiniela» arriba. **Medio segundo, y justo
+donde la gente toca**: sería recrear el fallo que esto viene a quitar.
+
+Por eso los tres nacen `hidden` y sólo se enseñan cuando ya se sabe el orden.
+
+⛔ **Y eso NO lo caza Playwright**, que mira el estado final: se comprobó
+quitando un `hidden` a propósito y las seis pruebas de la pantalla siguieron en
+verde. Lo vigila un centinela de texto en `architecture.test.js`, y queda escrito
+allí qué cubre y qué no, para que nadie lo confunda con una red.
+
+## Las dos decisiones de Marco
+
+1. **Una solicitud pendiente cuenta como «algo que enseñar»**, y va primero. Es
+   lo correcto: a quien está esperando aprobación, poniéndole «Unirme» delante
+   **vuelve a meter el código** — la misma confusión con otra cara. Su tarjeta
+   dice «Tu solicitud está en espera de aprobación».
+2. **Entrar directo cuando sólo hay una quiniela: NO.** Se propuso porque
+   resolvería el problema de raíz —la mayoría tiene una sola y ni vería la
+   pantalla— y Marco lo descartó. Queda anotado que se planteó, para no volver a
+   proponerlo.
+
+⚠️ Y una precisión que no estaba en la pregunta: `rechazado` y `expulsado` **no**
+cuentan como «algo que enseñar». Quien sólo tiene filas así no pertenece a
+ninguna parte y lo que necesita es el formulario; ver «expulsado» de primera cosa
+no le resuelve nada. Se enseñan, pero al final.
+
+## ⛔ Y una prueba mía que era decoración, destapada al romper el código
+
+La prueba «crear una quiniela cuenta como entrar en ella» **pasaba en verde con
+la marca de la creación quitada**.
+
+El motivo: usaba el ayudante `admin()`, que crea la quiniela **y la selecciona
+justo después**. Así que la marca la ponía el `seleccionar`, no el `crear`.
+Decía comprobar una cosa y comprobaba otra.
+
+Se arregló usando `cuentaNueva()` y creando sin seleccionar. Con eso, la mutación
+la tumba.
+
+⚠️ Es la lección de siempre con una cara nueva: **un ayudante cómodo puede hacer
+por su cuenta justo lo que la prueba quería verificar**. Lo único que lo destapa
+es romper el código a propósito.
+
+## Y un error de manejo que casi cuesta el trabajo
+
+Al deshacer una mutación se usó `git checkout public/quinielas.html`, y eso
+devolvió el archivo **a la versión del commit** —la vieja—, no a la de antes de
+la mutación. La reescritura entera se perdió y hubo que rehacerla.
+
+⛔ `git checkout` sobre un archivo con cambios **sin commit** no es «deshacer lo
+último»: es «tirar todo lo que no esté commiteado». Para deshacer una mutación,
+copia de respaldo, como en el resto de la sesión.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/010-ultimo-acceso.sql` | **Nueva.** `membresias.ultimo_acceso` |
+| `db/esquema.sql` | La columna, con la nota de que no es `updated_at` |
+| `src/membresias.js` | `marcarAcceso`, que **no** toca `updated_at` |
+| `src/quinielas.js` | El orden con `NULLS LAST`; crear anota el acceso |
+| `src/rutas/plataforma.js` | Entrar a una quiniela anota el acceso |
+| `public/quinielas.html` | Tres paneles con id y `hidden`; textos de ayuda |
+| `private/js/quinielas.js` | **Reescrito.** El orden lo decide la pantalla |
+| `test/rutas.test.js` | 5 pruebas nuevas |
+| `test/architecture.test.js` | Dos centinelas nuevos |
+| `test/e2e/quinielas-orden.spec.js` | **Nueva.** El orden por la interfaz |
+| `test/e2e/cuenta.spec.js` | Esperaba el panel vacío que ya no se enseña |
+
+**Verificación:**
+
+```
+npm test             → 543/543  (eran 536)
+npx playwright test  → 132/132  (eran 126)
+
+Rotas a proposito:
+  sin NULLS LAST            → cae "una quiniela sin estrenar va DESPUES"
+  entrar no anota nada      → caen 3
+  marcarAcceso toca updated_at → cae "NO toca updated_at" (y el centinela)
+  crear no anota el acceso  → cae "crear cuenta como entrar" (tras arreglarla)
+  los formularios siempre delante → caen 4 de navegador
+  quitar un `hidden`        → cae el centinela; las de navegador NO
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un `ORDER BY` que existe no es un `ORDER BY` que sirve.** `updated_at`
+   parecía «la más reciente» y era «la última vez que cambió tu membresía», que
+   para un grupo estable no cambia nunca.
+2. ⛔ **En un `DESC`, PostgreSQL pone los nulos PRIMERO.** Con una columna recién
+   añadida —todo nulo— eso invierte la lista entera el día del despliegue, en
+   silencio.
+3. ⚠️ **Hay fallos que duran medio segundo y son fallos igual.** El destello de
+   reordenar después de pintar cae justo donde la gente toca, y **ninguna prueba
+   de navegador lo ve**, porque miran el estado final.
+4. ⛔ **Un ayudante de pruebas puede hacer por su cuenta lo que la prueba quería
+   comprobar.** `admin()` selecciona después de crear, así que la prueba de la
+   creación verificaba el `seleccionar`.
+5. ⛔ **`git checkout <archivo>` tira los cambios sin commit**, no deshace el
+   último. Para revertir una mutación, respaldo.
+6. **El mejor reporte de fallo es el síntoma, no el diagnóstico.** «Hay gente que
+   acaba creando quinielas» llevó a mirar la pantalla; «ordena mal» habría
+   llevado a mirar el `ORDER BY` y a no ver nada raro.
+
+**Pendiente / siguiente paso:**
+
+✅ **La migración 010 está corrida.** La ejecutó Marco en Neon el 12 de
+septiembre, antes de empujar el código — que era el orden que tocaba: al revés,
+la pantalla de quinielas habría dejado de cargar, y es la primera que ve
+cualquiera al entrar.
+
+⚠️ Y una nota sobre su comprobación, que es la excepción a la costumbre:
+`membresias` es tabla de **plataforma** y **no lleva RLS**, así que la consulta
+del pie del archivo dice la verdad desde cualquier rol. Con `partidos` o
+`jugadores` haría falta el rol dueño (Entrada 069).
+
+Queda **redesplegar**, y nada más: la columna se va llenando sola conforme la
+gente entre, y mientras tanto el orden es el de siempre.
+
+Y después de esto, lo de las **notificaciones 15 minutos antes** (088), que era
+lo siguiente y quedó desbloqueado esta misma mañana.
 
 ---
 

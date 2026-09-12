@@ -125,6 +125,22 @@ function sinQuiniela(app, { requireLogin }) {
     }
 
     req.session.quinielaActivaId = quiniela.id;
+
+    /*
+     * Y queda anotado que pasó por aquí, que es lo que pone esta quiniela arriba
+     * la próxima vez que abra «Mis quinielas» (migración 010).
+     *
+     * ⚠️ CON `await`, y la tentación era no ponerlo: «es para ordenar una lista,
+     * que no bloquee la navegación». Dejarlo suelto abre una carrera de verdad
+     * —quien entra y vuelve enseguida a «Mis quinielas» puede leer el orden
+     * ANTES de que esta escritura aterrice— y además haría la prueba inestable.
+     *
+     * Y el argumento de protegerse del fallo no se sostiene: las dos consultas
+     * de arriba ya fueron a la base, así que si estuviera caída no se habría
+     * llegado hasta aquí. Es un UPDATE por clave en una tabla sin RLS.
+     */
+    await membresiasMod.marcarAcceso(quiniela.id, req.session.usuarioId);
+
     /*
      * ⚠️ El Admin Mode se cae al cambiar de quiniela. Va atado a una quiniela
      * concreta, y arrastrarlo sería conceder permisos administrativos en otra
