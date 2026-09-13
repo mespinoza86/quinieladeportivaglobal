@@ -2191,6 +2191,68 @@ test('⛔ el orden de «Mis quinielas» lleva NULLS LAST', () => {
     'marcarAcceso no puede tocar updated_at: visitar no es cambiar la membresia');
 });
 
+test('⛔ el ciclo de cada minuto no arrastra los JSON crudos del proveedor', () => {
+  /*
+   * ============================================================
+   * ESTO COSTO DINERO DE VERDAD (Entrada 090)
+   * ============================================================
+   *
+   * `refrescarPendientes` corre cada 60 segundos y pedia las filas de
+   * `fixtures` con `porClaves`, que hace `SELECT *`. En esa tabla, `SELECT *`
+   * arrastra `evento` y `busqueda`: las respuestas crudas del API, ~3 KB por
+   * partido, para mirar dos campos.
+   *
+   * Medido contra la base de verdad con 64 partidos en el catalogo:
+   *
+   *     SELECT *          539,2 KB por ciclo  ->  22,21 GB al mes
+   *     columnas justas     3,0 KB por ciclo  ->   0,13 GB al mes
+   *
+   * Agoto los 5 GB de transferencia mensual de Neon y dejo la base a punto de
+   * suspenderse, con doce jugadores y 54 partidos. No era el tamano de los
+   * datos -la tabla son 0,5 MB- sino leerla 43.200 veces al mes.
+   *
+   * ⚠️ Y es la clase de fallo que no avisa: no rompe nada, no sale en ninguna
+   * prueba, y el coste CRECE con la temporada. En agosto eran kilobytes.
+   */
+  const sinc = quitarComentarios(leer(path.join('src', 'sincronizador.js')));
+  const fx = quitarComentarios(leer(path.join('src', 'fixtures.js')));
+
+  /* 1. El camino de cada minuto usa la consulta ligera. */
+  const refrescar = sinc.slice(
+    sinc.indexOf('async function refrescarPendientes'),
+    sinc.indexOf('async function ejecutarCiclo'));
+
+  assert.ok(refrescar.length > 200, 'no se encontro refrescarPendientes; revisa esta prueba');
+
+  assert.match(refrescar, /fixturesMod\.paraDecidirConsulta\(/,
+    'el ciclo de cada minuto tiene que pedir solo las columnas que mira');
+  assert.doesNotMatch(refrescar, /fixturesMod\.porClaves\(/,
+    'porClaves hace SELECT * y aqui eso son 22 GB al mes de JSON que nadie lee');
+
+  /* 2. Y la consulta ligera no puede volver a ser un SELECT *. */
+  const ligera = fx.slice(fx.indexOf('async function paraDecidirConsulta'));
+  assert.ok(ligera.length > 200, 'no se encontro paraDecidirConsulta; revisa esta prueba');
+
+  const cuerpo = ligera.slice(0, ligera.indexOf('}\n'));
+  assert.doesNotMatch(cuerpo, /SELECT \*/,
+    'paraDecidirConsulta existe precisamente para no hacer SELECT *');
+
+  for (const columna of ['evento', 'busqueda']) {
+    assert.ok(!cuerpo.includes(columna),
+      `paraDecidirConsulta no puede pedir "${columna}": es la respuesta cruda del API`);
+  }
+
+  /*
+   * 3. Y la vuelta: `porClaves` SIGUE existiendo y sigue haciendo SELECT *,
+   * porque al reescribir una jornada el `evento` SI hace falta -es el marcador
+   * que puntua-. Lo que estaba mal no era la funcion, era usarla cada minuto.
+   */
+  assert.match(fx, /async function porClaves/,
+    'porClaves sigue haciendo falta para reescribir jornadas');
+  assert.match(sinc, /fixturesMod\.porClaves\(/,
+    'y alguien tiene que seguir usandola: si no, revisa esta prueba');
+});
+
 test('⛔ el aviso por correo toma el cerrojo antes de mandar nada', () => {
   /*
    * ============================================================

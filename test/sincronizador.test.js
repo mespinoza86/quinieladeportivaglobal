@@ -146,6 +146,75 @@ test('guardar un evento deja el fixture consultable, con su estado', async () =>
   assert.equal(cache.get('fx1').proximaConsulta, null, 'terminado: no se pregunta más');
 });
 
+test('⛔ decidir si toca consultar NO se trae los JSON del proveedor', async () => {
+  /*
+   * Es el arreglo de la Entrada 090, y lo que vigila no es una comodidad: el
+   * ciclo corre cada 60 segundos y pedía estas mismas filas con `SELECT *`,
+   * que arrastra `evento` y `busqueda` —las respuestas crudas del API, ~3 KB
+   * por partido— para mirar dos campos.
+   *
+   * Medido contra la base de verdad con 64 partidos: 539 KB por ciclo, **22 GB
+   * al mes**. Agotó la cuota de transferencia de Neon y dejó la base a punto
+   * de suspenderse.
+   *
+   * ⚠️ QUÉ CUBRE ESTA PRUEBA Y QUÉ NO, porque no es obvio.
+   *
+   * Cubre el CONTRATO: que quien llama recibe lo justo, y que con eso decide
+   * igual que con la fila entera. Si alguien vuelve a `porClaves` «porque ya
+   * existe», esto se pone rojo.
+   *
+   * ⛔ NO cubre los BYTES. El objeto que se devuelve se arma campo a campo, así
+   * que añadir `evento` al `SELECT` dejaría esta prueba en verde mientras
+   * vuelven a viajar 22 GB al mes. Se comprobó rompiéndolo a propósito. De eso
+   * se encarga el centinela «el ciclo de cada minuto no arrastra los JSON
+   * crudos del proveedor», en `architecture.test.js`, que sí mira el SQL.
+   *
+   * Hacen falta las dos: una vigila lo que se recibe, la otra lo que cuesta.
+   */
+  const d = descriptor('fx1');
+  await fixtures.guardar(d, { evento: eventoDe({ m1: 2, m2: 1, estado: 'Finished' }) });
+
+  const ligero = (await fixtures.paraDecidirConsulta(['fx1'])).get('fx1');
+
+  assert.ok(ligero, 'tiene que encontrar el fixture');
+  assert.equal('evento' in ligero, false, 'el evento crudo NO puede viajar en cada ciclo');
+  assert.equal('busqueda' in ligero, false, 'la búsqueda cruda, tampoco');
+
+  /* Y lo que sí necesita quien lo usa, está: `tocaConsultar` y `guardar`. */
+  assert.equal(ligero.estado, 'TC');
+  assert.equal(ligero.proximaConsulta, null);
+  assert.equal(ligero.fallosConsecutivos, 0);
+
+  /*
+   * La prueba de que basta: con lo que devuelve, `tocaConsultar` decide igual
+   * que con la fila entera.
+   */
+  const completo = (await fixtures.porClaves(['fx1'])).get('fx1');
+  assert.equal(
+    fixtures.tocaConsultar(ligero),
+    fixtures.tocaConsultar(completo),
+    'la versión ligera tiene que decidir lo mismo que la completa');
+});
+
+test('⛔ y el contador de fallos sobrevive a la versión ligera', async () => {
+  /*
+   * `guardar` usa `previo.fallosConsecutivos` para ir sumando los errores de
+   * red. Si la consulta ligera se dejara ese campo fuera, el contador volvería
+   * a cero en cada intento y **el abandono por fallos no llegaría nunca**: se
+   * seguiría gastando cuota del proveedor contra un partido roto, para siempre.
+   */
+  const d = descriptor('fx1');
+  await fixtures.guardar(d, { evento: null, error: 'ECONNRESET' });
+
+  const previo = (await fixtures.paraDecidirConsulta(['fx1'])).get('fx1');
+  assert.equal(previo.fallosConsecutivos, 1);
+
+  await fixtures.guardar(d, { evento: null, error: 'ECONNRESET', previo });
+
+  const despues = (await fixtures.paraDecidirConsulta(['fx1'])).get('fx1');
+  assert.equal(despues.fallosConsecutivos, 2, 'los fallos siguen sumando');
+});
+
 test('un error del proveedor NO borra el marcador que ya se tenía', async () => {
   const d = descriptor('fx1');
   await fixtures.guardar(d, { evento: eventoDe({ m1: 3, m2: 2, estado: '70' }) });

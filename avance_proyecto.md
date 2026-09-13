@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 543/543
+npm test                    # 546/546
 npm run test:e2e            # 132/132, ~7 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **543**, ~110 s |
+| Pruebas rápidas | **546**, ~110 s |
 | Pruebas de navegador | **132**, ~7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -473,20 +473,23 @@ escribirla (080).
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 12 de septiembre de 2026
+#### 📍 Dónde quedó todo el 13 de septiembre de 2026
 
 | | |
 |---|---|
-| Último commit | `76d65e6` — «Mis quinielas: primero la tuya…» (Entrada 089) |
+| Último commit | Entrada 090: el `SELECT *` que costaba 22 GB al mes |
 | Árbol | ✅ Limpio, y `main` al día con `origin/main` |
 | Base de datos | ✅ **Las diez migraciones corridas.** La 010 la corrió Marco el 12 de septiembre |
 | CI | ✅ En verde desde `38bdeb1`. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
-| Producción | ✅ **Al día.** `76d65e6` desplegado el 12 de septiembre a las 09:35 |
-| Pruebas | 543 rápidas + 132 de navegador, todas en verde |
+| Producción | ⚠️ **Falta desplegar la 090**, que corta 22 GB/mes de tráfico a Neon |
+| Pruebas | 546 rápidas + 132 de navegador, todas en verde |
+| ⛔ Antes que nada | **Redesplegar la 090.** Corta 22 GB/mes de tráfico contra Neon. **No toca la base** |
+| Y luego, en Neon | Mirar si el contador de transferencia baja de golpe: es lo único que confirma que era eso |
 | ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 al principio de «Lo siguiente» |
 | ⚠️ Y algo suyo | **Encender el aviso por correo** en Configurar quiniela → Avisos. Nace apagado: hoy no le llega nada a nadie (086) |
 
-✅ **No queda nada a medias, ni en la base ni en producción.**
+⚠️ **Lo único a medias es desplegar la 090**, y no toca la base: es una consulta
+que deja de pedir columnas que nadie miraba.
 
 Y el orden salió bien esta vez, que es lo que hay que repetir: **la migración
 010 se corrió ANTES de empujar**, así que el código llegó a una base que ya
@@ -15143,6 +15146,184 @@ que no funcione; es que todavía no hay nada que ordenar. Se llena sola.
 
 Y después de esto, lo de las **notificaciones 15 minutos antes** (088), que era
 lo siguiente y quedó desbloqueado esta misma mañana.
+
+---
+
+
+
+### 📌 Entrada 090 — 13 de septiembre de 2026 — Un `SELECT *` que costaba 22 GB al mes
+
+**Objetivo:** a Marco le llegó un correo de Neon:
+
+> «Your project quinieladeportivaglobaloregon has used 100% of its monthly 5 GB
+> network transfer allowance. Apps for this project may fail to connect.»
+
+Tuvo que pagar para que no se suspendiera, y preguntó lo correcto: **cómo es
+posible gastar 5 GB con doce jugadores**, y si había una fuga.
+
+La había.
+
+## ⛔ La fuga, medida
+
+`refrescarPendientes` corre **cada 60 segundos** y pedía las filas de `fixtures`
+con `porClaves`, que hace `SELECT *`. Y en esa tabla, `SELECT *` arrastra
+`evento` y `busqueda`: **las respuestas crudas del proveedor**, unas 3 KB por
+partido.
+
+¿Para qué? Para dárselas a `tocaConsultar`, que mira **dos campos**:
+
+```js
+if (previo.estado === 'TC') return false;
+if (previo.proximaConsulta && new Date(previo.proximaConsulta) > ahora) return false;
+```
+
+Medido contra la base de verdad, con 64 partidos en el catálogo:
+
+| | Por ciclo | Al mes |
+|---|---:|---:|
+| `SELECT *` | **539,2 KB** | **22,21 GB** |
+| Sólo las columnas que se miran | 3,0 KB | 0,13 GB |
+| **Desperdicio** | **536,2 KB (99%)** | **22,09 GB** |
+
+⛔ **La aritmética cuadra sola y es la clave del asunto:** la tabla `fixtures`
+pesa 0,5 MB. Leerla 43.200 veces al mes son ~21,6 GB. **No era el tamaño de los
+datos: era la repetición.**
+
+## Por qué no se vio antes, y por qué apareció ahora
+
+⚠️ **El coste crece con la temporada.** En agosto había cuatro partidos en el
+catálogo y esto eran kilobytes por ciclo. En septiembre son 64 y son medio mega.
+Nadie cambió nada: el mismo código pasó de gratis a insostenible solo.
+
+Es la familia de fallos más difícil de ver:
+
+- **No rompe nada.** Todo funciona, y funciona bien.
+- **No sale en ninguna prueba.** Las 543 estaban en verde.
+- **No lo delata el tamaño de la base**, que son 1,5 MB en total.
+- Y **el aviso llega del proveedor de infraestructura**, no del sistema.
+
+## Cómo se encontró, que importa tanto como el qué
+
+No se adivinó. Se descartó por capas, con números en cada paso:
+
+1. **¿Es el volumen de datos?** No: 54 partidos, 594 pronósticos, 12 miembros,
+   todas las tablas por debajo de 1 MB.
+2. **¿Cuánto se mueve de verdad?** Los contadores acumulados de PostgreSQL:
+   **1.014.049 transacciones** y **53,8 millones de filas devueltas**. Eso ya
+   dice que el problema es la repetición, no el tamaño.
+3. **¿Qué tabla?** `pg_stat_user_tables`: `partidos` con 148.010 escaneos
+   secuenciales, `fixtures` con 34.429.
+4. **¿Cuántos bytes exactamente?** Midiendo el **socket** —`bytesRead +
+   bytesWritten` del stream de `pg`— alrededor de las consultas reales contra
+   producción. Ahí salió el 539,2 contra 3,0 KB.
+
+⚠️ **Y hubo que esquivar la trampa de la Entrada 069 para medir nada**:
+`partidos` y `jornadas` llevan RLS, así que la primera consulta global con
+`app_quiniela` habría devuelto **cero filas sin fallar** y habría parecido que no
+hay nada que optimizar. Se midió quiniela por quiniela, con contexto, como hace
+la aplicación.
+
+## El arreglo
+
+`fixtures.paraDecidirConsulta(claves)`: las cuatro columnas que de verdad se
+miran —`clave`, `estado`, `proxima_consulta`, `fallos_consecutivos`— y ninguna
+más.
+
+⚠️ **`porClaves` NO se toca y sigue haciendo `SELECT *`**, porque el otro sitio
+que la usa —reescribir una jornada desde la caché— **sí necesita el `evento`: es
+el marcador que puntúa**. Lo que estaba mal no era la función, era usarla cada
+minuto para algo que no la necesitaba.
+
+⛔ Y `fallos_consecutivos` está en la lista por un motivo que costó mirar:
+`guardar` lo usa para ir sumando los errores de red. Si la consulta ligera lo
+dejara fuera, el contador volvería a cero en cada intento y **el abandono por
+fallos no llegaría nunca** — se seguiría gastando cuota del proveedor contra un
+partido roto, para siempre. Tiene su prueba.
+
+## Lo demás que salió del análisis, mucho menor
+
+| Qué | Coste medido | Decisión |
+|---|---:|---|
+| `censar()` sin `WHERE` | 0,39 GB/mes | **Se deja.** Ver abajo |
+| Cinco quinielas fantasma | incluido arriba | Son datos, no código: se archivan |
+| `/readyz` de Render | 0,04 GB/mes | Despreciable |
+| `/api/resultados` | 133 KB **por visita** | Es tráfico de persona, no de máquina |
+
+⚠️ **`censar()` se deja a propósito**, y conviene que quede escrito el porqué:
+lee todos los partidos de todas las quinielas cada minuto, y el 92% son historia
+que ya no cambia. Pero son 0,39 GB al mes, y filtrarlo por fecha significa elegir
+una ventana — y **una ventana mal elegida es un partido que deja de
+sincronizarse**, que es mucho peor que medio giga. Con el arreglo principal el
+total queda en ~0,6 GB de 5 GB, así que no hay prisa por arriesgar eso.
+
+## ⚠️ Y las cinco quinielas fantasma son el bug de la Entrada 089
+
+Al medir aparecieron **seis quinielas activas**: `quiniela2026` con 12 miembros y
+54 partidos, y **cinco con un miembro y cero partidos** — «Diego», «Tete» ×3,
+«CHOGUI».
+
+⛔ **Son exactamente lo que Marco reportó hace dos días**: gente que intentaba
+entrar a su quiniela y acabó creando la suya, porque la pantalla enseñaba el
+formulario de CREAR como primera cosa. La Entrada 089 arregló la pantalla; esas
+cinco se quedaron, y el reloj abre una transacción para cada una **cada minuto,
+para siempre**.
+
+Es una lección de las que no se olvidan: **un fallo de interfaz dejó basura en la
+base, y la basura cuesta dinero todos los minutos.**
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/fixtures.js` | `paraDecidirConsulta`: las cuatro columnas que se miran |
+| `src/sincronizador.js` | El ciclo de cada minuto la usa en vez de `porClaves` |
+| `test/sincronizador.test.js` | Dos pruebas: el contrato y el contador de fallos |
+| `test/architecture.test.js` | Centinela del SQL, con la cifra medida escrita |
+| `avance_proyecto.md` | Esta entrada |
+
+**Verificación:**
+
+```
+Contra la base de PRODUCCION, midiendo bytes en el socket:
+  SELECT *                      539,2 KB/ciclo -> 22,21 GB/mes
+  paraDecidirConsulta             3,0 KB/ciclo ->  0,13 GB/mes
+  AHORRO                                          22,09 GB/mes (99%)
+
+npm test             -> 546/546  (eran 543)
+npx playwright test  -> 132/132
+
+Rotas a proposito:
+  volver a porClaves en el ciclo      -> cae el centinela
+  meter `evento` en la consulta ligera -> cae el centinela
+  (y NO cae la prueba de conducta: esta escrito por que)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **`SELECT *` sobre una tabla con `jsonb` es una factura, no un atajo.** Una
+   tabla de 0,5 MB leída cada minuto son 22 GB al mes.
+2. ⛔ **Hay fallos cuyo coste CRECE solo con el tiempo.** El mismo código pasó de
+   gratis a agotar la cuota sin que nadie tocara nada: sólo creció el catálogo.
+3. ⚠️ **El tamaño de la base no dice nada sobre el tráfico.** 1,5 MB de datos y
+   53,8 millones de filas devueltas al mes.
+4. **Para medir bytes, el socket.** `bytesRead + bytesWritten` del stream de `pg`
+   alrededor de la consulta real da la cifra exacta; todo lo demás es estimar.
+5. ⚠️ **Una prueba de contrato y un centinela de coste NO son la misma prueba.**
+   Meter `evento` en el `SELECT` deja el contrato intacto —el objeto se arma
+   campo a campo— y multiplica el tráfico por 180. Hace falta una de cada.
+6. ⛔ **Un fallo de interfaz puede dejar basura que cuesta dinero cada minuto.**
+   Las cinco quinielas vacías son el bug de la 089, cobrando peaje.
+
+**Pendiente / siguiente paso:**
+
+⚠️ **No toca la base**: no hay migración. Sólo redesplegar.
+
+⛔ **Y después, mirar en Neon si el contador de transferencia baja de golpe.** Es
+lo único que confirma que era esto y no otra cosa que no se vio: desde aquí se
+mide lo que la aplicación pide, pero el número que se factura lo tiene Marco.
+
+**Y archivar las cinco quinielas vacías**, que además limpia la lista. Se hace
+desde Configurar quiniela, sin tocar código.
 
 ---
 

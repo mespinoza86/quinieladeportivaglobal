@@ -184,7 +184,15 @@ async function refrescarPendientes(catalogo, { consultar, ahora = new Date(), fo
   const claves = [...catalogo.keys()];
   if (!claves.length) return new Set();
 
-  const previos = await fixturesMod.porClaves(claves);
+  /*
+   * ⛔ `paraDecidirConsulta` y NO `porClaves`, que hace `SELECT *`.
+   *
+   * Esto corre cada 60 segundos, y `SELECT *` aquí se traía los JSON crudos del
+   * proveedor —539 KB por ciclo, 22 GB al mes— para mirar dos campos. Agotó la
+   * cuota de transferencia de Neon. El detalle está en la cabecera de esa
+   * función y en la Entrada 090.
+   */
+  const previos = await fixturesMod.paraDecidirConsulta(claves);
   const pendientes = [];
 
   for (const clave of claves) {

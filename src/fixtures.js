@@ -165,6 +165,54 @@ async function porClaves(claves) {
   return new Map(rows.map(f => [f.clave, fixturePublico(f)]));
 }
 
+/**
+ * Lo justo para decidir si a un partido le toca que le pregunten.
+ *
+ * ============================================================================
+ * ⛔ ESTA FUNCIÓN EXISTE PARA NO MOVER 22 GB AL MES POR NADA
+ * ============================================================================
+ *
+ * `refrescarPendientes` corre **cada 60 segundos** y pedía estas mismas filas
+ * con `porClaves`, que hace `SELECT *`. Y `SELECT *` en esta tabla se trae
+ * `evento` y `busqueda`, que son **las respuestas crudas del proveedor**: unos
+ * 3 KB por partido, ocho veces más que todo lo demás junto.
+ *
+ * Medido contra la base de verdad el 13 de septiembre de 2026, con 64 partidos
+ * en el catálogo:
+ *
+ *     SELECT *                 539,2 KB por ciclo  →  22,21 GB al mes
+ *     sólo estas columnas        6,9 KB por ciclo  →   0,29 GB al mes
+ *     ─────────────────────────────────────────────────────────────
+ *     desperdicio               532,3 KB (99%)     →  21,93 GB al mes
+ *
+ * ⛔ Eso agotó la cuota de transferencia de Neon y dejó la base a punto de
+ * suspenderse. No era el tamaño de los datos —la tabla entera son 0,5 MB— sino
+ * leerla **43.200 veces al mes**: 0,5 MB × 43.200 ≈ 21,6 GB, que es justo lo
+ * medido.
+ *
+ * ⚠️ Y no se notó antes porque **el coste crece con la temporada**: en agosto
+ * había cuatro partidos en el catálogo y esto eran kilobytes.
+ *
+ * Las columnas son exactamente las que miran `tocaConsultar` —`estado` y
+ * `proximaConsulta`— y `guardar` —`estado` otra vez y `fallosConsecutivos`—.
+ * Si alguna vez hace falta una más, se añade **aquí**; lo que no puede volver
+ * es el `SELECT *`.
+ */
+async function paraDecidirConsulta(claves) {
+  if (!claves?.length) return new Map();
+
+  const { rows } = await db.consulta(
+    `SELECT clave, estado, proxima_consulta, fallos_consecutivos
+       FROM fixtures WHERE clave = ANY($1::text[])`, [claves]);
+
+  return new Map(rows.map(f => [f.clave, {
+    clave: f.clave,
+    estado: f.estado,
+    proximaConsulta: f.proxima_consulta,
+    fallosConsecutivos: f.fallos_consecutivos
+  }]));
+}
+
 /** El evento crudo que el proveedor dio de un partido. `null` si no hay. */
 async function eventoDe(apiFixtureId) {
   const { rows: [f] } = await db.consulta(
@@ -237,5 +285,5 @@ function tocaConsultar(previo, ahora = new Date(), forzar = false) {
 module.exports = {
   VENTANAS_MS, UMBRAL_INMINENTE_MS, UMBRAL_ABANDONO_MS,
   claveDeFixture, descriptorDeFixture, calcularProximaConsulta,
-  fixturePublico, porClaves, eventoDe, guardar, tocaConsultar
+  fixturePublico, porClaves, paraDecidirConsulta, eventoDe, guardar, tocaConsultar
 };
