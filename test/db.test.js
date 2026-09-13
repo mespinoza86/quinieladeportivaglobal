@@ -196,7 +196,7 @@ test('el esquema deja las 14 tablas de dominio con RLS activo y forzado', async 
    * Y si sube sin que se haya añadido una tabla a propósito, tampoco está
    * bien: significa que hay una tabla nueva que nadie declaró aquí.
    *
-   * La 13.ª es `pagos` (migración 001) y la 14.ª `entregas_acumulado` (006).
+   * La 13.ª es `pagos` (migración 001) y la 14.ª `entregas` (006, renombrada en la 011).
    * Las dos guardan dinero: sin RLS serían una fuga de cuánto pagó o cobró
    * cada quiniela, y no fallarían — devolverían filas de más.
    */

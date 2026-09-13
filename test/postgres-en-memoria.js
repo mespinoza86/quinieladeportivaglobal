@@ -117,7 +117,7 @@ class PostgresEnMemoria {
  * una de las dos mitades **no falla**: o la prueba concede de más, o producción
  * concede de más, y en los dos casos todo sigue verde.
  */
-const SOLO_ESCRITURA = ['pagos', 'acciones_superadmin', 'entregas_acumulado'];
+const SOLO_ESCRITURA = ['pagos', 'acciones_superadmin', 'entregas'];
 const PREPARAR_ROL = `
   CREATE ROLE app_quiniela NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
   GRANT USAGE ON SCHEMA public TO app_quiniela;

@@ -319,6 +319,28 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     }
 
     /*
+     * El corte de los premios de jornada: a partir de qué secuencia se
+     * registran las entregas. Lo anterior se da por entregado (migración 011).
+     *
+     * ⚠️ `null` es un valor legítimo y significa «no asumas nada»: todas las
+     * jornadas cuentan como pendientes. Por eso se distingue de «no vino», que
+     * deja el ajuste como estaba — la misma distinción que `ligasFavoritas`.
+     */
+    if (req.body.premiosRegistradosDesde !== undefined) {
+      const valor = req.body.premiosRegistradosDesde;
+
+      if (valor === null) {
+        parcial.premiosRegistradosDesde = null;
+      } else {
+        const secuencia = Number(valor);
+        if (!Number.isInteger(secuencia) || secuencia < 0) {
+          return res.status(400).json({ error: 'El corte de premios debe ser un número de jornada.' });
+        }
+        parcial.premiosRegistradosDesde = secuencia;
+      }
+    }
+
+    /*
      * Las ligas favoritas se sustituyen enteras, no se funden: son una lista, y
      * fundir listas no significa nada. Mandar `[]` es la forma de no tener
      * ninguna, y por eso se distingue «no vino» de «vino vacía».

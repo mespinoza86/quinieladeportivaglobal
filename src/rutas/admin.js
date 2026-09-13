@@ -579,6 +579,52 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     res.json({ success: true, jornada: j });
   });
 
+  /**
+   * ⭐ La caja: cuánto dinero debe haber en la cuenta para estar al día.
+   *
+   * Junta lo cobrado y lo entregado —incluidos los premios de jornada, que
+   * hasta la migración 011 no se registraban— y dice cuánto está comprometido
+   * y cuánto queda libre.
+   */
+  app.get('/api/cobros/caja', requireAdmin, async (req, res) => {
+    res.json(await pagosMod.caja(req.quiniela.id, req.quiniela.configuracion));
+  });
+
+  /**
+   * Entrega el premio de una jornada a su ganador.
+   *
+   * ⛔ El monto NO se acepta del cuerpo: lo calcula `pagos.entregarPremioJornada`
+   * a partir de lo cobrado. Es la misma guarda que tiene la entrega del
+   * acumulado, y ahí romperla no tumbaba ninguna prueba porque vivía en la
+   * ruta y había que romper la ruta (Entrada 078).
+   */
+  app.post('/api/cobros/jornadas/:nombre/entregar-premio', requireAdmin, async (req, res) => {
+    const { jugadorId, nota } = req.body || {};
+
+    if (!cobros.esUuid(jugadorId)) {
+      return res.status(400).json({ error: 'Falta el jugador, o no es válido.' });
+    }
+
+    const r = await pagosMod.entregarPremioJornada(req.quiniela.id, {
+      jugadorId,
+      jornadaNombre: req.params.nombre,
+      nota: String(nota ?? '').trim(),
+      registradoPor: req.session.usuarioId
+    });
+
+    if (r.ok) return res.json({ success: true, entrega: r.entrega, jornada: r.jornada });
+
+    const motivos = {
+      jugador_no_encontrado: [404, 'Ese jugador no está en la quiniela.'],
+      jornada_no_encontrada: [404, 'Jornada no encontrada.'],
+      sin_premio: [400, 'Todavía no se ha cobrado nada para el premio de esa jornada.'],
+      ya_entregado: [409, 'El premio de esa jornada ya se entregó.']
+    };
+
+    const [status, mensaje] = motivos[r.motivo] || [400, 'No se pudo entregar el premio.'];
+    res.status(status).json({ error: mensaje });
+  });
+
   /* ==================== Compartir pronósticos al grupo ==================== */
 
   /*

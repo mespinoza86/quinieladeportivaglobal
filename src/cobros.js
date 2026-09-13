@@ -526,6 +526,141 @@ function botes({ jugadores = [], jornadas = [], pagosPorJugador = new Map(), ent
   };
 }
 
+/**
+ * Cuánto dinero debe haber en la cuenta para estar al día con todo.
+ *
+ * ============================================================================
+ * LA ECUACIÓN, Y POR QUÉ HASTA AHORA NO SE PODÍA CALCULAR
+ * ============================================================================
+ *
+ *     DEBE HABER = todo lo cobrado − todo lo entregado
+ *
+ * Lo cobrado siempre estuvo (`pagos`). Lo entregado, sólo a medias: se
+ * registraban las entregas del acumulado y **no las de los premios de
+ * jornada**. Cada domingo salía dinero de la cuenta sin dejar rastro, así que
+ * la caja no se podía cuadrar (migración 011).
+ *
+ * ============================================================================
+ * ⚠️ LOS PREMIOS ANTERIORES AL CORTE SE DAN POR ENTREGADOS
+ * ============================================================================
+ *
+ * Cuando esto se construyó ya se habían pagado los premios de las jornadas
+ * anteriores, y de ellos no hay registro. Marco pidió asumirlos entregados y
+ * empezar a registrar desde la jornada en juego.
+ *
+ * ⛔ Eso NO se resolvió inventando filas: no se sabe quién ganó cada una, y una
+ * entrega con un ganador falso es peor que no tener entrega. Se resuelve con un
+ * corte —`premiosRegistradosDesde`, la secuencia de la primera jornada que sí
+ * se registra— y es el mismo patrón que `cobrar_desde`: «de aquí en adelante».
+ *
+ * Sin corte (`null`), no se asume nada: todas las jornadas cuentan como
+ * pendientes hasta que se registre su entrega.
+ *
+ * ============================================================================
+ * ⛔ Y UNA ENTREGA NO ES UN ABONO
+ * ============================================================================
+ *
+ * El premio se le da entero al ganador y **no se abona a sus cuotas futuras**.
+ * Por eso las entregas viven en su propia tabla y no en `pagos` con el signo
+ * cambiado: ahí dentro, un premio se leería como que esa persona ya pagó, y se
+ * le cobraría de menos la jornada siguiente sin que nada fallara.
+ *
+ * @param {object}   botes                   Lo que devuelve `botes()`.
+ * @param {Array}    pagos                   Todos los abonos: `{concepto, monto}`.
+ * @param {Array}    entregas                `{concepto, jornadaId, monto}`.
+ * @param {number?}  premiosRegistradosDesde Secuencia del corte, o `null`.
+ */
+function caja({ botes: b = null, pagos = [], entregas = [], premiosRegistradosDesde = null } = {}) {
+  const jornadas = b?.jornadas || [];
+  const acumulado = b?.acumulado || { cobrado: 0, esperado: 0 };
+
+  /* ---------- Lo que entró ---------- */
+  let entradoTorneo = 0;
+  let entradoJornada = 0;
+
+  for (const p of pagos) {
+    /*
+     * ⚠️ Se suman TAMBIÉN los negativos. Una anulación es un asiento inverso:
+     * ese dinero salió de la cuenta o nunca llegó, y en los dos casos la caja
+     * tiene que reflejarlo. Filtrar los negativos daría una caja inflada.
+     */
+    const monto = aMonto(p.monto);
+    if (p.concepto === 'torneo') entradoTorneo = aMonto(entradoTorneo + monto);
+    else entradoJornada = aMonto(entradoJornada + monto);
+  }
+
+  const entrado = aMonto(entradoTorneo + entradoJornada);
+
+  /* ---------- Lo que salió, registrado ---------- */
+  const porConcepto = { jornada: 0, acumulado: 0, torneo: 0 };
+  const jornadasEntregadas = new Set();
+
+  for (const e of entregas) {
+    const concepto = porConcepto[e.concepto] === undefined ? 'acumulado' : e.concepto;
+    porConcepto[concepto] = aMonto(porConcepto[concepto] + aMonto(e.monto));
+    if (concepto === 'jornada' && e.jornadaId) jornadasEntregadas.add(String(e.jornadaId));
+  }
+
+  /* ---------- Y lo que salió antes de que esto existiera ---------- */
+  const corte = premiosRegistradosDesde === null || premiosRegistradosDesde === undefined
+    ? null
+    : Number(premiosRegistradosDesde);
+
+  const esAnteriorAlCorte = j => corte !== null && Number(j.secuencia) < corte;
+
+  let premiosAsumidos = 0;
+  let premiosPendientes = 0;
+  const pendientes = [];
+
+  for (const j of jornadas) {
+    if (esAnteriorAlCorte(j)) {
+      premiosAsumidos = aMonto(premiosAsumidos + j.premio);
+      continue;
+    }
+    if (jornadasEntregadas.has(String(j.id))) continue;
+
+    premiosPendientes = aMonto(premiosPendientes + j.premio);
+    pendientes.push({ id: j.id, nombre: j.nombre, secuencia: j.secuencia, premio: j.premio });
+  }
+
+  const salido = aMonto(porConcepto.jornada + porConcepto.acumulado
+    + porConcepto.torneo + premiosAsumidos);
+
+  const debeHaber = aMonto(entrado - salido);
+
+  /* ---------- De ese dinero, qué está comprometido ---------- */
+  const acumuladoPendiente = aMonto(acumulado.cobrado - porConcepto.acumulado);
+  const torneoPendiente = aMonto(entradoTorneo - porConcepto.torneo);
+
+  const comprometido = aMonto(acumuladoPendiente + premiosPendientes + torneoPendiente);
+
+  return {
+    entrado: { torneo: entradoTorneo, jornada: entradoJornada, total: entrado },
+    salido: {
+      premiosJornada: porConcepto.jornada,
+      premiosAsumidos,
+      acumulado: porConcepto.acumulado,
+      torneo: porConcepto.torneo,
+      total: salido
+    },
+    debeHaber,
+    comprometido: {
+      acumulado: acumuladoPendiente,
+      premiosJornada: premiosPendientes,
+      torneo: torneoPendiente,
+      total: comprometido
+    },
+    /*
+     * ⭐ El número que de verdad se mira: si no es cero, o falta por entregar
+     * algo o hay dinero que no debería estar. Puede ser negativo, y eso
+     * significa que se entregó más de lo que se cobró.
+     */
+    libre: aMonto(debeHaber - comprometido),
+    jornadasPendientes: pendientes,
+    corte
+  };
+}
+
 module.exports = {
   CONCEPTOS,
   MONTO_MAXIMO,
@@ -537,6 +672,6 @@ module.exports = {
   totalAbonado,
   jornadasQueCubre,
   cuentaDeJugador,
-  jornadaPagada, precioParaJugador, repartoDeAbonos, botes,
+  jornadaPagada, precioParaJugador, repartoDeAbonos, botes, caja,
   leTocaLaJornada, jornadasDe, desgloseParaJugador
 };

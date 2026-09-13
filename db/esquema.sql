@@ -469,20 +469,44 @@ CREATE TABLE puntos_jornada_jugador (
  * ⛔ Una entrega no se edita ni se borra. Si se anoto mal, se corrige con otra.
  * El dinero entregado es historia, igual que los abonos.
  */
-CREATE TABLE entregas_acumulado (
+/*
+ * ⛔ Y NO ES `pagos` CON EL SIGNO CAMBIADO (migracion 011).
+ *
+ * `pagos` responde "?cuanto debe esta persona?". Un jugador que gana un premio
+ * NO DEBE MENOS: si el premio entrara ahi, la cuenta lo leeria como que ya pago
+ * su cuota y le cobraria de menos la jornada siguiente, sin dar ningun error.
+ * Entra dinero por un lado y sale por otro: son dos libros.
+ */
+CREATE TABLE entregas (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   quiniela_id    uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
 
   jugador_id     uuid REFERENCES jugadores(id) ON DELETE SET NULL,
   nombre_ganador text NOT NULL,
 
+  -- jornada | acumulado | torneo. Con `jornada`, `jornada_id` dice cual.
+  concepto       text NOT NULL DEFAULT 'acumulado'
+                   CHECK (concepto IN ('jornada','acumulado','torneo')),
+  jornada_id     uuid REFERENCES jornadas(id) ON DELETE SET NULL,
+
   monto          numeric(12,2) NOT NULL CHECK (monto > 0),
   nota           text NOT NULL DEFAULT '',
   registrado_por uuid REFERENCES usuarios(id) ON DELETE SET NULL,
-  created_at     timestamptz NOT NULL DEFAULT now()
+  created_at     timestamptz NOT NULL DEFAULT now(),
+
+  /*
+   * Una entrega de jornada SIN jornada no se puede imputar a nada, y una del
+   * acumulado CON jornada seria una imputacion falsa. Las dos, el mismo CHECK.
+   */
+  CONSTRAINT entregas_jornada_solo_si_es_de_jornada
+    CHECK ((concepto = 'jornada') = (jornada_id IS NOT NULL))
 );
 
-CREATE INDEX ON entregas_acumulado (quiniela_id, created_at DESC);
+CREATE INDEX ON entregas (quiniela_id, created_at DESC);
+
+-- Un premio de jornada se entrega UNA vez.
+CREATE UNIQUE INDEX entregas_una_por_jornada
+  ON entregas (jornada_id) WHERE concepto = 'jornada';
 -- Los abonos (migracion 001). Una fila por abono.
 --
 -- Cuelga de `jugadores` y NO de `membresias` a proposito: `usuario_id` es
@@ -545,7 +569,7 @@ BEGIN
     'jugadores','jornadas','partidos','resultados','pronosticos',
     'resultados_oficiales','resultados_oficiales_partidos','trivias',
     'respuestas_trivia','equipos','puntos_jornada','puntos_jornada_jugador',
-    'pagos','entregas_acumulado'
+    'pagos','entregas'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);

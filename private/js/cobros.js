@@ -165,6 +165,10 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     selectorGanador.innerHTML = opciones;
 
+    /* Y el del premio de jornada, por lo mismo: lo gana quien lo gana. */
+    const ganadorPremio = document.getElementById('premioGanador');
+    if (ganadorPremio) ganadorPremio.innerHTML = opciones;
+
     /*
      * Las dos casillas se guardan igual y por separado: cada una manda SÓLO su
      * campo, así que tocar una no puede pisar la otra. La ruta deja como estaba
@@ -310,9 +314,19 @@ document.addEventListener('DOMContentLoaded', () => {
     listaEntregas.innerHTML = entregas.length
       ? html`<h3>Entregas</h3>` + entregas.map(e => {
           const fecha = new Date(e.created_at).toLocaleDateString('es-CR');
+          /*
+           * ⚠️ Se dice de QUÉ es cada entrega. Desde la migración 011 conviven
+           * las del acumulado y las de premio de jornada, y una lista de
+           * importes sin concepto no deja reconstruir nada — que es el mismo
+           * fallo que tuvo el historial de abonos durante semanas.
+           */
+          const de = e.concepto === 'jornada'
+            ? `premio de ${e.jornada || 'una jornada'}`
+            : e.concepto === 'torneo' ? 'premio del torneo' : 'acumulado';
+
           return html`<div class="info-card">
             <p class="helper-text">
-              ${fecha} · ${e.nombre_ganador} · <strong>${plata(e.monto)}</strong>
+              ${fecha} · ${de} · ${e.nombre_ganador} · <strong>${plata(e.monto)}</strong>
             </p>
             ${e.nota ? crudo(html`<p class="helper-text">${e.nota}</p>`) : ''}
             ${e.registrado_por ? crudo(html`<p class="helper-text">Anotó: ${e.registrado_por}</p>`) : ''}
@@ -320,6 +334,86 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('')
       : '';
   }
+
+  /**
+   * La caja: cuánto debe haber en la cuenta para estar al día.
+   *
+   * ⭐ El número que de verdad se mira es «libre». Si no es cero, o falta por
+   * entregar algo o hay dinero que no debería estar.
+   */
+  function pintarCaja(c) {
+    const cuadra = Math.abs(Number(c.libre)) < 0.005;
+
+    document.getElementById('cajaResumen').innerHTML = html`<div class="info-card">
+      <p class="helper-text">Entró: <strong>${plata(c.entrado.total)}</strong></p>
+      <p class="helper-text">Salió: <strong>${plata(c.salido.total)}</strong>${
+        c.salido.premiosAsumidos > 0
+          ? ` · de eso, ${plata(c.salido.premiosAsumidos)} en premios anteriores al registro`
+          : ''
+      }</p>
+      <h3>Debe haber en la cuenta: ${plata(c.debeHaber)}</h3>
+    </div>`;
+
+    const filas = [
+      ['Acumulado, sin entregar', c.comprometido.acumulado],
+      ['Premios de jornada sin entregar', c.comprometido.premiosJornada],
+      ['Cuota de torneo, hasta que acabe', c.comprometido.torneo]
+    ].filter(([, monto]) => Number(monto) !== 0);
+
+    document.getElementById('cajaComprometido').innerHTML = html`<div class="info-card">
+      <h3>De ese dinero, comprometido</h3>
+      ${filas.length
+        ? crudo(filas.map(([que, monto]) =>
+            html`<p class="helper-text">${que}: <strong>${plata(monto)}</strong></p>`).join(''))
+        : crudo(html`<p class="helper-text">Nada: todo está entregado.</p>`)}
+      <p class="helper-text">
+        <strong>Libre: ${plata(c.libre)}</strong>
+        ${cuadra
+          ? ' — cuadra.'
+          : Number(c.libre) > 0
+            ? ' — sobra dinero: falta por entregar algo, o hay un abono de más.'
+            : ' — falta dinero: se entregó más de lo que se ha cobrado.'}
+      </p>
+      ${c.jornadasPendientes.length
+        ? crudo(html`<p class="helper-text">Sin entregar: ${
+            c.jornadasPendientes.map(j => `${j.nombre} (${plata(j.premio)})`).join(' · ')}</p>`)
+        : ''}
+    </div>`;
+
+    /* El selector de jornada sólo ofrece las que de verdad quedan por entregar. */
+    const selector = document.getElementById('premioJornada');
+    const pendientes = c.jornadasPendientes.filter(j => Number(j.premio) > 0);
+
+    selector.innerHTML = pendientes
+      .map(j => html`<option value="${j.nombre}">${j.nombre} — ${plata(j.premio)}</option>`)
+      .join('');
+
+    document.getElementById('premioJornadaPanel').hidden = pendientes.length === 0;
+  }
+
+  document.getElementById('entregarPremio')?.addEventListener('click', async () => {
+    const jornada = document.getElementById('premioJornada').value;
+    const jugadorId = document.getElementById('premioGanador').value;
+
+    if (!jornada) { botesMensaje.textContent = 'Elige la jornada.'; return; }
+    if (!jugadorId) { botesMensaje.textContent = 'Elige a quién se le entrega.'; return; }
+
+    if (!confirm(`Se entrega el premio cobrado de ${jornada}. Queda anotado y no se puede borrar. ¿Continuar?`)) return;
+
+    try {
+      const r = await api(`/api/cobros/jornadas/${encodeURIComponent(jornada)}/entregar-premio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jugadorId, nota: document.getElementById('premioNota').value })
+      });
+      botesMensaje.textContent =
+        `Entregado ${plata(r.entrega.monto)} a ${r.entrega.nombre_ganador} por ${r.jornada}.`;
+      document.getElementById('premioNota').value = '';
+      await cargar();
+    } catch (error) {
+      botesMensaje.textContent = error.message;
+    }
+  });
 
   document.getElementById('entregarAcumulado')?.addEventListener('click', async () => {
     const jugadorId = selectorGanador.value;
@@ -351,6 +445,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (configuracion?.jornada.activo) {
         pintarBotes(await api('/api/cobros/botes'));
+      }
+
+      /*
+       * ⚠️ La caja se pide SIEMPRE que se cobre algo, aunque sólo sea el
+       * torneo: el dinero entra igual y hay que poder cuadrarlo.
+       */
+      if (configuracion?.torneo.activo || configuracion?.jornada.activo) {
+        document.getElementById('cajaPanel').hidden = false;
+        pintarCaja(await api('/api/cobros/caja'));
       }
     } catch (error) {
       mensaje.textContent = error.message;

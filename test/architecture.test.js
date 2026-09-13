@@ -2011,7 +2011,7 @@ test('⚠️ el acumulado nace apagado y todo el mundo participa', () => {
 test('⛔ las tablas de solo-escritura estan cerradas en las migraciones Y en el arnes', () => {
   /*
    * Tres tablas guardan hechos que no se pueden reescribir: dinero cobrado
-   * (`pagos`), dinero entregado (`entregas_acumulado`) y quien borro que cuenta
+   * (`pagos`), dinero entregado (`entregas`) y quien borro que cuenta
    * (`acciones_superadmin`). Un asiento que el propio actor puede quitar no es
    * un asiento.
    *
@@ -2050,10 +2050,75 @@ test('⛔ las tablas de solo-escritura estan cerradas en las migraciones Y en el
     if (m) for (const t of m[1].split(',')) cerradasEnMigraciones.add(t.trim());
   }
 
+  /*
+   * ⚠️ Y LOS RENOMBRADOS, porque una migracion vieja nombra la tabla como se
+   * llamaba ENTONCES.
+   *
+   * La 007 cierra `entregas_acumulado`; la 011 la renombro a `entregas`. Las
+   * dos son correctas: la 007 es historia y no se toca. Sin esto, la
+   * comparacion fallaria por una diferencia que no es un problema, y la salida
+   * obvia seria repetir la lista a mano aqui -que es justo lo que este
+   * centinela existe para evitar-.
+   *
+   * Asi que los renombrados se DEDUCEN igual que los REVOKE.
+   */
+  for (const linea of sql.split('\n')) {
+    const m = /^\s*ALTER TABLE\s+(\w+)\s+RENAME TO\s+(\w+)/i.exec(linea);
+    if (m && cerradasEnMigraciones.delete(m[1])) cerradasEnMigraciones.add(m[2]);
+  }
+
   assert.deepEqual(
     [...SOLO_ESCRITURA].sort(),
     [...cerradasEnMigraciones].sort(),
     'las dos listas tienen que decir lo mismo: lo que se cierra en Neon y lo que se cierra en las pruebas');
+});
+
+test('⛔ un premio entregado NO se escribe en `pagos`', () => {
+  /*
+   * ============================================================
+   * DOS LIBROS, Y CONFUNDIRLOS COBRA DE MENOS EN SILENCIO
+   * ============================================================
+   *
+   * `pagos` responde a UNA pregunta: "?cuanto debe esta persona?". `entregas`
+   * responde a otra: "?cuanto dinero ha salido de la caja?".
+   *
+   * ⛔ Meter un premio en `pagos` con el signo cambiado es la tentacion obvia
+   * -esa tabla YA admite montos negativos para las anulaciones- y romperia las
+   * cuentas sin dar ningun error: `cuentaDeJugador` lo leeria como que el
+   * ganador ya pago su cuota, y le cobraria de menos la jornada siguiente.
+   *
+   * Marco lo dijo con estas palabras el 13 de septiembre: "al jugador se le
+   * entrega el premio completo, eso quiere decir que el premio no se abona a
+   * futuras quinielas" (Entrada 091).
+   */
+  const mod = quitarComentarios(leer(path.join('src', 'pagos.js')));
+
+  for (const nombre of ['entregarAcumulado', 'entregarPremioJornada']) {
+    const inicio = mod.indexOf(`async function ${nombre}`);
+    assert.ok(inicio > 0, `no se encontro ${nombre}; revisa esta prueba`);
+
+    const cuerpo = mod.slice(inicio, mod.indexOf('async function', inicio + 30));
+
+    assert.match(cuerpo, /INSERT INTO entregas/,
+      `${nombre} tiene que escribir en el libro de salidas`);
+    assert.doesNotMatch(cuerpo, /INSERT INTO pagos/,
+      `${nombre} NO puede escribir en pagos: alli un premio se lee como un abono `
+      + 'y le cobraria de menos al ganador la jornada siguiente');
+  }
+
+  /*
+   * Y la vuelta: la aritmetica de lo que DEBE cada jugador no puede mirar las
+   * entregas. Si `cuentaDeJugador` las restara, ganar un premio bajaria la
+   * deuda -que es el mismo fallo por el otro lado-.
+   */
+  const aritmetica = quitarComentarios(leer(path.join('src', 'cobros.js')));
+  const cuenta = aritmetica.slice(
+    aritmetica.indexOf('function cuentaDeJugador'),
+    aritmetica.indexOf('function jornadaPagada'));
+
+  assert.ok(cuenta.length > 200, 'no se encontro cuentaDeJugador; revisa esta prueba');
+  assert.ok(!cuenta.includes('entrega'),
+    'cuentaDeJugador no puede mirar las entregas: un premio no reduce lo que se debe');
 });
 
 test('⛔ el hueco que pasa a ser otro partido pierde su marca de compartido', () => {

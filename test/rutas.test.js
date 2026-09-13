@@ -4637,3 +4637,249 @@ test('el acceso se anota por PERSONA, no por quiniela', async () => {
   assert.notDeepEqual(delJefe.ultimo_acceso, delSocio.ultimo_acceso,
     'y no se pisan: cada uno lleva el suyo');
 });
+
+
+/* ============ La caja: cuánto debe haber en la cuenta (Entrada 091) ============ */
+
+const abonar = (jefe, jugadorId, monto, concepto = 'jornada') =>
+  jefe.agente.post('/api/cobros/abonos').send({ jugadorId, concepto, monto, nota: 'prueba' });
+
+const caja = async jefe => (await jefe.agente.get('/api/cobros/caja')).body;
+
+test('la caja cuadra cuando no ha salido nada: lo cobrado está entero', async () => {
+  const { jefe, socio } = await conCobros('caja1', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const c = await caja(jefe);
+
+  assert.equal(c.entrado.total, 2000);
+  assert.equal(c.salido.total, 0);
+  assert.equal(c.debeHaber, 2000, 'nadie ha entregado nada: está todo');
+
+  /*
+   * Y todo está comprometido: mil del acumulado y mil del premio de J1, que
+   * todavía no se ha entregado.
+   */
+  assert.equal(c.comprometido.acumulado, 1000);
+  assert.equal(c.comprometido.premiosJornada, 1000);
+  assert.equal(c.libre, 0, 'cuadra: lo que hay es exactamente lo que se debe');
+});
+
+test('⭐ entregar el premio de una jornada saca ese dinero de la caja', async () => {
+  const { jefe, socio } = await conCobros('caja2', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const r = await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId, nota: 'ganó la J1' });
+
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(Number(r.body.entrega.monto), 1000, 'se entrega lo COBRADO para esa jornada');
+
+  const c = await caja(jefe);
+
+  assert.equal(c.salido.premiosJornada, 1000);
+  assert.equal(c.debeHaber, 1000, 'queda el acumulado');
+  assert.equal(c.comprometido.premiosJornada, 0, 'ya no está pendiente');
+  assert.equal(c.comprometido.acumulado, 1000);
+  assert.equal(c.libre, 0);
+});
+
+test('⛔ entregar un premio NO le reduce la deuda al ganador', async () => {
+  /*
+   * Es la regla que dio Marco con estas palabras: «al jugador se le entrega el
+   * premio completo, eso quiere decir que el premio no se abona a futuras
+   * quinielas».
+   *
+   * Si la entrega viviera en `pagos` —la tentación obvia, porque ya admite
+   * montos negativos— la cuenta la leería como un abono y le cobraría de menos
+   * la jornada siguiente, **sin dar ningún error**.
+   */
+  const { jefe, socio } = await conCobros('caja-deuda', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const antes = await jugadorDe(jefe, socio.datos.username);
+
+  await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId, nota: 'ganó' });
+
+  const despues = await jugadorDe(jefe, socio.datos.username);
+
+  assert.deepEqual(despues.jornada, antes.jornada,
+    'cobrar un premio no cambia lo que esa persona debe');
+});
+
+test('⛔ el premio de una jornada se entrega UNA vez', async () => {
+  const { jefe, socio } = await conCobros('caja-doble', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const uno = await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId });
+  assert.equal(uno.status, 200);
+
+  const dos = await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId });
+
+  assert.equal(dos.status, 409, 'lo impide el índice único, no una comprobación previa');
+  assert.match(dos.body.error, /ya se entregó/i);
+
+  const c = await caja(jefe);
+  assert.equal(c.salido.premiosJornada, 1000, 'y el dinero sólo salió una vez');
+});
+
+test('⚠️ sin nada cobrado no se puede entregar un premio', async () => {
+  const { jefe, socio } = await conCobros('caja-vacia', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+
+  const r = await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId });
+
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /no se ha cobrado nada/i);
+});
+
+test('⛔ el monto del premio NO se acepta del navegador', async () => {
+  /*
+   * Es la misma guarda que la entrega del acumulado, y allí romperla no tumbaba
+   * ninguna prueba porque vivía en la ruta y había que romper la ruta
+   * (Entrada 078). Aquí se comprueba desde fuera: mandar un monto enorme no
+   * cambia lo que sale.
+   */
+  const { jefe, socio } = await conCobros('caja-monto', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const r = await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId, monto: 999999 });
+
+  assert.equal(r.status, 200);
+  assert.equal(Number(r.body.entrega.monto), 1000, 'el servidor calcula el monto, no lo recibe');
+});
+
+test('⭐ los premios anteriores al corte se dan por entregados', async () => {
+  /*
+   * Cuando esto se construyó ya se habían pagado los premios de las jornadas
+   * anteriores y no había registro de ellos. Marco pidió asumirlos entregados
+   * y empezar a registrar desde la jornada en juego.
+   *
+   * ⛔ No se resolvió inventando filas de entrega: no se sabe quién ganó cada
+   * una, y una entrega con un ganador falso es peor que no tener entrega.
+   */
+  const { jefe, socio } = await conCobros('caja-corte', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  await jornadaJugadaPor(jefe, 'J2', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 4000);          // las dos jornadas
+
+  const sinCorte = await caja(jefe);
+  assert.equal(sinCorte.salido.premiosAsumidos, 0, 'sin corte no se asume nada');
+  assert.equal(sinCorte.comprometido.premiosJornada, 2000, 'los dos premios, pendientes');
+
+  /* El corte se pone en la segunda jornada: la primera queda dada por entregada. */
+  const jornadas = (await jefe.agente.get('/api/cobros/botes')).body.jornadas;
+  const segunda = jornadas.find(j => j.nombre === 'J2');
+
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ premiosRegistradosDesde: segunda.secuencia });
+
+  const conCorte = await caja(jefe);
+
+  assert.equal(conCorte.salido.premiosAsumidos, 1000, 'el premio de J1 se da por salido');
+  assert.equal(conCorte.comprometido.premiosJornada, 1000, 'sólo queda J2');
+  assert.equal(conCorte.debeHaber, 3000, 'de los 4000 cobrados, 1000 ya se habían entregado');
+  assert.equal(conCorte.libre, 0);
+});
+
+test('⚠️ una anulación también mueve la caja', async () => {
+  /*
+   * Las anulaciones son montos negativos en `pagos`. Filtrarlas al sumar daría
+   * una caja inflada: ese dinero se devolvió o nunca llegó.
+   */
+  const { jefe, socio } = await conCobros('caja-anula', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+
+  const abono = await abonar(jefe, suyo.jugadorId, 2000);
+  assert.equal((await caja(jefe)).entrado.total, 2000);
+
+  await jefe.agente.post(`/api/cobros/abonos/${abono.body.pago.id}/anular`)
+    .send({ nota: 'se devolvió el dinero' });
+
+  const c = await caja(jefe);
+  assert.equal(c.entrado.total, 0, 'lo que entró y volvió a salir no está en la caja');
+  assert.equal(c.debeHaber, 0);
+});
+
+test('⛔ la caja y las entregas son sólo del administrador', async () => {
+  const { jefe, socio } = await conCobros('caja-guardia', CON_ACUMULADO);
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+
+  assert.equal((await socio.agente.get('/api/cobros/caja')).status, 403);
+  assert.equal((await socio.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId })).status, 403);
+});
+
+test('⛔ la caja de una quiniela no cuenta el dinero de otra', async () => {
+  const uno = await conCobros('caja-cruz-a', CON_ACUMULADO);
+  const otro = await conCobros('caja-cruz-b', CON_ACUMULADO);
+
+  await jornadaJugadaPor(uno.jefe, 'J1', uno.socio);
+  const suyo = await jugadorDe(uno.jefe, uno.socio.datos.username);
+  await abonar(uno.jefe, suyo.jugadorId, 2000);
+
+  assert.equal((await caja(uno.jefe)).entrado.total, 2000);
+
+  /* El control: la de al lado cobra igual, y su caja está vacía. */
+  assert.equal((await caja(otro.jefe)).entrado.total, 0,
+    'el dinero de una quiniela no aparece en la caja de la otra');
+});
+
+
+test('⛔ entregar un premio de jornada NO toca el acumulado', async () => {
+  /*
+   * Desde la migración 011 las dos entregas viven en la misma tabla. Si `botes()
+   * sumara TODAS al calcular lo entregado del acumulado, cada premio de jornada
+   * encogería el bote: se entregaría de menos al ganador de la tabla general, y
+   * la diferencia no aparecería en ninguna parte.
+   *
+   * ⚠️ Esta prueba nació de romperlo a propósito y ver que las diez anteriores
+   * seguían en verde: la caja calcula el acumulado por su cuenta y era inmune,
+   * pero la pantalla de botes no.
+   */
+  const { jefe, socio } = await conCobros('caja-bote', CON_ACUMULADO);
+
+  await jornadaJugadaPor(jefe, 'J1', socio);
+  const suyo = await jugadorDe(jefe, socio.datos.username);
+  await abonar(jefe, suyo.jugadorId, 2000);
+
+  const antes = (await jefe.agente.get('/api/cobros/botes')).body.acumulado;
+  assert.equal(Number(antes.disponible), 1000);
+
+  await jefe.agente.post('/api/cobros/jornadas/J1/entregar-premio')
+    .send({ jugadorId: suyo.jugadorId });
+
+  const despues = (await jefe.agente.get('/api/cobros/botes')).body.acumulado;
+
+  assert.equal(Number(despues.disponible), 1000,
+    'el bote acumulado sigue entero: ese premio salió del dinero de la jornada');
+  assert.equal(Number(despues.entregado), 0,
+    'y del acumulado no se ha entregado nada todavía');
+});

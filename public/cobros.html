@@ -78,8 +78,39 @@
         <button id="entregarAcumulado" type="button">Entregar el acumulado</button>
       </div>
 
+      <div id="premioJornadaPanel" hidden>
+        <h3>Entregar el premio de una jornada</h3>
+        <p class="helper-text">
+          ⚠️ Se entrega lo <strong>cobrado</strong> para esa jornada, no lo esperado:
+          si falta gente por pagar, el premio es más pequeño. Queda anotado y no se
+          puede borrar.
+        </p>
+        <p class="helper-text">
+          El premio se le da entero al ganador y <strong>no se le descuenta de sus
+          cuotas</strong>: sigue debiendo lo mismo que antes.
+        </p>
+        <label class="field-label" for="premioJornada">Jornada</label>
+        <select id="premioJornada"></select>
+        <label class="field-label" for="premioGanador">Ganador de la jornada</label>
+        <select id="premioGanador"></select>
+        <label class="field-label" for="premioNota">Nota (opcional)</label>
+        <input type="text" id="premioNota" placeholder="pagado por SINPE" />
+        <button id="entregarPremio" type="button">Entregar el premio</button>
+      </div>
+
       <div id="listaEntregas"></div>
       <p id="botesMensaje" class="form-message"></p>
+    </section>
+
+    <section class="app-panel" id="cajaPanel" hidden>
+      <h2>La caja</h2>
+      <p class="helper-text">
+        Cuánto dinero <strong>debe haber en la cuenta</strong> ahora mismo, según
+        todo lo que ha entrado y todo lo que ha salido.
+      </p>
+      <div id="cajaResumen"></div>
+      <div id="cajaComprometido"></div>
+      <p id="cajaMensaje" class="form-message"></p>
     </section>
 
     <section class="app-panel" id="historialPanel" hidden>

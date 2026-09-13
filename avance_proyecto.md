@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 546/546
+npm test                    # 558/558
 npm run test:e2e            # 132/132, ~7 min
 ```
 
@@ -53,14 +53,14 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **546**, ~110 s |
+| Pruebas rápidas | **558**, ~115 s |
 | Pruebas de navegador | **132**, ~7 min, contra el servidor de verdad |
 | Rutas | **104**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 28 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ✅ **Al día.** Las diez migraciones corridas y verificadas |
+| Base en Neon | ⛔ **La 011 está SIN CORRER.** Las 001 a 010, hechas |
 | Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -479,11 +479,11 @@ escribirla (080).
 |---|---|
 | Último commit | Entrada 090: el `SELECT *` que costaba 22 GB al mes |
 | Árbol | ✅ Limpio, y `main` al día con `origin/main` |
-| Base de datos | ✅ **Las diez migraciones corridas.** La 010 la corrió Marco el 12 de septiembre |
+| Base de datos | ⛔ **La migración 011 está SIN CORRER** (Entrada 091). Las diez anteriores, hechas |
 | CI | ✅ En verde desde `38bdeb1`. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
 | Producción | ⚠️ **Falta desplegar la 090**, que corta 22 GB/mes de tráfico a Neon |
-| Pruebas | 546 rápidas + 132 de navegador, todas en verde |
-| ⛔ Antes que nada | **Redesplegar la 090.** Corta 22 GB/mes de tráfico contra Neon. **No toca la base** |
+| Pruebas | 558 rápidas + 132 de navegador, todas en verde |
+| ⛔ Antes que nada | **Correr la migración 011 y desplegar** (091): la caja de cobros. La 090 ya está desplegada |
 | Y luego, en Neon | Mirar si el contador de transferencia baja de golpe: es lo único que confirma que era eso |
 | ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 al principio de «Lo siguiente» |
 | ⚠️ Y algo suyo | **Encender el aviso por correo** en Configurar quiniela → Avisos. Nace apagado: hoy no le llega nada a nadie (086) |
@@ -747,8 +747,10 @@ despliegan solos. Van en `db/migraciones/`, se ejecutan en el editor SQL de Neon
 **con el rol dueño**, y **antes** del empujón que necesita la columna nueva. La
 001 (cobros) ya está corrida y comprobada; no hay que volver a ejecutarla.
 
-✅ **LAS DIEZ ESTÁN CORRIDAS Y VERIFICADAS contra Neon.** La 008 y la 009 las
-corrió Marco el 3 de septiembre, y la 010 el 12. No queda ninguna pendiente.
+⛔ **LA 011 ESTÁ SIN CORRER.** Renombra `entregas_acumulado` a `entregas` y le
+añade el concepto (Entrada 091). Sin ella la pantalla de cobros deja de cargar.
+
+✅ **Las diez anteriores están corridas y verificadas contra Neon.**
 
 | # | Qué trajo | Corrida |
 |---|---|---|
@@ -762,6 +764,7 @@ corrió Marco el 3 de septiembre, y la 010 el 12. No queda ninguna pendiente.
 | 008 | `partidos.compartido_en` (Entrada 085) | 3 sep |
 | 009 | `partidos.avisado_en`, la memoria del aviso (086) | 3 sep |
 | 010 | `membresias.ultimo_acceso`, el orden de «Mis quinielas» (089) | 12 sep |
+| **011** | `entregas`: el libro de salidas de dinero (091) | ⛔ **SIN CORRER** |
 
 Comprobado el 27 contra la base de verdad: las columnas con su valor por
 defecto, los dos `CHECK` de la 006, RLS forzada en `entregas_acumulado`, y las
@@ -15324,6 +15327,201 @@ mide lo que la aplicación pide, pero el número que se factura lo tiene Marco.
 
 **Y archivar las cinco quinielas vacías**, que además limpia la lista. Se hace
 desde Configurar quiniela, sin tocar código.
+
+---
+
+
+
+### 📌 Entrada 091 — 13 de septiembre de 2026 — La caja, y la mitad de la ecuación que no se registraba
+
+**Objetivo:** Marco pidió ver en Cobros «cuánto dinero debe haber en la cuenta
+para estar al día con todo», contando el acumulado, los abonos, los premios ya
+dados y el de la jornada en turno.
+
+## ⛔ Al ir a calcularlo faltaba la mitad
+
+```
+DEBE HABER = todo lo cobrado
+           − premios de jornada entregados     ← NO SE REGISTRABA
+           − entregas del acumulado            ← sí
+           − premio de torneo entregado        ← NO SE REGISTRABA
+```
+
+`botes()` sabía cuánto se había **cobrado** para el premio de cada jornada, pero
+**nada decía si ese premio había salido**. Cada domingo se le paga al ganador y
+ese dinero se iba de la cuenta sin dejar rastro.
+
+⚠️ Así que la caja no se podía calcular. Se podía *suponer* que todo premio ya
+se pagó, pero habría sido un número **seguro y equivocado** — la clase de error
+que este proyecto lleva noventa entradas evitando.
+
+## ⛔ La decisión de fondo: son DOS libros, no uno con el signo cambiado
+
+La tentación obvia era meter los premios en `pagos` con monto negativo: esa tabla
+**ya admite negativos** para las anulaciones, así que «encaja».
+
+Y rompería las cuentas en silencio. `pagos` responde a **una** pregunta:
+*«¿cuánto debe esta persona?»*. Un jugador que gana un premio **no debe menos**.
+Ahí dentro, `cuentaDeJugador` lo leería como que ya pagó su cuota y le cobraría
+de menos la jornada siguiente, **sin dar ningún error**.
+
+Marco lo dejó dicho con estas palabras, y son la especificación entera:
+
+> «al jugador se le entrega el premio completo, eso quiere decir que el premio no
+> se abona a futuras quinielas»
+
+Entra dinero por un lado y sale por otro. **Migración 011**:
+`entregas_acumulado` → **`entregas`**, con `concepto` (`jornada` · `acumulado` ·
+`torneo`) y `jornada_id`.
+
+⚠️ Y se renombró en vez de añadir columnas y callar: la tabla iba a guardar
+premios de jornada, así que `entregas_acumulado` habría pasado a ser mentira. Un
+nombre que miente cuesta más que el rato de renombrar.
+
+## ⚠️ «Para atrás asumimos que ya se entregaron»
+
+Los premios anteriores ya estaban pagados y de ellos no hay registro. Marco pidió
+darlos por entregados y registrar de la jornada en juego en adelante.
+
+⛔ **Eso NO se resolvió insertando filas inventadas.** No se sabe quién ganó cada
+una, y **una entrega con un ganador falso es peor que no tener entrega**: parece
+un dato y no lo es.
+
+Se resolvió con un **corte**: `configuracion.premiosRegistradosDesde` guarda la
+secuencia de la primera jornada que sí se registra; las anteriores se dan por
+salidas **por su importe cobrado**. Es el mismo patrón que
+`jugadores.cobrar_desde` —«de aquí en adelante»— y vive en el `jsonb`, así que no
+necesitó columna.
+
+⚠️ Sin corte (`null`) **no se asume nada**: todas cuentan como pendientes. El
+valor por defecto no inventa dinero salido.
+
+## Lo que se ve en la pantalla
+
+```
+Entró:  ₡96.000
+Salió:  ₡48.000   · de eso, ₡36.000 en premios anteriores al registro
+DEBE HABER EN LA CUENTA: ₡48.000
+
+De ese dinero, comprometido:
+  Acumulado, sin entregar            ₡36.000
+  Premios de jornada sin entregar    ₡12.000
+  ──────────────────────────────────────────
+  Libre: ₡0 — cuadra.
+```
+
+⭐ **«Libre» es el número que de verdad se mira.** Si no es cero, o falta por
+entregar algo o hay dinero que no debería estar. Puede ser negativo, y eso
+significa que se entregó más de lo que se ha cobrado.
+
+## Tres guardas que se copiaron de lo que ya había
+
+1. **El monto no se acepta del navegador.** Lo calcula el servidor a partir de
+   lo cobrado, igual que en la entrega del acumulado. Y se entrega lo
+   **cobrado**, no lo esperado: si falta gente por pagar el premio es más
+   pequeño, y sacar lo esperado sería mover de la caja un dinero que no ha
+   entrado.
+2. **Un premio se entrega una vez**, y lo impide un **índice único parcial**, no
+   una comprobación previa: entre el «¿ya se entregó?» y el `INSERT` cabe otra
+   petición.
+3. **Un `CHECK` ata concepto y jornada**: una entrega de jornada sin jornada no
+   se puede imputar a nada, y una del acumulado con jornada sería una imputación
+   falsa.
+
+## ⛔ Una prueba que faltaba, encontrada rompiendo el código
+
+Las dos entregas viven ahora en la misma tabla, así que `botes()` tuvo que pasar
+a sumar **sólo las del acumulado**. Se rompió a propósito —quitando ese filtro—
+y **las diez pruebas nuevas siguieron en verde**.
+
+El motivo: `caja()` calcula el acumulado por su cuenta y era inmune. Pero la
+pantalla de botes no: cada premio de jornada habría **encogido el bote**, se le
+habría entregado de menos al ganador de la tabla general y la diferencia no
+aparecería en ninguna parte.
+
+Hizo falta una prueba nueva —«entregar un premio de jornada NO toca el
+acumulado»— que sí cae con esa mutación.
+
+⚠️ **Que una mutación no tumbe nada no significa que el código esté bien
+cubierto: significa que hay que mirar por dónde se escapa.**
+
+## ⛔ Y el mismo error de manejo, por segunda vez
+
+Para deshacer una mutación se usó `git checkout src/rutas/admin.js` — y ese
+archivo tenía las **dos rutas nuevas sin commit**. Se las llevó por delante, y lo
+destapó la suite: cuatro pruebas rojas de golpe.
+
+**Está anotado desde la Entrada 089** y se repitió igual. `git checkout` sobre un
+archivo no deshace lo último: **tira todo lo que no esté commiteado**. Para
+revertir algo temporal, copia de respaldo — que es lo que se hizo con los otros
+cuatro archivos de esa misma sesión.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/011-entregas-de-premios.sql` | **Nueva.** El renombrado, `concepto`, `jornada_id` y sus dos CHECK |
+| `db/esquema.sql` | La tabla `entregas` y la lista de RLS |
+| `src/cobros.js` | **`caja()`**, aritmética pura |
+| `src/pagos.js` | `entregarPremioJornada`, `caja`, y `botes`/`entregas` al día |
+| `src/rutas/admin.js` | `GET /api/cobros/caja` y `POST …/jornadas/:nombre/entregar-premio` |
+| `src/rutas/plataforma.js` | `premiosRegistradosDesde` en la configuración |
+| `public/cobros.html` | El panel de caja y el de entregar premio |
+| `private/js/cobros.js` | `pintarCaja`, el concepto en el historial de entregas |
+| `test/rutas.test.js` | 11 pruebas nuevas |
+| `test/architecture.test.js` | Centinela de los dos libros; el de solo-escritura entiende renombrados |
+| `test/postgres-en-memoria.js`, `test/db.test.js` | El nombre nuevo |
+
+**Verificación:**
+
+```
+npm test             → 558/558  (eran 546)
+npx playwright test  → 132/132
+
+Rotas a proposito:
+  ignorar el corte                     → cae "los premios anteriores al corte"
+  aceptar el monto del navegador       → cae "el monto NO se acepta"
+  el premio se escribe en `pagos`      → cae el centinela de los dos libros
+  botes() suma TODAS las entregas      → NO caia; se anadio la prueba que si cae
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Dinero que entra y dinero que sale son dos libros.** Meter un premio en
+   `pagos` con el signo cambiado encaja de maravilla y le cobra de menos al
+   ganador la jornada siguiente, sin error.
+2. ⛔ **Un histórico que no se conoce no se inventa.** Para «asumir entregado» se
+   usó un corte, no filas con ganadores falsos: una fila falsa parece un dato.
+3. ⚠️ **Al generalizar una tabla, lo que se rompe es quien la sumaba entera.**
+   `botes()` sumaba todas las entregas y de golpe eso incluía otro concepto.
+4. ⚠️ **Una mutación que no tumba nada es una pregunta, no un aprobado.** La del
+   filtro del acumulado destapó que la caja era inmune y la pantalla no.
+5. ⛔ **`git checkout <archivo>` volvió a costar trabajo perdido.** Segunda vez,
+   con la lección ya escrita. Lo que la evita no es acordarse: es respaldar antes
+   de mutar, siempre.
+6. **Un centinela que deriva de las migraciones tiene que entender los
+   renombrados.** La 007 cierra `entregas_acumulado` y la 011 la renombra; las
+   dos son correctas, y la salida fácil —repetir la lista a mano— era justo lo
+   que ese centinela existe para evitar.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/011-entregas-de-premios.sql` en Neon con el rol dueño
+ANTES de empujar.** Al revés, la aplicación consulta una tabla que todavía se
+llama de otra forma y los cobros dejan de cargar.
+
+⚠️ Y comprobar después, con el rol dueño, que **`entregas` sigue siendo de sólo
+escritura**. El `REVOKE` de la 007 se arrastra con el renombrado, pero la
+comprobación cuesta un comando y no hacerla ya salió caro una vez (Entrada 079).
+La consulta está en el pie del archivo.
+
+**Después, y esto lo hace Marco desde la pantalla:**
+
+1. Entregar el premio de las jornadas que toquen, de la actual en adelante.
+2. **Poner el corte**: hoy los premios de las jornadas con secuencia 3, 4 y 5 ya
+   se pagaron y la 6 (`Jornada4`) está pendiente, así que el corte es **6**. Hasta
+   que se ponga, la caja contará esos tres premios como pendientes y «libre»
+   saldrá alto.
 
 ---
 

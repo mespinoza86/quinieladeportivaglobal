@@ -378,7 +378,14 @@ async function reporte(quinielaId, configuracion) {
         c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
         c.query('SELECT jugador_id, concepto, monto FROM pagos'),
         jornadasJugadas(c),
-        c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado')
+        /*
+         * ⚠️ SÓLO las del acumulado. Desde la migración 011 esta tabla guarda
+         * también los premios de jornada; sumarlos todos aquí restaría del
+         * acumulado un dinero que no salió de él, y el bote quedaría corto sin
+         * que nada fallara.
+         */
+        c.query(`SELECT COALESCE(sum(monto), 0) AS total
+                   FROM entregas WHERE concepto = 'acumulado'`)
       ]);
       return {
         jugadores: j.rows, jornadas: jo.rows, pagos: p.rows,
@@ -523,7 +530,8 @@ async function botes(quinielaId) {
       c.query(`SELECT id, cobrar_desde, juega_jornadas, juega_acumulado FROM jugadores`),
       c.query('SELECT id, nombre, secuencia, precio, al_acumulado FROM jornadas ORDER BY secuencia'),
       c.query('SELECT jugador_id, concepto, monto FROM pagos'),
-      c.query('SELECT COALESCE(sum(monto), 0) AS total FROM entregas_acumulado'),
+      c.query(`SELECT COALESCE(sum(monto), 0) AS total
+                 FROM entregas WHERE concepto = 'acumulado'`),
       jornadasJugadas(c)
     ]);
 
@@ -553,14 +561,22 @@ async function botes(quinielaId) {
   });
 }
 
-/** Las entregas del acumulado, de la más nueva a la más vieja. */
+/**
+ * TODAS las entregas de dinero, de la más nueva a la más vieja.
+ *
+ * Desde la migración 011 incluye los premios de jornada además del acumulado,
+ * así que cada fila trae su `concepto` y, cuando es de jornada, el nombre de
+ * la jornada a la que se imputó.
+ */
 async function entregas(quinielaId) {
   return db.enQuiniela(quinielaId, async c => {
     const { rows } = await c.query(
-      `SELECT e.id, e.nombre_ganador, e.monto, e.nota, e.created_at,
+      `SELECT e.id, e.concepto, e.jornada_id, j.nombre AS jornada,
+              e.nombre_ganador, e.monto, e.nota, e.created_at,
               u.username AS registrado_por
-         FROM entregas_acumulado e
+         FROM entregas e
          LEFT JOIN usuarios u ON u.id = e.registrado_por
+         LEFT JOIN jornadas j ON j.id = e.jornada_id
         ORDER BY e.created_at DESC`);
     return rows;
   });
@@ -591,13 +607,106 @@ async function entregarAcumulado(quinielaId, { jugadorId, nota, registradoPor } 
     if (!(monto > 0)) return { ok: false, motivo: 'sin_acumulado' };
 
     const { rows: [entrega] } = await c.query(
-      `INSERT INTO entregas_acumulado
-         (quiniela_id, jugador_id, nombre_ganador, monto, nota, registrado_por)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, nombre_ganador, monto, created_at`,
+      `INSERT INTO entregas
+         (quiniela_id, jugador_id, nombre_ganador, concepto, monto, nota, registrado_por)
+       VALUES ($1, $2, $3, 'acumulado', $4, $5, $6)
+       RETURNING id, concepto, nombre_ganador, monto, created_at`,
       [quinielaId, jugador.id, jugador.nombre, monto, nota || '', registradoPor || null]);
 
     return { ok: true, entrega };
+  });
+}
+
+/**
+ * Entrega el premio de UNA jornada a su ganador.
+ *
+ * ============================================================================
+ * ⛔ EL MONTO NO SE RECIBE DE FUERA
+ * ============================================================================
+ *
+ * Se calcula aquí, igual que en `entregarAcumulado`: es lo que se cobró para
+ * el premio de esa jornada. Si viniera del navegador, cualquiera con la
+ * pantalla abierta podría entregar un premio que no existe.
+ *
+ * ⚠️ Y no se entrega el premio ESPERADO sino el COBRADO. Si falta gente por
+ * pagar, el premio es más pequeño: entregar lo esperado sería sacar de la caja
+ * un dinero que todavía no ha entrado, y el descuadre aparecería en el
+ * acumulado de otro.
+ *
+ * ============================================================================
+ * ⛔ ENTREGAR UN PREMIO NO ABONA NADA
+ * ============================================================================
+ *
+ * El ganador recibe el premio entero y **sigue debiendo sus cuotas igual**. Por
+ * eso esto escribe en `entregas` y no en `pagos`: allí se leería como que ya
+ * pagó, y se le cobraría de menos la jornada siguiente sin dar ningún error.
+ */
+async function entregarPremioJornada(quinielaId, { jugadorId, jornadaNombre, nota, registradoPor } = {}) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows: [jugador] } = await c.query(
+      'SELECT id, nombre FROM jugadores WHERE id = $1', [jugadorId]);
+
+    if (!jugador) return { ok: false, motivo: 'jugador_no_encontrado' };
+
+    const { rows: [jornada] } = await c.query(
+      'SELECT id, nombre FROM jornadas WHERE nombre = $1', [jornadaNombre]);
+
+    if (!jornada) return { ok: false, motivo: 'jornada_no_encontrada' };
+
+    const estado = await botes(quinielaId);
+    const laJornada = estado.jornadas.find(j => String(j.id) === String(jornada.id));
+    const monto = laJornada?.premio ?? 0;
+
+    if (!(monto > 0)) return { ok: false, motivo: 'sin_premio' };
+
+    try {
+      const { rows: [entrega] } = await c.query(
+        `INSERT INTO entregas
+           (quiniela_id, jugador_id, nombre_ganador, concepto, jornada_id,
+            monto, nota, registrado_por)
+         VALUES ($1, $2, $3, 'jornada', $4, $5, $6, $7)
+         RETURNING id, concepto, nombre_ganador, monto, created_at`,
+        [quinielaId, jugador.id, jugador.nombre, jornada.id,
+          monto, nota || '', registradoPor || null]);
+
+      return { ok: true, entrega, jornada: jornada.nombre };
+    } catch (error) {
+      /*
+       * ⚠️ El índice único es quien impide entregar dos veces el mismo premio,
+       * no una comprobación previa: entre el «¿ya se entregó?» y el INSERT cabe
+       * otra petición. Aquí sólo se traduce el choque a un motivo legible.
+       */
+      if (error.code === '23505') return { ok: false, motivo: 'ya_entregado' };
+      throw error;
+    }
+  });
+}
+
+/**
+ * La caja: cuánto dinero debe haber en la cuenta para estar al día.
+ *
+ * Junta los tres libros —abonos, entregas y lo cobrado por jornada— y se lo
+ * pasa a `cobros.caja`, que es aritmética pura. Aquí no se suma nada.
+ */
+async function caja(quinielaId, configuracion) {
+  const [estado, datos] = await Promise.all([
+    botes(quinielaId),
+    db.enQuiniela(quinielaId, async c => {
+      const [p, e] = await Promise.all([
+        c.query('SELECT concepto, monto FROM pagos'),
+        c.query('SELECT concepto, jornada_id, monto FROM entregas')
+      ]);
+      return { pagos: p.rows, entregas: e.rows };
+    })
+  ]);
+
+  return cobros.caja({
+    botes: estado,
+    pagos: datos.pagos,
+    entregas: datos.entregas.map(e => ({
+      concepto: e.concepto, jornadaId: e.jornada_id, monto: e.monto
+    })),
+    premiosRegistradosDesde: configuracion?.premiosRegistradosDesde ?? null
   });
 }
 
@@ -606,5 +715,5 @@ module.exports = {
   registrar, anular,
   cuentas, cuentaDetallada,
   ajustarJugador, proximaSecuencia,
-  botes, entregas, entregarAcumulado, reporte
+  botes, entregas, entregarAcumulado, entregarPremioJornada, caja, reporte
 };
