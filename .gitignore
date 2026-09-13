@@ -7,3 +7,9 @@ npm-debug.log*
 # Playwright: informes y rastros de las pruebas de navegador
 test-results/
 playwright-report/
+
+# Los manuales: SOLO en esta maquina.
+# El repositorio es publico, asi que nada de lo que hay aqui debe subirse.
+# Ver la conversacion del 13 de septiembre de 2026: se eligio dejarlos fuera
+# de git en vez de poner el repo en privado.
+docs/
