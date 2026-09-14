@@ -142,10 +142,43 @@ async function censar() {
 
   for (const quiniela of quinielas) {
     await db.enQuiniela(quiniela.id, async c => {
+      /*
+       * ⛔ NO se leen los partidos ya terminados, y esto es lo que mantiene el
+       * ciclo barato para siempre.
+       *
+       * Antes no había filtro: cada minuto se leía TODO el historial de la
+       * quiniela para acabar descartándolo en `tocaConsultar`, que devuelve
+       * `false` para cualquier fixture en estado `TC` —terminado y bloqueado—.
+       * Con 54 partidos eran 8,8 KB por ciclo; a dos jornadas por semana el
+       * mismo ciclo costaba 13 GB al mes al cabo de un año, sin que hubiera
+       * cambiado nada más. El límite no lo ponía la gente, lo ponía el
+       * calendario.
+       *
+       * ⭐ El corte NO es por fecha sino por `TC`, que es exactamente el criterio
+       * que ya usaba `tocaConsultar`. Una ventana de días habría sido una
+       * segunda regla que mantener de acuerdo con la primera; así no hay dos
+       * verdades que puedan separarse.
+       *
+       * Lo que sigue entrando, por si el LEFT JOIN no salta a la vista:
+       *   · los que aún no tienen fila en `fixtures` (partido recién creado),
+       *   · los que no tienen id del proveedor —clave derivada, que SQL no
+       *     sabe calcular—, porque no se puede decidir sobre ellos,
+       *   · y todo lo que no esté en `TC`.
+       * Ante la duda se lee: dejar fuera un partido vivo lo congelaría sin dar
+       * ningún error.
+       *
+       * ⚠️ Esto NO afecta al botón de «sincronizar esta jornada ahora»: esa ruta
+       * arma su propio catálogo desde los partidos de la jornada y pasa
+       * `forzar: true`, así que sigue pudiendo revivir un partido viejo.
+       */
       const { rows: partidos } = await c.query(
         `SELECT j.nombre AS jornada, p.equipo1, p.equipo2,
                 p.api_fixture_id, p.api_league_id, p.api_date
-           FROM partidos p JOIN jornadas j ON j.id = p.jornada_id
+           FROM partidos p
+           JOIN jornadas j ON j.id = p.jornada_id
+           LEFT JOIN fixtures f
+                  ON p.api_fixture_id <> '' AND f.clave = p.api_fixture_id
+          WHERE f.estado IS DISTINCT FROM 'TC'
           ORDER BY j.secuencia, p.orden`);
 
       const porJornada = new Map();

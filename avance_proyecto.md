@@ -15747,6 +15747,170 @@ npx playwright test  → 142/142  (eran 140)
 
 ---
 
+
+### 📌 Entrada 093 — 14 de septiembre de 2026 — El censo releía el historial entero, cada minuto, para siempre
+
+**Objetivo:** Marco preguntó cuántos jugadores aguantaría jugando dos quinielas
+por semana sin pasar los 5 GB de Neon. Al modelarlo apareció que la pregunta
+estaba mal planteada: **el límite no lo ponía la gente, lo ponía el calendario**.
+
+## Lo que destapó la pregunta
+
+Midiendo contra producción para contestar, salió esto:
+
+```
+60 jugadores más           →  +0,5 GB/mes
+6 meses de partidos más    →  +6,3 GB/mes
+```
+
+El censo del ciclo de sincronización leía **todos los partidos que existieran**,
+cada minuto, sin filtro de ninguna clase:
+
+```sql
+SELECT ... FROM partidos p JOIN jornadas j ON j.id = p.jornada_id
+-- sin WHERE: un partido de hace seis meses se releía 43 200 veces al mes
+```
+
+⛔ Y lo peor no era el coste de hoy, sino la forma de la curva. Con **doce**
+jugadores —los de ahora— jugando dos por semana:
+
+```
+mes  3    3,74 GB     ✅
+mes  6    6,87 GB     ⛔ ya no cabe
+mes 12   13,13 GB     ⛔
+```
+
+Nadie habría hecho nada distinto. Sólo habría pasado el tiempo.
+
+## ⭐ El corte NO es por fecha
+
+La salida evidente era una ventana de días: «lee sólo lo de las últimas dos
+semanas». Se descartó.
+
+`tocaConsultar` ya tenía un criterio para no volver a mirar un partido: estado
+`TC`, *terminado y bloqueado*. Una ventana de días habría sido una **segunda
+regla** que mantener de acuerdo con la primera, y el día que se separaran —una
+consulta que sigue viva pasados los días de la ventana— el partido se congelaría
+sin dar ningún error.
+
+Así que el censo excluye exactamente lo que `tocaConsultar` ya descartaba:
+
+```sql
+LEFT JOIN fixtures f ON p.api_fixture_id <> '' AND f.clave = p.api_fixture_id
+WHERE f.estado IS DISTINCT FROM 'TC'
+```
+
+**Cero cambio de comportamiento**: esas filas se leían para tirarlas.
+
+## Lo que sigue entrando, y por qué
+
+⚠️ El filtro sólo deja fuera lo que **consta** terminado. Ante la duda, se lee:
+
+- los partidos sin fila todavía en `fixtures` (recién creados),
+- los que no tienen id del proveedor —clave derivada, que SQL no sabe calcular—,
+- y todo lo que no esté en `TC`.
+
+Dejar fuera un partido vivo no daría un error: dejaría de sincronizarse y su
+marcador se quedaría como estuviera. Es el tipo de fallo que este proyecto lleva
+noventa entradas evitando.
+
+⚠️ Y se comprobó antes de tocar nada que el botón de **«sincronizar esta jornada
+ahora»** no pasa por el censo: arma su propio catálogo desde los partidos de la
+jornada y usa `forzar: true`. Sigue pudiendo revivir un partido viejo.
+
+## Lo que costaba y lo que cuesta
+
+```
+                    ANTES        AHORA
+partidos leídos       54            1
+censo               8,80 KB      5,38 KB
+decidir             2,50 KB      0,39 KB
+por ciclo          11,30 KB      5,77 KB
+al mes              0,470 GB     0,238 GB
+```
+
+⭐ La mitad que ahorra hoy no es el punto. **El punto es que ese número ya no
+crece.** Lo que quedan son 5,38 KB de suelo fijo —abrir la transacción de cada
+quiniela activa, el `SET LOCAL`— que serán los mismos dentro de dos años.
+
+## ⛔ Una prueba que probaba otra cosa
+
+Cuatro mutaciones. Tres cayeron a la primera; la cuarta —quitar
+`p.api_fixture_id <> ''` del JOIN— **no la detectaba nadie**.
+
+Se escribió una prueba para taparlo y **seguía sin detectarla**. Al ir a mirar
+por qué: el ayudante de pruebas pone `apiFixtureId: null` por defecto, y `null`
+y `''` **se guardan distinto**. Con `null`, la igualdad contra una clave vacía da
+NULL y la fila se salva sola; la guarda sólo importa con la cadena vacía.
+
+```
+mutación 4, con la prueba mal:  0 fallos  ⛔
+mutación 4, con la prueba bien: 1 fallo   ✅
+```
+
+⚠️ **Una prueba nueva que no cae al romper lo que dice cubrir es una prueba mal
+escrita, no un código bien hecho.** Es la segunda vez en dos días: pasó con
+`botes()` en la Entrada 091.
+
+Y el fallo de fondo merece quedar escrito: `fixtures.clave` es `NOT NULL`, pero
+**no «no vacía»**. Basta una fila con la clave en blanco para que todos los
+partidos sin id del proveedor se emparejen con ella.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/sincronizador.js` | El censo filtra por `TC`, con el porqué escrito al lado |
+| `test/sincronizador.test.js` | 4 pruebas: excluye terminados, ante la duda lee, control positivo, y la clave vacía |
+
+**Verificación:**
+
+```
+npm test             → 584/584  (eran 580)
+npx playwright test  → 142/142
+
+Medido contra producción, antes y después:
+  11,30 KB → 5,77 KB por ciclo
+
+Rotas a propósito, 4 de 4 detectadas:
+  quitar el filtro            → 2 rojas
+  filtrar TODO (ciclo muerto) → 8 rojas
+  != en vez de IS DISTINCT    → 7 rojas
+  el JOIN sin la guarda       → 1 roja (tras arreglar la prueba)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un trabajo periódico que lee «todo» tiene una bomba de tiempo dentro.**
+   El coste no depende de los usuarios sino del calendario, y no se nota hasta
+   que ya no cabe. Nadie tiene que hacer nada mal.
+2. ⭐ **Al filtrar, reutilizar el criterio que ya existe.** Una ventana de días
+   habría sido una segunda verdad que puede separarse de la primera en silencio.
+3. ⚠️ **`NOT NULL` no es «no vacía».** Una clave en blanco en `fixtures` se
+   emparejaría con todos los partidos sin id del proveedor.
+4. ⚠️ **`null` y `''` se guardan distinto**, y una prueba que usa uno no prueba
+   el otro. Comprobarlo costó una consulta y evitó una prueba decorativa.
+5. **El control positivo va SIEMPRE con el filtro.** «No lee los terminados» es
+   también lo que se cumple si el censo no lee nada: hizo falta una prueba que
+   exija que lo demás sí entre.
+
+**Pendiente / siguiente paso:**
+
+Lo que queda del análisis de capacidad, por orden de lo que rinde:
+
+1. **Un torneo, una quiniela.** No cuesta código: la tabla general sólo lee las
+   jornadas de SU quiniela, así que empezar una nueva cada torneo reinicia el
+   coste. Con eso, ~60 jugadores caben sin acercarse al límite.
+2. **Que el ranking no relea toda la historia en cada carga.** Es el siguiente
+   techo: en el mes 12 una sola carga cuesta 3,82 MB frente a 0,45 MB en el
+   mes 1. Sólo hace falta si se quieren temporadas largas con mucha gente.
+3. ⚠️ **`Promise.all` con varias `c.query` sobre el mismo cliente**, en cinco
+   sitios de `src/pagos.js` (líneas 134, 193, 374, 529 y 695). Hoy no rompe
+   nada —`pg` las encola— pero está obsoleto y desaparece en `pg@9`. Los cinco
+   son código de dinero.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

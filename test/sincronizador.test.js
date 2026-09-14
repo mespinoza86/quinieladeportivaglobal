@@ -778,3 +778,112 @@ test('un partido terminado por el proveedor tampoco se reescribe después', asyn
   doc = await oficiales.deJornada(q.id, 'J1');
   assert.equal(doc.partidos[0].marcador1, 3, 'lo terminado es historia: no se reescribe');
 });
+
+/* ==================== El censo no relee el historial ==================== */
+
+/** Deja una fila en `fixtures` con el estado que se pida. */
+async function fixtureEnEstado(clave, estado) {
+  await db.consulta(
+    `INSERT INTO fixtures (clave, api_fixture_id, busqueda, evento, estado, api_date,
+                           consultado_en, proxima_consulta, fallos_consecutivos, ultimo_error)
+     VALUES ($1, $1, '{}'::jsonb, '{}'::jsonb, $2, '2026-09-01 15:00',
+             now(), now(), 0, '')
+     ON CONFLICT (clave) DO UPDATE SET estado = EXCLUDED.estado`,
+    [clave, estado]);
+}
+
+test('⛔ el censo NO lee los partidos ya terminados', async () => {
+  /*
+   * Es lo que mantiene el ciclo barato para siempre. Sin este filtro, cada
+   * minuto se releía el historial entero para acabar descartándolo en
+   * `tocaConsultar`: a dos jornadas por semana, el mismo ciclo pasaba de 0,47 a
+   * 13 GB al mes en un año sin que nadie hubiera hecho nada.
+   */
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: '111' }),
+    partido('C', 'D', { apiFixtureId: '222' })
+  ]);
+
+  await fixtureEnEstado('111', 'TC');            // terminado y bloqueado
+  await fixtureEnEstado('222', 'PROGRAMADO');    // todavía vivo
+
+  const { catalogo, partidosSeguidos } = await sinc.censar();
+
+  assert.equal(partidosSeguidos, 1, 'sólo cuenta el que sigue vivo');
+  assert.deepEqual([...catalogo.keys()], ['222']);
+});
+
+test('⛔ ante la duda, el censo LEE', async () => {
+  /*
+   * Los tres casos en que no se puede decidir. Dejar fuera un partido vivo lo
+   * congelaría: no se volvería a consultar nunca y su marcador se quedaría como
+   * estuviera, sin dar ningún error. Por eso el filtro sólo excluye lo que
+   * consta terminado, nunca lo desconocido.
+   */
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: '111' }),   // sin fila en fixtures todavía
+    partido('C', 'D', { apiFixtureId: '222' }),   // con fila, pero no terminado
+    partido('E', 'F')                             // sin id de proveedor: clave derivada
+  ]);
+
+  await fixtureEnEstado('222', 'EN_JUEGO');
+
+  const { partidosSeguidos } = await sinc.censar();
+
+  assert.equal(partidosSeguidos, 3, 'los tres entran: ninguno consta terminado');
+});
+
+test('un partido que termina deja de censarse, y el resto sigue', async () => {
+  /*
+   * ⚠️ Control positivo del filtro. Sin esta prueba, un `WHERE` que excluyera
+   * SIEMPRE todo dejaría verdes a las dos de arriba —cero partidos censados
+   * también es «no lee los terminados»— y el ciclo habría dejado de sincronizar
+   * sin que nada se quejara.
+   */
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: '111' }),
+    partido('C', 'D', { apiFixtureId: '222' })
+  ]);
+
+  const antes = await sinc.censar();
+  assert.equal(antes.partidosSeguidos, 2, 'los dos vivos al principio');
+
+  await fixtureEnEstado('111', 'TC');
+
+  const despues = await sinc.censar();
+  assert.equal(despues.partidosSeguidos, 1, 'uno menos al terminar');
+  assert.deepEqual([...despues.catalogo.keys()], ['222'], 'y es el otro el que queda');
+});
+
+test('⛔ una fixture con la clave vacia no arrastra a los partidos sin id', async () => {
+  /*
+   * El `LEFT JOIN` exige `p.api_fixture_id <> ''` además de la igualdad, y sin
+   * esta prueba esa condición no la respaldaba nada: hoy `claveDeFixture` nunca
+   * devuelve cadena vacía, así que quitarla no rompía ningún test.
+   *
+   * ⚠️ Pero `fixtures.clave` sólo es `NOT NULL`, no «no vacía». Basta UNA fila
+   * con la clave en blanco —un arreglo a mano, una importación— para que TODOS
+   * los partidos sin id del proveedor se emparejen con ella. Si esa fila está
+   * en `TC`, el censo los daría por terminados y dejarían de sincronizarse para
+   * siempre, sin un solo error.
+   */
+  const q = await quinielaNueva();
+
+  /*
+   * ⚠️ `apiFixtureId: ''` y NO el `null` que pone el ayudante por defecto. Se
+   * guardan distinto —comprobado— y sólo la cadena vacía se empareja con una
+   * clave vacía: con `null`, la igualdad da NULL y la fila se salva sola, así
+   * que la prueba pasaría sin la guarda y no probaría nada.
+   */
+  await jornadas.guardar(q.id, 'J1', [partido('E', 'F', { apiFixtureId: '' })]);
+
+  await fixtureEnEstado('', 'TC');
+
+  const { partidosSeguidos } = await sinc.censar();
+
+  assert.equal(partidosSeguidos, 1,
+    'el partido sin id NO debe emparejarse con la fixture de clave vacía');
+});
