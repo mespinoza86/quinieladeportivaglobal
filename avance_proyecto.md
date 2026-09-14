@@ -22,13 +22,13 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 584/584
+npm test                    # 615/615
 npm run test:e2e            # 142/142, ~6 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
 la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
-`src/servidor.js`, `src/rutas/` y 29 módulos de `src/`.
+`src/servidor.js`, `src/rutas/` y 31 módulos de `src/`.
 
 ✅ **Fundida en `main` el 22 de agosto**, y el esquema de Neon está al día:
 `npm start` conecta, arranca y responde. Se comprobó de punta a punta contra la
@@ -53,16 +53,16 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **584**, ~115 s |
+| Pruebas rápidas | **615**, ~120 s |
 | Pruebas de navegador | **142**, ~6 min, contra el servidor de verdad |
-| Rutas | **112**, todas sobre PostgreSQL |
+| Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
-| `src/` | 29 módulos + `src/rutas/` (6) |
+| `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ✅ **Las 12 migraciones corridas.** La 011 y la 012, el 13 y 14 de septiembre |
-| Producción | ✅ Al día en `bbac88c`. En uso, con cuentas y quinielas de verdad |
-| Tráfico a Neon | ✅ **0,24 GB/mes** de 5, medido. Era 20,4 GB en septiembre |
+| Base en Neon | ✅ **Las 14 migraciones corridas.** De la 011 a la 014, el 13 y 14 de septiembre |
+| Producción | ✅ Al día en `602f641`. En uso, con cuentas y quinielas de verdad |
+| Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -481,6 +481,7 @@ Nueve entradas de bitácora (085 a 093). Cuatro trabajos grandes y dos sustos.
 | **La caja de cobros** | 091 | ✅ Desplegada. Migración 011. Contesta «cuánto dinero debe haber en la cuenta» |
 | **Niveles de administrador** | 092 | ✅ Desplegado. Migración 012. Cuatro escalones, 50 rutas, una sola tabla de permisos |
 | **La fuga de tráfico a Neon** | 090, 093 | ✅ De 20,4 GB/mes a 0,24. Dos causas distintas, once días de diferencia |
+| ⭐ **Notificaciones al teléfono** | 094, 095 | ✅ Desplegadas. Migraciones 013 y 014. Lo que Marco llamó «lo que más quiero» |
 | Documentación en `docs/` | 089 | 8 ficheros HTML, **ignorados por git**: el repositorio es público |
 
 #### Las dos fugas de Neon, que no eran la misma
@@ -539,6 +540,32 @@ proyecto pisando en silencio lo que hace el navegador por defecto**.
 ⛔ **Ninguna de las 584 pruebas de `npm test` ejecuta código de navegador.** Los
 dos fallos convivían con la suite entera en verde. Los cogió Playwright.
 
+#### ⭐ Las notificaciones, y la regla que las gobierna
+
+Lo último del día, y lo que Marco llevaba pidiendo desde el 4 de septiembre.
+Dos avisos por jornada y uno por partido, con **tres audiencias distintas**:
+
+```
+2 h antes del partido MÁS TEMPRANO   →  a quien le falten pronósticos
+15 min antes de ese mismo partido    →  a quien le falten pronósticos
+15 min antes de cada partido después →  sólo a quien empezó y le falte ése
+```
+
+⭐ Todo eso sale de **una sola frase**, que es lo que hay que recordar al
+tocarlo: *una notificación sólo se manda si quien la recibe todavía puede
+cambiar algo*.
+
+Esa regla **sustituyó a una función entera**. Marco había propuesto un botón de
+«no me avises más» dentro de la notificación; se descartó porque en iPhone esos
+botones probablemente no se muestran —dejando sin salida a quien más pasos dio
+para poder recibirlas— y porque habría que repetirlo cada jornada. Con la regla
+de la audiencia, el silencio de quien se sienta una jornada **llega solo**.
+
+Y lo del iPhone se resolvió **sin saber qué teléfono usa nadie**: no se mira el
+`User-Agent` —que en iPad miente— sino si existe `PushManager`. Quien puede, ve
+el botón; quien no, ve las instrucciones para añadir el sitio a la pantalla de
+inicio, y en cuanto lo hace el botón aparece solo.
+
 #### Tres veces que una sonda mintió
 
 Merece estar junto, porque es el patrón que más trabajo costó en estas dos
@@ -564,22 +591,33 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `bbac88c` — Entrada 093: el censo que releía el historial entero |
+| Último commit | `602f641` — Entrada 095: sólo se avisa a quien puede cambiar algo |
 | Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Base de datos | ✅ **Las 12 migraciones corridas.** La 011 y la 012 las corrió Marco, comprobadas contra Neon |
+| Base de datos | ✅ **Las 14 migraciones corridas.** De la 011 a la 014, las corrió Marco y se comprobaron contra Neon una a una |
 | CI | ✅ En verde. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
-| Producción | ✅ **Al día.** Queda que Marco jale `bbac88c` en Render |
-| Pruebas | **584** rápidas + **142** de navegador, todas en verde |
-| Tráfico a Neon | ✅ **0,24 GB/mes** de 5, medido contra producción. En septiembre eran 20,4 |
-| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Sigue **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 más abajo |
+| Producción | ✅ **Al día en `602f641`**, con las tres variables VAPID puestas |
+| Pruebas | **615** rápidas + **142** de navegador, todas en verde |
+| Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido contra producción. A principios de mes eran 20,4 |
+| ⭐ Lo que se acabó hoy | **Las notificaciones al teléfono**, lo que Marco llamó «lo que más quiero» el 4 de septiembre. Entradas 094 y 095 |
 
-✅ **No queda nada a medias.** Los tres trabajos del 13 y 14 —niveles de
-administrador, la fuga de Neon y el censo— están cerrados, probados, documentados
-y empujados.
+✅ **No queda nada a medias.** Los cinco trabajos del 13 y 14 —niveles de
+administrador, la caja, las dos fugas de tráfico y las notificaciones— están
+cerrados, probados, documentados, desplegados y con sus migraciones corridas.
 
-⚠️ **Lo único que conviene vigilar** es el domingo siguiente al despliegue de
-`bbac88c`: que los marcadores oficiales sigan llegando solos, sin tocar
-«sincronizar esta jornada». Es lo único que ese cambio podría haber roto.
+⚠️ **DOS COSAS QUE SÓLO PUEDE CONFIRMAR EL MUNDO REAL**, y que conviene mirar el
+próximo fin de semana con partidos:
+
+1. **Que llegue una notificación a un teléfono.** Todo lo de aquí está probado
+   sin salir a la red: el envío se sustituye en las pruebas. Que Google y Apple
+   la entreguen sólo lo dice un partido de verdad. Si no llega, la pista está en
+   los registros de Render.
+2. **Que los marcadores oficiales sigan llegando solos**, sin tocar «sincronizar
+   esta jornada». Es lo único que el filtro del censo (093) podría haber roto.
+
+⚠️ Y una consecuencia del diseño nuevo que conviene tener en la cabeza: como la
+audiencia depende de **quién ha llenado qué**, el primer aviso real es también la
+primera prueba de esa consulta. Si llega un aviso de un partido ya pronosticado,
+o falta uno que sí faltaba, **el nombre del partido basta para encontrarlo**.
 
 **Cómo se comprobó el despliegue**, que es la forma que funciona:
 
@@ -639,91 +677,102 @@ correo que hay que encender.
 
 ### 🛑 SI MARCO VUELVE Y PREGUNTA «¿DÓNDE ESTAMOS?», ESTO ES LA RESPUESTA
 
-> Escrito el 12 de septiembre de 2026 y **puesto al día el 14**. Está aquí,
+> Escrito el 12 de septiembre de 2026 y **reescrito el 14 por la noche**. Está aquí,
 > arriba del todo, porque es exactamente lo que pidió que se recordara: dónde
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las doce migraciones corridas**, **584 + 142** pruebas en verde,
-el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea empezada sin
-terminar.**
+funcionando, **las catorce migraciones corridas**, **615 + 142** pruebas en
+verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
+empezada sin terminar.**
 
-**Lo que se propone hacer a continuación**, y está sin empezar —ni una línea de
-código—: las **notificaciones al teléfono 15 minutos antes de que arranque un
-partido**, para todos los jugadores. Lo pidió el 4 de septiembre con estas
-palabras: *«eso es lo que más quiero»*. El análisis entero está en la Entrada
-088; el resumen, justo debajo de este recuadro.
+### ✅ Lo que se acabó el 14 de septiembre: las notificaciones
 
-⛔ **LO QUE HACE FALTA DE MARCO PARA SEGUIR.** Son tres decisiones pequeñas, y
-las tres tienen recomendación. Con un «dale» a las tres, se empieza:
+Lo que Marco pidió el 4 de septiembre con estas palabras —**«eso es lo que más
+quiero»**— está **hecho, probado, documentado y desplegado**. Entradas 094 y 095.
 
-| Pregunta | Recomendación | Por qué |
-|---|---|---|
-| ¿A quién le llega? | **A todos** los que se apunten | Es lo que pidió: «revisa tus resultados» vale para cualquiera |
-| ¿Cuándo? | **15 minutos fijos** | Configurable es una casilla más para algo que ya nombró él |
-| ¿Y si la ventana ya pasó? | **Callarse** | «Arranca en 15 minutos» cuando lleva media hora jugándose es peor que nada |
+```
+2 h antes del partido MÁS TEMPRANO de la jornada  →  a quien le falten pronósticos
+15 min antes de ese mismo partido                 →  a quien le falten pronósticos
+15 min antes de cada partido siguiente            →  sólo a quien empezó y le falte ése
+```
 
-✅ **El aviso por correo YA ESTÁ FUNCIONANDO, y esto estuvo mal escrito aquí
-durante once días.** Marco lo encendió el 7 de septiembre y han salido 39 avisos;
-el 14 lo confirmó: «los correos me llegan a la hora que debe ser».
+⭐ **La regla que lo gobierna todo, y que conviene no perder de vista al tocarlo:**
 
-⛔ Y merece quedar anotado **cómo se llegó a afirmar lo contrario**: una sonda
+> Una notificación sólo se manda si quien la recibe **todavía puede cambiar
+> algo**.
+
+De ahí salen las tres audiencias sin decidir nada más: quien llenó todo no recibe
+nada nunca; quien va a medias recibe sólo de lo que le falta; quien no llenó nada
+recibe los dos avisos de la jornada y después se le deja en paz.
+
+Esa regla **sustituyó a una función entera**: Marco había propuesto un botón de
+«no me avises más» dentro de la notificación, y se descartó porque en iPhone esos
+botones probablemente no se muestran —dejando sin salida a quien más pasos dio
+para recibirlas— y porque habría que repetirlo cada jornada.
+
+### ⚠️ LO ÚNICO QUE FALTA POR SABER, Y NO DEPENDE DE ESCRIBIR CÓDIGO
+
+**Que una notificación llegue de verdad a un teléfono.** Todas las pruebas
+sustituyen el envío: comprueban a quién se escribe y qué se le dice, nunca que
+Google o Apple lo entreguen. Eso sólo lo confirma un partido real.
+
+Cuando llegue ese fin de semana, lo que hay que mirar:
+
+1. ¿Llegó el aviso de dos horas? ¿Y el de quince minutos?
+2. ¿Le llegó a quien le faltaban pronósticos, y **no** a quien ya había llenado?
+3. Si algo no cuadra, **el nombre del partido basta para encontrarlo**: la
+   audiencia se decide por quién ha pronosticado qué, y esa consulta se puede
+   correr a mano para ese partido.
+4. Si no llega nada, mirar los registros de Render: `push.enviar` deja escrito el
+   código de error del servicio.
+
+### ⛔ Y una cosa que este documento tuvo mal durante once días
+
+Decía que el aviso por correo estaba apagado. **Llevaba encendido desde el 7 de
+septiembre** y han salido 39 avisos; Marco lo confirmó el 14: *«los correos me
+llegan a la hora que debe ser»*.
+
+Cómo se llegó a afirmar lo contrario, porque el mecanismo va a volver: una sonda
 contó `partidos WHERE avisado_en IS NOT NULL` con `db.consulta`, **sin contexto
-de quiniela**. `partidos` lleva RLS: devolvió cero filas **sin dar ningún error**,
-y ese cero se leyó como «nunca se ha enviado nada». Con el contexto puesto eran
-39. Es la trampa que este documento lleva avisando desde la Entrada 053, y aun
-así se cayó en ella.
+de quiniela**. `partidos` lleva RLS, así que devolvió cero filas **sin dar ningún
+error**, y ese cero se leyó como «nunca se ha enviado nada». Con el contexto
+puesto eran 39.
+
+⚠️ Esa misma trampa mordió **dos veces más** el mismo día: al comprobar la
+migración 014 (dijo «0 jornadas», eran 4) y en dos sondas que leyeron campos con
+nombre supuesto (`₡NaN` y `cobrado: undefined`). Las tres se destaparon igual:
+**el resultado era raro y se fue a mirar en vez de darlo por bueno.**
 
 ---
 
-### ⭐ Lo que Marco quiere de verdad, y está decidido a medias
+### ✅ Lo que Marco quería de verdad — HECHO el 14 de septiembre
 
-**Notificaciones en el teléfono 15 minutos antes de que arranque un partido**,
-para todos los jugadores: *«el partido va a iniciar, revisa tus resultados para
-asegurarte de que están bien»*. Lo pidió el 4 de septiembre y dijo, con esas
-palabras, **«eso es lo que más quiero»**.
+> Esta sección describió durante diez días algo «decidido a medias». Ya no lo
+> está: se construyó entero. Se conserva el resumen porque explica **por qué**
+> quedó como quedó, que es lo que hace falta para tocarlo sin romperlo.
 
-⛔ **Y NO necesita la Play Store.** Las notificaciones web funcionan en Android
-sin publicar nada. Todo está contado en la **Entrada 088**; lo esencial:
+**Notificaciones en el teléfono antes de que arranquen los partidos.** Lo pidió
+el 4 de septiembre: *«el partido va a iniciar, revisa tus resultados para
+asegurarte de que están bien»*, y dijo que era **lo que más quería**.
 
-| | |
+Las dos preguntas que lo bloquearon durante una semana, y cómo se resolvieron:
+
+| Duda | Cómo se cerró |
 |---|---|
-| Android / Chrome | ✅ Funciona sin nada especial |
-| iPhone / Safari | ⚠️ Sólo si antes **añaden el sitio a la pantalla de inicio** |
-| Disparador | ✅ Ya existe: el planificador corre cada 60 s |
-| Falta | Tabla de suscripciones, una marca por partido, *service worker*, botón de activar, `web-push` y dos claves VAPID |
-| Tamaño | Como las Entradas 085 y 086 **juntas** |
+| ¿Render se duerme y el reloj se para? | ✅ No: el plan es de pago, y `/readyz` marcaba 4,3 días seguidos de proceso |
+| ¿Cuánta gente usa iPhone? | ✅ **Da igual, y por eso dejó de bloquear.** No se cuenta: la pantalla detecta `PushManager` y enseña el botón a quien puede, y las instrucciones para añadir a la pantalla de inicio a quien no |
 
-✅ **Las dos preguntas que bloqueaban esto están resueltas** (11 de septiembre):
+⛔ **Y NO hizo falta la Play Store.** Las notificaciones web funcionan en Android
+sin publicar nada.
 
-1. **El plan de Render es DE PAGO.** Lo confirmó Marco, y cuadra con la medición:
-   `/readyz` daba **4,3 días seguidos** de proceso. El servicio no se duerme, así
-   que el reloj corre siempre y el aviso saldrá a su hora. Era el cimiento: una
-   notificación que no llega es peor que no tener la función.
+⚠️ Lo que sí hizo falta y no estaba previsto: un **`manifest.webmanifest`**. Sin
+un manifiesto con `display: standalone`, «añadir a la pantalla de inicio» en
+iPhone **no** habilita las notificaciones por mucho que la persona lo haga.
 
-   ⚠️ `render.yaml` sigue diciendo `plan: free`, y eso **no es lo que hay
-   puesto**. Es la trampa de siempre con este archivo: Render no lo aplica solo
-   (§B.3), así que el archivo describe una intención vieja, no la realidad.
-
-2. **Lo del iPhone no hace falta saberlo, y por eso deja de bloquear.** Marco no
-   sabe cuántos lo usan, y da igual: en vez de contarlos, **la pantalla se entera
-   sola**.
-
-   ⛔ No por husmear el `User-Agent` —que en iPad miente— sino por **detección de
-   capacidad**: si `PushManager` no existe en ese navegador, las notificaciones
-   no se pueden activar ahí y punto. En iPhone eso ocurre exactamente mientras el
-   sitio esté en una pestaña; en cuanto lo añaden a la pantalla de inicio,
-   `PushManager` aparece y el botón funciona.
-
-   Así que la pantalla enseña **el botón** a quien puede, y **las instrucciones
-   para añadir a la pantalla de inicio** a quien no. Nadie tiene que saber de
-   antemano qué teléfono usa nadie, y el día que Apple lo cambie, esto se entera
-   solo.
-
-**Las tres decisiones que quedan** —pequeñas, con recomendación—: **¿a todos o
-sólo a quien no llenó?** (a todos, que es lo que pidió), **¿15 minutos fijos o
-configurables?** (fijos), y **¿qué hacer si la ventana ya pasó?** (callarse:
-«arranca en 15 minutos» cuando lleva media hora jugándose es peor que nada).
+Las tres decisiones que faltaban las cerró Marco el 14, y luego las afinó él
+mismo hasta la regla de «sólo a quien puede cambiar algo». El detalle está en el
+recuadro 🛑 de arriba y en las **Entradas 094 y 095**.
 
 ### Lo demás que hay sobre la mesa
 
@@ -1040,7 +1089,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 584 pruebas rápidas, ~115 s
+npm test                   # las 615 pruebas rápidas, ~120 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -1090,13 +1139,20 @@ empezado: no hay trabajo a medias en el repositorio.
 
 | # | Qué | Por qué importa | Tamaño |
 |---|---|---|---|
-| 1 | ⭐ **Notificaciones al teléfono, 15 min antes** | Lo que Marco dijo que **más quiere** (4 sept). Desbloqueado desde la 088; faltan tres decisiones suyas, todas con recomendación | Grande |
-| 2 | ⚠️ **`Promise.all` con varias `c.query` sobre el mismo cliente** | 5 sitios de `src/pagos.js` (134, 193, 374, 529, 695). Hoy NO rompe nada —`pg` las encola— pero está obsoleto y desaparece en `pg@9`. Los cinco son código de dinero | Pequeño |
-| 3 | **Que el ranking no relea la temporada entera en cada carga** | Es el siguiente techo de tráfico: en el mes 12 una carga cuesta 3,82 MB frente a 0,45 en el mes 1. Sólo hace falta para temporadas largas con mucha gente | Mediano |
-| 4 | **Cierre por reloj, no por el proveedor** | Marco lo pidió el 3 sept: *«si dice que cierra a las 3pm, que cierre a las 3pm»*. Medido en la 086, **no implementado** | Mediano |
+| 1 | ⚠️ **`Promise.all` con varias `c.query` sobre el mismo cliente** | 5 sitios de `src/pagos.js` (134, 193, 374, 529, 695). Hoy NO rompe nada —`pg` las encola— pero está obsoleto y desaparece en `pg@9`. Los cinco son código de dinero | Pequeño |
+| 2 | **Cierre por reloj, no por el proveedor** | Marco lo pidió el 3 sept: *«si dice que cierra a las 3pm, que cierre a las 3pm»*. Medido en la 086, **no implementado** | Mediano |
+| 3 | **Que el ranking no relea la temporada entera en cada carga** | El siguiente techo de tráfico: en el mes 12 una carga cuesta 3,82 MB frente a 0,45 en el mes 1. ⭐ Lo evita gratis **un torneo, una quiniela** | Mediano |
+| 4 | **Un icono de 192×192** en `public/img/` | Las notificaciones salen hoy con el dibujo genérico del navegador. Dos líneas en `sw.js` y se ven bastante mejor | Pequeño |
 | 5 | `generar_reporte.html` tira de cdnjs | Única dependencia externa del frontend | Pequeño |
 | 6 | Paginar el libro de abonos | Crece sin tope; hoy son 32 filas | Pequeño |
 | 7 | Trivias de punta a punta | Sin prueba de navegador que las recorra enteras | Mediano |
+
+⛔ **Nada de esto está empezado**, y ninguno bloquea a los demás. El orden es de
+lo que rinde, no de dependencias.
+
+⚠️ **Y lo primero que hay que hacer al volver no está en esta lista**, porque no
+es código: **comprobar que las notificaciones llegan** en el próximo fin de
+semana con partidos. Ver el recuadro 🛑.
 
 ### ✅ Lo que se puede tachar, y no estaba tachado
 
@@ -1112,6 +1168,9 @@ Todo esto estuvo en esta lista y **ya está hecho**:
   ₡11.000 cada una) en vez de darlas por supuestas con el corte. Un dato real
   vale más que una suposición. **Dejarlo sin poner.**
 - **Cortar el tráfico a Neon** — dos veces, entradas 090 y 093.
+- ⭐ **Las notificaciones al teléfono** — lo que Marco llamó «lo que más quiero».
+  Hechas, probadas, desplegadas y con las migraciones 013 y 014 corridas
+  (Entradas 094 y 095).
 
 ### 💡 Y una que no es código
 
@@ -1591,7 +1650,7 @@ migraciones**), `public/` (35 pantallas), `private/` (CSS y JS servidos),
 
 ### 2.2 `src/` — la aplicación
 
-**29 módulos y 6 archivos de rutas**, remedidos con guion el 14 de septiembre de 2026. La
+**31 módulos y 6 archivos de rutas**, remedidos con guion el 14 de septiembre de 2026. La
 regla que los ordena: `src/db.js` es el **único** sitio que abre transacciones y
 fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 
@@ -1603,9 +1662,10 @@ fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 | `cobros.js` | 677 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
 | `jornadas.js` | 540 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
 | `sincronizador.js` | 527 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
+| `notificaciones.js` | 495 | **Las notificaciones al teléfono**: las dos ventanas (2 h y 15 min), las tres audiencias y las suscripciones. ⭐ Su regla: sólo se avisa a quien todavía puede cambiar algo (Entradas 094 y 095) |
 | `eventos.js` | 469 | La lectura del JSON del proveedor, en un solo sitio |
 | `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
-| `compartir.js` | 416 | Qué está listo para salir al grupo, agrupado por hora de inicio, las dos marcas —compartido y avisado— y el barrido del aviso (Entradas 085 y 086). **No da formato al texto**: eso es `private/js/compartir.js` |
+| `compartir.js` | 407 | Qué está listo para salir al grupo, agrupado por hora de inicio, las dos marcas —compartido y avisado— y el barrido del aviso (Entradas 085 y 086). **No da formato al texto**: eso es `private/js/compartir.js` |
 | `oficiales.js` | 373 | Resultados oficiales, con `SAVEPOINT` por partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
 | `pronosticos.js` | 340 | Pronósticos, y la tabla comparativa en **una sola consulta** |
@@ -1614,26 +1674,27 @@ fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 | `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
 | `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
 | `correo.js` | 262 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria. Tres correos: confirmar, restablecer y el aviso de compartir |
+| `planificador.js` | 255 | **Tres relojes**: el sincronizador (1 min), la resolución de trivias (5 min) y el aviso de compartir (1 min). ⚠️ El del aviso lleva **cerrojo propio**: un correo no es idempotente y dos instancias mandarían dos (Entrada 086) |
 | `quinielas.js` | 224 | Alta, archivado y configuración (puntuación, cobros y **ligas favoritas**) |
 | `respuestas-trivia.js` | 223 | Respuestas de los participantes |
 | `proveedor.js` | 221 | Cliente de APIFootball, con tiempo de espera propio |
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
-| `planificador.js` | 198 | **Tres relojes**: el sincronizador (1 min), la resolución de trivias (5 min) y el aviso de compartir (1 min). ⚠️ El del aviso lleva **cerrojo propio**: un correo no es idempotente y dos instancias mandarían dos (Entrada 086) |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
 | `permisos.js` | 191 | **Quién puede qué, en una sola tabla.** La escalera de cinco roles, las 9 capacidades y el mapa de pantallas. Lo lee la guardia del servidor Y la pantalla, para que no puedan separarse (Entrada 092) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
 | `jugadores.js` | 154 | Participantes |
+| `fechas.js` | 110 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 | `tokens.js` | 101 | Tokens de un solo uso, **guardados sólo en SHA-256** |
+| `push.js` | 93 | El transporte hacia Google y Apple. ⚠️ `404`/`410` son los ÚNICOS códigos que mandan borrar una suscripción |
 | `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
-| `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 
-**`src/rutas/` — 97 rutas, repartidas por tema** (más las 15 de `servidor.js`, abajo):
+**`src/rutas/` — 100 rutas, repartidas por tema** (más las 15 de `servidor.js`, abajo):
 
 | Archivo | Líneas | Rutas |
 |---|---:|---|
 | `admin.js` | 682 | 26 — administración, sincronizador, **cobros** (con la caja) y **compartir al grupo** |
 | `puntuacion.js` | 404 | 10 — resultados, totales, clasificación por jornada |
-| `plataforma.js` | 457 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
+| `plataforma.js` | 515 | 23 — lo de fuera de una quiniela, **más las tres de notificaciones**. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
 | `dominio.js` | 334 | 16 — jornadas, partidos, pronósticos |
 | `trivias.js` | 241 | 14 — trivias y sus respuestas |
 | `superadmin.js` | 181 | 11 — cuentas de todo el sistema. ⚠️ Se montan **antes** del guardia de quiniela: no dependen de tener una seleccionada |
@@ -1659,7 +1720,7 @@ grep -hoE "app\.(get|post|put|patch|delete)\(" src/rutas/*.js | wc -l
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `esquema.sql` | 579 | **22 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
+| `esquema.sql` | 622 | **23 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
 | `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055). **Desde que hay datos en Neon ya no sirve**: los cambios van por `migraciones/` |
 
 **`db/migraciones/` — los cambios de esquema, uno por archivo numerado.** Nació
@@ -1672,7 +1733,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-✅ **Son doce, y las doce están corridas y verificadas contra Neon.**
+✅ **Son catorce, y las catorce están corridas y verificadas contra Neon.**
 
 | Archivo | Líneas | Qué trae | Entrada |
 |---|---:|---|---|
@@ -1688,6 +1749,8 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 | `010-ultimo-acceso.sql` | 105 | `membresias.ultimo_acceso`: cuándo entraste por última vez a cada quiniela. **No es `updated_at`**, que dice cuándo cambió la membresía | 089 |
 | `011-entregas-de-premios.sql` | 141 | `entregas_acumulado` → **`entregas`**, con `concepto` y `jornada_id`. ⚠️ Renombra: el código desplegado antes de correrla deja los cobros sin cargar | 091 |
 | `012-niveles-de-administrador.sql` | 42 | Amplía el `CHECK` de `membresias.rol` con `admin_jornadas` y `admin_lector`. ⭐ **No mueve ninguna fila**, así que el orden con el despliegue da igual | 092 |
+| `013-notificaciones-push.sql` | 110 | `suscripciones_push` —de PLATAFORMA, sin RLS: un teléfono no es de una quiniela— con su `GRANT`, y `partidos.notificado_en` | 094 |
+| `014-aviso-previo-de-jornada.sql` | 34 | `jornadas.avisado_2h_en`. ⛔ Va en la JORNADA y no en un partido: «el primero» puede dejar de serlo si se añade otro antes | 095 |
 
 ⛔ **Después de cada migración hay que preguntarle a la base qué permisos
 quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
@@ -1701,7 +1764,7 @@ consulta está en «Lo siguiente».
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 584 pruebas rápidas y 142 de navegador
+### 2.5 `test/` — 615 pruebas rápidas y 142 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
