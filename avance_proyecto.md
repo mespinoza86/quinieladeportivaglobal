@@ -16227,6 +16227,173 @@ verían bastante mejor.
 
 ---
 
+
+### 📌 Entrada 095 — 14 de septiembre de 2026 — «Sólo se avisa a quien todavía puede cambiar algo»
+
+**Objetivo:** Marco quiso afinar las notificaciones recién hechas: un aviso más
+temprano —dos horas antes de que arranque la jornada— y que los avisos dejaran
+de llegarle a quien ya no los necesita.
+
+## ⭐ La regla, que sustituyó a una función entera
+
+Marco propuso un botón dentro de la notificación: *«¿sigo avisando de esta
+jornada?»*, y si dice que no, silencio. Buena intención —el problema de las
+catorce notificaciones es real— pero tenía dos grietas:
+
+1. ⛔ **Los botones dentro de una notificación no se muestran igual en todas
+   partes**, y en iPhone probablemente no aparecen. Habría dejado sin salida
+   justo a quien más pasos tuvo que dar para recibirlas.
+2. ⚠️ **Se olvida cada jornada.** Quien siempre las encuentra pesadas tendría
+   que decir «no» todas las semanas. Eso no es control, es un peaje.
+
+La alternativa que se acordó no necesita botones, ni estado, ni funciona
+distinto en cada teléfono:
+
+> **Una notificación sólo se manda si quien la recibe todavía puede cambiar
+> algo.**
+
+De esa frase salen las tres audiencias sin decidir nada más:
+
+| Quién | 2 h antes | 15 min, primer partido | 15 min, resto |
+|---|:--:|:--:|:--:|
+| Llenó todo | — | — | — |
+| Llenó a medias | ✅ | ✅ | ✅ sólo de los que le faltan |
+| No llenó nada | ✅ | ✅ | — *(ya se le avisó dos veces)* |
+
+⭐ El silencio del tercer caso —lo que iba a resolver el botón— **llega solo**: a
+partir del primer partido la pregunta deja de ser «¿te falta algo?» y pasa a ser
+«¿estás jugando esto y te falta algo?».
+
+## ⛔ «Juega la jornada» ya significaba otra cosa
+
+Al ir a reutilizar la regla que existe apareció esto:
+
+```sql
+-- src/pagos.js · jornadasJugadas()
+SELECT DISTINCT r.jugador_id, r.jornada_id
+  FROM resultados r JOIN pronosticos p ON p.resultado_id = r.id
+```
+
+**«Juega esa jornada» significa «ya puso pronósticos en ella».** Para el dinero
+tiene todo el sentido: se cobra a quien participó. Para avisos, aplicada sin
+mirar, habría dejado fuera **exactamente a quien más falta le hace el
+recordatorio** — el que se olvidó.
+
+Por eso las audiencias se escribieron aparte, en `notificaciones.js`, pero
+respetando `juega_jornadas` y `cobrar_desde`, que sí son la respuesta a «¿le toca
+esta jornada?».
+
+## La marca del aviso previo va en `jornadas`
+
+**Migración 014**: `jornadas.avisado_2h_en`, y no una columna más en `partidos`.
+
+⛔ Ponerla en `partidos` obligaría a elegir un partido al que colgársela —el
+primero— y esa elección se rompe sola: si después se añade un partido más
+temprano, el «primero» cambia, la marca se queda en el equivocado y **la jornada
+avisa dos veces**. En `jornadas` no hay nada que elegir.
+
+## ⛔ El aviso de dos horas mentía, y lo cazaron las pruebas
+
+La primera versión buscaba jornadas que arrancaran «dentro de las próximas dos
+horas». Con esa ventana, un partido que empezaba **en diez minutos** también
+entraba — y recibía un mensaje que decía *«arranca en 2 horas»*.
+
+Dos pruebas nuevas cayeron a la vez y lo destaparon antes de que llegara a
+ningún teléfono. Se arregló con una **banda** alrededor del momento de las dos
+horas:
+
+```
+antes:   (ahora, ahora + 2h]        ← entraba todo lo que quedara por debajo
+ahora:   (ahora + 1h45, ahora + 2h] ← sólo cuando de verdad faltan ~2 horas
+```
+
+⚠️ La tolerancia es de **quince minutos y no de uno** porque el reloj puede
+perderse algún minuto —un reinicio, un ciclo lento—, y con un minuto de margen
+el aviso se perdería entero cada vez que eso pasara.
+
+Y es la misma regla de «callarse» por el otro extremo: si la jornada se creó con
+media hora de margen, este aviso **no sale** y del asunto se encarga el de quince
+minutos.
+
+## ⛔ Una mutación que no caía, y el estado intermedio que escondía
+
+Seis mutaciones. Cinco cayeron; quitar el `EXISTS` que comprueba «tiene algún
+pronóstico» **no rompía nada**.
+
+El motivo: en el escenario normal, quien no llenó tampoco tiene fila en
+`resultados`, y el `JOIN` ya lo deja fuera. El `EXISTS` sólo importa en un estado
+que no se estaba probando:
+
+> **Alguien llena la jornada entera y luego la borra.** Borrar un pronóstico
+> elimina su fila de `pronosticos` y **deja la de `resultados`**.
+
+Esa persona queda con la fila de la jornada y cero pronósticos. Sin el `EXISTS`
+recibiría un aviso por **cada** partido siguiente — justo lo que se decidió no
+hacer con quien se sienta la jornada.
+
+⚠️ **Cuarta vez esta semana que una mutación que no cae señala un estado del
+sistema que nadie había mirado**, no una prueba de más.
+
+## Y se quitó código muerto recién nacido
+
+`destinatariosDe` dejó de usarse al partir la audiencia en dos, y su prueba —la
+del aislamiento entre quinielas, que sí vale— apuntaba a una función que ya no
+corría en producción. Se borró la función y la prueba se apuntó a
+`suscripcionesDe`, que es la que de verdad manda los avisos.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/014-aviso-previo-de-jornada.sql` | **Nueva.** `jornadas.avisado_2h_en` |
+| `db/esquema.sql` | La columna |
+| `src/notificaciones.js` | Las tres audiencias, la ventana de 2 h con banda, y el barrido reescrito |
+| `test/notificaciones.test.js` | De 16 a 24 pruebas; el escenario de los tres estados de llenado |
+
+**Verificación:**
+
+```
+npm test             → 615/615  (eran 607)
+npx playwright test  → 142/142
+
+Rotas a proposito, 6:
+  avisar a quien lleno todo        → 8 rojas
+  audiencia del primero cambiada   → 1 roja
+  avisar a quien no empezo         → NO caia; se anadio «lleno y luego borro»
+  avisar de un partido ya puesto   → 3 rojas
+  volver a la ventana ancha de 2h  → 2 rojas
+  ignorar cobrar_desde             → 8 rojas
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Una regla de audiencia bien elegida sustituye a una función entera.**
+   «Sólo si puedes cambiar algo» hizo innecesarios el botón, su tabla, su
+   manejador en el *service worker* y el problema de iOS.
+2. ⛔ **Un concepto del dominio puede significar lo contrario en otro contexto.**
+   «Juega la jornada» = «ya pronosticó» sirve para cobrar y habría excluido de
+   los recordatorios justo a quien los necesita.
+3. ⛔ **Una marca de «ya avisé» necesita un dueño que no cambie.** La del aviso
+   previo va en la jornada porque «el primer partido» puede dejar de serlo.
+4. ⚠️ **Una ventana «de aquí a dos horas» no es lo mismo que «dentro de dos
+   horas».** La primera manda mensajes que mienten por 110 minutos.
+5. ⚠️ **Borrar un pronóstico deja la fila de `resultados`.** Hay un estado
+   «empezó pero no tiene nada» que no es igual a «no empezó» en la base, aunque
+   lo sea para la persona.
+6. **Partir una función en dos deja muerta a la original**, y su prueba sigue en
+   verde probando código que ya no corre.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/014-aviso-previo-de-jornada.sql`** en Neon con el rol
+dueño. Es aditiva y no mueve ninguna fila: el orden con el despliegue da igual.
+
+⚠️ **Y lo que sigue sin comprobarse es lo único que importa de verdad**: que la
+notificación llegue a un teléfono en un partido real. Todo lo de aquí está
+probado sin salir a la red.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

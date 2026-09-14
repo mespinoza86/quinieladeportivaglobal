@@ -67,10 +67,9 @@ test('⛔ entra lo que arranca DENTRO de los 15 minutos, y nada más', async () 
     partido('Yaarranco', 'X', '2026-09-20 14:45') // arrancó hace 5 → no
   ]);
 
-  const grupos = await notificaciones.paraNotificar(quiniela.id, { ahora });
-  const equipos = grupos.flatMap(g => g.partidos.map(p => p.equipo1)).sort();
+  const enVentana = await notificaciones.paraNotificar(quiniela.id, { ahora });
 
-  assert.deepEqual(equipos, ['Dentro', 'Justo']);
+  assert.deepEqual(enVentana.map(p => p.equipo1).sort(), ['Dentro', 'Justo']);
 });
 
 test('⛔ un partido que YA arrancó no avisa nunca — «callarse»', async () => {
@@ -149,19 +148,26 @@ test('un partido sin hora prevista no entra', async () => {
   assert.deepEqual(grupos, []);
 });
 
-test('los que arrancan a la misma hora van en UN grupo', async () => {
+test('⛔ el «primero» es el MÁS TEMPRANO, no el de orden 1', async () => {
+  /*
+   * Decide a quién se avisa: el primero va a todo el que no haya terminado,
+   * los demás sólo a quien empezó y le falta ése. Si se mirara `orden` —que es
+   * la posición en la pantalla y se puede reordenar—, una jornada reordenada
+   * avisaría del partido equivocado y nadie lo notaría.
+   */
   const { quiniela } = await quinielaNueva();
+
+  /* El que va PRIMERO en la lista arranca DESPUÉS. */
   await jornadas.guardar(quiniela.id, 'J1', [
-    partido('A', 'B', '2026-09-20 15:00'),
-    partido('C', 'D', '2026-09-20 15:00'),
-    partido('E', 'F', '2026-09-20 15:03')
+    partido('Tarde', 'X', '2026-09-20 15:05'),
+    partido('Temprano', 'X', '2026-09-20 15:00')
   ]);
 
-  const grupos = await notificaciones.paraNotificar(quiniela.id,
+  const enVentana = await notificaciones.paraNotificar(quiniela.id,
     { ahora: new Date('2026-09-20T20:50:00Z') });
 
-  assert.equal(grupos.length, 2, 'dos horas de arranque, dos grupos');
-  assert.equal(grupos.find(g => g.apiDate === '2026-09-20 15:00').partidos.length, 2);
+  assert.equal(enVentana.find(p => p.equipo1 === 'Temprano').esPrimero, true);
+  assert.equal(enVentana.find(p => p.equipo1 === 'Tarde').esPrimero, false);
 });
 
 /* ==================== La memoria ==================== */
@@ -179,7 +185,7 @@ test('⛔ un partido ya notificado no vuelve a salir', async () => {
   const primera = await notificaciones.paraNotificar(quiniela.id, { ahora });
   assert.equal(primera.length, 1);
 
-  await notificaciones.marcarNotificados(quiniela.id, primera[0].partidos.map(p => p.id));
+  await notificaciones.marcarNotificados(quiniela.id, primera.map(p => p.id));
 
   const segunda = await notificaciones.paraNotificar(quiniela.id, { ahora });
   assert.deepEqual(segunda, [], 'ya avisó: no se repite');
@@ -265,92 +271,333 @@ test('⛔ sólo reciben los miembros ACTIVOS de esa quiniela', async () => {
     await notificaciones.suscribir(u.id, suscripcionDe());
   }
 
-  const destinatarios = await notificaciones.destinatariosDe(quiniela.id);
+  /*
+   * Se le pasan los CUATRO y tienen que volver dos: el filtro no lo pone
+   * quien llama, lo pone la consulta.
+   */
+  const destinatarios = await notificaciones.suscripcionesDe(quiniela.id,
+    [dueno.id, miembro.id, pendiente.id, ajeno.id]);
   const ids = destinatarios.map(d => d.usuarioId).sort();
 
   assert.deepEqual(ids, [dueno.id, miembro.id].sort(),
     'el pendiente y el de otra quiniela NO reciben');
 });
 
-/* ==================== El barrido ==================== */
+/* ==================== El barrido, y a quién le sirve ==================== */
+
+/*
+ * ⭐ LA REGLA QUE SE PRUEBA AQUÍ, Y DE LA QUE SALE TODO LO DEMÁS
+ *
+ * «Una notificación sólo se manda si quien la recibe todavía puede cambiar
+ * algo» (Marco, 14 de septiembre). Sustituyó a un botón de «no me avises más»
+ * que habría necesitado acciones dentro de la notificación — algo que en iPhone
+ * probablemente no se muestra, dejando sin salida justo a quien más pasos tuvo
+ * que dar para recibirlas.
+ *
+ * El escenario de abajo es siempre el mismo y cubre los tres casos:
+ *
+ *   completo  llenó los dos partidos     → no debe recibir NADA
+ *   medias    llenó sólo el primero      → recibe, y sólo de lo que le falta
+ *   vacio     no llenó ninguno           → recibe los dos avisos de jornada, y para
+ */
+
+const jugadoresMod = require('../src/jugadores');
+const pronosticosMod = require('../src/pronosticos');
+
+/** Un jugador ligado a una cuenta que juega TODAS las jornadas. */
+async function jugadorNuevo(quinielaId, usuarioId, nombre) {
+  await db.enQuiniela(quinielaId, async c => {
+    await jugadoresMod.asegurar(c, quinielaId, nombre, usuarioId);
+    /*
+     * ⚠️ `asegurar` pone `cobrar_desde` en la PRÓXIMA jornada —a quien llega no
+     * se le cobran las ya jugadas—. Aquí se limpia a propósito: lo que se quiere
+     * probar es el aviso, no esa regla, y dejar el dato implícito haría que
+     * estas pruebas dependieran de ella sin decirlo.
+     */
+    await c.query('UPDATE jugadores SET cobrar_desde = NULL WHERE nombre = $1', [nombre]);
+  });
+}
+
+/**
+ * El escenario: una jornada de dos partidos y tres personas con el teléfono
+ * activado, en los tres estados posibles de llenado.
+ */
+async function escenario({ ahora = new Date('2026-09-20T20:50:00Z') } = {}) {
+  const { quiniela, dueno } = await quinielaNueva();
+
+  await jornadas.guardar(quiniela.id, 'J1', [
+    partido('Primero', 'X', '2026-09-20 15:00'),
+    partido('Segundo', 'Y', '2026-09-20 16:00')
+  ]);
+
+  const gente = {};
+  for (const nombre of ['completo', 'medias', 'vacio']) {
+    const cuenta = await cuentaNueva(nombre);
+    await membresias.solicitarIngreso(quiniela.id, cuenta.id);
+    const m = await membresias.de(quiniela.id, cuenta.id);
+    await db.consulta(`UPDATE membresias SET estado='activo' WHERE id = $1`, [m.id]);
+    await jugadorNuevo(quiniela.id, cuenta.id, nombre);
+    await notificaciones.suscribir(cuenta.id, suscripcionDe());
+    gente[nombre] = cuenta;
+  }
+
+  /* Un tiempo MUY anterior, para que los partidos no estén cerrados al llenar. */
+  const antes = new Date('2026-09-20T10:00:00Z');
+
+  await pronosticosMod.guardar(quiniela.id, {
+    jugador: 'completo', usuarioId: gente.completo.id, jornada: 'J1', ahora: antes,
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 2 }]
+  });
+  await pronosticosMod.guardar(quiniela.id, {
+    jugador: 'medias', usuarioId: gente.medias.id, jornada: 'J1', ahora: antes,
+    pronosticos: [{ marcador1: 1, marcador2: 0 }]          // sólo el primero
+  });
+  /* `vacio` no llena nada. */
+
+  return { quiniela, dueno, gente, ahora };
+}
+
+/** Corre el barrido y devuelve quién recibió qué. */
+async function barrer(opciones = {}) {
+  const recibidos = [];
+  const r = await notificaciones.notificarDeTodas({
+    enviar: async ({ destinatario, mensaje }) => {
+      recibidos.push({ usuarioId: destinatario.usuarioId, titulo: mensaje.titulo, cuerpo: mensaje.cuerpo });
+      return { ok: true };
+    },
+    ...opciones
+  });
+  return { recibidos, resultado: r };
+}
+
+const quienRecibio = (recibidos, gente) =>
+  [...new Set(recibidos.map(x =>
+    Object.keys(gente).find(n => gente[n].id === x.usuarioId)))].sort();
+
+test('⛔ dos horas antes: avisa a quien le falta algo, y a nadie más', async () => {
+  const { gente } = await escenario();
+
+  /* Dos horas antes de las 15:00 = 13:00 en Costa Rica = 19:00 UTC. */
+  const { recibidos } = await barrer({ ahora: new Date('2026-09-20T19:00:00Z') });
+
+  assert.deepEqual(quienRecibio(recibidos, gente), ['medias', 'vacio']);
+  assert.ok(recibidos.every(x => /arranca en 2 horas/.test(x.titulo)), 'el texto del aviso previo');
+});
+
+test('⛔ quien ya llenó TODO no recibe absolutamente nada', async () => {
+  /*
+   * La prueba insignia de la regla. Se recorren los tres momentos de la jornada
+   * y en ninguno debe aparecer.
+   */
+  const { gente } = await escenario();
+  const todos = [];
+
+  for (const momento of ['2026-09-20T19:00:00Z',    // dos horas antes
+                         '2026-09-20T20:50:00Z',    // 15 min del primero
+                         '2026-09-20T21:50:00Z']) { // 15 min del segundo
+    const { recibidos } = await barrer({ ahora: new Date(momento) });
+    todos.push(...recibidos);
+  }
+
+  assert.equal(todos.filter(x => x.usuarioId === gente.completo.id).length, 0,
+    'llenó todo: no hay nada que pueda cambiar, no se le escribe');
+  assert.ok(todos.length > 0, 'control: a los otros SÍ se les avisó');
+});
+
+test('⛔ quince minutos antes del primero: a quien le falta algo, incluido quien no llenó nada', async () => {
+  const { gente } = await escenario();
+
+  /* Sólo la ventana de 15 min: el aviso previo ya no entra a esta hora. */
+  const { recibidos } = await barrer({ ahora: new Date('2026-09-20T20:50:00Z') });
+
+  assert.deepEqual(quienRecibio(recibidos, gente), ['medias', 'vacio']);
+  assert.ok(recibidos.every(x => /arranca en 15 minutos/.test(x.titulo)));
+});
+
+test('⛔ los partidos siguientes: sólo a quien EMPEZÓ y le falta ése', async () => {
+  /*
+   * Aquí es donde `vacio` deja de recibir, y es el silencio que antes iba a
+   * necesitar un botón: quien se sienta la jornada recibe dos avisos y se acabó,
+   * en vez de catorce.
+   */
+  const { gente } = await escenario();
+
+  /* Se despacha primero la ventana del primer partido, para no mezclar. */
+  await barrer({ ahora: new Date('2026-09-20T20:50:00Z') });
+
+  /* 15 min antes de las 16:00 = 15:45 en Costa Rica = 21:45 UTC. */
+  const { recibidos } = await barrer({ ahora: new Date('2026-09-20T21:45:00Z') });
+
+  assert.deepEqual(quienRecibio(recibidos, gente), ['medias'],
+    'vacio no empezó la jornada; completo ya lo tiene pronosticado');
+  assert.ok(/Segundo vs Y/.test(recibidos[0].titulo), recibidos[0].titulo);
+});
+
+test('el aviso de dos horas se manda UNA vez, aunque el reloj siga corriendo', async () => {
+  const { gente } = await escenario();
+
+  const primera = await barrer({ ahora: new Date('2026-09-20T19:00:00Z') });
+  assert.equal(primera.resultado.previos, 1);
+
+  /* Un minuto después, todavía dentro de la ventana de dos horas. */
+  const segunda = await barrer({ ahora: new Date('2026-09-20T19:01:00Z') });
+  assert.equal(segunda.resultado.previos, 0, 'no se repite');
+  assert.equal(quienRecibio(segunda.recibidos, gente).length, 0);
+});
+
+test('⛔ si la jornada se crea con menos de dos horas de margen, el aviso previo NO sale', async () => {
+  /*
+   * La misma regla de «callarse» que en los quince minutos: un aviso que dice
+   * «en dos horas» cuando falta una hora miente, y se nota.
+   */
+  const { gente } = await escenario();
+
+  /* Una hora antes de las 15:00: la ventana de dos horas ya pasó. */
+  const { recibidos, resultado } = await barrer({ ahora: new Date('2026-09-20T20:00:00Z') });
+
+  assert.equal(resultado.previos, 0);
+  assert.equal(quienRecibio(recibidos, gente).length, 0);
+});
+
+test('a quien le faltan dos partidos de la MISMA hora le llega UN aviso con los dos', async () => {
+  const { quiniela, dueno } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J1', [
+    partido('Uno', 'A', '2026-09-20 14:00'),      // el primero, para «empezar» la jornada
+    partido('Dos', 'B', '2026-09-20 16:00'),
+    partido('Tres', 'C', '2026-09-20 16:00')
+  ]);
+
+  const cuenta = await cuentaNueva('rezagado');
+  await membresias.solicitarIngreso(quiniela.id, cuenta.id);
+  const m = await membresias.de(quiniela.id, cuenta.id);
+  await db.consulta(`UPDATE membresias SET estado='activo' WHERE id = $1`, [m.id]);
+  await jugadorNuevo(quiniela.id, cuenta.id, 'rezagado');
+  await notificaciones.suscribir(cuenta.id, suscripcionDe());
+
+  /* Llena sólo el primero: ha empezado la jornada y le faltan los dos de las 16:00. */
+  await pronosticosMod.guardar(quiniela.id, {
+    jugador: 'rezagado', usuarioId: cuenta.id, jornada: 'J1',
+    ahora: new Date('2026-09-20T10:00:00Z'),
+    pronosticos: [{ marcador1: 1, marcador2: 0 }]
+  });
+
+  /* 15 min antes de las 16:00. */
+  const { recibidos } = await barrer({ ahora: new Date('2026-09-20T21:45:00Z') });
+  const suyos = recibidos.filter(x => x.usuarioId === cuenta.id);
+
+  assert.equal(suyos.length, 1, 'un solo aviso, no dos');
+  assert.match(suyos[0].titulo, /^2 partidos/);
+});
+
+test('⛔ un partido se marca aunque no se avise a NADIE', async () => {
+  /*
+   * Si no, se volvería a mirar cada minuto de su ventana. Y lo peor: alguien que
+   * borrase un pronóstico a falta de tres minutos recibiría un aviso cuando ya
+   * no le da tiempo a nada.
+   */
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J1', [partido('A', 'B', '2026-09-20 15:00')]);
+
+  const ahora = new Date('2026-09-20T20:50:00Z');
+  await barrer({ ahora });                       // no hay jugadores: no se avisa a nadie
+
+  assert.deepEqual(await notificaciones.paraNotificar(quiniela.id, { ahora }), [],
+    'la ventana de ese partido queda cerrada igual');
+});
 
 test('⛔ se marca DESPUÉS de enviar, y sólo si alguno salió', async () => {
   /*
-   * Marcar antes deja a todo el mundo sin aviso y sin rastro de que debió
-   * haberlo: el partido quedaría notificado para siempre. Misma regla que el
-   * correo (Entrada 086).
+   * Marcar antes deja a todo el mundo sin aviso y la jornada marcada para
+   * siempre. Misma regla que el correo (Entrada 086).
    */
-  const { quiniela, dueno } = await quinielaNueva();
-  await jornadas.guardar(quiniela.id, 'J1', [partido('A', 'B', '2026-09-20 15:00')]);
-  await notificaciones.suscribir(dueno.id, suscripcionDe());
+  const { gente } = await escenario();
+  const ahora = new Date('2026-09-20T19:00:00Z');
 
-  const ahora = new Date('2026-09-20T20:50:00Z');
-
-  /* Primer intento: todo falla. */
   await notificaciones.notificarDeTodas({
     ahora, enviar: async () => { throw new Error('la red se cayó'); }
   });
 
-  const siguen = await notificaciones.paraNotificar(quiniela.id, { ahora });
-  assert.equal(siguen.length, 1, 'si no salió nada, el partido sigue pendiente');
-
-  /* Segundo intento: ahora sí. */
-  const r = await notificaciones.notificarDeTodas({ ahora, enviar: async () => ({ ok: true }) });
-  assert.equal(r.notificaciones, 1);
-
-  assert.deepEqual(await notificaciones.paraNotificar(quiniela.id, { ahora }), [],
-    'ahora sí queda marcado');
+  const segunda = await barrer({ ahora });
+  assert.equal(segunda.resultado.previos, 1, 'si no salió nada, el aviso sigue pendiente');
+  assert.deepEqual(quienRecibio(segunda.recibidos, gente), ['medias', 'vacio']);
 });
 
 test('una suscripción muerta se borra sola', async () => {
-  /*
-   * Un 404/410 del servicio significa que ese navegador ya no existe. Sin
-   * borrarla, se le escribe en cada partido para siempre y cada intento cuesta
-   * una petición de red.
-   */
-  const { quiniela, dueno } = await quinielaNueva();
-  await jornadas.guardar(quiniela.id, 'J1', [partido('A', 'B', '2026-09-20 15:00')]);
-  await notificaciones.suscribir(dueno.id, suscripcionDe());
+  const { gente } = await escenario();
 
   const r = await notificaciones.notificarDeTodas({
-    ahora: new Date('2026-09-20T20:50:00Z'),
+    ahora: new Date('2026-09-20T19:00:00Z'),
     enviar: async () => ({ ok: false, muerta: true })
   });
 
-  assert.equal(r.muertas, 1);
-  assert.equal(await notificaciones.cuantasTiene(dueno.id), 0, 'se quitó de la tabla');
-});
-
-test('el mensaje dice los equipos si es uno, y cuántos si son varios', async () => {
-  const { quiniela, dueno } = await quinielaNueva();
-  await notificaciones.suscribir(dueno.id, suscripcionDe());
-
-  await jornadas.guardar(quiniela.id, 'J1', [
-    partido('Saprissa', 'Alajuelense', '2026-09-20 15:00'),
-    partido('Cartago', 'Herediano', '2026-09-20 16:00'),
-    partido('Otro', 'Mas', '2026-09-20 16:00')
-  ]);
-
-  const mensajes = [];
-  await notificaciones.notificarDeTodas({
-    ahora: new Date('2026-09-20T20:50:00Z'),
-    antelacionMinutos: 90,
-    enviar: async ({ mensaje }) => { mensajes.push(mensaje.titulo); return { ok: true }; }
-  });
-
-  assert.ok(mensajes.some(t => /Saprissa vs Alajuelense/.test(t)), mensajes.join(' | '));
-  assert.ok(mensajes.some(t => /^2 partidos/.test(t)), mensajes.join(' | '));
+  assert.ok(r.muertas >= 1);
+  assert.equal(await notificaciones.cuantasTiene(gente.vacio.id), 0);
 });
 
 test('una quiniela archivada no notifica', async () => {
-  const { quiniela, dueno } = await quinielaNueva();
-  await jornadas.guardar(quiniela.id, 'J1', [partido('A', 'B', '2026-09-20 15:00')]);
-  await notificaciones.suscribir(dueno.id, suscripcionDe());
+  const { quiniela, gente } = await escenario();
   await quinielasMod.cambiarEstado(quiniela.id, 'archivada');
 
-  const r = await notificaciones.notificarDeTodas({
-    ahora: new Date('2026-09-20T20:50:00Z'), enviar: async () => ({ ok: true })
+  const { recibidos } = await barrer({ ahora: new Date('2026-09-20T19:00:00Z') });
+  assert.equal(quienRecibio(recibidos, gente).length, 0);
+});
+
+test('⛔ quien llenó y luego lo BORRÓ todo cuenta como que no empezó', async () => {
+  /*
+   * ⚠️ Esta prueba nació de una mutación que no caía. Quitar el `EXISTS` que
+   * comprueba «tiene algún pronóstico» no rompía nada, porque en el escenario
+   * normal quien no llenó tampoco tiene fila en `resultados` y el `JOIN` ya lo
+   * deja fuera.
+   *
+   * Pero hay un estado intermedio real: borrar un pronóstico elimina su fila de
+   * `pronosticos` y **deja la de `resultados`**. Quien llena y luego lo borra
+   * todo queda con la fila de la jornada y cero pronósticos.
+   *
+   * Sin el `EXISTS`, esa persona recibiría un aviso por CADA partido siguiente
+   * — justo lo que se decidió no hacer con quien se sienta la jornada.
+   */
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J1', [
+    partido('Uno', 'A', '2026-09-20 15:00'),
+    partido('Dos', 'B', '2026-09-20 16:00')
+  ]);
+
+  const cuenta = await cuentaNueva('arrepentido');
+  await membresias.solicitarIngreso(quiniela.id, cuenta.id);
+  const m = await membresias.de(quiniela.id, cuenta.id);
+  await db.consulta(`UPDATE membresias SET estado='activo' WHERE id = $1`, [m.id]);
+  await jugadorNuevo(quiniela.id, cuenta.id, 'arrepentido');
+  await notificaciones.suscribir(cuenta.id, suscripcionDe());
+
+  const antes = new Date('2026-09-20T10:00:00Z');
+
+  /* Llena los dos… */
+  await pronosticosMod.guardar(quiniela.id, {
+    jugador: 'arrepentido', usuarioId: cuenta.id, jornada: 'J1', ahora: antes,
+    pronosticos: [{ marcador1: 1, marcador2: 0 }, { marcador1: 2, marcador2: 2 }]
   });
 
-  assert.equal(r.notificaciones, 0);
+  /* …y los borra: marcadores vacíos quitan la fila, pero `resultados` se queda. */
+  await pronosticosMod.guardar(quiniela.id, {
+    jugador: 'arrepentido', usuarioId: cuenta.id, jornada: 'J1', ahora: antes,
+    pronosticos: [{ marcador1: '', marcador2: '' }, { marcador1: '', marcador2: '' }]
+  });
+
+  await db.enQuiniela(quiniela.id, async c => {
+    const { rows: [n] } = await c.query(
+      `SELECT (SELECT count(*)::int FROM resultados) AS resultados,
+              (SELECT count(*)::int FROM pronosticos) AS pronosticos`);
+    assert.equal(n.resultados, 1, 'la fila de la jornada sigue ahí');
+    assert.equal(n.pronosticos, 0, 'y sin ningún pronóstico');
+  });
+
+  /* Se despacha la ventana del primero, que sí debe recibir. */
+  const primera = await barrer({ ahora: new Date('2026-09-20T20:50:00Z') });
+  assert.equal(primera.recibidos.filter(x => x.usuarioId === cuenta.id).length, 1,
+    'del primero sí se le avisa: le falta todo');
+
+  /* Y la del segundo, que NO. */
+  const segunda = await barrer({ ahora: new Date('2026-09-20T21:45:00Z') });
+  assert.equal(segunda.recibidos.filter(x => x.usuarioId === cuenta.id).length, 0,
+    'no empezó la jornada: no se le persigue partido a partido');
 });

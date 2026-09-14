@@ -323,6 +323,12 @@ CREATE TABLE jornadas (
    * manana no puede reinterpretar lo que ya se jugo.
    */
   al_acumulado numeric(12,2) NOT NULL DEFAULT 0 CHECK (al_acumulado >= 0),
+  /*
+   * Cuando se aviso de que esta jornada arranca en dos horas (migracion 014).
+   * NULL = todavia no. Va en la JORNADA y no en un partido: es un aviso de la
+   * jornada entera y se manda una sola vez, aunque tenga catorce partidos.
+   */
+  avisado_2h_en timestamptz,
 
   -- ⛔ El bote no puede ser mayor que lo que se cobra: daria un premio de
   -- jornada NEGATIVO, y las cuentas saldrian al reves sin fallar.
