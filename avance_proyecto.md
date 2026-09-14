@@ -1150,6 +1150,12 @@ empezado: no hay trabajo a medias en el repositorio.
 ⛔ **Nada de esto está empezado**, y ninguno bloquea a los demás. El orden es de
 lo que rinde, no de dependencias.
 
+⭐ **Y aparte de la lista, hay una cosa grande acordada y planificada:** las
+**quinielas de liga con borrador semanal** (§22). Elegir al crear la quiniela que
+es de Liga MX, de la Primera de Costa Rica o de Champions, y que cada semana se
+proponga la jornada siguiente ya armada, para revisarla y confirmarla. El plan
+está cerrado con Marco, con las decisiones tomadas y las tajadas repartidas.
+
 ⚠️ **Y lo primero que hay que hacer al volver no está en esta lista**, porque no
 es código: **comprobar que las notificaciones llegan** en el próximo fin de
 semana con partidos. Ver el recuadro 🛑.
@@ -4456,6 +4462,135 @@ con datos y no con impresiones.
 
 Lo que sigue fuera del alcance de este anexo es la **migración en sí**: ninguna
 ruta de la aplicación habla todavía con PostgreSQL, y eso es deliberado.
+
+---
+
+## 22. Plan — Quinielas de liga, con borrador semanal
+
+**Acordado con Marco el 14 de septiembre de 2026.** Sin empezar.
+
+Hoy toda quiniela se arma igual: jornada a jornada, eligiendo partidos a mano en
+el buscador. Marco pidió una segunda forma: **decir al crearla que es de una liga
+o torneo** —Liga MX, Primera División de Costa Rica, Champions— y que las
+jornadas se vayan proponiendo solas según el proveedor publica el calendario.
+
+### ⭐ Lo que se decidió, y por qué
+
+**Borrador, no creación automática.** El sistema **propone**; el administrador
+revisa comodines, precio y qué partidos entran, y **confirma**. Se descartó la
+creación totalmente automática por cuatro choques reales:
+
+| Si naciera sola | Qué rompería |
+|---|---|
+| Jornadas creadas con semanas de antelación | ⛔ «La jornada actual es la ÚLTIMA QUE SE CREÓ» (Entradas 027 y 028). La 9 existiría mientras se juega la 7, y la portada, los pronósticos y los cobros apuntarían al sitio equivocado |
+| Precio y `al_acumulado` | Nadie los habría decidido |
+| Comodines | Los elige una persona, partido a partido |
+| El proveedor cambia de idea | Un partido aplazado cambia de ronda. Si la jornada ya está abierta y la gente llenó, **aparece un partido que nadie pronosticó**, y eso toca puntuación y dinero |
+
+Con el borrador, los cuatro desaparecen: la jornada nace **cuando alguien
+confirma**, que es justo cuando esas decisiones existen.
+
+**El tipo propone, no prohíbe.** Una quiniela de Liga MX conserva el buscador de
+siempre: si un jueves quieres meter un partido de Champions, lo metes. Atarla
+sólo añadiría una prohibición que un día estorba.
+
+### ⛔ La comprobación que hace viable todo esto
+
+El proveedor manda `match_round`, un campo que **no se estaba leyendo**. Medido
+contra los eventos reales guardados en producción:
+
+```
+Primera División (Costa Rica)    15 partidos   15 con ronda   → 6, 7, 8
+Liga MX                          11            11             → 6, 7, 8
+Champions (League Phase)          6             6             → 1
+Premier League                    7             7             → 2, 3, 4
+Concacaf · Quarter-finals         4             4             → "Quarter-finals"
+
+MLS - Regular season              5             0             → vacío
+Concacaf · Group Stage            8             0             → vacío
+Libertadores · 1/8-finals         1             0             → vacío
+```
+
+⚠️ **La regla NO es «ligas sí, copas no».** La MLS es una liga y viene vacía; los
+cuartos de Concacaf traen texto y sirven igual. La regla es: **se puede si el
+proveedor dice a qué ronda pertenece cada partido**, venga número o nombre.
+
+Las que no, **no se ofrecen, y se dice por qué**: *«la MLS no publica el número
+de jornada; esta liga sólo se puede armar a mano»*. Ofrecerlas crearía jornadas
+vacías o con la temporada entera dentro.
+
+### ⭐ Dos cosas que abaratan el trabajo, y hay que aprovecharlas
+
+1. **`/api/football/fixtures` ya admite `{ league, from, to }`.** La búsqueda por
+   liga existe; falta agrupar por ronda.
+2. **`ligas-disponibles` ya tiene todos los partidos en la mano** para agrupar
+   por país, y su caché **se comparte entre quinielas** por rango de fechas. Así
+   que saber qué ligas se pueden automatizar **no cuesta ni una consulta más**.
+
+Y la pantalla de confirmar tampoco hay que inventarla: es `jornadas.html`, que ya
+crea, modifica y borra. El borrador sólo la llega **rellena** en vez de vacía.
+
+### Las decisiones de diseño, cerradas
+
+| Pregunta | Decisión |
+|---|---|
+| ¿Cuál es «la próxima jornada»? | **La ronda más temprana con partidos sin jugar que no esté ya en una jornada tuya.** No «la última + 1», que se rompe al empezar a mitad de temporada o al saltarse una semana |
+| ¿Cómo se llama? | **Como la llama la liga** —`Jornada 9`—, editable. Es la que la gente reconoce del calendario. ⚠️ Y no coincide con la cuenta propia: hoy `Jornada01`…`Jornada4` tienen secuencias 3…6 |
+| ¿El precio? | Uno por defecto al crear la quiniela, **cambiable en cada confirmación** |
+| ¿Quién lo ve? | Quien tiene `jornadas.escribir`: dueño, administrador pleno y administrador de jornadas |
+| ¿Se acabó la temporada? | No hay nada que proponer, y se ofrecen **tres salidas**: cambiar de liga, archivar la quiniela, o seguir a mano. Decide el administrador |
+| ¿Y las quinielas que ya existen? | Quedan **customizadas**. No cambia nada para nadie |
+
+### ⭐ El borrador NO se guarda
+
+Se calcula al abrir la pantalla, cruzando lo que dice el proveedor con lo que ya
+tienes creado. Así **nunca está viejo**, y se ahorra una tabla que habría que
+mantener sincronizada con un proveedor que cambia de idea — que es justo el
+problema que el borrador existe para esquivar.
+
+### Dónde vive cada cosa
+
+**El tipo y la liga van en `configuracion` (jsonb), sin migración**, como
+`ligasFavoritas` y `premiosRegistradosDesde`:
+
+```json
+{ "tipo": "liga", "ligaId": "235", "ligaNombre": "Liga MX",
+  "precioPorDefecto": { "precio": 2000, "alAcumulado": 1000 } }
+```
+
+⚠️ **Lo único que sí necesita migración es `partidos.api_round`**, y hace falta:
+es lo que dice qué rondas ya están usadas. Se podría deducir cruzando con
+`fixtures.evento->>'match_round'`, pero eso ata una decisión de la quiniela a que
+la caché del proveedor siga teniendo ese partido. Una columna es más barata que
+esa fragilidad.
+
+### Las tajadas, cada una verde y commiteable
+
+| # | Qué | Tamaño |
+|---|---|---|
+| 1 | `mapearEvento` captura `match_round` y `stage_name`. Migración 015: `partidos.api_round` | Pequeña |
+| 2 | `ligas.js` sabe decir, por liga, si se puede automatizar y por qué no | Pequeña |
+| 3 | `src/borradores.js`: la próxima ronda de una liga, con sus partidos | **Mediana — el corazón** |
+| 4 | `GET /api/jornadas/borrador`, y `POST /api/jornadas` guardando la ronda | Pequeña |
+| 5 | Elegir tipo y liga al crear la quiniela | Mediana |
+| 6 | El panel del borrador en `jornadas.html`, y las tres salidas de fin de temporada | Mediana |
+| 7 | Pruebas de navegador | Mediana |
+
+**Una o dos sesiones** como las del 14 de septiembre.
+
+### ⚠️ Lo que hay que vigilar al construirlo
+
+1. ⛔ **Que una ronda a medio publicar no se proponga como completa.** El
+   proveedor a veces publica seis de los nueve partidos de una jornada. Confirmar
+   esa jornada dejaría a la gente pronosticando seis y apareciendo tres después.
+   Hay que enseñar cuántos trae y dejar decidir — o avisar si la ronda anterior
+   tuvo más partidos.
+2. **La cuota es compartida entre todas las quinielas.** El borrador tiene que
+   apoyarse en la caché por rango que ya existe, no abrir su propia consulta por
+   quiniela.
+3. **`api_round` es texto, no número.** `"Quarter-finals"` es una ronda válida, y
+   ordenar por ella alfabéticamente no sirve: el orden lo da la fecha del partido
+   más temprano de cada ronda.
 
 ---
 
