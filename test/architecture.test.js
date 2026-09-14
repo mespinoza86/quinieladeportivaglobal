@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const permisos = require('../src/permisos');
 
 const root = path.join(__dirname, '..');
 
@@ -1102,7 +1103,7 @@ test('⚠️ los abonos no se editan ni se borran: se corrigen con un asiento in
   assert.match(esquema, /CREATE UNIQUE INDEX pagos_una_anulacion_por_abono/);
 });
 
-test('⛔ toda ruta que salga a la red del proveedor exige requireAdmin', () => {
+test('⛔ toda ruta que salga a la red del proveedor exige permiso de escritura', () => {
   /*
    * La cuota de APIFootball es UNA SOLA para todas las quinielas. Una ruta de
    * `/api/football/*` sin guardia deja que cualquier miembro de cualquier
@@ -1120,9 +1121,17 @@ test('⛔ toda ruta que salga a la red del proveedor exige requireAdmin', () => 
   assert.ok(rutasFootball.length >= 3,
     `Se esperaban al menos 3 rutas de proveedor, hay ${rutasFootball.length}`);
 
+  /*
+   * ⚠️ Ya no basta con que lleven guardia: desde los niveles de administrador
+   * hay guardias BARATAS. Un `requierePermiso('admin.ver')` aquí dejaría que
+   * el escalón de sólo lectura —el que más gente va a tener— quemara la cuota
+   * de TODAS las quinielas. Lo que se exige es el NIVEL, no la presencia.
+   */
   for (const [, , ruta, siguiente] of rutasFootball) {
-    assert.equal(siguiente.trim(), 'requireAdmin',
-      `${ruta} sale a la red y gasta cuota compartida: necesita requireAdmin`);
+    const cap = /requierePermiso\('([^']+)'/.exec(siguiente)?.[1];
+    assert.ok(cap, `${ruta} sale a la red y gasta cuota compartida: necesita requierePermiso`);
+    assert.ok(!permisos.puede('admin_lector', cap),
+      `${ruta} gasta cuota compartida y a '${cap}' llega el solo-lectura`);
   }
 });
 
@@ -2391,7 +2400,7 @@ test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_
    * pagina se sirve a cualquiera con sesion, carga entera, y luego va fallando
    * peticion por peticion con 403.
    *
-   * No es una fuga de datos —las rutas de datos exigen `requireAdmin`— pero si
+   * No es una fuga de datos —las rutas de datos exigen permiso— pero si
    * de superficie, y una experiencia pesima. Ya paso: la guardia antes solo
    * comprobaba que hubiera sesion.
    *
@@ -2403,15 +2412,20 @@ test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_
    * antes de que existiera ningun caso. El primero fue `compartir.html`.
    *
    * Ahora los prefijos se DEDUCEN de las rutas: se agrupan por `/api/<x>/` y se
-   * queda con aquellos en los que TODAS las rutas llevan `requireAdmin`. Si un
+   * queda con aquellos en los que TODAS las rutas llevan `requierePermiso`. Si un
    * prefijo tiene una sola ruta abierta no cuenta, porque entonces una pantalla
    * de jugador puede llamarlo con toda razon —es el caso de `/api/jornadas/`,
    * que mezcla lectura publica con escritura de administracion—.
    */
-  const servidor = leer(path.join('src', 'servidor.js'));
-  const bloque = servidor.match(/const PAGINAS_ADMIN = \[([\s\S]*?)\];/)?.[1] || '';
+  /*
+   * El mapa se mudo a `src/permisos.js` cuando los administradores pasaron a
+   * tener niveles: la pantalla necesita leerlo para esconder lo que no puede
+   * abrir, y duplicarlo habria sido tener dos listas que se desincronizan.
+   */
+  const fuente = leer(path.join('src', 'permisos.js'));
+  const bloque = fuente.match(/const PAGINAS = \{([\s\S]*?)\};/)?.[1] || '';
 
-  assert.ok(bloque, 'no se encontro PAGINAS_ADMIN en src/servidor.js');
+  assert.ok(bloque, 'no se encontro PAGINAS en src/permisos.js');
 
   const declaradas = new Set([...bloque.matchAll(/'(\/[^']+\.html)'/g)].map(m => m[1]));
 
@@ -2421,13 +2435,13 @@ test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_
    * El corte del `(?=async|\(req|\n)` es para quedarse con lo que va ENTRE la
    * ruta y el manejador, que es donde se enganchan las guardias. Sin el, el
    * cuerpo entero de la ruta entraria en la comparacion y cualquier mencion a
-   * requireAdmin en un comentario la daria por protegida.
+   * requierePermiso en un comentario la daria por protegida.
    */
   const porPrefijo = new Map();
 
   for (const nombre of fs.readdirSync(path.join(root, 'src', 'rutas')).filter(f => f.endsWith('.js'))) {
     const codigo = leer(path.join('src', 'rutas', nombre));
-    const re = /app\.(get|post|put|patch|delete)\(\s*'([^']+)'\s*(,[^)]*?)?(?=async|\(req|\r?\n)/g;
+    const re = /app\.(get|post|put|patch|delete)\(\s*'([^']+)'\s*(,[^\n]*?)?(?=async|\(req|\r?\n)/g;
 
     let m;
     while ((m = re.exec(codigo))) {
@@ -2436,7 +2450,7 @@ test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_
 
       const prefijo = `/api/${segmentos[1]}/`;
       if (!porPrefijo.has(prefijo)) porPrefijo.set(prefijo, []);
-      porPrefijo.get(prefijo).push(/requireAdmin/.test(m[3] || ''));
+      porPrefijo.get(prefijo).push(/requierePermiso/.test(m[3] || ''));
     }
   }
 

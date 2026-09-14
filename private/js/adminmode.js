@@ -56,6 +56,36 @@ document.addEventListener('DOMContentLoaded', () => {
   const esperar = ms => new Promise(listo => setTimeout(listo, ms));
 
   /**
+   * Esconde las tarjetas que este escalón no puede abrir.
+   *
+   * ⚠️ Esto es CORTESÍA, no seguridad: quien protege de verdad es la guardia
+   * del servidor, y escribir a mano la dirección de una pantalla prohibida
+   * sigue acabando en Inicio. Esconderlas existe para no enseñar un menú lleno
+   * de puertas cerradas.
+   *
+   * El mapa de pantallas lo manda el servidor —es el MISMO que usa la
+   * guardia—, así que el menú no se puede desincronizar de la puerta.
+   */
+  function ajustarMenu(capacidades, paginas) {
+    if (!adminContent) return;
+
+    for (const enlace of adminContent.querySelectorAll('a[href]')) {
+      const href = enlace.getAttribute('href') || '';
+      const destino = href.startsWith('/') ? href : '/' + href;
+      const necesaria = paginas[destino];
+
+      /* Sin capacidad asociada es una pantalla de todos: se deja. */
+      if (necesaria && !capacidades.includes(necesaria)) enlace.hidden = true;
+    }
+
+    /* Un grupo que se quedó sin ninguna tarjeta visible parece roto. */
+    for (const grupo of adminContent.querySelectorAll('.quick-actions')) {
+      const vivas = [...grupo.querySelectorAll('a[href]')].filter(a => !a.hidden);
+      if (vivas.length === 0) grupo.hidden = true;
+    }
+  }
+
+  /**
    * Pide algo al servidor y **exige que la respuesta sea JSON**.
    *
    * ⚠️ Esto es lo que hacía saltar el fallo: cuando el servicio está
@@ -87,10 +117,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (respuesta.status === 409) { window.location.href = '/quinielas.html'; return true; }
     if (!respuesta.ok) throw new Error(datos.error || 'No se pudo leer la quiniela.');
 
-    esAdmin = ['propietario', 'admin'].includes(datos.rol);
+    /*
+     * ⚠️ Se mira una CAPACIDAD, no una lista de roles.
+     *
+     * Aquí ponía `['propietario', 'admin'].includes(datos.rol)`, y con los
+     * escalones nuevos eso habría echado de la pantalla al de jornadas y al de
+     * sólo lectura: el servidor les habría servido el HTML —su guardia sí los
+     * conoce— y este `replace` los habría mandado a Inicio. Una pantalla que
+     * te expulsa sin decir nada.
+     */
+    esAdmin = (datos.capacidades || []).includes('admin.ver');
     if (!esAdmin) { window.location.replace('/index.html'); return true; }
 
     const estado = await pedirJson('/api/admin-mode');
+    ajustarMenu(estado.datos.capacidades || [], estado.datos.paginas || {});
     mostrarEstado(Boolean(estado.datos.activo));
     return true;
   }

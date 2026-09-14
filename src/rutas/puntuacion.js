@@ -38,6 +38,7 @@ const rankingMod = require('../ranking');
 const usuariosMod = require('../usuarios');
 const { normalizarMarcador } = require('../validacion');
 const { partidoYaInicio } = require('../fechas');
+const permisos = require('../permisos');
 
 /* ==================== La caché del ranking ==================== */
 
@@ -95,9 +96,14 @@ function responderRanking(res, req, tabla) {
 
 /* ==================== Las rutas ==================== */
 
-module.exports = function rutasDePuntuacion(app, { requireAdmin, enQuiniela }) {
+module.exports = function rutasDePuntuacion(app, { requierePermiso, enQuiniela }) {
 
-  const esAdmin = req => ['propietario', 'admin'].includes(req.membresia.rol);
+  /*
+   * Aquí `esAdmin` decide quién VE pronósticos ajenos, no quién escribe. Por
+   * eso mira `admin.ver` y no un rol: los cuatro escalones administrativos
+   * ven los resultados de todos, también el de sólo lectura.
+   */
+  const esAdmin = req => permisos.puede(req.membresia.rol, 'admin.ver');
 
   /** El nombre de quien pide. Hace falta para saber qué es «lo propio». */
   async function miNombre(req) {
@@ -317,7 +323,7 @@ module.exports = function rutasDePuntuacion(app, { requireAdmin, enQuiniela }) {
     });
   });
 
-  app.post('/api/resultados-oficiales', requireAdmin, async (req, res) => {
+  app.post('/api/resultados-oficiales', requierePermiso('resultados.escribir'), async (req, res) => {
     const jornada = String(req.body?.jornada || '').trim();
     const resultados = req.body?.resultados;
 

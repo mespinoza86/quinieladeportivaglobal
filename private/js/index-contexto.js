@@ -15,7 +15,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const q = await contexto.json();
       document.querySelector('h1').textContent = q.nombre;
       document.getElementById('quinielaActualNombre').textContent = `${q.nombre} · ${q.rol}`;
-      if (['propietario', 'admin'].includes(q.rol)) {
+      /* Una capacidad, no una lista de roles: con escalones la lista envejece. */
+      if ((q.capacidades || []).includes('admin.ver')) {
         document.getElementById('adminModeCard').style.display = 'flex';
       }
     }

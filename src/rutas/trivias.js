@@ -30,11 +30,17 @@ const respuestasMod = require('../respuestas-trivia');
 const fixturesMod = require('../fixtures');
 const eventosMod = require('../eventos');
 const usuariosMod = require('../usuarios');
+const permisos = require('../permisos');
 const { invalidarCacheRanking } = require('./puntuacion');
 
-module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
+module.exports = function rutasDeTrivias(app, { requierePermiso, enQuiniela }) {
 
-  const esAdmin = req => ['propietario', 'admin'].includes(req.membresia.rol);
+  /*
+   * Aquí `esAdmin` decide quién VE pronósticos ajenos, no quién escribe. Por
+   * eso mira `admin.ver` y no un rol: los cuatro escalones administrativos
+   * ven los resultados de todos, también el de sólo lectura.
+   */
+  const esAdmin = req => permisos.puede(req.membresia.rol, 'admin.ver');
   const triviasActivadas = req => req.puntuacion?.triviasHabilitadas !== false;
 
   async function miNombre(req) {
@@ -51,7 +57,7 @@ module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
 
   /* ---------- Administración ---------- */
 
-  app.post('/api/admin/trivias', requireAdmin, async (req, res) => {
+  app.post('/api/admin/trivias', requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!triviasActivadas(req)) {
       return res.status(409).json({ error: 'Habilita las trivias en la configuración de la quiniela.' });
     }
@@ -75,7 +81,7 @@ module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
     res.json({ mensaje: 'Trivias creadas correctamente.', creadas: r.creadas });
   });
 
-  app.get('/api/admin/trivias/:jornadaNombre', requireAdmin, async (req, res) => {
+  app.get('/api/admin/trivias/:jornadaNombre', requierePermiso('admin.ver'), async (req, res) => {
     res.json(await triviasMod.deJornada(req.quiniela.id, req.params.jornadaNombre));
   });
 
@@ -87,7 +93,7 @@ module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
    * huérfanas de trivias ya borradas, que seguían sumando puntos en el ranking
    * sin pregunta a la que corresponder.
    */
-  app.put('/api/admin/trivias/:jornadaNombre', requireAdmin, async (req, res) => {
+  app.put('/api/admin/trivias/:jornadaNombre', requierePermiso('jornadas.escribir'), async (req, res) => {
     const { fechaCierre, configuracion } = req.body;
     if (!fechaCierre || !Array.isArray(configuracion)) {
       return res.status(400).json({ error: 'Datos inválidos para actualizar trivias.' });
@@ -113,7 +119,7 @@ module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
     });
   });
 
-  app.delete('/api/admin/trivias/:triviaId', requireAdmin, async (req, res) => {
+  app.delete('/api/admin/trivias/:triviaId', requierePermiso('jornadas.escribir'), async (req, res) => {
     const r = await triviasMod.eliminar(req.quiniela.id, req.params.triviaId);
     if (!r.ok) return res.status(404).json({ error: 'Trivia no encontrada.' });
 
@@ -121,7 +127,7 @@ module.exports = function rutasDeTrivias(app, { requireAdmin, enQuiniela }) {
     res.json({ mensaje: 'Trivia eliminada correctamente. También se eliminaron sus respuestas y puntos.' });
   });
 
-  app.post('/api/admin/trivias/resolver', requireAdmin, async (req, res) => {
+  app.post('/api/admin/trivias/resolver', requierePermiso('resultados.escribir'), async (req, res) => {
     const r = await triviasMod.resolverPendientes(req.quiniela.id, {
       obtenerEvento: apiFixtureId => fixturesMod.eventoDe(apiFixtureId),
       interpretar: eventosMod.resolverRespuestaTrivia

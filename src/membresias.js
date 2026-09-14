@@ -12,6 +12,7 @@
 'use strict';
 
 const db = require('./db');
+const permisos = require('./permisos');
 
 /** Los estados en los que se considera que alguien está dentro. */
 const DENTRO = ['activo', 'pendiente_retiro'];
@@ -151,7 +152,7 @@ async function rechazar(quinielaId, membresiaId) {
  * sin ninguno.
  */
 async function cambiarRol(quinielaId, membresiaId, nuevoRol) {
-  if (!['admin', 'user'].includes(nuevoRol)) return no('rol_invalido', 'Rol inválido.');
+  if (!permisos.ROLES_ASIGNABLES.includes(nuevoRol)) return no('rol_invalido', 'Rol inválido.');
 
   return db.enTransaccion(async cliente => {
     const { rows: [m] } = await cliente.query(
@@ -165,11 +166,20 @@ async function cambiarRol(quinielaId, membresiaId, nuevoRol) {
       return no('es_propietario', 'El rol del propietario solo cambia mediante una transferencia.');
     }
 
-    if (m.rol === 'admin' && nuevoRol === 'user') {
+    /*
+     * ⚠️ No basta con mirar si baja de `admin` a `user`: con varios escalones
+     * también se puede dejar la quiniela huérfana bajando a `admin_jornadas`,
+     * que NO gestiona miembros. Lo que importa es si PIERDE la capacidad de
+     * gestionar gente, no la etiqueta concreta a la que se mueve.
+     */
+    const perdiaLaGestion = permisos.puede(m.rol, 'miembros.gestionar') &&
+                            !permisos.puede(nuevoRol, 'miembros.gestionar');
+
+    if (perdiaLaGestion) {
       const { rows: [{ n }] } = await cliente.query(
         `SELECT count(*)::int AS n FROM membresias
-          WHERE quiniela_id = $1 AND estado = 'activo' AND rol IN ('propietario','admin')`,
-        [quinielaId]);
+          WHERE quiniela_id = $1 AND estado = 'activo' AND rol = ANY($2::text[])`,
+        [quinielaId, permisos.rolesCon('miembros.gestionar')]);
       if (n <= 1) return no('sin_admin', 'La quiniela no puede quedar sin administrador.');
     }
 
@@ -296,11 +306,16 @@ async function correosDeAdministradores(quinielaId) {
        FROM membresias m
        JOIN usuarios u ON u.id = m.usuario_id
       WHERE m.quiniela_id = $1
-        AND m.rol IN ('propietario', 'admin')
+        AND m.rol = ANY($2::text[])
         AND m.estado = 'activo'
         AND u.email_verificado = true
       ORDER BY m.created_at`,
-    [quinielaId]);
+    /*
+     * El aviso del pitido inicial va a TODOS los escalones administrativos,
+     * incluido el de sólo lectura: ese aviso existe para que alguien envíe los
+     * pronósticos al grupo, y enviarlos es justo lo que el lector sí puede.
+     */
+    [quinielaId, permisos.rolesCon('compartir')]);
 
   return rows;
 }

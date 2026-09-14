@@ -58,6 +58,7 @@ const membresiasMod = require('./membresias');
 const tokensMod = require('./tokens');
 const correoMod = require('./correo');
 const superadminMod = require('./superadmin');
+const permisos = require('./permisos');
 
 const RAIZ = path.join(__dirname, '..');
 
@@ -69,28 +70,45 @@ function requireLogin(req, res, next) {
 }
 
 /**
- * Administrador de la quiniela activa **y** con el Admin Mode vigente.
+ * Exige UNA capacidad concreta en la quiniela activa **y** el Admin Mode.
  *
  * Son dos cosas distintas y hacen falta las dos: el rol dice quién puedes ser,
  * el Admin Mode dice que has confirmado tu contraseña hace menos de una hora.
+ * El Admin Mode se pide en TODOS los escalones, también en el de sólo lectura:
+ * una sesión olvidada en un ordenador compartido tampoco debería enseñar lo
+ * que ha pagado cada persona.
+ *
+ * ⭐ El nombre de la capacidad se comprueba AQUÍ, al montar las rutas, no en
+ * cada petición. Así una errata —`'dinero.gestion'`— tumba el arranque del
+ * servidor en el acto, en vez de convertirse en un 500 el día que alguien
+ * pulse ese botón. Falla pronto y ruidoso, que es lo barato.
  */
-function requireAdmin(req, res, next) {
-  if (!req.membresia || !['propietario', 'admin'].includes(req.membresia.rol)) {
-    return res.status(403).json({ error: 'Se requieren permisos de administrador en esta quiniela.' });
+function requierePermiso(capacidad) {
+  if (!Object.prototype.hasOwnProperty.call(permisos.CAPACIDADES, capacidad)) {
+    throw new Error(`Capacidad desconocida al montar una ruta: "${capacidad}"`);
   }
 
-  const acceso = req.session?.adminMode;
-  const vigente = acceso &&
-    acceso.quinielaId === String(req.quiniela?.id) &&
-    Date.now() - acceso.verificadoEn < 1000 * 60 * 60;
+  return function guardiaDePermiso(req, res, next) {
+    if (!req.membresia || !permisos.puede(req.membresia.rol, capacidad)) {
+      return res.status(403).json({
+        error: 'No tienes permisos suficientes para esto en esta quiniela.',
+        capacidadRequerida: capacidad
+      });
+    }
 
-  if (!vigente) {
-    return res.status(401).json({
-      error: 'Confirma tu contraseña para entrar al modo administrador.',
-      requiereAdminMode: true
-    });
-  }
-  return next();
+    const acceso = req.session?.adminMode;
+    const vigente = acceso &&
+      acceso.quinielaId === String(req.quiniela?.id) &&
+      Date.now() - acceso.verificadoEn < 1000 * 60 * 60;
+
+    if (!vigente) {
+      return res.status(401).json({
+        error: 'Confirma tu contraseña para entrar al modo administrador.',
+        requiereAdminMode: true
+      });
+    }
+    return next();
+  };
 }
 
 /**
@@ -582,7 +600,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    * poder seleccionar quiniela dejaría a una cuenta nueva sin forma de entrar.
    */
   const ctx = {
-    requireLogin, requireAdmin, requireSuperadmin, enQuiniela,
+    requireLogin, requierePermiso, requireSuperadmin, enQuiniela,
     limiteLogin, limiteRegistro, limiteAdminMode, limiteSuperadmin
   };
 
@@ -673,15 +691,26 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
 
   /* ---------- Las páginas de administración ---------- */
 
-  const PAGINAS_ADMIN = [
-    '/jugadores.html', '/jornadas.html', '/resultados.html',
-    '/agregar-resultados-oficiales.html', '/generar_reporte.html',
-    '/enviarresultados.html', '/copiarresultadojugador.html', '/admin_trivias.html',
-    '/enviarresultadostrivias.html', '/enviarresultadospartido.html',
-    '/enviarresultadostriviaspartido.html', '/miembros.html',
-    '/configuracion-quiniela.html', '/cobros.html', '/reporte-cobros.html',
-    '/compartir.html'
-  ];
+  /*
+   * Cada pantalla con la capacidad que hace falta para ABRIRLA.
+   *
+   * ⚠️ Esto es superficie, no seguridad. Quien de verdad protege los datos es
+   * `requierePermiso` en cada ruta de la API; esto sólo evita que alguien
+   * aterrice en una pantalla que va a fallar petición por petición.
+   *
+   * El criterio del reparto: las pantallas que EXISTEN para actuar piden la
+   * capacidad de esa acción; las que existen para mirar piden `admin.ver`.
+   * `copiarresultadojugador.html` está entre las de mirar porque sólo hace
+   * GET —cosa que hubo que comprobar, porque el nombre no lo dice—, y
+   * `resultados.html` está entre las de escribir por lo contrario: publica en
+   * `/api/admin/resultados`.
+   */
+  /*
+   * El mapa vive en `src/permisos.js`, con la tabla de capacidades: es dato de
+   * permisos, y desde ahí lo puede leer también `/api/admin-mode` para que la
+   * pantalla esconda lo que no toca sin repetir la lista en el navegador.
+   */
+  const PAGINAS_ADMIN = permisos.PAGINAS;
 
   /*
    * Antes esta guardia sólo comprobaba que hubiera sesión, así que cualquier
@@ -711,12 +740,13 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   });
 
   app.use(async (req, res, next) => {
-    if (!PAGINAS_ADMIN.includes(req.path)) return next();
+    const capacidad = PAGINAS_ADMIN[req.path];
+    if (!capacidad) return next();
     if (!req.session?.usuarioId) return res.redirect('/login.html');
     if (!req.session?.quinielaActivaId) return res.redirect('/quinielas.html');
 
     const membresia = await membresiasMod.de(req.session.quinielaActivaId, req.session.usuarioId);
-    if (!membresia || !['propietario', 'admin'].includes(membresia.rol)) {
+    if (!membresia || !permisos.puede(membresia.rol, capacidad)) {
       return res.redirect('/index.html');
     }
     return next();
@@ -869,11 +899,11 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
 
   return {
     app,
-    requireLogin, requireAdmin, requireSuperadmin, enQuiniela,
+    requireLogin, requierePermiso, requireSuperadmin, enQuiniela,
     limitadores: {
       limiteLogin, limiteRegistro, limiteAdminMode, limiteReenvio, limiteSuperadmin
     }
   };
 }
 
-module.exports = { crearApp, requireLogin, requireAdmin, requireSuperadmin, enQuiniela };
+module.exports = { crearApp, requireLogin, requierePermiso, requireSuperadmin, enQuiniela };

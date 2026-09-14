@@ -9,6 +9,7 @@
 
 const crypto = require('crypto');
 const db = require('./db');
+const permisos = require('./permisos');
 
 /*
  * La puntuación por defecto de una quiniela nueva. Es la misma tabla de
@@ -167,7 +168,7 @@ async function deUsuario(usuarioId) {
   const { rows } = await db.consulta(
     `SELECT q.id,
             q.nombre,
-            CASE WHEN m.rol IN ('propietario','admin') THEN q.codigo_ingreso END AS codigo_ingreso,
+            CASE WHEN m.rol = ANY($2::text[]) THEN q.codigo_ingreso END AS codigo_ingreso,
             q.estado AS estado_quiniela,
             m.rol,
             m.estado AS estado_membresia
@@ -175,7 +176,12 @@ async function deUsuario(usuarioId) {
        JOIN quinielas  q ON q.id = m.quiniela_id
       WHERE m.usuario_id = $1 AND q.estado <> 'eliminada'
       ORDER BY m.ultimo_acceso DESC NULLS LAST, m.updated_at DESC`,
-    [usuarioId]);
+    /*
+     * ⚠️ El código de ingreso se enseña a quien puede gestionar miembros, no
+     * a cualquier administrador: con él se entra a la quiniela, así que
+     * repartirlo ES meter gente. El de sólo lectura no lo ve.
+     */
+    [usuarioId, permisos.rolesCon('miembros.gestionar')]);
   return rows;
 }
 

@@ -8,8 +8,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('incluirExpulsadosEnRanking').checked=quiniela.configuracion.incluirExpulsadosEnRanking;
     /* El aviso nace apagado: sin campo, la casilla va desmarcada. `=== true` y no `!!` por lo mismo que en el servidor. */
     document.getElementById('avisarAlCompartir').checked=quiniela.configuracion.avisarAlCompartir===true;
-    if(['propietario','admin'].includes(quiniela.rol)){document.getElementById('cicloPanel').hidden=false;document.getElementById('archivarButton').textContent=quiniela.estado==='archivada'?'Restaurar quiniela':'Archivar quiniela';}
-    if(quiniela.rol==='propietario') document.getElementById('eliminarPanel').hidden=false;
+    if((quiniela.capacidades||[]).includes('quiniela.configurar')){document.getElementById('cicloPanel').hidden=false;document.getElementById('archivarButton').textContent=quiniela.estado==='archivada'?'Restaurar quiniela':'Archivar quiniela';}
+    if((quiniela.capacidades||[]).includes('quiniela.eliminar')) document.getElementById('eliminarPanel').hidden=false;
   } catch(e){mensaje.textContent=e.message;}
   document.getElementById('configForm').addEventListener('submit',async e=>{e.preventDefault();try{const campos=['marcadorExacto','resultadoCorrecto','comodinExacto','comodinResultado','puntosTriviaDefault'];const puntuacion=Object.fromEntries(campos.map(c=>[c,Number(document.getElementById(c).value)]));puntuacion.triviasHabilitadas=document.getElementById('triviasHabilitadas').checked;await api('/api/quiniela-actual/configuracion',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({puntuacion,incluirExpulsadosEnRanking:document.getElementById('incluirExpulsadosEnRanking').checked,avisarAlCompartir:document.getElementById('avisarAlCompartir').checked})});mensaje.textContent='Configuración guardada.';}catch(err){mensaje.textContent=err.message;}});
   document.getElementById('archivarButton').addEventListener('click',async()=>{try{await api('/api/quiniela-actual/archivar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archivada:quiniela.estado!=='archivada'})});window.location.reload();}catch(e){mensaje.textContent=e.message;}});
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  if (['propietario', 'admin'].includes(quiniela?.rol)) {
+  if ((quiniela?.capacidades || []).includes('quiniela.configurar')) {
     panelFavoritas.hidden = false;
     cargarFavoritas();
   }
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     refrescarTotal();
   }
 
-  if (['propietario', 'admin'].includes(quiniela?.rol)) {
+  if ((quiniela?.capacidades || []).includes('quiniela.configurar')) {
     cobrosPanel.hidden = false;
     pintarCobros(quiniela.configuracion);
   }

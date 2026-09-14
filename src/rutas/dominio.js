@@ -39,7 +39,7 @@ const {
   normalizarIndicesDePartido, MAX_PARTIDOS_POR_JORNADA
 } = validacion;
 
-module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
+module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
 
   /* ==================== Jugadores ==================== */
 
@@ -56,13 +56,13 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
    * código. Responden 410 —«esto ya no está»— y no 404, para que una pantalla
    * vieja que las llame reciba una explicación en vez de un misterio.
    */
-  app.post('/api/jugadores', requireAdmin, (req, res) => {
+  app.post('/api/jugadores', requierePermiso('miembros.gestionar'), (req, res) => {
     res.status(410).json({
       error: 'Los jugadores ahora crean su cuenta y solicitan ingreso mediante el código de la quiniela.'
     });
   });
 
-  app.delete('/api/jugadores/:nombre', requireAdmin, (req, res) => {
+  app.delete('/api/jugadores/:nombre', requierePermiso('miembros.gestionar'), (req, res) => {
     res.status(410).json({ error: 'Usa la administración de miembros para expulsar participantes.' });
   });
 
@@ -169,7 +169,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
     res.json(jornada);
   });
 
-  app.post('/api/jornadas', requireAdmin, async (req, res) => {
+  app.post('/api/jornadas', requierePermiso('jornadas.escribir'), async (req, res) => {
     const nombre = normalizarNombreDeJornada(req.body?.nombre);
     const partidos = normalizarPartidos(req.body?.partidos);
 
@@ -226,7 +226,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
     });
   });
 
-  app.post('/api/jornadas/agregar-partido', requireAdmin, async (req, res) => {
+  app.post('/api/jornadas/agregar-partido', requierePermiso('jornadas.escribir'), async (req, res) => {
     const nombre = normalizarNombreDeJornada(req.body?.jornada);
     const partido = normalizarPartido(req.body?.partido);
 
@@ -246,7 +246,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
     res.json({ success: true });
   });
 
-  app.post('/api/jornadas/eliminar-partidos', requireAdmin, async (req, res) => {
+  app.post('/api/jornadas/eliminar-partidos', requierePermiso('jornadas.escribir'), async (req, res) => {
     const nombre = normalizarNombreDeJornada(req.body?.jornada);
 
     const jornada = await jornadasMod.porNombre(req.quiniela.id, nombre);
@@ -262,7 +262,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
     res.json({ success: true });
   });
 
-  app.post('/api/jornadas/comodin', requireAdmin, async (req, res) => {
+  app.post('/api/jornadas/comodin', requierePermiso('jornadas.escribir'), async (req, res) => {
     const nombre = normalizarNombreDeJornada(req.body?.jornada);
     const partidos = normalizarPartidos(req.body?.partidos);
 
@@ -285,7 +285,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
     res.send('Estado de comodín actualizado');
   });
 
-  app.delete('/api/jornadas/:nombre', requireAdmin, async (req, res) => {
+  app.delete('/api/jornadas/:nombre', requierePermiso('jornadas.escribir'), async (req, res) => {
     /*
      * Los pronósticos, los resultados oficiales y los puntos congelados se van
      * con ella **por clave ajena en cascada**. En Mongo eran cuatro borrados
@@ -313,7 +313,7 @@ module.exports = function rutasDeDominio(app, { requireAdmin, enQuiniela }) {
    * no venga, se va. Todo en una transacción, porque a medias la lista de
    * equipos quedaría en un estado que nadie pidió.
    */
-  app.post('/actualizar-equipos', requireAdmin, async (req, res) => {
+  app.post('/actualizar-equipos', requierePermiso('jornadas.escribir'), async (req, res) => {
     const { equipos } = req.body;
     if (!Array.isArray(equipos)) return res.status(400).json({ error: 'Equipos inválidos' });
 

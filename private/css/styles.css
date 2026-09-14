@@ -138,6 +138,27 @@ h1 {
   font-size: 2rem;
 }
 
+/*
+ * ⛔ QUE `hidden` SIGNIFIQUE ESCONDIDO, SIEMPRE.
+ *
+ * El navegador trae `[hidden] { display: none }`, pero esa regla es de SU hoja
+ * de estilos y cualquier regla de la nuestra le gana, aunque tenga la misma
+ * especificidad. Así que `.action-card { display: flex }` dejaba a
+ * `elemento.hidden = true` sin ningún efecto: el elemento quedaba marcado como
+ * escondido y se seguía viendo.
+ *
+ * Lo destapó el menú por niveles de administrador: las tarjetas prohibidas se
+ * marcaban una por una y salían todas igual. Sin la prueba de navegador esto
+ * se habría desplegado tal cual, porque el servidor SÍ estaba cerrando la
+ * puerta —lo único roto era que el menú la enseñaba—.
+ *
+ * Con `!important` aquí, `hidden` vuelve a querer decir lo que dice, en toda la
+ * aplicación y no sólo en ese menú.
+ */
+[hidden] {
+  display: none !important;
+}
+
 .quick-actions {
   display: grid;
   grid-template-columns: 1fr;

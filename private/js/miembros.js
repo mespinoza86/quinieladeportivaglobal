@@ -10,14 +10,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       lista.innerHTML = '';
       miembros.forEach(m => {
         const card = document.createElement('article'); card.className = 'action-card';
-        card.innerHTML = html`<div><h3>${m.username || 'Cuenta no disponible'}</h3><p>${m.email || ''}</p><p><strong>${m.rol}</strong> · ${m.estado}</p></div>`;
+        const nombreDelRol = (q.nombresDeRol || {})[m.rol] || m.rol;
+        card.innerHTML = html`<div><h3>${m.username || 'Cuenta no disponible'}</h3><p>${m.email || ''}</p><p><strong>${nombreDelRol}</strong> · ${m.estado}</p></div>`;
         const actions = document.createElement('div'); actions.className = 'button-row';
         const add = (texto, fn, clase='secondary-button') => { const b=document.createElement('button'); b.type='button'; b.className=clase; b.textContent=texto; b.onclick=fn; actions.appendChild(b); };
         if (m.estado === 'pendiente_ingreso') { add('Aprobar', () => accion(m.id, 'aprobar')); add('Rechazar', () => accion(m.id, 'rechazar')); }
         if (m.estado === 'pendiente_retiro') { add('Aprobar retiro', () => accion(m.id, 'aprobar-retiro')); add('Rechazar retiro', () => accion(m.id, 'rechazar')); }
         if (m.estado === 'activo' && m.rol !== 'propietario') {
-          add(m.rol === 'admin' ? 'Convertir en user' : 'Hacer admin', () => accion(m.id, 'rol', { rol: m.rol === 'admin' ? 'user' : 'admin' }));
-          if (q.rol === 'propietario' && m.rol === 'admin') add('Transferir propiedad', async () => { if (!confirm(`¿Transferir la propiedad a ${m.username}?`)) return; try { await api('/api/quiniela-actual/transferir-propiedad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioId: m.usuarioId }) }); await cargar(); } catch (e) { mensaje.textContent = e.message; } });
+          /*
+           * ⚠️ El selector sólo se pinta si quien mira puede repartir roles, y
+           * eso lo dice el SERVIDOR con una capacidad. Esconderlo no protege
+           * nada —la ruta exige `roles.asignar`— pero enseñar un desplegable
+           * que siempre responde 403 es peor que no enseñarlo.
+           */
+          if ((q.capacidades || []).includes('roles.asignar')) {
+            const selector = document.createElement('select');
+            selector.className = 'secondary-button';
+            selector.setAttribute('aria-label', `Rol de ${m.username || 'este miembro'}`);
+
+            for (const rol of (q.rolesAsignables || [])) {
+              const opcion = document.createElement('option');
+              opcion.value = rol;
+              opcion.textContent = (q.nombresDeRol || {})[rol] || rol;
+              opcion.selected = rol === m.rol;
+              selector.appendChild(opcion);
+            }
+
+            selector.onchange = () => accion(m.id, 'rol', { rol: selector.value });
+            actions.appendChild(selector);
+          }
+          if ((q.capacidades || []).includes('quiniela.eliminar') && m.rol === 'admin') add('Transferir propiedad', async () => { if (!confirm(`¿Transferir la propiedad a ${m.username}?`)) return; try { await api('/api/quiniela-actual/transferir-propiedad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioId: m.usuarioId }) }); await cargar(); } catch (e) { mensaje.textContent = e.message; } });
           add('Expulsar', () => confirm(`¿Expulsar a ${m.username}?`) && accion(m.id, 'expulsar'));
         }
         card.appendChild(actions); lista.appendChild(card);

@@ -127,7 +127,7 @@ CREATE TABLE membresias (
   quiniela_id   uuid NOT NULL REFERENCES quinielas(id) ON DELETE CASCADE,
   usuario_id    uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   rol           text NOT NULL DEFAULT 'user'
-                  CHECK (rol IN ('propietario','admin','user')),
+                  CHECK (rol IN ('propietario','admin','admin_jornadas','admin_lector','user')),
   estado        text NOT NULL DEFAULT 'pendiente_ingreso'
                   CHECK (estado IN ('pendiente_ingreso','activo','pendiente_retiro',
                                     'rechazado','expulsado')),

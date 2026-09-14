@@ -34,6 +34,7 @@ const ligas = require('../ligas');
 const cobros = require('../cobros');
 const pagosMod = require('../pagos');
 const jugadoresMod = require('../jugadores');
+const permisos = require('../permisos');
 
 /** De motivo de negocio a código HTTP. Un solo sitio donde mirarlo. */
 const CODIGOS = {
@@ -158,14 +159,22 @@ function sinQuiniela(app, { requireLogin }) {
 
 /* ==================== Ya dentro de una quiniela ==================== */
 
-function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
+function conQuiniela(app, { requierePermiso, limiteAdminMode }) {
   app.get('/api/quiniela-actual', (req, res) => {
     res.json({
       id: req.quiniela.id,
       nombre: req.quiniela.nombre,
       estado: req.quiniela.estado,
       rol: req.membresia.rol,
-      codigoIngreso: ['propietario', 'admin'].includes(req.membresia.rol)
+      /*
+       * ⭐ Las capacidades se MANDAN, no se deducen en el navegador. Si la
+       * pantalla repitiera la escalera, habría dos tablas de permisos que
+       * mantener al día y una de ellas se quedaría atrás sin avisar.
+       */
+      capacidades: permisos.capacidadesDe(req.membresia.rol),
+      rolesAsignables: permisos.ROLES_ASIGNABLES,
+      nombresDeRol: permisos.NOMBRES,
+      codigoIngreso: permisos.puede(req.membresia.rol, 'miembros.gestionar')
         ? req.quiniela.codigo_ingreso : undefined,
       configuracion: req.quiniela.configuracion
     });
@@ -179,7 +188,7 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
    * abierta en un ordenador compartido no debería poder borrar una jornada.
    */
   app.get('/api/admin-mode', (req, res) => {
-    const autorizadoPorRol = ['propietario', 'admin'].includes(req.membresia.rol);
+    const autorizadoPorRol = permisos.esAdministrativo(req.membresia.rol);
     const acceso = req.session.adminMode;
 
     const activo = autorizadoPorRol && Boolean(
@@ -187,11 +196,21 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
       acceso.quinielaId === String(req.quiniela.id) &&
       Date.now() - acceso.verificadoEn < 1000 * 60 * 60);
 
-    res.json({ autorizadoPorRol, activo });
+    /*
+     * `paginas` viaja para que el menú de administración esconda las tarjetas
+     * que este escalón no puede abrir. Es la MISMA tabla que usa la guardia
+     * del servidor, así que el menú no puede desincronizarse de la puerta.
+     */
+    res.json({
+      autorizadoPorRol,
+      activo,
+      capacidades: permisos.capacidadesDe(req.membresia.rol),
+      paginas: permisos.PAGINAS
+    });
   });
 
   app.post('/api/admin-mode/activar', limiteAdminMode, async (req, res) => {
-    if (!['propietario', 'admin'].includes(req.membresia.rol)) {
+    if (!permisos.esAdministrativo(req.membresia.rol)) {
       return res.status(403).json({ error: 'No tienes permisos administrativos en esta quiniela.' });
     }
 
@@ -217,7 +236,7 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
 
   /* ---------- Miembros ---------- */
 
-  app.get('/api/quiniela-actual/miembros', requireAdmin, async (req, res) => {
+  app.get('/api/quiniela-actual/miembros', requierePermiso('admin.ver'), async (req, res) => {
     const filas = await membresiasMod.listar(req.quiniela.id);
     res.json(filas.map(m => ({
       id: m.id,
@@ -230,15 +249,15 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     })));
   });
 
-  app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar', requierePermiso('miembros.gestionar'), async (req, res) => {
     responder(res, await membresiasMod.aprobarIngreso(req.quiniela.id, req.params.membresiaId));
   });
 
-  app.patch('/api/quiniela-actual/miembros/:membresiaId/rechazar', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/miembros/:membresiaId/rechazar', requierePermiso('miembros.gestionar'), async (req, res) => {
     responder(res, await membresiasMod.rechazar(req.quiniela.id, req.params.membresiaId));
   });
 
-  app.patch('/api/quiniela-actual/miembros/:membresiaId/rol', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/miembros/:membresiaId/rol', requierePermiso('roles.asignar'), async (req, res) => {
     responder(res, await membresiasMod.cambiarRol(req.quiniela.id, req.params.membresiaId, req.body.rol));
   });
 
@@ -248,17 +267,17 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
       { success: true, message: 'Solicitud de retiro enviada.' });
   });
 
-  app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar-retiro', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/miembros/:membresiaId/aprobar-retiro', requierePermiso('miembros.gestionar'), async (req, res) => {
     responder(res, await membresiasMod.aprobarRetiro(req.quiniela.id, req.params.membresiaId));
   });
 
-  app.patch('/api/quiniela-actual/miembros/:membresiaId/expulsar', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/miembros/:membresiaId/expulsar', requierePermiso('miembros.gestionar'), async (req, res) => {
     responder(res,
       await membresiasMod.expulsar(req.quiniela.id, req.params.membresiaId, req.session.usuarioId));
   });
 
-  app.post('/api/quiniela-actual/transferir-propiedad', requireAdmin, async (req, res) => {
-    if (req.membresia.rol !== 'propietario') {
+  app.post('/api/quiniela-actual/transferir-propiedad', requierePermiso('quiniela.eliminar'), async (req, res) => {
+    if (!permisos.puede(req.membresia.rol, 'quiniela.eliminar')) {
       return res.status(403).json({ error: 'Solo el propietario puede transferir la propiedad.' });
     }
     responder(res, await membresiasMod.transferirPropiedad(
@@ -271,7 +290,7 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     'marcadorExacto', 'resultadoCorrecto', 'comodinExacto', 'comodinResultado', 'puntosTriviaDefault'
   ];
 
-  app.patch('/api/quiniela-actual/configuracion', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/configuracion', requierePermiso('quiniela.configurar'), async (req, res) => {
     const entrada = req.body.puntuacion || {};
     const puntuacion = {};
 
@@ -410,14 +429,14 @@ function conQuiniela(app, { requireAdmin, limiteAdminMode }) {
     res.json({ cobra: true, juega: true, ...cuenta });
   });
 
-  app.patch('/api/quiniela-actual/archivar', requireAdmin, async (req, res) => {
+  app.patch('/api/quiniela-actual/archivar', requierePermiso('quiniela.configurar'), async (req, res) => {
     const estado = req.body.archivada === false ? 'activa' : 'archivada';
     const quiniela = await quinielasMod.cambiarEstado(req.quiniela.id, estado);
     res.json({ success: true, estado: quiniela.estado });
   });
 
-  app.delete('/api/quiniela-actual', requireAdmin, async (req, res) => {
-    if (req.membresia.rol !== 'propietario') {
+  app.delete('/api/quiniela-actual', requierePermiso('quiniela.eliminar'), async (req, res) => {
+    if (!permisos.puede(req.membresia.rol, 'quiniela.eliminar')) {
       return res.status(403).json({ error: 'Solo el propietario puede eliminar la quiniela.' });
     }
     /*

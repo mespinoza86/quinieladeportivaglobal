@@ -15526,6 +15526,186 @@ La consulta está en el pie del archivo.
 ---
 
 
+### 📌 Entrada 092 — 13 de septiembre de 2026 — Niveles de administrador, y un menú que enseñaba puertas cerradas
+
+**Objetivo:** Marco pidió repartir el trabajo sin repartir el riesgo: que alguien
+arme jornadas sin poder tocar el dinero, que alguien envíe los partidos al grupo
+sin poder cambiar un marcador, y que sólo él pueda eliminar la quiniela y
+repartir los roles.
+
+## Lo que ya estaba hecho, y lo que de verdad hacía falta
+
+Antes de escribir nada se midió, y la mitad de lo pedido **ya existía**:
+
+```
+plataforma.js:420   DELETE /api/quiniela-actual    if (rol !== 'propietario') → 403
+plataforma.js:261   transferir-propiedad           igual
+```
+
+Marco dijo que la única diferencia entre el dueño y el administrador pleno era
+poder eliminar la quiniela. Esa diferencia llevaba meses construida. El trabajo
+nuevo eran los dos escalones de abajo.
+
+⚠️ Y un dato que convenía decir antes de empezar: **nadie tenía el rol `admin`**.
+En las seis quinielas, cero. Se usaba uno de los dos roles que ya había y se
+pedían cuatro. No lo hace mala idea —construir para delegar es legítimo— pero
+cambia la pregunta de «¿cuánto cuesta?» a «¿a quién se lo vas a dar?».
+
+## ⛔ Por qué esto no se parece a los demás cambios
+
+Un fallo de permisos **no da error**. Si una ruta se queda con el nivel
+equivocado la pantalla funciona, la petición responde 200, y lo único que pasa es
+que alguien pudo hacer algo que no le tocaba. Es el mismo patrón que consultar
+una tabla con RLS sin contexto —cero filas, sin quejarse—.
+
+Así que el diseño entero se organizó alrededor de hacer ruidoso ese fallo:
+
+1. **Una sola tabla**, en `src/permisos.js`. Antes el rol se miraba a mano en
+   **once sitios**, dos de ellos en el navegador.
+2. **Los roles son una escalera**, no etiquetas sueltas. Marco los describió así
+   sin proponérselo, y tiene consecuencias: con conjuntos libres habría que
+   razonar sobre combinaciones que nadie ha pensado —«¿un lector que además
+   cobra?»—; con una escalera sólo hay que contestar hasta dónde llega cada uno.
+3. **Una rejilla escrita a mano** de 50 rutas × 5 roles, que NO se deriva de la
+   tabla. Derivarla sería escribir «el código hace lo que hace el código».
+
+```
+propietario     todo
+admin           todo menos eliminar la quiniela y menos repartir roles
+admin_jornadas  arma jornadas y envía partidos
+admin_lector    envía partidos y mira
+user            jugador
+```
+
+## La capacidad que no estaba en el plan
+
+Al repartir las rutas apareció una que no encajaba: cambiar el rol de un miembro.
+Estaba bajo «gestionar miembros», y ahí habría dejado que un administrador pleno
+repartiera roles.
+
+⛔ **Un permiso que sus titulares pueden regalar no es un permiso.** Un `admin`
+que puede nombrar `admin` puede nombrarse pares indefinidamente; el reparto
+dejaría de significar nada. Se separó en `roles.asignar`, sólo del dueño, que es
+justo lo que Marco pidió: «el único que asigna o modifica las capacidades es el
+dueño de la quiniela».
+
+## Tres cosas que salieron de mirar en vez de suponer
+
+1. **`resultados.html` escribe.** Por el nombre parecía una pantalla de consulta;
+   publica en `/api/admin/resultados`. Habría acabado en el escalón de lectura.
+2. **`copiarresultadojugador.html` sólo lee**, al revés de lo que sugiere «copiar».
+3. **Cinco rutas de depuración llevaban `requireDebug` delante**, así que no
+   encajaron en la conversión automática. La limpieza genérica las dejó pasando
+   la **fábrica** de guardias como middleware —`requierePermiso` sin paréntesis—,
+   que habría reventado toda ruta de depuración. Lo destapó exigir que la tabla
+   de conversión no tuviera sobrantes NI faltantes.
+
+## ⛔ El fallo que se habría desplegado: `hidden` no escondía
+
+Las tarjetas del menú de administración se marcaban con `elemento.hidden = true`
+y **salían todas igual**.
+
+La causa: el navegador trae `[hidden] { display: none }` en **su** hoja de
+estilos, y cualquier regla de la del proyecto le gana. `.action-card { display:
+flex }` dejaba `hidden` sin ningún efecto.
+
+⚠️ Lo grave es cómo se veía desde fuera: el servidor **sí** estaba cerrando la
+puerta —escribir la dirección a mano acababa en Inicio—, así que lo único roto
+era que el menú enseñaba tarjetas que al pulsarlas expulsaban. Ninguna de las 580
+pruebas de `npm test` ejecuta código de navegador: sin la prueba de Playwright
+esto sube a producción tal cual.
+
+Se arregló con `[hidden] { display: none !important }` en la hoja del proyecto,
+que es el arreglo **general**: esa trampa iba a volver en cualquier otro sitio.
+
+## Que la suite no fuera decorativa
+
+Las 21 pruebas nuevas pasaron **a la primera**, que en este proyecto ya es motivo
+de sospecha. Se rompió el código a propósito siete veces:
+
+```
+dinero.gestionar baja al de jornadas        → 2 rojas  ✅
+compartir baja al jugador raso              → 2 rojas  ✅
+roles.asignar deja de ser sólo del dueño    → 3 rojas  ✅
+una ruta de cobros cambia de capacidad      → 2 rojas  ✅
+a una ruta de cobros se le cae la guardia   → 3 rojas  ✅
+vuelve una lista de roles al servidor       → 1 roja   ✅
+vuelve una lista de roles al navegador      → 1 roja   ✅
+```
+
+Cada una cayó por al menos dos caminos, y siempre al menos uno de comportamiento
+real —peticiones con sesión, no lectura del fuente—.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/permisos.js` | **Nuevo.** La escalera, las 9 capacidades, el mapa de pantallas y `rolesCon()` |
+| `db/migraciones/012-niveles-de-administrador.sql` | **Nueva.** Amplía el `CHECK` de `membresias.rol` |
+| `db/esquema.sql` | Los cinco roles |
+| `src/servidor.js` | `requireAdmin` → `requierePermiso(capacidad)`; el mapa de pantallas se muda |
+| `src/rutas/{admin,dominio,plataforma,puntuacion,trivias}.js` | Las 50 guardias, y las comprobaciones sueltas |
+| `src/membresias.js` | Roles asignables, «sin quien gestione» y a quién va el correo |
+| `src/quinielas.js` | El código de ingreso se deriva de la capacidad |
+| `private/js/adminmode.js` | `ajustarMenu`: esconde lo que este escalón no abre |
+| `private/js/{miembros,index-contexto,configuracion-quiniela}.js` | Capacidades en vez de listas de roles; selector de rol |
+| `private/css/styles.css` | `[hidden] { display: none !important }` |
+| `test/permisos.test.js` | **Nuevo.** 22 pruebas: la escalera, la rejilla y peticiones reales |
+| `test/e2e/niveles-admin.spec.js` | **Nuevo.** 4 pruebas del menú en el navegador |
+| `test/architecture.test.js` | Centinelas al día; el de la cuota exige NIVEL, no presencia |
+| `package.json` | La suite nueva en los dos guiones |
+
+**Verificación:**
+
+```
+npm test             → 580/580  (eran 558)
+npx playwright test  → 140/140  (eran 132)
+
+Migración 012 comprobada contra Neon antes de escribirla:
+  membresias_rol_check existía con ese nombre exacto
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un permiso que sus titulares pueden regalar no es un permiso.** Repartir
+   roles tuvo que salirse de «gestionar miembros» y ser sólo del dueño.
+2. ⛔ **`hidden` no esconde si la hoja del proyecto fija `display`.** La regla del
+   navegador pierde siempre. El arreglo bueno es `!important` global, no
+   `style.display` caso por caso.
+3. ⛔ **Ninguna prueba de servidor ejecuta código de navegador.** Un menú roto del
+   todo convive con 580 pruebas verdes. Lo que lo vio fue Playwright.
+4. ⚠️ **Una conversión masiva necesita control en los DOS sentidos.** Exigir que
+   la tabla no tuviera sobrantes ni faltantes destapó cinco rutas con otra forma;
+   sólo con «no quedan `requireAdmin`» habrían pasado rotas.
+5. ⚠️ **Un centinela que exige «que haya guardia» se queda corto en cuanto hay
+   guardias baratas.** El de la cuota del proveedor pasó a exigir nivel: un
+   `admin.ver` ahí dejaría al escalón más poblado quemar la cuota de todas las
+   quinielas.
+6. ⚠️ **El heredoc se come un nivel de barras invertidas aunque esté
+   entrecomillado.** Iba a colar una expresión regular rota en un centinela. Las
+   barras se construyen con `String.fromCharCode(92)`.
+7. **Medir antes de diseñar ahorró la mitad del trabajo**: lo de «sólo el dueño
+   elimina» ya estaba, y nadie tenía el rol `admin`.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/012-niveles-de-administrador.sql` en Neon con el rol
+dueño.** A diferencia de la 011, ésta **no corre prisa en ningún sentido**: sólo
+añade dos valores al abanico del `CHECK` y no mueve ninguna fila. El código
+desplegado sin ella sigue funcionando para los roles de siempre; lo único que
+falla es intentar poner uno de los dos nuevos.
+
+**Después, desde la pantalla (Miembros y solicitudes):** el desplegable de rol ya
+ofrece los cuatro niveles, y sólo lo ve el dueño.
+
+⚠️ Y queda dicho por si se quiere revisar: **el de sólo lectura ve los cobros y la
+caja.** Es lo que Marco pidió —«ver las cosas que ven los otros
+administradores»— pero es el único sitio donde ese escalón toca dinero, aunque
+sea mirándolo. Cambiarlo es mover una línea en `src/permisos.js`.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

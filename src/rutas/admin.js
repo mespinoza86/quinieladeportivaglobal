@@ -64,7 +64,7 @@ function sinClave(res) {
  */
 const MAX_PARTIDOS_A_MARCAR = 50;
 
-module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
+module.exports = function rutasDeAdmin(app, { requierePermiso, enQuiniela }) {
 
   /* ==================== El proveedor, en directo ==================== */
 
@@ -82,7 +82,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * sin poder armar jornadas. La ruta hermana —`ligas-disponibles`— sí la
    * llevaba desde el principio; ésta se quedó sin ella (Entrada 064).
    */
-  app.get('/api/football/fixtures', requireAdmin, async (req, res) => {
+  app.get('/api/football/fixtures', requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const { date, from, to, league } = req.query;
@@ -102,7 +102,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * quien arma una jornada abre esta pantalla varias veces seguidas, y cada
    * apertura consultaría el rango entero otra vez.
    */
-  app.get('/api/football/ligas-disponibles', requireAdmin, async (req, res) => {
+  app.get('/api/football/ligas-disponibles', requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const rango = ligas.rangoDeBusqueda({ desde: req.query.desde, dias: req.query.dias });
@@ -137,7 +137,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   // Misma razón que la de arriba: sale a la red y gasta cuota compartida.
-  app.get('/api/football/leagues', requireAdmin, async (req, res) => {
+  app.get('/api/football/leagues', requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
     res.json(await proveedor.ligas());
   });
@@ -150,7 +150,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * ⚠️ Se salta las ventanas de consulta a propósito (`forzar`): es una petición
    * explícita de un administrador que está mirando la pantalla, no el reloj.
    */
-  app.post('/api/sync-resultados-oficiales/:jornada', requireAdmin, async (req, res) => {
+  app.post('/api/sync-resultados-oficiales/:jornada', requierePermiso('resultados.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const jornada = req.params.jornada;
@@ -188,7 +188,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * partido**: un administrador está transcribiendo lo que ya recibió, y a
    * menudo lo hace con la jornada empezada. Por eso exige `requireAdmin`.
    */
-  app.post('/api/admin/resultados', requireAdmin, async (req, res) => {
+  app.post('/api/admin/resultados', requierePermiso('resultados.escribir'), async (req, res) => {
     const { jugador, jornada, pronosticos } = req.body;
 
     if (!jugador || !jornada || !Array.isArray(pronosticos)) {
@@ -234,7 +234,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** Las trivias de una jornada con TODAS las respuestas, para revisarlas. */
-  app.get('/api/admin/respuestas-trivias-jornada/:jornadaNombre', requireAdmin, async (req, res) => {
+  app.get('/api/admin/respuestas-trivias-jornada/:jornadaNombre', requierePermiso('admin.ver'), async (req, res) => {
     const { jornadaNombre } = req.params;
     const datos = await respuestasMod.deJornada(req.quiniela.id, jornadaNombre);
 
@@ -254,7 +254,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * mismos partidos. Si se queda en cero, la deduplicación no está funcionando y
    * la cuota se está gastando de más sin que nada falle.
    */
-  app.get('/api/admin/sync-metricas', requireAdmin, async (req, res) => {
+  app.get('/api/admin/sync-metricas', requierePermiso('admin.ver'), async (req, res) => {
     res.json({
       ...sincronizador.metricas,
       cerrojo: await cerrojos.estado(sincronizador.CERROJO_SYNC),
@@ -274,12 +274,12 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   /* ==================== Depuración ==================== */
 
   /** Qué estado deduce el sistema de un `match_status` cualquiera. */
-  app.get('/api/debug/estado-partido/:status', requireDebug, requireAdmin, (req, res) => {
+  app.get('/api/debug/estado-partido/:status', requireDebug, requierePermiso('admin.ver'), (req, res) => {
     const fixture = { match_status: req.params.status, match_live: req.query.live || '' };
     res.json({ fixture, resultado: eventos.obtenerEstadoPartido(fixture, {}) });
   });
 
-  app.get('/api/debug/api-football-match/:matchId', requireDebug, requireAdmin, async (req, res) => {
+  app.get('/api/debug/api-football-match/:matchId', requireDebug, requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const evento = await proveedor.porId(req.params.matchId);
@@ -290,12 +290,12 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     });
   });
 
-  app.get('/api/debug/jornadas', requireDebug, requireAdmin, async (req, res) => {
+  app.get('/api/debug/jornadas', requireDebug, requierePermiso('admin.ver'), async (req, res) => {
     res.json(await jornadasMod.listar(req.quiniela.id));
   });
 
   /** Los goles tal como los ve el resolutor de trivias, para entender un fallo. */
-  app.get('/debug/trivia-goles/:matchId', requireDebug, requireAdmin, async (req, res) => {
+  app.get('/debug/trivia-goles/:matchId', requireDebug, requierePermiso('jornadas.escribir'), async (req, res) => {
     const evento = await fixtures.eventoDe(req.params.matchId)
       || (proveedor.hayClave() ? await proveedor.porId(req.params.matchId) : null);
 
@@ -309,7 +309,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
     });
   });
 
-  app.get('/api/admin/debug-partido-api/:matchId', requireDebug, requireAdmin, async (req, res) => {
+  app.get('/api/admin/debug-partido-api/:matchId', requireDebug, requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
 
     const evento = await proveedor.porId(req.params.matchId);
@@ -346,7 +346,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    */
 
   /** La cuenta de cada jugador: lo que debe del torneo y lo de las jornadas. */
-  app.get('/api/cobros/cuentas', requireAdmin, async (req, res) => {
+  app.get('/api/cobros/cuentas', requierePermiso('admin.ver'), async (req, res) => {
     res.json({
       cobros: cobros.normalizarCobros(req.quiniela.configuracion),
       cuentas: await pagosMod.cuentas(req.quiniela.id, req.quiniela.configuracion)
@@ -354,7 +354,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** El historial completo de abonos, para cuando hay que revisar una cuenta. */
-  app.get('/api/cobros/abonos', requireAdmin, async (req, res) => {
+  app.get('/api/cobros/abonos', requierePermiso('admin.ver'), async (req, res) => {
     if (req.query.jugador && !cobros.esUuid(req.query.jugador)) {
       return res.status(400).json({ error: 'Ese jugador no es válido.' });
     }
@@ -365,7 +365,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** Anota un abono. */
-  app.post('/api/cobros/abonos', requireAdmin, async (req, res) => {
+  app.post('/api/cobros/abonos', requierePermiso('dinero.gestionar'), async (req, res) => {
     const { jugadorId, concepto, monto, nota } = req.body || {};
 
     /*
@@ -422,7 +422,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * discusión se resuelve mirando el historial, no la palabra de quien pudo
    * reescribirlo.
    */
-  app.post('/api/cobros/abonos/:pagoId/anular', requireAdmin, async (req, res) => {
+  app.post('/api/cobros/abonos/:pagoId/anular', requierePermiso('dinero.gestionar'), async (req, res) => {
     if (!cobros.esUuid(req.params.pagoId)) {
       return res.status(400).json({ error: 'Ese abono no es válido.' });
     }
@@ -469,7 +469,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** Si un jugador entra al torneo completo, y desde qué jornada se le cobra. */
-  app.patch('/api/cobros/jugadores/:jugadorId', requireAdmin, async (req, res) => {
+  app.patch('/api/cobros/jugadores/:jugadorId', requierePermiso('dinero.gestionar'), async (req, res) => {
     if (!cobros.esUuid(req.params.jugadorId)) {
       return res.status(400).json({ error: 'Ese jugador no es válido.' });
     }
@@ -498,7 +498,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * que no cuadra con lo que ve la gente es peor que no tenerlo: convierte una
    * cuenta clara en una discusión.
    */
-  app.get('/api/cobros/reporte', requireAdmin, async (req, res) => {
+  app.get('/api/cobros/reporte', requierePermiso('admin.ver'), async (req, res) => {
     res.json({
       quiniela: { nombre: req.quiniela.nombre },
       ...await pagosMod.reporte(req.quiniela.id, req.quiniela.configuracion)
@@ -511,7 +511,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * Se calcula sobre lo COBRADO, y se devuelve también lo esperado: sin el
    * segundo número, un premio a medio cobrar parece completo.
    */
-  app.get('/api/cobros/botes', requireAdmin, async (req, res) => {
+  app.get('/api/cobros/botes', requierePermiso('admin.ver'), async (req, res) => {
     const [estado, historial] = await Promise.all([
       pagosMod.botes(req.quiniela.id),
       pagosMod.entregas(req.quiniela.id)
@@ -527,7 +527,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * Aceptarlo de fuera dejaría que dos pestañas entregaran dos veces el mismo
    * dinero, o una cifra que ya cambió porque alguien acaba de abonar.
    */
-  app.post('/api/cobros/acumulado/entregar', requireAdmin, async (req, res) => {
+  app.post('/api/cobros/acumulado/entregar', requierePermiso('dinero.gestionar'), async (req, res) => {
     const { jugadorId, nota } = req.body || {};
 
     if (!cobros.esUuid(jugadorId)) {
@@ -551,7 +551,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** Cambia lo que cuesta UNA jornada: la de finales vale más. */
-  app.patch('/api/cobros/jornadas/:nombre/precio', requireAdmin, async (req, res) => {
+  app.patch('/api/cobros/jornadas/:nombre/precio', requierePermiso('dinero.gestionar'), async (req, res) => {
     const precio = cobros.aMonto(req.body?.precio);
     if (!(precio >= 0)) return res.status(400).json({ error: 'El precio no puede ser negativo.' });
     if (precio > cobros.MONTO_MAXIMO) {
@@ -586,7 +586,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * hasta la migración 011 no se registraban— y dice cuánto está comprometido
    * y cuánto queda libre.
    */
-  app.get('/api/cobros/caja', requireAdmin, async (req, res) => {
+  app.get('/api/cobros/caja', requierePermiso('admin.ver'), async (req, res) => {
     res.json(await pagosMod.caja(req.quiniela.id, req.quiniela.configuracion));
   });
 
@@ -598,7 +598,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * acumulado, y ahí romperla no tumbaba ninguna prueba porque vivía en la
    * ruta y había que romper la ruta (Entrada 078).
    */
-  app.post('/api/cobros/jornadas/:nombre/entregar-premio', requireAdmin, async (req, res) => {
+  app.post('/api/cobros/jornadas/:nombre/entregar-premio', requierePermiso('dinero.gestionar'), async (req, res) => {
     const { jugadorId, nota } = req.body || {};
 
     if (!cobros.esUuid(jugadorId)) {
@@ -638,7 +638,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    */
 
   /** Lo que está listo para salir al grupo, agrupado por hora de inicio. */
-  app.get('/api/compartir/pendientes', requireAdmin, async (req, res) => {
+  app.get('/api/compartir/pendientes', requierePermiso('admin.ver'), async (req, res) => {
     res.json(await compartirMod.paraCompartir(req.quiniela.id));
   });
 
@@ -661,7 +661,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
    * ⚠️ Se marca DESPUÉS de abrir WhatsApp y sin saber si el mensaje llegó a
    * enviarse: eso WhatsApp no lo cuenta. Por eso existe la ruta de al lado.
    */
-  app.post('/api/compartir/marcar', requireAdmin, async (req, res) => {
+  app.post('/api/compartir/marcar', requierePermiso('compartir'), async (req, res) => {
     const ids = partidosDelCuerpo(req);
     if (!ids) return res.status(400).json({ error: 'Faltan los partidos, o no son válidos.' });
 
@@ -670,7 +670,7 @@ module.exports = function rutasDeAdmin(app, { requireAdmin, enQuiniela }) {
   });
 
   /** Deshace la marca: vuelve a estar pendiente. Para quien canceló el envío. */
-  app.post('/api/compartir/desmarcar', requireAdmin, async (req, res) => {
+  app.post('/api/compartir/desmarcar', requierePermiso('compartir'), async (req, res) => {
     const ids = partidosDelCuerpo(req);
     if (!ids) return res.status(400).json({ error: 'Faltan los partidos, o no son válidos.' });
 
