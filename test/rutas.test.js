@@ -4883,3 +4883,84 @@ test('⛔ entregar un premio de jornada NO toca el acumulado', async () => {
   assert.equal(Number(despues.entregado), 0,
     'y del acumulado no se ha entregado nada todavía');
 });
+/* ==================== Notificaciones al teléfono ==================== */
+
+const suscripcionFalsa = (n = 1) => ({
+  endpoint: `https://push.ejemplo.com/rutas-${n}`,
+  keys: { p256dh: `publica-${n}`, auth: `secreto-${n}` }
+});
+
+test('las notificaciones exigen sesión', async () => {
+  const sinEntrar = request(app);
+
+  assert.equal((await sinEntrar.get('/api/notificaciones')).status, 401);
+  assert.equal((await sinEntrar.post('/api/notificaciones/suscribir')
+    .send(suscripcionFalsa())).status, 401);
+});
+
+test('⛔ sin claves VAPID la pantalla se entera, en vez de dar un botón muerto', async () => {
+  /*
+   * Es lo que separa «no está configurado» de «le di y no pasó nada». Las
+   * pruebas corren sin claves, así que éste es el caso por defecto aquí.
+   */
+  const { agente } = await cuentaNueva();
+  const res = await agente.get('/api/notificaciones');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.disponible, false);
+  assert.equal(res.body.clavePublica, '');
+  assert.equal(res.body.antelacionMinutos, 15, 'los 15 minutos que pidió Marco');
+});
+
+test('activar los avisos guarda el navegador, y dos veces no lo duplica', async () => {
+  const { agente } = await cuentaNueva();
+
+  const primera = await agente.post('/api/notificaciones/suscribir').send(suscripcionFalsa(2));
+  assert.equal(primera.status, 201);
+  assert.equal((await agente.get('/api/notificaciones')).body.telefonos, 1);
+
+  await agente.post('/api/notificaciones/suscribir').send(suscripcionFalsa(2));
+  assert.equal((await agente.get('/api/notificaciones')).body.telefonos, 1,
+    'el mismo endpoint no crea una segunda fila');
+});
+
+test('una suscripción a medias se rechaza con 400', async () => {
+  const { agente } = await cuentaNueva();
+
+  assert.equal((await agente.post('/api/notificaciones/suscribir').send({})).status, 400);
+  assert.equal((await agente.post('/api/notificaciones/suscribir')
+    .send({ endpoint: 'https://x', keys: { p256dh: 'solo-una' } })).status, 400);
+});
+
+test('apagar los avisos de este teléfono los quita', async () => {
+  const { agente } = await cuentaNueva();
+  const suscripcion = suscripcionFalsa(3);
+
+  await agente.post('/api/notificaciones/suscribir').send(suscripcion);
+  const fuera = await agente.post('/api/notificaciones/desuscribir')
+    .send({ endpoint: suscripcion.endpoint });
+
+  assert.equal(fuera.status, 200);
+  assert.equal((await agente.get('/api/notificaciones')).body.telefonos, 0);
+});
+
+test('desuscribir sin decir cuál responde 400', async () => {
+  const { agente } = await cuentaNueva();
+  assert.equal((await agente.post('/api/notificaciones/desuscribir').send({})).status, 400);
+});
+
+test('⛔ las notificaciones NO exigen quiniela seleccionada', async () => {
+  /*
+   * Un teléfono no pertenece a una quiniela. Si estas rutas colgaran del guardia
+   * de quiniela activa, alguien recién registrado —que todavía no ha entrado en
+   * ninguna— no podría activarlas, y es justo cuando más se le quiere enganchar.
+   */
+  const { agente } = await cuentaNueva();
+
+  const yo = await agente.get('/api/auth/me');
+  assert.equal(yo.body.quinielaActivaId, null, 'sin quiniela seleccionada');
+
+  assert.equal((await agente.get('/api/notificaciones')).status, 200);
+  assert.equal((await agente.post('/api/notificaciones/suscribir')
+    .send(suscripcionFalsa(4))).status, 201);
+});

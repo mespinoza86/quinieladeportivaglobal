@@ -7,6 +7,14 @@
   <title>Quiniela Deportiva</title>
 
   <link rel="stylesheet" href="css/styles.css" />
+
+  <!--
+    El manifiesto NO es decoración: en iPhone, «añadir a la pantalla de inicio»
+    sólo habilita las notificaciones si el sitio se declara aplicación con
+    `display: standalone`. Sin esto, el camino que resuelve lo del iPhone no
+    funciona por mucho que la persona lo añada.
+  -->
+  <link rel="manifest" href="/manifest.webmanifest" />
 </head>
 
 <body class="app-body">
@@ -42,6 +50,22 @@
       <a id="superadminCard" class="action-card" href="superadmin.html" style="display:none">
         <span class="icon">🛡️</span><div><h3>Administrar el sistema</h3><p>Todas las cuentas del sistema, no sólo esta quiniela</p></div>
       </a>
+
+    <!--
+      Avisos en el teléfono. Nace oculto y lo enseña `notificaciones.js` cuando
+      sabe qué decir: si no hay sesión, o el servidor no tiene claves VAPID, no
+      se enseña nada en vez de un botón que no puede funcionar.
+    -->
+    <section class="app-panel" id="panelNotificaciones" hidden>
+      <h2>Avisos de tus partidos</h2>
+      <p id="estadoNotificaciones" class="helper-text"></p>
+      <button type="button" id="botonNotificaciones" class="secondary-button" hidden></button>
+      <p id="ayudaNotificaciones" class="helper-text" hidden>
+        En iPhone hace falta un paso más: toca <strong>Compartir</strong> y luego
+        <strong>Añadir a pantalla de inicio</strong>. Abre la aplicación desde ese
+        icono y aquí aparecerá el botón para activarlos.
+      </p>
+    </section>
 
     <section class="app-panel" id="miCuentaCard" hidden>
       <h2>Mis pagos</h2>
@@ -260,5 +284,6 @@
 
   <script src="js/index-contexto.js" defer></script>
   <script src="js/index-cuenta.js" defer></script>
+  <script src="js/notificaciones.js" defer></script>
 </body>
 </html>

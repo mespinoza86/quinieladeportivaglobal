@@ -16041,6 +16041,192 @@ Lo que queda del análisis de capacidad, por orden de lo que rinde:
 
 ---
 
+
+### 📌 Entrada 094 — 14 de septiembre de 2026 — «Tu partido arranca en 15 minutos»
+
+**Objetivo:** lo que Marco pidió el 4 de septiembre y llamó **«lo que más
+quiero»**: un aviso en el teléfono quince minutos antes de que empiece un
+partido, para que a nadie se le pase revisar sus pronósticos.
+
+## Las tres decisiones, cerradas
+
+Llevaban desde la Entrada 088 esperando. Marco eligió las tres recomendaciones:
+
+| Pregunta | Decisión |
+|---|---|
+| ¿A quién? | **A todos los que se apunten.** Revisar sirve igual a quien ya llenó |
+| ¿Cuándo? | **15 minutos fijos.** Él nombró la cifra; una casilla más es código que mantener |
+| ¿Si la ventana ya pasó? | **Callarse.** «Arranca en 15 min» con el partido jugándose llega a burlarse |
+
+## ⭐ Lo del iPhone se resolvió sin saber nada de nadie
+
+En iPhone las notificaciones sólo existen si el sitio está **añadido a la
+pantalla de inicio**. La salida fácil era mirar el `User-Agent`.
+
+⛔ Y está mal dos veces: el iPad **miente** —se declara escritorio desde iPadOS
+13— y sobre todo la pregunta útil no es «¿qué teléfono es?» sino **«¿se puede
+aquí?»**. Se detecta la **capacidad**:
+
+```js
+const sePuedeAqui = 'serviceWorker' in navigator
+  && 'PushManager' in window && 'Notification' in window;
+```
+
+En iPhone eso es falso mientras el sitio esté en una pestaña, y en cuanto lo
+añaden a la pantalla de inicio `PushManager` aparece y el botón funciona solo. El
+día que Apple lo cambie, esto se entera sin que nadie toque nada.
+
+⚠️ Y hacía falta una pieza que no estaba: **`manifest.webmanifest`**. Sin un
+manifiesto con `display: standalone`, «añadir a la pantalla de inicio» en iPhone
+**no** habilita las notificaciones por mucho que la persona lo haga.
+
+## ⛔ La suscripción es de un NAVEGADOR, no de una quiniela
+
+La tabla `suscripciones_push` es de **plataforma** y no lleva RLS, al revés que
+casi todo lo demás. La misma persona en cinco quinielas tiene **un** teléfono:
+
+- colgarla de la quiniela obligaría a activar las notificaciones cinco veces,
+- guardaría cinco filas con el mismo `endpoint`,
+- y al apagarlas en una, seguiría recibiendo por las otras cuatro.
+
+A quién avisar se resuelve **al avisar**, cruzando con `membresias`, que es donde
+esa pregunta tiene respuesta.
+
+⭐ Y el `UNIQUE` va sobre el **endpoint solo**, no sobre el par con el usuario:
+si otra persona entra en ese móvil, la suscripción tiene que **cambiar de
+dueño**, no duplicarse. Por eso el `ON CONFLICT` hace `DO UPDATE` y no
+`DO NOTHING`.
+
+## La ventana, y por qué el operador importa
+
+```sql
+WHERE p.notificado_en IS NULL
+  AND p.api_date >  $ahora      -- ⭐ estricto: ESTO es «callarse»
+  AND p.api_date <= $ahora_mas_15
+```
+
+Ese `>` estricto **es** la decisión de Marco, hecha en la propia consulta y no en
+una comprobación aparte que pudiera discrepar. Si el servicio estuvo caído una
+hora, esos partidos no avisan nunca — y es lo correcto.
+
+⚠️ Se comparan textos, y funciona porque `api_date` es «YYYY-MM-DD HH:MM» con
+ceros a la izquierda: en ese formato el orden alfabético y el cronológico son el
+mismo.
+
+## Tres cosas copiadas de lo que ya funcionaba
+
+1. **`partidos.notificado_en`**, tercera marca de la familia tras `compartido_en`
+   (008) y `avisado_en` (009). El reloj corre cada minuto y la ventana dura
+   quince: sin memoria, **el mismo partido avisaría quince veces**.
+2. **Se marca DESPUÉS de enviar y sólo si alguno salió.** Marcar antes y fallar
+   deja a todos sin aviso y el partido marcado para siempre.
+3. **Cerrojo propio y reloj propio.** Una notificación no es idempotente: dos
+   instancias mandarían dos, y la marca no lo evitaría porque las dos leerían el
+   partido sin marcar antes de que ninguna lo marcase.
+
+## ⭐ `comoApiDate` se mudó en vez de copiarse
+
+Vivía privado en `compartir.js` y las notificaciones lo necesitaban. Copiarlo
+habría sido tener **dos veces** la misma resta de seis horas — y esa función ya
+se escribió mal una vez: daba formato en el huso del **servidor**, que en Render
+es UTC, así que la ventana se desplazaba seis horas sin dar ningún error
+(Entrada 086). Ahora vive en `fechas.js`, con una prueba que fija `TZ` a tres
+zonas distintas y exige el mismo resultado.
+
+## ⛔ Una mutación que no cayó, y el borde que destapó
+
+Seis mutaciones sobre el módulo. Cinco cayeron; **cambiar `>` por `>=` no la
+detectó nadie**.
+
+El motivo: los dos operadores sólo se diferencian cuando el partido arranca **en
+ese mismo minuto**, y las cuatro pruebas de la ventana usaban partidos a 5, 10,
+15 y 40 minutos. Ninguna tocaba el minuto cero.
+
+Con `>=`, a alguien le llegaría «arranca en 15 minutos» mientras el árbitro pita
+el inicio. Hizo falta una prueba nueva para ese único minuto.
+
+⚠️ **Es la tercera vez en dos días que una suite nueva pasa entera a la primera y
+al mutarla aparece un agujero.** El patrón ya no es casualidad: verde a la
+primera es una pregunta, no un aprobado.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/013-notificaciones-push.sql` | **Nueva.** `suscripciones_push` con su `GRANT`, y `partidos.notificado_en` |
+| `db/esquema.sql` | La tabla nueva (23) y la columna |
+| `src/notificaciones.js` | **Nuevo.** La ventana, la memoria, las suscripciones y el barrido |
+| `src/push.js` | **Nuevo.** El transporte. `{muerta:true}` en 404/410, que es cuando hay que borrar |
+| `src/fechas.js` | Recibe `comoApiDate`; `compartir.js` lo importa |
+| `src/planificador.js` | El cuarto reloj, con cerrojo propio |
+| `src/rutas/plataforma.js` | Tres rutas **sin quiniela**: estado, suscribir, desuscribir |
+| `public/sw.js` | **Nuevo.** El service worker, en la RAÍZ para que su alcance sea el sitio |
+| `public/manifest.webmanifest` | **Nuevo.** Sin él, lo del iPhone no funciona |
+| `private/js/notificaciones.js` | **Nuevo.** Detección de capacidad y el botón |
+| `public/index.html` | El panel y el enlace al manifiesto |
+| `test/notificaciones.test.js` | **Nuevo.** 16 pruebas |
+| `test/rutas.test.js` | 7 pruebas de las rutas |
+| `package.json` | `web-push`, y la suite nueva en los dos guiones |
+
+**Verificación:**
+
+```
+npm test             → 607/607  (eran 584)
+npx playwright test  → 142/142
+
+Servido de verdad, comprobado con peticiones:
+  /sw.js                  200  application/javascript
+  /manifest.webmanifest   200  application/manifest+json
+  /api/notificaciones     401 sin sesión · disponible:true con claves
+
+Rotas a proposito, 6:
+  ventana con >=              → NO caia; se anadio la prueba del minuto exacto
+  sin memoria (avisaria x15)  → 2 rojas
+  sin filtro de estado activo → 1 roja
+  sin filtro de quiniela      → 4 rojas
+  ON CONFLICT DO NOTHING      → 8 rojas
+  suscripcion incompleta ok   → 1 roja
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Detectar la capacidad, no adivinar el aparato.** `'PushManager' in window`
+   contesta la pregunta que importa y se actualiza sola; el `User-Agent` miente
+   en iPad y habría que mantenerlo.
+2. ⛔ **Una suscripción push pertenece a un navegador**, no a una quiniela ni del
+   todo a una persona. De ahí que la tabla sea de plataforma y que el `UNIQUE`
+   vaya sobre el endpoint solo.
+3. ⚠️ **En iPhone, sin manifiesto no hay notificaciones** por mucho que se añada
+   a la pantalla de inicio. Es una pieza fácil de no ver.
+4. ⭐ **404 y 410 son los ÚNICOS códigos que mandan borrar.** Tratar un 500 igual
+   perdería suscripciones vivas; tratar un 410 como error de red llenaría la
+   tabla de teléfonos muertos a los que se escribe para siempre.
+5. ⚠️ **Dos operadores casi iguales necesitan una prueba en el borde exacto.**
+   `>` y `>=` sólo difieren en un minuto al día, y ninguna prueba lo tocaba.
+6. **El permiso se pide dentro del clic**, nunca al cargar: pedirlo de golpe al
+   entrar es la forma más rápida de que digan que no, y algunos navegadores lo
+   bloquean para siempre si llega sin gesto.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Y esto no funciona hasta que Marco haga dos cosas:**
+
+1. **Correr `db/migraciones/013-notificaciones-push.sql`** en Neon con el rol
+   dueño. Es aditiva: crea una tabla y añade una columna, así que el orden con
+   el despliegue da igual.
+2. **Poner tres variables en Render** → `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+   y `VAPID_SUBJECT`. Están generadas y guardadas en el `.env` local, que no se
+   commitea. ⚠️ Sin ellas la pantalla dice «no están configuradas» y no ofrece
+   el botón — a propósito, para que el fallo se vea en vez de ser un botón que
+   no hace nada.
+
+**Y una cosa que mejoraría el resultado sin ser imprescindible:** el proyecto no
+tiene **ningún icono**, así que las notificaciones salen con el dibujo genérico
+del navegador. Con un PNG de 192×192 en `public/img/` y dos líneas en `sw.js` se
+verían bastante mejor.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

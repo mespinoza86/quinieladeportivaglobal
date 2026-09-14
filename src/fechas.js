@@ -84,4 +84,27 @@ function partidoYaInicio(partido, oficial = null, ahora = new Date()) {
   return fecha <= ahora;
 }
 
-module.exports = { extraerFechaApi, parseFechaPartidoCostaRica, partidoYaInicio };
+/**
+ * Una fecha de JavaScript, escrita como las guarda `partidos.api_date`.
+ *
+ * ⛔ Vivía privado dentro de `compartir.js` y se mudó aquí al aparecer el
+ * segundo consumidor (las notificaciones). Copiarlo habría sido tener dos
+ * veces la misma resta de seis horas, y la primera versión ya se escribió mal:
+ * daba formato en el huso del SERVIDOR, que en Render es UTC, así que la
+ * ventana se desplazaba seis horas sin dar ningún error (Entrada 086).
+ *
+ * Costa Rica es UTC−6 todo el año: no hay horario de verano que complique esto.
+ */
+function comoApiDate(fecha) {
+  const enCostaRica = new Date(fecha.getTime() - 6 * 60 * 60 * 1000);
+  const dos = n => String(n).padStart(2, '0');
+
+  return `${enCostaRica.getUTCFullYear()}`
+    + `-${dos(enCostaRica.getUTCMonth() + 1)}`
+    + `-${dos(enCostaRica.getUTCDate())}`
+    + ` ${dos(enCostaRica.getUTCHours())}:${dos(enCostaRica.getUTCMinutes())}`;
+}
+
+module.exports = {
+  extraerFechaApi, parseFechaPartidoCostaRica, partidoYaInicio, comoApiDate
+};

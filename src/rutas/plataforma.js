@@ -35,6 +35,8 @@ const cobros = require('../cobros');
 const pagosMod = require('../pagos');
 const jugadoresMod = require('../jugadores');
 const permisos = require('../permisos');
+const notificacionesMod = require('../notificaciones');
+const push = require('../push');
 
 /** De motivo de negocio a código HTTP. Un solo sitio donde mirarlo. */
 const CODIGOS = {
@@ -154,6 +156,62 @@ function sinQuiniela(app, { requireLogin }) {
       quiniela: { id: quiniela.id, nombre: quiniela.nombre },
       rol: membresia.rol
     });
+  });
+
+  /* ---------- Notificaciones al teléfono ---------- */
+
+  /*
+   * ⛔ Estas tres van SIN quiniela, y no es un descuido.
+   *
+   * Una suscripción push es un NAVEGADOR, no un jugador de una quiniela. La
+   * misma persona en cinco quinielas tiene UN teléfono: pedirle que active las
+   * notificaciones cinco veces guardaría cinco filas con el mismo endpoint, y
+   * al apagarlas en una seguiría recibiendo por las otras cuatro.
+   *
+   * A quién avisar se resuelve al avisar, cruzando con `membresias`.
+   */
+
+  /** Si se pueden activar aquí, y si esta cuenta ya las tiene. */
+  app.get('/api/notificaciones', requireLogin, async (req, res) => {
+    res.json({
+      /*
+       * ⚠️ `disponible: false` cuando faltan las claves VAPID. Sin esto la
+       * pantalla ofrecería un botón que no puede funcionar, y el fallo
+       * aparecería como «le di y no pasó nada».
+       */
+      disponible: push.hayClaves(),
+      clavePublica: push.clavePublica(),
+      telefonos: await notificacionesMod.cuantasTiene(req.session.usuarioId),
+      antelacionMinutos: notificacionesMod.ANTELACION_MINUTOS
+    });
+  });
+
+  /** Este navegador quiere recibir avisos. */
+  app.post('/api/notificaciones/suscribir', requireLogin, async (req, res) => {
+    const r = await notificacionesMod.suscribir(req.session.usuarioId, {
+      endpoint: req.body?.endpoint,
+      keys: req.body?.keys,
+      userAgent: req.get('user-agent') || ''
+    });
+
+    if (!r.ok) return res.status(400).json({ error: 'Suscripción incompleta.' });
+    res.status(201).json({ success: true });
+  });
+
+  /** Este navegador ya no. */
+  app.post('/api/notificaciones/desuscribir', requireLogin, async (req, res) => {
+    const endpoint = req.body?.endpoint;
+    if (!endpoint) return res.status(400).json({ error: 'Falta el endpoint.' });
+
+    /*
+     * ⚠️ Se borra por endpoint SIN comprobar de quién era, a propósito: si dos
+     * personas comparten el móvil, la que está delante tiene que poder apagar
+     * lo que suena en ese aparato. El endpoint sólo lo conoce ese navegador, y
+     * lo peor que puede pasar es dejar de recibir avisos que se piden otra vez
+     * con un botón.
+     */
+    await notificacionesMod.desuscribir(endpoint);
+    res.json({ success: true });
   });
 }
 

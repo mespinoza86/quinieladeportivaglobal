@@ -48,7 +48,7 @@
 
 const db = require('./db');
 const jugadoresMod = require('./jugadores');
-const { partidoYaInicio } = require('./fechas');
+const { partidoYaInicio, comoApiDate } = require('./fechas');
 
 /**
  * Cuántas horas hacia atrás se proponen partidos.
@@ -86,15 +86,6 @@ const VENTANA_HORAS = Number(process.env.COMPARTIR_VENTANA_HORAS || 12);
  * respuestas equivocadas **sin fallar**. Si algún día cambia el formato del
  * proveedor, hay que volver aquí.
  */
-function comoApiDate(fecha) {
-  const enCostaRica = new Date(fecha.getTime() - 6 * 60 * 60 * 1000);
-  const dos = n => String(n).padStart(2, '0');
-
-  return `${enCostaRica.getUTCFullYear()}`
-    + `-${dos(enCostaRica.getUTCMonth() + 1)}`
-    + `-${dos(enCostaRica.getUTCDate())}`
-    + ` ${dos(enCostaRica.getUTCHours())}:${dos(enCostaRica.getUTCMinutes())}`;
-}
 
 /**
  * Los partidos cuyos pronósticos están listos para salir, agrupados por hora de

@@ -35,15 +35,21 @@ const trivias = require('./trivias');
 const compartir = require('./compartir');
 const membresias = require('./membresias');
 const correo = require('./correo');
+const notificaciones = require('./notificaciones');
+const push = require('./push');
 const cerrojos = require('./cerrojos');
 
 const INTERVALO_CICLO_SYNC_MS = Number(process.env.SYNC_INTERVALO_MS || 60 * 1000);
 const INTERVALO_RESOLUCION_TRIVIAS_MS = 5 * 60 * 1000;
 const INTERVALO_AVISO_COMPARTIR_MS = Number(process.env.AVISO_INTERVALO_MS || 60 * 1000);
+const INTERVALO_NOTIFICACIONES_MS = Number(process.env.NOTIFICACION_INTERVALO_MS || 60 * 1000);
 const JOBS_HABILITADOS = process.env.JOBS_HABILITADOS !== 'false';
 
 const CERROJO_AVISO = 'aviso-de-compartir';
 const TTL_CERROJO_AVISO_MS = 2 * 60 * 1000;
+
+const CERROJO_NOTIFICACION = 'notificacion-push';
+const TTL_CERROJO_NOTIFICACION_MS = 2 * 60 * 1000;
 
 /** Un ciclo de sincronización, con el proveedor de verdad enchufado. */
 function unCiclo(opciones = {}) {
@@ -143,9 +149,46 @@ async function avisarDeCompartir({ ahora = new Date() } = {}) {
   }
 }
 
+let notificacionesLanzadas = 0;
+
+/**
+ * Avisa al teléfono de los partidos que arrancan en quince minutos.
+ *
+ * ⛔ CERROJO PROPIO, y por la misma razón que el del correo: una notificación
+ * **no es idempotente**. Si dos instancias corrieran esto a la vez, el mismo
+ * teléfono recibiría el aviso dos veces — y la marca `notificado_en` no lo
+ * evitaría, porque las dos leerían el partido sin marcar antes de que ninguna
+ * lo marcara.
+ *
+ * ⚠️ Y va en su propio reloj, no colgado del ciclo de sincronización: un ciclo
+ * abandonado por tiempo se llevaría el aviso con él, y el aviso no necesita
+ * salir a la red del proveedor para saber a qué hora empieza un partido.
+ */
+async function notificarDeTodas({ ahora = new Date() } = {}) {
+  /*
+   * Sin claves no hay nada que hacer, y se sale ANTES de tocar el cerrojo: no
+   * tiene sentido bloquear a las demás instancias para no hacer nada.
+   */
+  if (!push.hayClaves()) return { omitido: true, motivo: 'sin claves VAPID' };
+
+  const titular = `${cerrojos.ID_INSTANCIA}#push${++notificacionesLanzadas}`;
+
+  if (!(await cerrojos.tomar(CERROJO_NOTIFICACION, TTL_CERROJO_NOTIFICACION_MS, ahora, titular))) {
+    return { omitido: true, motivo: 'cerrojo en poder de otra instancia' };
+  }
+
+  try {
+    return await notificaciones.notificarDeTodas({ ahora, enviar: push.enviar });
+  } finally {
+    await cerrojos.soltar(CERROJO_NOTIFICACION, titular).catch(error => {
+      console.error('Error soltando el cerrojo de notificaciones:', error.message);
+    });
+  }
+}
+
 let temporizadores = [];
 
-/** Arranca los dos relojes. No hace nada si los trabajos están apagados. */
+/** Arranca los cuatro relojes. No hace nada si los trabajos están apagados. */
 function arrancar() {
   if (!JOBS_HABILITADOS) {
     console.log('[planificador] trabajos periódicos apagados (JOBS_HABILITADOS=false)');
@@ -176,7 +219,19 @@ function arrancar() {
       avisarDeCompartir().catch(error => {
         console.error('Error avisando de lo que hay que compartir:', error.message);
       });
-    }, INTERVALO_AVISO_COMPARTIR_MS)
+    }, INTERVALO_AVISO_COMPARTIR_MS),
+
+    /*
+     * ⚠️ El cuarto, también con reloj y cerrojo propios. Avisar al teléfono no
+     * depende del proveedor ni del correo, y compartir su suerte sería regalar
+     * una forma de que se pierda: si el ciclo de sincronización se abandona por
+     * tiempo, el partido arranca igual.
+     */
+    setInterval(() => {
+      notificarDeTodas().catch(error => {
+        console.error('Error notificando los partidos que arrancan:', error.message);
+      });
+    }, INTERVALO_NOTIFICACIONES_MS)
   ];
 
   // Un temporizador pendiente no debe impedir que el proceso termine.
@@ -193,6 +248,8 @@ function parar() {
 module.exports = {
   INTERVALO_CICLO_SYNC_MS, INTERVALO_RESOLUCION_TRIVIAS_MS,
   INTERVALO_AVISO_COMPARTIR_MS, CERROJO_AVISO, TTL_CERROJO_AVISO_MS,
+  INTERVALO_NOTIFICACIONES_MS, CERROJO_NOTIFICACION, TTL_CERROJO_NOTIFICACION_MS,
   JOBS_HABILITADOS,
-  unCiclo, resolverTriviasDeTodas, avisarDeCompartir, arrancar, parar
+  unCiclo, resolverTriviasDeTodas, avisarDeCompartir, notificarDeTodas,
+  arrancar, parar
 };

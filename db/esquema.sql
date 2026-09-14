@@ -187,6 +187,37 @@ CREATE TABLE job_locks (
  *
  * El indice sobre expire lo usa la limpieza periodica de sesiones caducadas.
  */
+/*
+ * Los navegadores que aceptaron recibir notificaciones (migracion 013).
+ *
+ * ⛔ Es tabla de PLATAFORMA y NO lleva RLS, igual que `usuarios` y
+ * `membresias`: una suscripcion push es un NAVEGADOR, no un jugador de una
+ * quiniela. La misma persona en cinco quinielas tiene UN telefono; colgarla de
+ * la quiniela guardaria cinco filas con el mismo endpoint y al apagarlas en una
+ * seguiria recibiendo por las otras cuatro.
+ *
+ * A quien avisar sale del cruce con `membresias` al momento de avisar.
+ */
+CREATE TABLE suscripciones_push (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id   uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  endpoint     text NOT NULL,
+  p256dh       text NOT NULL,
+  auth         text NOT NULL,
+  user_agent   text NOT NULL DEFAULT '',
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  usada_en     timestamptz
+);
+
+/*
+ * ⛔ UNIQUE sobre el endpoint SOLO, no sobre (usuario, endpoint): el endpoint
+ * pertenece a un navegador. Pulsar «activar» dos veces mandaria DOS avisos del
+ * mismo partido al mismo telefono, y si otra persona entra en ese movil la
+ * suscripcion tiene que cambiar de dueño, no duplicarse.
+ */
+CREATE UNIQUE INDEX suscripciones_push_endpoint ON suscripciones_push (endpoint);
+CREATE INDEX suscripciones_push_usuario ON suscripciones_push (usuario_id);
+
 CREATE TABLE sesiones (
   sid    text PRIMARY KEY,
   sess   json NOT NULL,
@@ -328,6 +359,12 @@ CREATE TABLE partidos (
    * compartido: sin ella el aviso se repetiria cada minuto hasta compartir.
    */
   avisado_en     timestamptz,
+  /*
+   * Cuando se NOTIFICO al telefono de que faltaban 15 minutos (migracion 013).
+   * NULL = todavia no. Tercera marca y por el mismo motivo que las dos de
+   * arriba: el reloj corre cada minuto y una notificacion no es idempotente.
+   */
+  notificado_en  timestamptz,
   /*
    * DEFERRABLE porque renumerar hace falta: al borrar el partido de la posicion
    * 2, los de despues bajan una. Si la unicidad se comprobara fila a fila, la
