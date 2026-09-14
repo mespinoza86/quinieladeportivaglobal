@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 3 de septiembre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 14 de septiembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -22,13 +22,13 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 558/558
-npm run test:e2e            # 132/132, ~7 min
+npm test                    # 584/584
+npm run test:e2e            # 142/142, ~6 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
 la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
-`src/servidor.js`, `src/rutas/` y 28 módulos de `src/`.
+`src/servidor.js`, `src/rutas/` y 29 módulos de `src/`.
 
 ✅ **Fundida en `main` el 22 de agosto**, y el esquema de Neon está al día:
 `npm start` conecta, arranca y responde. Se comprobó de punta a punta contra la
@@ -53,15 +53,17 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **558**, ~115 s |
-| Pruebas de navegador | **132**, ~7 min, contra el servidor de verdad |
-| Rutas | **104**, todas sobre PostgreSQL |
+| Pruebas rápidas | **584**, ~115 s |
+| Pruebas de navegador | **142**, ~6 min, contra el servidor de verdad |
+| Rutas | **112**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
-| `src/` | 28 módulos + `src/rutas/` (6) |
+| `src/` | 29 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ⛔ **La 011 está SIN CORRER.** Las 001 a 010, hechas |
-| Producción | Desplegada y en uso, con cuentas y quinielas de verdad |
+| Base en Neon | ✅ **Las 12 migraciones corridas.** La 011 y la 012, el 13 y 14 de septiembre |
+| Producción | ✅ Al día en `bbac88c`. En uso, con cuentas y quinielas de verdad |
+| Tráfico a Neon | ✅ **0,24 GB/mes** de 5, medido. Era 20,4 GB en septiembre |
+| Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
 
@@ -468,33 +470,116 @@ escribirla (080).
   juntando dinero desde la primera jornada**, que es exactamente lo que se
   quería: nadie pagó antes por un acumulado que no existía.
 
+### Lo que se hizo del 1 al 14 de septiembre — el correo, la caja, los permisos y el tráfico
+
+Nueve entradas de bitácora (085 a 093). Cuatro trabajos grandes y dos sustos.
+
+| Qué | Entradas | Dónde quedó |
+|---|---|---|
+| **Enviar al grupo, semiautomático** | 085 | Marco descartó la API de WhatsApp: *«no quiero arriesgar mi número»*. La pantalla prepara el mensaje; él lo pega |
+| **Aviso por correo al pitido inicial** | 086 | ✅ Encendido el 7 de septiembre. 39 avisos salidos, y confirmados por él |
+| **La caja de cobros** | 091 | ✅ Desplegada. Migración 011. Contesta «cuánto dinero debe haber en la cuenta» |
+| **Niveles de administrador** | 092 | ✅ Desplegado. Migración 012. Cuatro escalones, 50 rutas, una sola tabla de permisos |
+| **La fuga de tráfico a Neon** | 090, 093 | ✅ De 20,4 GB/mes a 0,24. Dos causas distintas, once días de diferencia |
+| Documentación en `docs/` | 089 | 8 ficheros HTML, **ignorados por git**: el repositorio es público |
+
+#### Las dos fugas de Neon, que no eran la misma
+
+Neon avisó de que se había gastado el 100% de los 5 GB de transferencia. La
+causa se buscó **midiendo bytes en el socket**, no leyendo código:
+
+1. **Entrada 090** — `SELECT *` sobre `fixtures` cada minuto, para mirar dos
+   campos, arrastrando los JSON crudos del proveedor. **539 KB por ciclo.**
+2. **Entrada 093** — el censo leía **todos los partidos que existieran**, cada
+   minuto, para acabar descartándolos. No costaba tanto hoy, pero **crecía con el
+   calendario**: doce jugadores jugando dos por semana llegaban a 13 GB/mes al
+   cabo de un año sin hacer nada distinto.
+
+```
+ciclo de sincronización:  539,2 KB  →  11,3 KB  →  5,77 KB
+al mes:                    22,2 GB  →  0,47 GB  →   0,24 GB
+```
+
+⭐ La segunda sólo apareció porque Marco preguntó **cuántos jugadores aguantaría**
+jugando dos quinielas por semana. Al modelarlo salió que la pregunta estaba mal
+planteada: el límite no lo ponían los jugadores, lo ponía el tiempo.
+
+#### La capacidad, ya medida
+
+Con el censo arreglado, y dos jornadas por semana:
+
+| Temporada | Jugadores que caben en 5 GB |
+|---|---|
+| 6 meses | ~80 |
+| 12 meses | ~57 |
+
+⚠️ El coste por jugador es **cuadrático**: cada uno carga una tabla que contiene
+a todos los demás. Pasar de 12 a 24 no duplica el tráfico, lo cuadruplica.
+
+⭐ Y hay una salida que no cuesta código: **un torneo, una quiniela**. La tabla
+general sólo lee las jornadas de SU quiniela, así que empezar una nueva cada
+torneo reinicia el coste y lo deja plano. Con eso, ~60 jugadores caben sobrados.
+
+El disco **no es un límite**: 10 MB de 500, y con 60 jugadores serían 52 MB al
+año. Llenarlo llevaría más de diez años.
+
+#### Dos fallos que sólo vio el navegador
+
+Los dos del 13 de septiembre, y los dos de la misma familia: **una regla del
+proyecto pisando en silencio lo que hace el navegador por defecto**.
+
+1. `elemento.hidden = true` **no escondía nada**, porque `.action-card { display:
+   flex }` gana a la regla `[hidden]` del navegador. El menú de administración
+   enseñaba tarjetas que al pulsarlas expulsaban. Arreglado en general con
+   `[hidden] { display: none !important }`.
+2. El selector de rol se veía **blanco sobre blanco**: llevaba una clase de botón
+   que fija un color pensado para fondo oscuro. Lo vio Marco antes que ninguna
+   prueba.
+
+⛔ **Ninguna de las 584 pruebas de `npm test` ejecuta código de navegador.** Los
+dos fallos convivían con la suite entera en verde. Los cogió Playwright.
+
+#### Tres veces que una sonda mintió
+
+Merece estar junto, porque es el patrón que más trabajo costó en estas dos
+semanas:
+
+| Qué se preguntó | Qué respondió | Por qué mentía |
+|---|---|---|
+| ¿Se ha enviado algún aviso? | «0 partidos avisados» | `partidos` lleva RLS y se consultó **sin contexto**: cero filas, sin error. Eran 39 |
+| ¿Cuánto hay en la caja? | `₡NaN` | `entrado` y `salido` son **objetos** con `.total`, no números |
+| ¿Cuántos partidos hay por jornada? | `cobrado: undefined` | Nombre de campo supuesto en vez de mirado |
+
+⭐ Las tres se destaparon igual: **el resultado era raro y se fue a mirar en vez
+de contarlo**. La primera llevaba once días escrita como verdad en este mismo
+documento.
+
+
 ### 🌅 Lo siguiente
 
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 13 de septiembre de 2026
+#### 📍 Dónde quedó todo el 14 de septiembre de 2026
 
 | | |
 |---|---|
-| Último commit | Entrada 090: el `SELECT *` que costaba 22 GB al mes |
-| Árbol | ✅ Limpio, y `main` al día con `origin/main` |
-| Base de datos | ⛔ **La migración 011 está SIN CORRER** (Entrada 091). Las diez anteriores, hechas |
-| CI | ✅ En verde desde `38bdeb1`. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
-| Producción | ⚠️ **Falta desplegar la 090**, que corta 22 GB/mes de tráfico a Neon |
-| Pruebas | 558 rápidas + 132 de navegador, todas en verde |
-| ⛔ Antes que nada | **Correr la migración 011 y desplegar** (091): la caja de cobros. La 090 ya está desplegada |
-| Y luego, en Neon | Mirar si el contador de transferencia baja de golpe: es lo único que confirma que era eso |
-| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Desbloqueado y **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 al principio de «Lo siguiente» |
-| ⚠️ Y algo suyo | **Encender el aviso por correo** en Configurar quiniela → Avisos. Nace apagado: hoy no le llega nada a nadie (086) |
+| Último commit | `bbac88c` — Entrada 093: el censo que releía el historial entero |
+| Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
+| Base de datos | ✅ **Las 12 migraciones corridas.** La 011 y la 012 las corrió Marco, comprobadas contra Neon |
+| CI | ✅ En verde. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
+| Producción | ✅ **Al día.** Queda que Marco jale `bbac88c` en Render |
+| Pruebas | **584** rápidas + **142** de navegador, todas en verde |
+| Tráfico a Neon | ✅ **0,24 GB/mes** de 5, medido contra producción. En septiembre eran 20,4 |
+| ⭐ Lo siguiente | **Notificaciones al teléfono 15 min antes del partido** (088). Sigue **sin empezar**. Hacen falta tres decisiones de Marco: ver 🛑 más abajo |
 
-⚠️ **Lo único a medias es desplegar la 090**, y no toca la base: es una consulta
-que deja de pedir columnas que nadie miraba.
+✅ **No queda nada a medias.** Los tres trabajos del 13 y 14 —niveles de
+administrador, la fuga de Neon y el censo— están cerrados, probados, documentados
+y empujados.
 
-Y el orden salió bien esta vez, que es lo que hay que repetir: **la migración
-010 se corrió ANTES de empujar**, así que el código llegó a una base que ya
-tenía la columna. Al revés, la pantalla de quinielas habría dejado de cargar —y
-es la primera que ve cualquiera al entrar—.
+⚠️ **Lo único que conviene vigilar** es el domingo siguiente al despliegue de
+`bbac88c`: que los marcadores oficiales sigan llegando solos, sin tocar
+«sincronizar esta jornada». Es lo único que ese cambio podría haber roto.
 
 **Cómo se comprobó el despliegue**, que es la forma que funciona:
 
@@ -554,13 +639,13 @@ correo que hay que encender.
 
 ### 🛑 SI MARCO VUELVE Y PREGUNTA «¿DÓNDE ESTAMOS?», ESTO ES LA RESPUESTA
 
-> Escrito el **12 de septiembre de 2026**, cuando Marco tuvo que salir. Está
-> aquí, arriba del todo, porque es exactamente lo que pidió que se recordara:
-> dónde estamos, qué se propone, y qué hace falta de él.
+> Escrito el 12 de septiembre de 2026 y **puesto al día el 14**. Está aquí,
+> arriba del todo, porque es exactamente lo que pidió que se recordara: dónde
+> estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, las diez migraciones corridas, 543 + 132 pruebas en verde, el árbol
-limpio y `main` al día con `origin`. **No hay ninguna tarea empezada sin
+funcionando, **las doce migraciones corridas**, **584 + 142** pruebas en verde,
+el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea empezada sin
 terminar.**
 
 **Lo que se propone hacer a continuación**, y está sin empezar —ni una línea de
@@ -578,13 +663,16 @@ las tres tienen recomendación. Con un «dale» a las tres, se empieza:
 | ¿Cuándo? | **15 minutos fijos** | Configurable es una casilla más para algo que ya nombró él |
 | ¿Y si la ventana ya pasó? | **Callarse** | «Arranca en 15 minutos» cuando lleva media hora jugándose es peor que nada |
 
-⚠️ **Y una cosa que le toca a él, independiente de lo anterior: ENCENDER EL AVISO
-POR CORREO.** Está en Configurar quiniela → Avisos. Se construyó en la Entrada
-086, está desplegado desde el 3 de septiembre y **nace apagado a propósito**, así
-que ahora mismo **no le llega ningún correo a nadie**. Es lo único que separa esa
-función de estar funcionando de verdad — y además le sirve para ver si con el
-correo ya le basta antes de meterse en las notificaciones, que son bastante más
-grandes.
+✅ **El aviso por correo YA ESTÁ FUNCIONANDO, y esto estuvo mal escrito aquí
+durante once días.** Marco lo encendió el 7 de septiembre y han salido 39 avisos;
+el 14 lo confirmó: «los correos me llegan a la hora que debe ser».
+
+⛔ Y merece quedar anotado **cómo se llegó a afirmar lo contrario**: una sonda
+contó `partidos WHERE avisado_en IS NOT NULL` con `db.consulta`, **sin contexto
+de quiniela**. `partidos` lleva RLS: devolvió cero filas **sin dar ningún error**,
+y ese cero se leyó como «nunca se ha enviado nada». Con el contexto puesto eran
+39. Es la trampa que este documento lleva avisando desde la Entrada 053, y aun
+así se cayó en ella.
 
 ---
 
@@ -952,11 +1040,11 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 508 pruebas rápidas, ~80 s
+npm test                   # las 584 pruebas rápidas, ~115 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 120 de navegador (~5,4 min, escritorio y móvil)
+npm run test:e2e           # las 142 de navegador (~6 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -995,12 +1083,51 @@ detecta cualquiera de las dos cosas mal, en vez de dar un verde sin valor.
 
 ## 🎯 LO QUE QUEDA PENDIENTE
 
-**Puesto al día el 22 de agosto de 2026**, al cerrar la migración. Sigue
-dividido en dos mundos que conviene no mezclar: **la migración** (§A), que ya
-está hecha y sólo deja un paso manual, y **lo que ya estaba pendiente antes**
-(§B), que no ha cambiado en toda la semana.
+**Puesto al día el 14 de septiembre de 2026.** Nada de lo de abajo está
+empezado: no hay trabajo a medias en el repositorio.
+
+### 📋 La lista corta, por orden de lo que rinde
+
+| # | Qué | Por qué importa | Tamaño |
+|---|---|---|---|
+| 1 | ⭐ **Notificaciones al teléfono, 15 min antes** | Lo que Marco dijo que **más quiere** (4 sept). Desbloqueado desde la 088; faltan tres decisiones suyas, todas con recomendación | Grande |
+| 2 | ⚠️ **`Promise.all` con varias `c.query` sobre el mismo cliente** | 5 sitios de `src/pagos.js` (134, 193, 374, 529, 695). Hoy NO rompe nada —`pg` las encola— pero está obsoleto y desaparece en `pg@9`. Los cinco son código de dinero | Pequeño |
+| 3 | **Que el ranking no relea la temporada entera en cada carga** | Es el siguiente techo de tráfico: en el mes 12 una carga cuesta 3,82 MB frente a 0,45 en el mes 1. Sólo hace falta para temporadas largas con mucha gente | Mediano |
+| 4 | **Cierre por reloj, no por el proveedor** | Marco lo pidió el 3 sept: *«si dice que cierra a las 3pm, que cierre a las 3pm»*. Medido en la 086, **no implementado** | Mediano |
+| 5 | `generar_reporte.html` tira de cdnjs | Única dependencia externa del frontend | Pequeño |
+| 6 | Paginar el libro de abonos | Crece sin tope; hoy son 32 filas | Pequeño |
+| 7 | Trivias de punta a punta | Sin prueba de navegador que las recorra enteras | Mediano |
+
+### ✅ Lo que se puede tachar, y no estaba tachado
+
+Todo esto estuvo en esta lista y **ya está hecho**:
+
+- **Correr las migraciones 011 y 012** — las corrió Marco el 13 y el 14, y se
+  comprobaron contra Neon.
+- **Encender el aviso por correo** — llevaba encendido desde el **7 de
+  septiembre**; este documento decía lo contrario durante once días (ver el
+  recuadro 🛑).
+- **Poner `premiosRegistradosDesde` en 6** — ⛔ **ya no hace falta, y lo que hizo
+  Marco es mejor**: registró las tres entregas de verdad (Jornada01, 2 y 3, a
+  ₡11.000 cada una) en vez de darlas por supuestas con el corte. Un dato real
+  vale más que una suposición. **Dejarlo sin poner.**
+- **Cortar el tráfico a Neon** — dos veces, entradas 090 y 093.
+
+### 💡 Y una que no es código
+
+⭐ **Un torneo, una quiniela.** La tabla general sólo lee las jornadas de SU
+quiniela, así que empezar una nueva cada torneo reinicia el coste de tráfico y lo
+deja plano. Es lo que vuelve innecesario el punto 3 de arriba, y ya es como Marco
+juega. Sólo hay que no caer en la tentación de arrastrar una quiniela eterna.
+
+### 🔍 Lo que conviene mirar en Neon de vez en cuando
+
+**Proyecto → Settings → Usage**, métrica **«Data transfer»**. Lo medido desde
+aquí dice 0,24 GB/mes de 5; ese panel es lo único que lo confirma de punta a
+punta, porque mide lo que Neon factura y no lo que se ve desde el cliente.
 
 ---
+
 
 ## A. ✅ La migración a PostgreSQL — TERMINADA Y FUNDIDA
 
@@ -1464,50 +1591,51 @@ migraciones**), `public/` (35 pantallas), `private/` (CSS y JS servidos),
 
 ### 2.2 `src/` — la aplicación
 
-**27 módulos y 6 archivos de rutas**, medidos el 1 de septiembre de 2026. La
+**29 módulos y 6 archivos de rutas**, remedidos con guion el 14 de septiembre de 2026. La
 regla que los ordena: `src/db.js` es el **único** sitio que abre transacciones y
 fija el contexto de quiniela; todo lo demás recibe la conexión ya preparada.
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `servidor.js` | 879 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
+| `servidor.js` | 909 | Monta Express: sesión, guardias, limitadores y autenticación. Exporta `crearApp({pool, secretoSesion})` |
+| `pagos.js` | 719 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
 | `superadmin.js` | 715 | El superadministrador **del sistema, no de una quiniela**: la lista de correos con poder, las ataduras de una cuenta y sus cuatro acciones (Entrada 069) |
-| `pagos.js` | 610 | Los abonos y las cuentas. ⚠️ **Ni edita ni borra**: se corrige con asiento inverso |
-| `cobros.js` | 542 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
+| `cobros.js` | 677 | **La aritmética del dinero, sin efectos.** Las dos cuentas, los dos botes, el saldo y la estimación |
 | `jornadas.js` | 540 | Jornadas, partidos, **el orden por hora** y lo que costó cada una |
-| `sincronizador.js` | 486 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
+| `sincronizador.js` | 527 | Ciclo de sincronización con el proveedor, con ventana por estado del partido |
 | `eventos.js` | 469 | La lectura del JSON del proveedor, en un solo sitio |
 | `trivias.js` | 459 | Trivias: apertura, cierre y respuestas |
 | `compartir.js` | 416 | Qué está listo para salir al grupo, agrupado por hora de inicio, las dos marcas —compartido y avisado— y el barrido del aviso (Entradas 085 y 086). **No da formato al texto**: eso es `private/js/compartir.js` |
 | `oficiales.js` | 373 | Resultados oficiales, con `SAVEPOINT` por partido |
 | `ranking.js` | 349 | Clasificación y **las reglas de congelado** de una jornada cerrada |
 | `pronosticos.js` | 340 | Pronósticos, y la tabla comparativa en **una sola consulta** |
-| `membresias.js` | 289 | Quién pertenece a qué quiniela y con qué papel |
+| `membresias.js` | 328 | Quién pertenece a qué quiniela y con qué papel |
+| `fixtures.js` | 289 | Caché de partidos del proveedor, compartida entre quinielas |
 | `ligas.js` | 281 | Rango de búsqueda, competiciones bloqueadas, agrupado por país y **ligas favoritas** |
 | `db.js` | 267 | **El único que abre transacciones** y fija `app.quiniela_id`. Expone el pool crudo con `fuenteActual()` |
 | `correo.js` | 262 | Tres transportes —`consola`, `brevo`, `resend`—, plantillas y bandeja en memoria. Tres correos: confirmar, restablecer y el aviso de compartir |
-| `fixtures.js` | 241 | Caché de partidos del proveedor, compartida entre quinielas |
+| `quinielas.js` | 224 | Alta, archivado y configuración (puntuación, cobros y **ligas favoritas**) |
 | `respuestas-trivia.js` | 223 | Respuestas de los participantes |
 | `proveedor.js` | 221 | Cliente de APIFootball, con tiempo de espera propio |
 | `puntuacion.js` | 203 | **Motor de puntos, sin efectos.** Aritmética idéntica a la de Mongo |
 | `planificador.js` | 198 | **Tres relojes**: el sincronizador (1 min), la resolución de trivias (5 min) y el aviso de compartir (1 min). ⚠️ El del aviso lleva **cerrojo propio**: un correo no es idempotente y dos instancias mandarían dos (Entrada 086) |
 | `usuarios.js` | 194 | Cuentas, contraseñas y cierre de sesiones |
-| `quinielas.js` | 193 | Alta, archivado y configuración (puntuación, cobros y **ligas favoritas**) |
+| `permisos.js` | 191 | **Quién puede qué, en una sola tabla.** La escalera de cinco roles, las 9 capacidades y el mapa de pantallas. Lo lee la guardia del servidor Y la pantalla, para que no puedan separarse (Entrada 092) |
 | `validacion.js` | 161 | Validadores de dominio: marcadores, nombres, partidos, índices |
 | `jugadores.js` | 154 | Participantes |
 | `tokens.js` | 101 | Tokens de un solo uso, **guardados sólo en SHA-256** |
-| `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 | `cerrojos.js` | 87 | Cerrojos de consejo para que dos instancias no hagan el mismo trabajo |
+| `fechas.js` | 87 | `parseFechaPartidoCostaRica`. Costa Rica es UTC−6 todo el año |
 
-**`src/rutas/` — 95 rutas, repartidas por tema:**
+**`src/rutas/` — 97 rutas, repartidas por tema** (más las 15 de `servidor.js`, abajo):
 
 | Archivo | Líneas | Rutas |
 |---|---:|---|
-| `admin.js` | 636 | 24 — administración, sincronizador, **cobros** y **compartir al grupo** |
-| `puntuacion.js` | 398 | 10 — resultados, totales, clasificación por jornada |
-| `plataforma.js` | 387 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
+| `admin.js` | 682 | 26 — administración, sincronizador, **cobros** (con la caja) y **compartir al grupo** |
+| `puntuacion.js` | 404 | 10 — resultados, totales, clasificación por jornada |
+| `plataforma.js` | 457 | 20 — lo de fuera de una quiniela. ⚠️ Partido en `sinQuiniela`/`conQuiniela` **porque el orden importa** |
 | `dominio.js` | 334 | 16 — jornadas, partidos, pronósticos |
-| `trivias.js` | 235 | 14 — trivias y sus respuestas |
+| `trivias.js` | 241 | 14 — trivias y sus respuestas |
 | `superadmin.js` | 181 | 11 — cuentas de todo el sistema. ⚠️ Se montan **antes** del guardia de quiniela: no dependen de tener una seleccionada |
 
 ⚠️ **Y `servidor.js` registra otras 15 por su cuenta**: las dos sondas, registro,
@@ -1531,7 +1659,7 @@ grep -hoE "app\.(get|post|put|patch|delete)\(" src/rutas/*.js | wc -l
 
 | Archivo | Líneas | Rol |
 |---|---:|---|
-| `esquema.sql` | 538 | **19 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
+| `esquema.sql` | 579 | **22 tablas** con seguridad por fila (RLS) activada y forzada. Es lo que se pega en el editor de Neon |
 | `poner-al-dia.sql` | 158 | Recrea el esquema con el rol dueño. ⚠️ **Se niega a correr si hay datos**, y ese seguro ya destapó un fallo real (Entrada 055). **Desde que hay datos en Neon ya no sirve**: los cambios van por `migraciones/` |
 
 **`db/migraciones/` — los cambios de esquema, uno por archivo numerado.** Nació
@@ -1544,7 +1672,7 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 3. **La misma verdad que `esquema.sql`.** Si los dos se separan, una
    instalación nueva y una al día dejan de ser la misma cosa.
 
-✅ **Son diez, y las diez están corridas y verificadas contra Neon.**
+✅ **Son doce, y las doce están corridas y verificadas contra Neon.**
 
 | Archivo | Líneas | Qué trae | Entrada |
 |---|---:|---|---|
@@ -1558,6 +1686,8 @@ delante. Sus tres reglas están escritas en la cabecera de la primera:
 | `008-compartir-pronosticos.sql` | 104 | `partidos.compartido_en`: cuándo salieron al grupo los pronósticos de ese partido | 085 |
 | `009-aviso-de-compartir.sql` | 112 | `partidos.avisado_en`: la memoria del AVISO, que no es la de haber compartido. Sin ella el correo se repetiría cada minuto | 086 |
 | `010-ultimo-acceso.sql` | 105 | `membresias.ultimo_acceso`: cuándo entraste por última vez a cada quiniela. **No es `updated_at`**, que dice cuándo cambió la membresía | 089 |
+| `011-entregas-de-premios.sql` | 141 | `entregas_acumulado` → **`entregas`**, con `concepto` y `jornada_id`. ⚠️ Renombra: el código desplegado antes de correrla deja los cobros sin cargar | 091 |
+| `012-niveles-de-administrador.sql` | 42 | Amplía el `CHECK` de `membresias.rol` con `admin_jornadas` y `admin_lector`. ⭐ **No mueve ninguna fila**, así que el orden con el despliegue da igual | 092 |
 
 ⛔ **Después de cada migración hay que preguntarle a la base qué permisos
 quedaron**, y no sólo en la tabla que se acaba de tocar: la 003 nació de
@@ -1571,7 +1701,7 @@ consulta está en «Lo siguiente».
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 
-### 2.5 `test/` — 508 pruebas rápidas y 120 de navegador
+### 2.5 `test/` — 584 pruebas rápidas y 142 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
