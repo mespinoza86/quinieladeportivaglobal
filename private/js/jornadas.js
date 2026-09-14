@@ -518,7 +518,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 apiFixtureId: partido.apiFixtureId || '',
                 apiLeagueId: partido.apiLeagueId || '',
                 apiDate: partido.fecha || '',
-                apiStatus: partido.estado || ''
+                apiStatus: partido.estado || '',
+                apiRound: partido.ronda || ''
             });
 
             agregados += 1;

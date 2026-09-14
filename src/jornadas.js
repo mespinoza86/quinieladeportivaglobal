@@ -54,7 +54,8 @@ function partidoPublico(fila) {
     apiFixtureId: fila.api_fixture_id,
     apiLeagueId: fila.api_league_id,
     apiDate: fila.api_date,
-    apiStatus: fila.api_status
+    apiStatus: fila.api_status,
+    apiRound: fila.api_round
   };
 }
 
@@ -65,7 +66,12 @@ function valoresDePartido(p) {
     p.logoEquipo1 ?? null, p.logoEquipo2 ?? null,
     Boolean(p.comodin),
     p.apiFixtureId ?? null, p.apiLeagueId ?? null,
-    p.apiDate ?? null, p.apiStatus ?? null
+    p.apiDate ?? null, p.apiStatus ?? null,
+    /*
+     * ⚠️ `?? ''` y no `?? null`: la columna es NOT NULL. Un partido puesto a
+     * mano no trae ronda, y el vacío significa «no se sabe», que es cierto.
+     */
+    p.apiRound ?? ''
   ];
 }
 
@@ -121,7 +127,8 @@ async function listar(quinielaId) {
                    'logoEquipo1', p.logo_equipo1, 'logoEquipo2', p.logo_equipo2,
                    'comodin', p.comodin,
                    'apiFixtureId', p.api_fixture_id, 'apiLeagueId', p.api_league_id,
-                   'apiDate', p.api_date, 'apiStatus', p.api_status
+                   'apiDate', p.api_date, 'apiStatus', p.api_status,
+                   'apiRound', p.api_round
                  ) ORDER BY p.orden
                ) FILTER (WHERE p.id IS NOT NULL),
                '[]'
@@ -308,15 +315,17 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
           await c.query(
             `UPDATE partidos SET orden=$2, equipo1=$3, equipo2=$4,
                     logo_equipo1=$5, logo_equipo2=$6, comodin=$7,
-                    api_fixture_id=$8, api_league_id=$9, api_date=$10, api_status=$11
+                    api_fixture_id=$8, api_league_id=$9, api_date=$10, api_status=$11,
+                    api_round=$12
               WHERE id = $1`,
             [fila.id, i, ...valores]);
         } else {
           await c.query(
             `INSERT INTO partidos (quiniela_id, jornada_id, orden, equipo1, equipo2,
                                    logo_equipo1, logo_equipo2, comodin,
-                                   api_fixture_id, api_league_id, api_date, api_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                                   api_fixture_id, api_league_id, api_date, api_status,
+                                   api_round)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [quinielaId, j.id, i, ...valores]);
         }
       }
@@ -353,15 +362,17 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
 
           await c.query(
             `UPDATE partidos SET equipo1=$2, equipo2=$3, logo_equipo1=$4, logo_equipo2=$5,
-                    comodin=$6, api_fixture_id=$7, api_league_id=$8, api_date=$9, api_status=$10
+                    comodin=$6, api_fixture_id=$7, api_league_id=$8, api_date=$9, api_status=$10,
+                    api_round=$11
               WHERE id = $1`,
             [existentes[i].id, ...valores]);
         } else {
           await c.query(
             `INSERT INTO partidos (quiniela_id, jornada_id, orden, equipo1, equipo2,
                                    logo_equipo1, logo_equipo2, comodin,
-                                   api_fixture_id, api_league_id, api_date, api_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                                   api_fixture_id, api_league_id, api_date, api_status,
+                                   api_round)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [quinielaId, j.id, i, ...valores]);
         }
       }
@@ -414,8 +425,9 @@ async function agregarPartido(quinielaId, nombre, partido, maximo) {
     await c.query(
       `INSERT INTO partidos (quiniela_id, jornada_id, orden, equipo1, equipo2,
                              logo_equipo1, logo_equipo2, comodin,
-                             api_fixture_id, api_league_id, api_date, api_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                             api_fixture_id, api_league_id, api_date, api_status,
+                             api_round)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [quinielaId, jornadaId, n, ...valoresDePartido(partido)]);
 
     return { ok: true };

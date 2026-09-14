@@ -2486,3 +2486,61 @@ test('⛔ toda pantalla que llame a rutas de solo-administrador esta en PAGINAS_
   assert.deepEqual(faltan, [],
     'estas pantallas llaman a rutas de administracion y se sirven a cualquiera con sesion');
 });
+
+test('⛔ toda consulta de partidos lista tantas columnas como valores', () => {
+  /*
+   * Las columnas de `partidos` están escritas a mano en SIETE sitios de
+   * `src/jornadas.js`: tres `INSERT`, dos `UPDATE`, el `json_build_object` y
+   * `valoresDePartido`. Añadir una columna obliga a tocarlos todos.
+   *
+   * ⛔ Y al añadir `api_round` (migración 015) se escapó UNO: el tercer INSERT
+   * tenía otra indentación y una sustitución de «exactamente dos apariciones»
+   * lo dio por bueno. El fallo no fue de sintaxis ni de tipos —se veía
+   * correcto— sino un «bind message supplies 13 parameters, but prepared
+   * statement requires 12» en tiempo de ejecución.
+   *
+   * Esto lo caza sin tener que acordarse: cuenta las columnas entre paréntesis
+   * y los `$n` del VALUES, y exige que coincidan.
+   */
+  const codigo = quitarComentarios(leer(path.join('src', 'jornadas.js')));
+
+  const inserts = [...codigo.matchAll(
+    /INSERT INTO partidos\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)/g)];
+
+  /*
+   * ⚠️ Control positivo. Si la extracción dejara de encontrar los INSERT, esto
+   * pasaría sin comprobar nada — la forma exacta en que un centinela deja de
+   * servir sin avisar (Entrada 072).
+   */
+  assert.ok(inserts.length >= 3,
+    `se esperaban al menos 3 INSERT de partidos, se encontraron ${inserts.length}`);
+
+  for (const [, columnas, valores] of inserts) {
+    const cuantasColumnas = columnas.split(',').filter(c => c.trim()).length;
+    const cuantosValores = valores.split(',').filter(v => v.trim()).length;
+
+    assert.equal(cuantosValores, cuantasColumnas,
+      `un INSERT de partidos lista ${cuantasColumnas} columnas y ${cuantosValores} valores:\n  ${columnas.replace(/\s+/g, ' ').trim()}`);
+  }
+
+  /*
+   * Y los UPDATE: el mayor `$n` asignado tiene que ser el número de asignaciones
+   * más uno, porque `$1` siempre es el `id` del WHERE.
+   *
+   * ⚠️ El cuerpo NO puede contener `WHERE`, y esa restricción hace falta: sin
+   * ella, un `UPDATE ... WHERE id = ANY($1::uuid[])` —que hay— no cerraba la
+   * coincidencia y el patrón se comía medio archivo hasta el siguiente
+   * `WHERE id = $1`, contando asignaciones de tres consultas distintas.
+   */
+  const updates = [...codigo.matchAll(/UPDATE partidos SET((?:(?!WHERE)[\s\S])*)WHERE id = \$1/g)];
+  assert.ok(updates.length >= 2,
+    `se esperaban al menos 2 UPDATE de partidos, se encontraron ${updates.length}`);
+
+  for (const [, cuerpo] of updates) {
+    const asignaciones = [...cuerpo.matchAll(/\w+\s*=\s*\$(\d+)/g)].map(m => Number(m[1]));
+    const mayor = Math.max(...asignaciones);
+
+    assert.equal(mayor, asignaciones.length + 1,
+      `un UPDATE de partidos asigna ${asignaciones.length} columnas pero llega hasta $${mayor}:\n  ${cuerpo.replace(/\s+/g, ' ').trim()}`);
+  }
+});

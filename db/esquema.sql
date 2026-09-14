@@ -354,6 +354,17 @@ CREATE TABLE partidos (
   api_date       text,
   api_status     text,
   /*
+   * A que jornada de la LIGA pertenece este partido (migracion 015): «4»,
+   * «7», «Quarter-finals». Lo manda el proveedor en match_round.
+   *
+   * ⚠️ TEXTO: «Quarter-finals» es una ronda tan valida como «7». Y por eso no
+   * se ordena alfabeticamente: el orden lo da la fecha del partido mas
+   * temprano de cada ronda.
+   *
+   * '' = el proveedor no lo dijo. Esas ligas no se pueden automatizar.
+   */
+  api_round      text NOT NULL DEFAULT '',
+  /*
    * Cuando salieron al grupo los pronosticos de este partido (migracion 008).
    * NULL = todavia no. Es lo unico que impide que la pantalla de compartir
    * vuelva a proponer lo ya enviado despues de un reinicio de Render.

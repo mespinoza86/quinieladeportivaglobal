@@ -1,0 +1,48 @@
+-- ===========================================================================
+-- 015 · A qué jornada de la liga pertenece cada partido
+-- ===========================================================================
+--
+-- Primera tajada de §22: las quinielas de liga con borrador semanal.
+--
+-- El proveedor manda `match_round` en cada partido —«4», «7», «Quarter-finals»—
+-- y hasta ahora se tiraba. Es lo que permitirá proponer «la jornada 9 de Liga
+-- MX» ya armada, en vez de elegir catorce partidos a mano.
+--
+-- ⛔ POR QUÉ SE GUARDA AQUÍ Y NO SE DEDUCE
+--
+-- Se podría sacar cruzando con `fixtures.evento->>'match_round'`, sin columna
+-- nueva. Y ataría una decisión de la quiniela —«esta jornada es la 9 de la
+-- liga»— a que la caché del proveedor siga teniendo ese partido dentro. Esa
+-- caché existe para ahorrar cuota, no para ser un archivo histórico: lo que
+-- guarda se puede reescribir o caducar.
+--
+-- Una columna cuesta menos que esa fragilidad.
+--
+-- ⚠️ TEXTO, NO NÚMERO, y no es pereza: `"Quarter-finals"` es una ronda tan
+-- válida como `"7"`. Los cuartos de Concacaf y de Libertadores la traen así, y
+-- con ellas se pueden armar jornadas igual de bien. Un `integer` dejaría fuera
+-- media copa.
+--
+-- ⚠️ Y por lo mismo, NO se ordena alfabéticamente: el orden de las rondas lo da
+-- la fecha del partido más temprano de cada una, nunca su nombre.
+--
+-- '' significa «el proveedor no lo dijo», que es el caso de la MLS y de varias
+-- fases de grupos. Esas ligas no se podrán automatizar, y se dirá por qué.
+--
+-- Correr en Neon CON EL ROL DUEÑO. Es aditiva y no mueve ninguna fila: el orden
+-- con el despliegue da igual.
+-- ===========================================================================
+
+ALTER TABLE partidos
+  ADD COLUMN IF NOT EXISTS api_round text NOT NULL DEFAULT '';
+
+-- ---------------------------------------------------------------------------
+-- Comprobación:
+--
+--   SELECT column_name, data_type, column_default FROM information_schema.columns
+--    WHERE table_name = 'partidos' AND column_name = 'api_round';
+--
+-- Y que no se haya tocado ninguna fila (todas deben salir con ''):
+--
+--   SELECT api_round, count(*) FROM partidos GROUP BY api_round;
+-- ---------------------------------------------------------------------------

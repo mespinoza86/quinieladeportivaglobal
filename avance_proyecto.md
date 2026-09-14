@@ -4568,7 +4568,7 @@ esa fragilidad.
 
 | # | Qué | Tamaño |
 |---|---|---|
-| 1 | `mapearEvento` captura `match_round` y `stage_name`. Migración 015: `partidos.api_round` | Pequeña |
+| 1 | ✅ **HECHA** (Entrada 096). `mapearEvento` captura `match_round`. Migración 015: `partidos.api_round` | Pequeña |
 | 2 | `ligas.js` sabe decir, por liga, si se puede automatizar y por qué no | Pequeña |
 | 3 | `src/borradores.js`: la próxima ronda de una liga, con sus partidos | **Mediana — el corazón** |
 | 4 | `GET /api/jornadas/borrador`, y `POST /api/jornadas` guardando la ronda | Pequeña |
@@ -16589,6 +16589,131 @@ dueño. Es aditiva y no mueve ninguna fila: el orden con el despliegue da igual.
 ⚠️ **Y lo que sigue sin comprobarse es lo único que importa de verdad**: que la
 notificación llegue a un teléfono en un partido real. Todo lo de aquí está
 probado sin salir a la red.
+
+---
+
+
+### 📌 Entrada 096 — 14 de septiembre de 2026 — Tajada 1 de §22: la ronda del partido, y un camino sin probar
+
+**Objetivo:** primera tajada de las quinielas de liga. Capturar `match_round`
+—el campo que dice a qué jornada de la liga pertenece un partido— y guardarlo,
+que es lo que después permitirá proponer «la jornada 9 de Liga MX» ya armada.
+
+## Lo que se hizo
+
+El proveedor mandaba el dato y **se tiraba**. Ahora `mapearEvento` lo captura, el
+navegador lo envía, y `partidos.api_round` lo guarda (**migración 015**).
+
+⚠️ **Texto y no número**, y no es pereza: `"Quarter-finals"` es una ronda tan
+válida como `"7"`. Los cuartos de Concacaf y de Libertadores la traen así, y con
+ellas se arman jornadas igual de bien. Un `integer` habría dejado fuera media
+copa.
+
+⚠️ Y por lo mismo, **no se ordena alfabeticamente**: el orden de las rondas lo da
+la fecha del partido más temprano de cada una.
+
+## ⛔ Se escapó un INSERT, y la comprobación dio confianza falsa
+
+Las columnas de `partidos` están escritas a mano en **siete sitios** de
+`src/jornadas.js`. Al añadir la columna se actualizaron con una sustitución que
+exigía «exactamente dos apariciones» —dos `INSERT` idénticos— y pasó.
+
+Había **tres**. El tercero tenía otra indentación.
+
+```
+antes de arreglarlo:  35 pruebas rojas
+el error:             bind message supplies 13 parameters,
+                      but prepared statement requires 12
+```
+
+⚠️ **Exigir un número exacto de apariciones protege de sustituir de menos, no de
+haber contado mal.** La sustitución hizo justo lo que se le pidió; la cuenta
+estaba mal desde el principio.
+
+Se añadió un centinela que lo caza sin acordarse: cuenta las columnas entre
+paréntesis y los `$n` del `VALUES`, y exige que coincidan. Lo mismo para los
+`UPDATE`.
+
+⚠️ Su primera versión se comía medio archivo: el patrón `[\s\S]*?` hasta
+`WHERE id = $1` saltaba por encima de un `UPDATE ... WHERE id = ANY($1::uuid[])`
+y contaba asignaciones de tres consultas distintas. El cuerpo tuvo que
+prohibirse contener `WHERE`.
+
+## ⛔ Y el hallazgo de verdad: producción corre por el camino sin probar
+
+Una mutación no caía: quitarle `api_round=$12` a uno de los `UPDATE` no rompía
+nada. Al ir a mirar por qué —en vez de dar la mutación por equivalente—:
+
+`jornadas.guardar` tiene **dos caminos**:
+
+| Cuándo | Qué hace |
+|---|---|
+| **Todos** los partidos traen `api_fixture_id` | Los empareja por ese id y **conserva sus filas**, con sus pronósticos |
+| Alguno no lo trae | Los empareja **por posición**, el camino antiguo |
+
+⛔ Los partidos reales vienen del proveedor y **siempre traen id**, así que en
+producción corre siempre el primero. Y **todas** las pruebas de edición usaban
+partidos sin id: probaban el segundo.
+
+El primero no lo ejecutaba ninguna prueba. Se le podía quitar una columna al
+`UPDATE` y la suite seguía verde.
+
+⚠️ **Dos caminos con uno solo probado es peor que un camino solo**, porque da la
+impresión de estar cubierto. La prueba nueva reordena una jornada del proveedor y
+exige lo que de verdad importa de ese camino: que las filas sean **las mismas**,
+no unas nuevas — porque de esas filas cuelgan los pronósticos de todo el mundo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/015-ronda-del-partido.sql` | **Nueva.** `partidos.api_round`, texto, `''` por defecto |
+| `db/esquema.sql` | La columna |
+| `src/proveedor.js` | `mapearEvento` captura `ronda` y `fase` |
+| `src/jornadas.js` | La ronda viaja: `partidoPublico`, `valoresDePartido`, 3 `INSERT`, 2 `UPDATE` y el `json_build_object` |
+| `private/js/jornadas.js` | El navegador manda `apiRound` |
+| `test/dominio.test.js` | La forma del partido, la ronda, y **el camino de identidad** |
+| `test/architecture.test.js` | Centinela: columnas y valores tienen que coincidir |
+
+**Verificación:**
+
+```
+npm test             → 618/618  (eran 615)
+npx playwright test  → 142/142
+
+Rotas a proposito, 4 de 4 detectadas:
+  a un INSERT le falta la columna          → 2 rojas
+  a un UPDATE le falta                     → NO caia; era el camino sin probar
+  el partido deja de devolver la ronda     → 2 rojas
+  el camino de identidad no conserva filas → 1 roja
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Producción corría por el camino que ninguna prueba ejecutaba.** Dos
+   ramas, y las pruebas entraban siempre por la que no se usa de verdad.
+2. ⚠️ **Exigir «exactamente N apariciones» no protege de haber contado mal.** Da
+   confianza y no cubre el caso en que el número de partida ya era falso.
+3. ⚠️ **Siete sitios repiten las columnas de `partidos`.** El centinela nuevo
+   tapa el síntoma; la causa sigue ahí y volverá con la próxima columna.
+4. ⚠️ **Un patrón `[\s\S]*?` cruza consultas.** El centinela se comía medio
+   archivo hasta que el cuerpo tuvo prohibido contener `WHERE`.
+5. **Una mutación que no cae merece que se vaya a mirar POR QUÉ**, no que se
+   declare equivalente. Ésta destapó una rama sin pruebas.
+
+**Pendiente / siguiente paso:**
+
+⛔ **Correr `db/migraciones/015-ronda-del-partido.sql`** en Neon con el rol dueño.
+Es aditiva y no mueve ninguna fila.
+
+⚠️ Y una consecuencia que conviene saber: **las jornadas que ya existen quedan
+con `api_round` vacío**. No se rellenan solas, y no hace falta: el borrador mira
+qué rondas están usadas de aquí en adelante. Si alguna vez conviene rellenarlas,
+se puede cruzar con `fixtures.evento->>'match_round'` mientras esos partidos
+sigan en la caché.
+
+**Siguiente tajada:** la 2 de §22 — que `ligas.js` sepa decir, por liga, si se
+puede automatizar y por qué no.
 
 ---
 

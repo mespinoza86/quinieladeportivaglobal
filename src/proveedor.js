@@ -83,6 +83,15 @@ function mapearEvento(item) {
     pais: item.country_name || '',
     temporada: '',
     apiLeagueId: Number(item.league_id),
+    /*
+     * A qué jornada de la liga pertenece. Se tiraba hasta la tajada 1 de §22.
+     *
+     * ⚠️ Puede venir vacío —la MLS y varias fases de grupos no lo mandan— y
+     * ESO ES UN DATO, no un fallo: significa que esa liga no se puede armar
+     * sola. Por eso se guarda '' en vez de dejarlo indefinido.
+     */
+    ronda: String(item.match_round ?? '').trim(),
+    fase: String(item.stage_name ?? '').trim(),
     equipo1: item.match_hometeam_name,
     equipo2: item.match_awayteam_name,
     logoEquipo1: item.team_home_badge || '',

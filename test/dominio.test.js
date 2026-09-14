@@ -108,8 +108,35 @@ test('los partidos vuelven con la forma que espera el frontend', async () => {
     equipo1: 'Saprissa', equipo2: 'Alajuelense',
     logoEquipo1: 'Saprissa.png', logoEquipo2: 'Alajuelense.png',
     comodin: true, apiFixtureId: '123', apiLeagueId: null,
-    apiDate: '2026-08-20 20:00', apiStatus: null
+    apiDate: '2026-08-20 20:00', apiStatus: null,
+    /*
+     * ⚠️ `''` y no ausente: a qué jornada de la liga pertenece (migración 015).
+     * Un partido puesto a mano no la trae, y el vacío significa «no se sabe».
+     * La comparación es EXACTA a propósito: es la forma que consume el
+     * frontend, y un campo de más o de menos aquí se nota allí.
+     */
+    apiRound: ''
   });
+});
+
+test('la ronda de la liga se guarda y vuelve', async () => {
+  /*
+   * Primera tajada de §22. Sin esto no se puede saber qué jornadas de la liga
+   * ya están metidas, que es lo que decide cuál se propone la semana siguiente.
+   */
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J', [
+    partido('A', 'B', { apiFixtureId: '1', apiRound: '9' }),
+    partido('C', 'D', { apiFixtureId: '2', apiRound: 'Quarter-finals' }),
+    partido('E', 'F', { apiFixtureId: '3' })
+  ]);
+
+  const j = await jornadas.porNombre(quiniela.id, 'J');
+
+  assert.equal(j.partidos[0].apiRound, '9');
+  assert.equal(j.partidos[1].apiRound, 'Quarter-finals',
+    'texto: «Quarter-finals» es una ronda tan válida como «9»');
+  assert.equal(j.partidos[2].apiRound, '', 'el que no la trae queda vacío, no nulo');
 });
 
 test('el orden de los partidos se conserva', async () => {
@@ -540,4 +567,53 @@ test('un marcador que no es un entero de 0 a 99 se rechaza con su mensaje', () =
       /marcador/i,
       `${JSON.stringify(malo)} debería rechazarse`);
   }
+});
+
+test('⛔ reordenar una jornada del proveedor conserva los ids y actualiza la ronda', async () => {
+  /*
+   * ⚠️ Esta prueba cubre el camino de `guardar` que NO estaba probado, y es el
+   * que usa producción.
+   *
+   * `guardar` tiene dos: si TODOS los partidos traen `api_fixture_id` va por
+   * identidad —los empareja por ese id y conserva sus filas—; si no, por
+   * posición. Los partidos reales vienen del proveedor y siempre traen id, así
+   * que en producción corre siempre el primero… y todas las pruebas de edición
+   * usaban partidos sin id, o sea el segundo.
+   *
+   * Lo destapó una mutación: quitarle una columna al `UPDATE` de ese camino no
+   * rompía nada. Dos caminos y uno solo probado es peor que uno solo, porque da
+   * la impresión de estar cubierto.
+   */
+  const { quiniela } = await quinielaNueva();
+
+  await jornadas.guardar(quiniela.id, 'J', [
+    partido('A', 'B', { apiFixtureId: '11', apiRound: '8' }),
+    partido('C', 'D', { apiFixtureId: '22', apiRound: '8' })
+  ]);
+
+  const antes = await jornadas.porNombre(quiniela.id, 'J');
+  const idsAntes = await db.enQuiniela(quiniela.id, async c =>
+    (await c.query('SELECT id, api_fixture_id, orden FROM partidos ORDER BY orden')).rows);
+
+  assert.equal(antes.partidos[0].apiRound, '8');
+
+  /* Se reordenan, y el proveedor corrige la ronda a la 9. */
+  await jornadas.guardar(quiniela.id, 'J', [
+    partido('C', 'D', { apiFixtureId: '22', apiRound: '9' }),
+    partido('A', 'B', { apiFixtureId: '11', apiRound: '9' })
+  ]);
+
+  const despues = await jornadas.porNombre(quiniela.id, 'J');
+  const idsDespues = await db.enQuiniela(quiniela.id, async c =>
+    (await c.query('SELECT id, api_fixture_id, orden FROM partidos ORDER BY orden')).rows);
+
+  assert.deepEqual(despues.partidos.map(p => p.equipo1), ['C', 'A'], 'se reordenaron');
+  assert.deepEqual(despues.partidos.map(p => p.apiRound), ['9', '9'],
+    'la ronda nueva se guardó en las dos filas');
+
+  /* Y lo que de verdad importa: las filas son las MISMAS, no unas nuevas. */
+  const porFixture = f => idsAntes.find(x => x.api_fixture_id === f).id;
+  assert.equal(idsDespues.find(x => x.api_fixture_id === '22').id, porFixture('22'),
+    'el partido 22 conserva su id, y con él sus pronósticos');
+  assert.equal(idsDespues.find(x => x.api_fixture_id === '11').id, porFixture('11'));
 });
