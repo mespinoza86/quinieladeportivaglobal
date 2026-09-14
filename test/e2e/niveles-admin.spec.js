@@ -47,7 +47,13 @@ async function segundoMiembroCon(browser, rol) {
   const quinielas = await (await otro.request.get('/api/quinielas')).json();
   const suya = (quinielas.quinielas || quinielas).find(q => q.nombre.startsWith('Niveles'));
   await otro.request.post(`/api/quinielas/${suya.id}/seleccionar`);
-  await activarAdminMode(otro, datosOtro.password);
+
+  /*
+   * ⚠️ Sólo los escalones administrativos entran al Admin Mode: a un `user` la
+   * pantalla lo manda a Inicio —y hace bien—, así que intentarlo aquí colgaba
+   * el ayudante esperando un formulario que no iba a aparecer.
+   */
+  if (rol !== 'user') await activarAdminMode(otro, datosOtro.password);
 
   return { otro, dueno, contextos: [contextoDueno, contextoOtro] };
 }
@@ -133,5 +139,41 @@ test('el dueño sigue viéndolo todo', async ({ browser }) => {
     }
   } finally {
     await contexto.close();
+  }
+});
+
+test('⛔ el selector de rol se lee: texto oscuro sobre el desplegable claro', async ({ browser }) => {
+  /*
+   * Marco lo vio antes que ninguna prueba: «se ve todo en blanco, tengo que
+   * pasar el mouse por encima para ver que dice».
+   *
+   * La causa fue ponerle al `select` una clase de BOTÓN, que fija un color casi
+   * blanco pensado para el fondo oscuro de las tarjetas. El desplegable nativo
+   * pinta sus opciones sobre fondo claro, así que salía blanco sobre blanco;
+   * sólo se leían al pasar el ratón, porque el resaltado del sistema le pone
+   * fondo propio a la opción.
+   *
+   * ⚠️ Se comprueba la LUMINANCIA, no un color concreto. Fijar `rgb(15,23,42)`
+   * ataría la prueba a la paleta y se rompería al retocarla, sin que nada
+   * estuviera mal. Lo que no puede cambiar es que el texto sea oscuro.
+   */
+  const { dueno, contextos } = await segundoMiembroCon(browser, 'user');
+
+  try {
+    await dueno.goto('/miembros.html');
+    const selector = dueno.locator('#listaMiembros select').first();
+    await selector.waitFor({ state: 'visible' });
+
+    const luminancia = await selector.evaluate(elemento => {
+      const [r, v, a] = getComputedStyle(elemento).color
+        .match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      return (0.2126 * r + 0.7152 * v + 0.0722 * a) / 255;
+    });
+
+    expect(luminancia,
+      `el texto del selector es demasiado claro (luminancia ${luminancia.toFixed(2)}): ` +
+      'sobre el desplegable nativo, que es claro, no se lee').toBeLessThan(0.5);
+  } finally {
+    for (const c of contextos) await c.close();
   }
 });

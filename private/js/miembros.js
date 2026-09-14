@@ -25,7 +25,20 @@ document.addEventListener('DOMContentLoaded', async () => {
            */
           if ((q.capacidades || []).includes('roles.asignar')) {
             const selector = document.createElement('select');
-            selector.className = 'secondary-button';
+            /*
+             * ⛔ SIN clase de botón, y no es cosmética.
+             *
+             * Llevaba `secondary-button`, que fija `color: var(--text)` —casi
+             * blanco, pensado para el fondo oscuro de las tarjetas—. Esa clase
+             * gana por especificidad a la regla global del proyecto
+             * (`input, select, textarea { background: casi blanco; color: #0f172a }`),
+             * y el desplegable NATIVO pinta sus opciones sobre fondo claro: texto
+             * blanco sobre blanco. Sólo se leían al pasar el ratón, porque el
+             * resaltado del sistema le pone fondo propio a la opción.
+             *
+             * Un `select` no es un botón. Sin clase hereda lo que ya usan todos
+             * los demás desplegables de la aplicación, que se leen bien.
+             */
             selector.setAttribute('aria-label', `Rol de ${m.username || 'este miembro'}`);
 
             for (const rol of (q.rolesAsignables || [])) {

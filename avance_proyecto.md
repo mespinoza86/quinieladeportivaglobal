@@ -15689,8 +15689,10 @@ Migración 012 comprobada contra Neon antes de escribirla:
 
 **Pendiente / siguiente paso:**
 
-⛔ **Correr `db/migraciones/012-niveles-de-administrador.sql` en Neon con el rol
-dueño.** A diferencia de la 011, ésta **no corre prisa en ningún sentido**: sólo
+✅ **`db/migraciones/012-niveles-de-administrador.sql` CORRIDA** por Marco el 13
+de septiembre, y comprobada contra la base: el `CHECK` lista los cinco roles.
+
+A diferencia de la 011, ésta **no corría prisa en ningún sentido**: sólo
 añade dos valores al abanico del `CHECK` y no mueve ninguna fila. El código
 desplegado sin ella sigue funcionando para los roles de siempre; lo único que
 falla es intentar poner uno de los dos nuevos.
@@ -15703,8 +15705,47 @@ caja.** Es lo que Marco pidió —«ver las cosas que ven los otros
 administradores»— pero es el único sitio donde ese escalón toca dinero, aunque
 sea mirándolo. Cambiarlo es mover una línea en `src/permisos.js`.
 
----
+## ⛔ Apéndice, el mismo día — un `select` con clase de botón
 
+Marco lo vio antes que ninguna prueba: **«el combobox se ve todo en blanco, tengo
+que pasar el mouse por encima para ver que dice»**.
+
+El selector de rol llevaba `class="secondary-button"`, puesto por inercia para
+que combinara con los botones de al lado:
+
+```css
+.secondary-button          { color: var(--text); }   /* #f8fafc, casi BLANCO */
+input, select, textarea    { background: casi blanco; color: #0f172a; }
+```
+
+La clase gana por especificidad a la regla global del proyecto. En la tarjeta
+—fondo oscuro— el texto se leía; pero el desplegable **nativo** pinta sus
+opciones sobre fondo claro del sistema, así que salían blancas sobre blanco. Al
+pasar el ratón aparecían porque el resaltado le pone fondo propio a la opción, y
+eso es exactamente lo que Marco describió.
+
+⛔ **Un `select` no es un botón.** Quitada la clase, hereda lo que ya usan todos
+los demás desplegables de la aplicación y se lee.
+
+⚠️ Y es el **segundo** fallo de esta misma entrada en que una regla del proyecto
+pisa en silencio el comportamiento por defecto del navegador —el primero fue
+`hidden`—. Los dos se veían bien en el código y mal en la pantalla; los dos los
+cogió el navegador, no el servidor.
+
+La prueba nueva comprueba **luminancia**, no un color concreto: fijar
+`rgb(15,23,42)` la ataría a la paleta y se rompería al retocarla sin que nada
+estuviera mal. Con la clase devuelta a propósito, cae con «luminancia 0.98».
+
+Y se destapó de paso que el ayudante de las pruebas de navegador intentaba meter
+en Admin Mode a un jugador raso, al que la pantalla echa —y hace bien—.
+
+```
+npm test             → 580/580
+npx playwright test  → 142/142  (eran 140)
+```
+
+
+---
 
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
