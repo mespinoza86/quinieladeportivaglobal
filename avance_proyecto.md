@@ -591,14 +591,15 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `602f641` — Entrada 095: sólo se avisa a quien puede cambiar algo |
+| Último commit | `06ff139` — Entrada 103: la llave que se retiraba al entrar |
 | Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Base de datos | ✅ **Las 14 migraciones corridas.** De la 011 a la 014, las corrió Marco y se comprobaron contra Neon una a una |
+| Base de datos | ✅ **Las 15 migraciones corridas.** De la 011 a la 015, las corrió Marco y se comprobaron contra Neon una a una |
 | CI | ✅ En verde. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
-| Producción | ✅ **Al día en `602f641`**, con las tres variables VAPID puestas |
-| Pruebas | **615** rápidas + **142** de navegador, todas en verde |
+| Producción | ✅ **Al día en `06ff139`**, con las tres variables VAPID puestas |
+| Pruebas | **647** rápidas + **170** de navegador, todas en verde |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido contra producción. A principios de mes eran 20,4 |
-| ⭐ Lo que se acabó hoy | **Las notificaciones al teléfono**, lo que Marco llamó «lo que más quiero» el 4 de septiembre. Entradas 094 y 095 |
+| ⭐ Lo que se acabó hoy | **Las notificaciones al teléfono** (094, 095) y **§22 entero: las quinielas de liga con borrador semanal** (096 a 103) |
+| ✅ §22, comprobado de verdad | Marco eligió la Primera de Costa Rica y **salieron los partidos que tenían que salir**. Era lo único que ni las pruebas ni el ensayo podían hacer |
 
 ✅ **No queda nada a medias.** Los cinco trabajos del 13 y 14 —niveles de
 administrador, la caja, las dos fugas de tráfico y las notificaciones— están
@@ -613,6 +614,11 @@ próximo fin de semana con partidos:
    los registros de Render.
 2. **Que los marcadores oficiales sigan llegando solos**, sin tocar «sincronizar
    esta jornada». Es lo único que el filtro del censo (093) podría haber roto.
+
+✅ **Y una que ya se comprobó:** el borrador de §22. Marco eligió la Primera de
+Costa Rica y salieron los partidos correctos. Faltaría confirmarlo una vez para
+ver el ciclo completo —crear la jornada y que a la semana siguiente proponga la
+de después—, pero la parte difícil ya está vista.
 
 ⚠️ Y una consecuencia del diseño nuevo que conviene tener en la cabeza: como la
 audiencia depende de **quién ha llenado qué**, el primer aviso real es también la
