@@ -53,14 +53,21 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
    *
    * Se hace aquí y no en cada prueba porque es propiedad del ENTORNO —esta
    * aplicación de pruebas no habla con nadie de fuera—, no de un caso concreto.
+   *
+   * ⭐ Desde §22, Liga MX trae `match_round` y la Primera de Costa Rica NO. No
+   * es adorno: son los dos casos que la pantalla de elegir liga debe
+   * distinguir. Una liga sin ronda no se puede armar sola, y eso hay que poder
+   * verlo en el navegador, no sólo en una prueba de módulo.
    */
   proveedor.usarFuente(async () => ([
     { match_id: '1', match_date: '2099-01-01', match_time: '15:00', match_status: 'NS',
+      match_round: '9',
       league_name: 'Liga MX', country_name: 'Mexico', league_id: '101',
       match_hometeam_name: 'America', match_awayteam_name: 'Chivas',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' },
     { match_id: '2', match_date: '2099-01-02', match_time: '17:00', match_status: 'NS',
+      match_round: '9',
       league_name: 'Liga MX', country_name: 'Mexico', league_id: '101',
       match_hometeam_name: 'Pumas', match_awayteam_name: 'Cruz Azul',
       team_home_badge: '', team_away_badge: '',

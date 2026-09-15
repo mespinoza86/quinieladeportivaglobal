@@ -196,7 +196,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: document.getElementById('nombreQuiniela').value })
       });
-      window.location.href = '/index.html';
+
+      /*
+       * ⚠️ La liga NO se elige aquí, y no es un descuido: la lista de ligas la
+       * sirve una ruta que exige quiniela activa, y hasta este momento no
+       * había ninguna. El servidor deja la recién creada seleccionada, así que
+       * el sitio donde SÍ se puede elegir es la pantalla siguiente.
+       *
+       * Por eso esta elección sólo decide a dónde se aterriza.
+       */
+      const tipo = document.querySelector('input[name="tipoQuiniela"]:checked')?.value;
+      window.location.href = tipo === 'liga'
+        ? '/configuracion-quiniela.html#liga'
+        : '/index.html';
     } catch (error) { mensaje.textContent = error.message; }
   });
 

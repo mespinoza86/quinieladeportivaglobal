@@ -4572,7 +4572,7 @@ esa fragilidad.
 | 2 | ✅ **HECHA** (Entrada 097). `puedeAutomatizarse()`, con dos motivos distintos | Pequeña |
 | 3 | ✅ **HECHA** (Entrada 098). `proponer()` puro, `rondasUsadas()` y el aviso de ronda corta | **Mediana — el corazón** |
 | 4 | ✅ **HECHA** (Entrada 099). `GET /api/borrador-de-jornada` —la otra ruta la tapaba `:nombre`— y la ronda en la forma canónica | Pequeña |
-| 5 | Elegir tipo y liga al crear la quiniela | Mediana |
+| 5 | ✅ **HECHA** (Entrada 100). La elección al crear decide a dónde aterrizas; la liga se elige en Configurar | Mediana |
 | 6 | El panel del borrador en `jornadas.html`, y las tres salidas de fin de temporada | Mediana |
 | 7 | Pruebas de navegador | Mediana |
 
@@ -17023,6 +17023,101 @@ Rotas a proposito, 7 de 7 detectadas:
 **Pendiente / siguiente paso:** la tajada 5 de §22 —elegir tipo y liga **al crear
 la quiniela**—. La configuración ya lo acepta; falta la pantalla, y que el
 selector de liga esconda las que no se pueden automatizar con su motivo.
+
+⚠️ Nada que correr en Neon.
+
+---
+
+
+### 📌 Entrada 100 — 14 de septiembre de 2026 — Tajada 5 de §22: elegir la liga, y decir por qué unas no se pueden
+
+**Objetivo:** que al crear una quiniela se pueda decir que es de una liga, y que
+la pantalla enseñe cuáles se pueden armar solas **y cuáles no, con el motivo**.
+
+## ⛔ Un problema de orden que cambió el diseño
+
+La idea era elegir la liga **en el formulario de crear**. No se puede: la lista de
+ligas la sirve una ruta que exige **quiniela activa**, y hasta crearla no hay
+ninguna.
+
+Se podría haber abierto esa ruta al público. Sería peor: gasta cuota del
+proveedor, y una ruta sin guardia es superficie nueva para algo que sólo usan los
+administradores.
+
+⭐ La salida aprovecha algo que ya hacía el servidor: **al crear una quiniela la
+deja seleccionada**. Así que la elección del formulario decide **a dónde
+aterrizas** —a la portada, o a la pantalla donde sí se puede elegir la liga con
+la lista ya abierta— y nada más.
+
+## Las ligas que no sirven SE VEN
+
+No se esconden. Se pintan igual, sin botón, con su motivo debajo:
+
+```
+Liga MX              México · 2 partidos esta semana        [ Elegir ]
+Primera Division     «Primera Division» no publica el número de jornada
+```
+
+⚠️ Esconderlas sería peor: quien busca la MLS y no la encuentra piensa que la
+aplicación no la conoce y se queda intentándolo. Verla con su motivo **cierra la
+pregunta de una vez**.
+
+Y el motivo es el del servidor tal cual, que distingue «no publica la jornada» de
+«sólo la publica en 3 de 8». Esa diferencia es lo que separa un dato del
+proveedor de un fallo nuestro.
+
+## ⛔ La pantalla contaba menos de lo que hacía
+
+Al elegir liga, el resumen decía **«De Liga MX.»** a secas — justo después de
+haber guardado un precio de 2.000.
+
+El precio se guardaba bien; lo que faltaba era meterlo en el estado local, así
+que el resumen lo ignoraba hasta recargar. Es la forma barata de que alguien crea
+que no se guardó y lo repita.
+
+Lo cazó la prueba de navegador, que compara **lo que la pantalla dice** con lo
+que se acababa de mandar. Ninguna prueba de servidor podía verlo: el `PATCH` era
+correcto.
+
+## El sustituto del proveedor, ahora con los dos casos
+
+El arnés de Playwright mandaba partidos sin `match_round`. Ahora **Liga MX trae
+ronda y la Primera de Costa Rica no**, a propósito: son exactamente los dos casos
+que esta pantalla debe distinguir, y sin ellos la prueba no podría verlos.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/quinielas.html` | La elección al crear: customizada o de liga |
+| `private/js/quinielas.js` | A dónde se aterriza según la elección |
+| `public/configuracion-quiniela.html` | El panel «Cómo se arman las jornadas» |
+| `private/js/liga-de-quiniela.js` | **Nuevo.** Elegir liga, precio de partida y quitarla |
+| `test/e2e/quiniela-de-liga.spec.js` | **Nuevo.** 4 pruebas de navegador |
+| `test/e2e/arrancar.js` | El proveedor falso, con una liga con ronda y otra sin |
+
+**Verificación:**
+
+```
+npm test             → 644/644
+npx playwright test  → 148/148  (eran 142)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una pantalla no puede pedir datos que exigen un contexto que todavía no
+   existe.** Elegir la liga al crear la quiniela era imposible sin abrir una ruta
+   que gasta cuota; la solución fue reordenar el recorrido, no la guardia.
+2. ⭐ **Lo que no sirve se enseña con su motivo.** Esconderlo deja a quien busca
+   intentándolo sin saber por qué.
+3. ⚠️ **Guardar bien y contarlo mal es un fallo.** El resumen ignoraba un precio
+   recién guardado, y eso lleva a repetir la acción.
+4. **Un sustituto de pruebas sin los casos límite no puede probarlos.** El
+   proveedor falso no traía rondas, así que la distinción que esta pantalla
+   existe para hacer era invisible.
+
+**Pendiente / siguiente paso:** la tajada 6 de §22 —el panel del borrador en
+`jornadas.html`, con las tres salidas de fin de temporada—.
 
 ⚠️ Nada que correr en Neon.
 

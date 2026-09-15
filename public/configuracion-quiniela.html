@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/navegacion.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/navegacion.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script><script src="/js/liga-de-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
 <section class="hero-card"><div class="hero-top"><div><p class="eyebrow">Administración</p><h1>Configurar quiniela</h1></div><div class="app-logo">🎛️</div></div></section>
 <section class="app-panel"><form id="configForm"><h2>Puntuación</h2>
 <label class="field-label">Marcador exacto</label><input type="number" min="0" id="marcadorExacto" required />
@@ -11,6 +11,30 @@
 <label class="checkbox-fila"><input type="checkbox" id="avisarAlCompartir" /><span>Avisarme por correo cuando haya pronósticos listos para el grupo</span></label>
 <p class="helper-text">Al arrancar un partido, sus pronósticos dejan de ser secretos. Con esto encendido, llega un correo a todos los administradores con el enlace a <strong>Compartir al grupo</strong>. Un solo correo por hora de inicio, no uno por partido.</p>
 <button type="submit">Guardar configuración</button></form><p id="configMensaje" class="form-message"></p></section>
+<!--
+  De qué liga es esta quiniela (§22). Nace oculto y lo enseña
+  `liga-de-quiniela.js` cuando sabe que quien mira puede configurarla.
+-->
+<section class="app-panel" id="panelLiga" hidden>
+<h2>Cómo se arman las jornadas</h2>
+<p id="ligaResumen" class="helper-text"></p>
+
+<label class="field-label" for="precioPorDefecto">Precio con el que nace cada jornada</label>
+<input type="number" min="0" id="precioPorDefecto" value="0" />
+<label class="field-label" for="alAcumuladoPorDefecto">De eso, al acumulado</label>
+<input type="number" min="0" id="alAcumuladoPorDefecto" value="0" />
+<p class="helper-text">Es un valor de partida: al confirmar cada jornada puedes cambiarlo esa semana sin tocar esto.</p>
+
+<div class="button-row">
+  <button type="button" id="botonElegirLiga" class="secondary-button">Elegir liga o torneo</button>
+  <button type="button" id="guardarLiga" class="secondary-button">Guardar precio</button>
+  <button type="button" id="quitarLiga" class="ghost-button" hidden>Dejar de armarla por liga</button>
+</div>
+
+<p id="ligaMensaje" class="form-message"></p>
+<div id="listaLigas" hidden></div>
+</section>
+
 <section class="app-panel" id="cobrosPanel" hidden><h2>Cobros</h2>
 <p class="helper-text">Los dos son independientes: se puede cobrar el torneo completo, la jornada, o las dos cosas.</p>
 <label class="checkbox-fila"><input type="checkbox" id="torneoActivo" /><span>Cobrar cuota de torneo completo</span></label>
