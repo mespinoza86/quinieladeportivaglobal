@@ -144,6 +144,13 @@ const REJILLA = {
   'post /api/compartir/desmarcar': 'admin_lector',
 
   /* ---- Armar jornadas ---- */
+  /*
+   * El borrador propone la jornada siguiente ya armada (§22). Va con los
+   * demas de armar jornadas: quien puede crearlas puede pedir la propuesta.
+   * ⚠️ Sale a la red del proveedor, asi que NO puede alcanzarla el escalon de
+   * solo lectura: la cuota es una sola para todas las quinielas.
+   */
+  'get /api/borrador-de-jornada': 'admin_jornadas',
   'post /api/jornadas': 'admin_jornadas',
   'post /api/jornadas/agregar-partido': 'admin_jornadas',
   'post /api/jornadas/eliminar-partidos': 'admin_jornadas',

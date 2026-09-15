@@ -418,6 +418,71 @@ function conQuiniela(app, { requierePermiso, limiteAdminMode }) {
     }
 
     /*
+     * ==================================================================
+     * De qué es esta quiniela: customizada o de una liga (§22)
+     * ==================================================================
+     *
+     * ⭐ Va en la configuración y NO en una columna, como `ligasFavoritas` y
+     * `premiosRegistradosDesde`. No hace falta consultar por ella, y una
+     * migración por cada ajuste de este tipo sale cara para lo que aporta.
+     *
+     * ⚠️ El tipo decide qué se PROPONE, no qué se permite: una quiniela de Liga
+     * MX conserva el buscador y puede meter un partido de Champions cuando
+     * quiera. Atarla sólo añadiría una prohibición que un día estorba.
+     */
+    if (req.body.tipo !== undefined) {
+      if (!['customizada', 'liga'].includes(req.body.tipo)) {
+        return res.status(400).json({ error: 'El tipo de quiniela no es válido.' });
+      }
+
+      /*
+       * ⛔ «De liga» sin liga no se acepta.
+       *
+       * Quedaría una quiniela que dice ser automática y no puede proponer nada:
+       * el borrador contestaría `quiniela_customizada` —porque mira las dos
+       * cosas— y quien la creó vería que «no funciona» sin ninguna pista. Es
+       * mejor no dejar que ese estado exista.
+       */
+      const ligaId = String(req.body.ligaId ?? '').trim();
+      if (req.body.tipo === 'liga' && !ligaId) {
+        return res.status(400).json({ error: 'Una quiniela de liga necesita una liga.' });
+      }
+
+      parcial.tipo = req.body.tipo;
+      parcial.ligaId = req.body.tipo === 'liga' ? ligaId : null;
+      parcial.ligaNombre = req.body.tipo === 'liga'
+        ? String(req.body.ligaNombre ?? '').trim() : null;
+    }
+
+    /*
+     * El precio con el que nace cada jornada propuesta. ⚠️ Es un valor POR
+     * DEFECTO, no una atadura: quien confirma el borrador puede cambiarlo esa
+     * semana sin tocar la configuración.
+     */
+    if (req.body.precioPorDefecto !== undefined) {
+      const entrada = req.body.precioPorDefecto;
+
+      if (entrada === null) {
+        parcial.precioPorDefecto = null;
+      } else {
+        const precio = Number(entrada?.precio);
+        const alAcumulado = Number(entrada?.alAcumulado ?? 0);
+
+        if (!Number.isFinite(precio) || precio < 0
+          || !Number.isFinite(alAcumulado) || alAcumulado < 0) {
+          return res.status(400).json({ error: 'El precio por defecto no es válido.' });
+        }
+        if (alAcumulado > precio) {
+          return res.status(400).json({
+            error: 'Al acumulado no puede ir más de lo que cuesta la jornada.'
+          });
+        }
+
+        parcial.precioPorDefecto = { precio, alAcumulado };
+      }
+    }
+
+    /*
      * Las ligas favoritas se sustituyen enteras, no se funden: son una lista, y
      * fundir listas no significa nada. Mandar `[]` es la forma de no tener
      * ninguna, y por eso se distingue «no vino» de «vino vacía».

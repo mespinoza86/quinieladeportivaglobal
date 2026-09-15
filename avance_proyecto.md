@@ -4571,7 +4571,7 @@ esa fragilidad.
 | 1 | ✅ **HECHA** (Entrada 096). `mapearEvento` captura `match_round`. Migración 015: `partidos.api_round` | Pequeña |
 | 2 | ✅ **HECHA** (Entrada 097). `puedeAutomatizarse()`, con dos motivos distintos | Pequeña |
 | 3 | ✅ **HECHA** (Entrada 098). `proponer()` puro, `rondasUsadas()` y el aviso de ronda corta | **Mediana — el corazón** |
-| 4 | `GET /api/jornadas/borrador`, y `POST /api/jornadas` guardando la ronda | Pequeña |
+| 4 | ✅ **HECHA** (Entrada 099). `GET /api/borrador-de-jornada` —la otra ruta la tapaba `:nombre`— y la ronda en la forma canónica | Pequeña |
 | 5 | Elegir tipo y liga al crear la quiniela | Mediana |
 | 6 | El panel del borrador en `jornadas.html`, y las tres salidas de fin de temporada | Mediana |
 | 7 | Pruebas de navegador | Mediana |
@@ -16916,6 +16916,115 @@ Rotas a proposito, 10 de 10 detectadas:
 `rondasUsadas` y devuelve la propuesta.
 
 ⚠️ Nada que correr en Neon: esta tajada no toca la base.
+
+---
+
+
+### 📌 Entrada 099 — 14 de septiembre de 2026 — Tajada 4 de §22: la ruta del borrador, y un dato que se perdía por el camino
+
+**Objetivo:** juntar las dos mitades —lo que dice el proveedor y lo que ya hay en
+la base— en `GET /api/borrador-de-jornada`.
+
+## ⛔ La tajada 1 estaba incompleta, y la prueba no lo vio
+
+`normalizarPartido` es **la forma canónica de un partido**: todo lo que entra por
+HTTP pasa por ahí y lo que no esté en su lista blanca **se tira**.
+
+`apiRound` no estaba. Así que el dato se leía del proveedor, viajaba desde el
+navegador… y se descartaba justo antes de llegar a la base.
+
+⚠️ **Y la Entrada 096 lo dio por hecho** porque sus pruebas llamaban a
+`jornadas.guardar` directamente. Probaban el módulo; el camino que usa la
+aplicación pasa por el normalizador.
+
+```
+la prueba del modulo:   guardar() → api_round = '9'   ✅
+el camino de verdad:    POST → normalizar → guardar   → api_round = ''  ⛔
+```
+
+⭐ Lo destapó la prueba de punta a punta de esta tajada, que **crea la jornada
+por HTTP** y luego pide el borrador. Es la misma lección que la propia 096 dejó
+escrita —producción corre por el camino que las pruebas no ejercitan— repetida
+dos tajadas después, con otra forma.
+
+## ⛔ Y la dirección no puede ser la natural
+
+`/api/jornadas/borrador` devolvía **404**. `dominio.js` monta
+`GET /api/jornadas/:nombre` y se monta **antes** que `admin.js`, así que se
+tragaba «borrador» como si fuera el nombre de una jornada.
+
+Se cambió a **`/api/borrador-de-jornada`**. Reordenar la ruta habría funcionado
+igual y habría dejado una trampa: basta con que alguien mueva un `require` para
+que vuelva el 404, y sin ningún error que lo explique.
+
+## ⭐ La cuota manda en cómo está escrita la ruta
+
+La de APIFootball es **una sola para todas las quinielas** y ya se agotó una vez
+este mes. Por eso:
+
+- se apoya en la **misma caché de diez minutos** que las ligas disponibles, con
+  una clave propia —rango y liga— para que dos quinielas que sigan la misma liga
+  compartan la consulta;
+- y la regla vive en `borradores.proponer()`, que no sabe de red: **no puede
+  colarse una consulta dentro de un bucle** sin que se note.
+
+Hay una prueba que lo fija: tres vistazos seguidos, **una** consulta.
+
+## De paso: una caché que había pasado a mentir
+
+Se llamaba `cacheLigas` y el borrador iba a guardar ahí listas de **partidos**.
+Es un almacén genérico —clave libre, diez minutos— así que pasó a llamarse
+`cacheProveedor`: 18 apariciones, mecánico, y hecho **antes** de meter el segundo
+consumidor que habría cimentado el nombre falso.
+
+## Dos guardas nuevas en la configuración
+
+| Regla | Por qué |
+|---|---|
+| ⛔ «De liga» **sin liga** no se guarda | Quedaría una quiniela que dice ser automática y no propone nada; el borrador contestaría «customizada» y quien la creó no tendría ninguna pista |
+| Volver a customizada **limpia** la liga | Dejarla colgando es un dato que miente esperando a confundir |
+| Al acumulado no puede pasar del precio | El bote de la jornada saldría negativo |
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/validacion.js` | `apiRound` entra en la forma canónica, con alias `ronda` |
+| `src/rutas/admin.js` | `GET /api/borrador-de-jornada`, con caché propia |
+| `src/rutas/plataforma.js` | `tipo`, `ligaId`, `ligaNombre` y `precioPorDefecto` |
+| `src/proveedor.js` | `cacheLigas` → `cacheProveedor` |
+| `test/rutas.test.js` | 7 pruebas nuevas; `eventoApi` admite ronda y fecha |
+| `test/permisos.test.js` | La ruta nueva, declarada en la rejilla |
+
+**Verificación:**
+
+```
+npm test             → 644/644  (eran 637)
+npx playwright test  → 142/142
+
+Rotas a proposito, 7 de 7 detectadas:
+  la forma canonica vuelve a tirar la ronda · el borrador ignora las rondas
+  usadas · se pierde la cache · «de liga» sin liga · volver a customizada deja
+  la liga colgando · el tope del acumulado · (y las tres de la tajada 3)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un normalizador con lista blanca tira en silencio lo que no conoce.**
+   Añadir una columna a la base no basta: hay que añadirla también a la forma
+   canónica, o el dato no llega nunca por HTTP.
+2. ⚠️ **Probar el módulo no es probar el camino.** La tajada 1 pasó llamando a
+   `guardar()` directamente; el camino real tenía un filtro en medio.
+3. ⛔ **Una dirección que depende del orden de montaje es una trampa.**
+   `/api/jornadas/borrador` la tapa `/api/jornadas/:nombre` de otro archivo.
+4. ⭐ **Renombrar antes del segundo consumidor.** `cacheLigas` iba a guardar
+   partidos; el rato de renombrar es menor ahora que con dos usos dentro.
+
+**Pendiente / siguiente paso:** la tajada 5 de §22 —elegir tipo y liga **al crear
+la quiniela**—. La configuración ya lo acepta; falta la pantalla, y que el
+selector de liga esconda las que no se pueden automatizar con su motivo.
+
+⚠️ Nada que correr en Neon.
 
 ---
 

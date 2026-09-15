@@ -1468,9 +1468,10 @@ async function conProveedorFalso(respuestas, fn) {
   try { return await fn(); } finally { proveedor.usarFuente(anterior); }
 }
 
-const eventoApi = ({ id = '1', local = 'Alfa', visitante = 'Beta', liga = 'Primera', pais = 'Costa Rica', ligaId = '7' } = {}) => ({
+const eventoApi = ({ id = '1', local = 'Alfa', visitante = 'Beta', liga = 'Primera', pais = 'Costa Rica', ligaId = '7', ronda = '', fecha = '2099-01-01' } = {}) => ({
   match_id: id,
-  match_date: '2099-01-01',
+  match_date: fecha,
+  match_round: ronda,
   match_time: '15:00',
   match_status: 'Finished',
   league_name: liga,
@@ -1536,7 +1537,7 @@ test('sin fecha, el buscador de partidos responde 400 y no consulta nada', async
 
 test('el buscador de ligas agrupa por país y se cachea', async () => {
   const jefe = await admin('jefe');
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 
   let consultas = 0;
   const lista = [
@@ -1555,7 +1556,7 @@ test('el buscador de ligas agrupa por país y se cachea', async () => {
   });
 
   assert.equal(consultas, 1, 'quien arma una jornada abre esa pantalla varias veces seguidas');
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 });
 
 /* ---------- Ligas favoritas ---------- */
@@ -1572,7 +1573,7 @@ const DOS_LIGAS = [
 
 test('las ligas favoritas salen de primero y no se repiten abajo', async () => {
   const jefe = await admin('jefe');
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 
   assert.equal((await marcarFavoritas(jefe, [{ id: '12', nombre: 'Liga MX' }])).status, 200);
 
@@ -1587,7 +1588,7 @@ test('las ligas favoritas salen de primero y no se repiten abajo', async () => {
     assert.ok(abajo.includes('Primera División'));
   });
 
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 });
 
 test('⛔ la caché compartida NO cuela las favoritas de una quiniela en otra', async () => {
@@ -1599,7 +1600,7 @@ test('⛔ la caché compartida NO cuela las favoritas de una quiniela en otra', 
    */
   const uno = await admin('favuno');
   const otro = await admin('favotro');
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 
   await marcarFavoritas(uno, [{ id: '12', nombre: 'Liga MX' }]);
 
@@ -1620,12 +1621,12 @@ test('⛔ la caché compartida NO cuela las favoritas de una quiniela en otra', 
   });
 
   assert.equal(consultas, 1);
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 });
 
 test('una favorita sin partidos esta semana llega con partidos en 0', async () => {
   const jefe = await admin('jefe');
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 
   await marcarFavoritas(jefe, [{ id: '999', nombre: 'Liga Centroamericana' }]);
 
@@ -1636,7 +1637,7 @@ test('una favorita sin partidos esta semana llega con partidos en 0', async () =
     ]);
   });
 
-  proveedor.vaciarCacheLigas();
+  proveedor.vaciarCacheProveedor();
 });
 
 test('guardar favoritas no se lleva por delante la puntuación', async () => {
@@ -4963,4 +4964,175 @@ test('⛔ las notificaciones NO exigen quiniela seleccionada', async () => {
   assert.equal((await agente.get('/api/notificaciones')).status, 200);
   assert.equal((await agente.post('/api/notificaciones/suscribir')
     .send(suscripcionFalsa(4))).status, 201);
+});
+
+/* ============ El borrador de la próxima jornada (tajada 4 de §22) ============ */
+
+/** Deja la quiniela marcada como «de liga». */
+async function comoQuinielaDeLiga(agente, ligaId = '7', nombre = 'Primera') {
+  const r = await agente.patch('/api/quiniela-actual/configuracion')
+    .send({ tipo: 'liga', ligaId, ligaNombre: nombre, precioPorDefecto: { precio: 2000, alAcumulado: 1000 } });
+  assert.equal(r.status, 200, `no se pudo configurar: ${JSON.stringify(r.body)}`);
+}
+
+test('⛔ una quiniela customizada no tiene borrador, y no es un error', async () => {
+  /*
+   * Es el caso por defecto y el de todas las quinielas que ya existían. La
+   * pantalla simplemente no enseña el panel. Devolver un 400 haría que se viera
+   * un error en el sitio más común de todos.
+   */
+  const jefe = await admin('jefe');
+
+  const res = await jefe.agente.get('/api/borrador-de-jornada');
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.motivo, 'quiniela_customizada');
+});
+
+test('el borrador propone la ronda más temprana que falta', async () => {
+  const jefe = await admin('jefe');
+  await comoQuinielaDeLiga(jefe.agente);
+  proveedor.vaciarCacheProveedor();
+
+  const lista = [
+    eventoApi({ id: '1', ronda: '10', fecha: '2099-01-10', local: 'Decima' }),
+    eventoApi({ id: '2', ronda: '9', fecha: '2099-01-03', local: 'Novena' }),
+    eventoApi({ id: '3', ronda: '9', fecha: '2099-01-04', local: 'NovenaB' })
+  ];
+
+  await conProveedorFalso(() => lista, async () => {
+    const res = await jefe.agente.get('/api/borrador-de-jornada');
+
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.ronda, '9');
+    assert.equal(res.body.nombre, 'Jornada 9');
+    assert.deepEqual(res.body.partidos.map(p => p.equipo1), ['Novena', 'NovenaB']);
+    assert.equal(res.body.liga.nombre, 'Primera', 'la pantalla necesita el rótulo');
+    assert.deepEqual(res.body.precioPorDefecto, { precio: 2000, alAcumulado: 1000 });
+  });
+
+  proveedor.vaciarCacheProveedor();
+});
+
+test('⛔ el borrador se cachea: la cuota es una sola para todas las quinielas', async () => {
+  /*
+   * Ya se agotó una vez este mes. Quien arma una jornada abre esa pantalla
+   * varias veces seguidas, y sin caché cada vistazo sería una consulta.
+   */
+  const jefe = await admin('jefe');
+  await comoQuinielaDeLiga(jefe.agente);
+  proveedor.vaciarCacheProveedor();
+
+  let consultas = 0;
+
+  await conProveedorFalso(() => {
+    consultas += 1;
+    return [eventoApi({ id: '1', ronda: '9' })];
+  }, async () => {
+    await jefe.agente.get('/api/borrador-de-jornada');
+    await jefe.agente.get('/api/borrador-de-jornada');
+    await jefe.agente.get('/api/borrador-de-jornada');
+  });
+
+  assert.equal(consultas, 1, 'tres vistazos, una consulta');
+  proveedor.vaciarCacheProveedor();
+});
+
+test('⛔ una ronda que ya está creada no se vuelve a proponer, de punta a punta', async () => {
+  /*
+   * Esto cruza las dos mitades: lo que dice el proveedor y lo que hay en la
+   * base. Es el recorrido completo de la función, y el que de verdad importa.
+   */
+  const jefe = await admin('jefe');
+  await comoQuinielaDeLiga(jefe.agente);
+  proveedor.vaciarCacheProveedor();
+
+  /* Se crea a mano la jornada 9, con su ronda marcada. */
+  const creada = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'Jornada 9',
+    partidos: [partido('Novena', 'Rival', { apiFixtureId: '2', apiRound: '9' })]
+  });
+  assert.equal(creada.status, 200, JSON.stringify(creada.body));
+
+  const lista = [
+    eventoApi({ id: '2', ronda: '9', fecha: '2099-01-03' }),
+    eventoApi({ id: '1', ronda: '10', fecha: '2099-01-10', local: 'Decima' })
+  ];
+
+  await conProveedorFalso(() => lista, async () => {
+    const res = await jefe.agente.get('/api/borrador-de-jornada');
+    assert.equal(res.body.ronda, '10', 'la 9 ya está metida');
+  });
+
+  proveedor.vaciarCacheProveedor();
+});
+
+test('cuando no queda nada, el motivo viaja explicado', async () => {
+  /*
+   * ⚠️ `sin_rondas_nuevas` es el fin de temporada, y es cuando la pantalla tiene
+   * que ofrecer cambiar de liga, archivar o seguir a mano. El texto viaja hecho
+   * para que la pantalla no tenga que traducir códigos.
+   */
+  const jefe = await admin('jefe');
+  await comoQuinielaDeLiga(jefe.agente);
+  proveedor.vaciarCacheProveedor();
+
+  await conProveedorFalso(() => [], async () => {
+    const res = await jefe.agente.get('/api/borrador-de-jornada');
+
+    assert.equal(res.body.ok, false);
+    assert.equal(res.body.motivo, 'sin_partidos');
+    assert.match(res.body.explicacion, /no devolvió partidos/);
+  });
+
+  proveedor.vaciarCacheProveedor();
+});
+
+test('⛔ una quiniela «de liga» SIN liga no se puede guardar', async () => {
+  /*
+   * Quedaría una quiniela que dice ser automática y no puede proponer nada: el
+   * borrador contestaría `quiniela_customizada` —porque mira las dos cosas— y
+   * quien la creó vería que «no funciona» sin ninguna pista de por qué.
+   *
+   * Es más barato impedir que ese estado exista que explicarlo después.
+   */
+  const jefe = await admin('jefe');
+
+  const sinLiga = await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ tipo: 'liga' });
+  assert.equal(sinLiga.status, 400);
+  assert.match(sinLiga.body.error, /necesita una liga/);
+
+  const inventado = await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ tipo: 'loqueasea', ligaId: '7' });
+  assert.equal(inventado.status, 400);
+
+  /* Y volver a customizada limpia la liga, en vez de dejarla colgando. */
+  await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ tipo: 'liga', ligaId: '7', ligaNombre: 'Primera' });
+  await jefe.agente.patch('/api/quiniela-actual/configuracion').send({ tipo: 'customizada' });
+
+  const q = await jefe.agente.get('/api/quiniela-actual');
+  assert.equal(q.body.configuracion.tipo, 'customizada');
+  assert.equal(q.body.configuracion.ligaId, null, 'la liga no se queda colgando');
+});
+
+test('el precio por defecto se valida: al acumulado no puede pasarse', async () => {
+  /*
+   * Si al acumulado fuera más de lo que cuesta la jornada, el bote de la jornada
+   * saldría negativo y el reparto dejaría de significar nada. Es la misma regla
+   * que ya aplican los cobros, comprobada aquí porque este valor nace en otro
+   * sitio y va a copiarse a cada jornada propuesta.
+   */
+  const jefe = await admin('jefe');
+
+  const malo = await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ precioPorDefecto: { precio: 1000, alAcumulado: 2000 } });
+  assert.equal(malo.status, 400);
+  assert.match(malo.body.error, /más de lo que cuesta/);
+
+  const bueno = await jefe.agente.patch('/api/quiniela-actual/configuracion')
+    .send({ precioPorDefecto: { precio: 2000, alAcumulado: 1000 } });
+  assert.equal(bueno.status, 200);
 });

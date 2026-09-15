@@ -110,7 +110,18 @@ function normalizarPartido(valor, indice = 0) {
     apiFixtureId: texto('apiFixtureId'),
     apiLeagueId: texto('apiLeagueId'),
     apiDate: primero('apiDate', 'fecha'),
-    apiStatus: primero('apiStatus', 'estado')
+    apiStatus: primero('apiStatus', 'estado'),
+    /*
+     * A qué jornada de la liga pertenece (§22). El alias `ronda` es como lo
+     * llama `mapearEvento`, igual que `fecha` y `estado` de arriba.
+     *
+     * ⛔ Faltaba aquí y el dato se perdía ENTERO por el camino HTTP: se leía
+     * del proveedor, se mandaba desde el navegador y esta función lo tiraba
+     * antes de llegar a la base. Las pruebas de la tajada 1 llamaban a
+     * `jornadas.guardar` directamente, así que probaban el módulo y no el
+     * camino que usa la aplicación.
+     */
+    apiRound: primero('apiRound', 'ronda')
   };
 }
 

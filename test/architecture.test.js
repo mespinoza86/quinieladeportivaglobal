@@ -1148,8 +1148,8 @@ test('lo que se guarda en la cache de ligas es lo del proveedor, sin favoritas',
    */
   const admin = quitarComentarios(leer(path.join('src', 'rutas', 'admin.js')));
 
-  assert.match(admin, /guardarCacheLigas\(clave, respuesta\)/);
-  assert.doesNotMatch(admin, /guardarCacheLigas\([^)]*aplicarFavoritas/,
+  assert.match(admin, /guardarCacheProveedor\(clave, respuesta\)/);
+  assert.doesNotMatch(admin, /guardarCacheProveedor\([^)]*aplicarFavoritas/,
     'guardar lo ya ordenado envenena una cache que se comparte entre quinielas');
 
   // Y las dos salidas —la de cache y la fresca— tienen que aplicarlas.

@@ -206,25 +206,33 @@ async function buscarEvento(descriptor, metricas = null) {
  * una consulta más cada diez minutos.
  */
 const CACHE_LIGAS_MS = 10 * 60 * 1000;
-const cacheLigas = new Map();
+/*
+ * ⚠️ Se llamaba `cacheProveedor` hasta la tajada 4 de §22, y el nombre paso a
+ * mentir en cuanto el borrador guardo aqui listas de PARTIDOS. Es un almacen
+ * generico -clave libre, diez minutos- y ahora lo dice.
+ *
+ * La clave la pone quien guarda, y por eso el borrador usa un prefijo propio:
+ * dos cosas distintas con el mismo rango de fechas no pueden pisarse.
+ */
+const cacheProveedor = new Map();
 
-function leerCacheLigas(clave, ahora = Date.now()) {
-  const guardado = cacheLigas.get(clave);
+function leerCacheProveedor(clave, ahora = Date.now()) {
+  const guardado = cacheProveedor.get(clave);
   if (!guardado || guardado.expiraEn <= ahora) return null;
   return guardado.valor;
 }
 
-function guardarCacheLigas(clave, valor, ahora = Date.now()) {
-  cacheLigas.set(clave, { valor, expiraEn: ahora + CACHE_LIGAS_MS });
+function guardarCacheProveedor(clave, valor, ahora = Date.now()) {
+  cacheProveedor.set(clave, { valor, expiraEn: ahora + CACHE_LIGAS_MS });
 }
 
-function vaciarCacheLigas() {
-  cacheLigas.clear();
+function vaciarCacheProveedor() {
+  cacheProveedor.clear();
 }
 
 module.exports = {
   TIMEOUT_MS, CACHE_LIGAS_MS,
   usarFuente, hayClave, mapearEvento,
   porRango, porId, porFecha, ligas, buscarEvento,
-  leerCacheLigas, guardarCacheLigas, vaciarCacheLigas
+  leerCacheProveedor, guardarCacheProveedor, vaciarCacheProveedor
 };

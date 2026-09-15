@@ -34,6 +34,7 @@ const cerrojos = require('../cerrojos');
 const { normalizarMarcador } = require('../validacion');
 const ligas = require('../ligas');
 const pagosMod = require('../pagos');
+const borradores = require('../borradores');
 const cobros = require('../cobros');
 const compartirMod = require('../compartir');
 const { invalidarCacheRanking } = require('./puntuacion');
@@ -119,7 +120,7 @@ module.exports = function rutasDeAdmin(app, { requierePermiso, enQuiniela }) {
      */
     const favoritas = req.quiniela?.configuracion?.ligasFavoritas;
 
-    const enCache = proveedor.leerCacheLigas(clave);
+    const enCache = proveedor.leerCacheProveedor(clave);
     if (enCache) return res.json({ ...ligas.aplicarFavoritas(enCache, favoritas), deCache: true });
 
     const partidos = await proveedor.porRango({ desde: rango.desde, hasta: rango.hasta });
@@ -132,7 +133,7 @@ module.exports = function rutasDeAdmin(app, { requierePermiso, enQuiniela }) {
       paises: ligas.agruparLigasPorPais(partidos)
     };
 
-    proveedor.guardarCacheLigas(clave, respuesta);
+    proveedor.guardarCacheProveedor(clave, respuesta);
     res.json({ ...ligas.aplicarFavoritas(respuesta, favoritas), deCache: false });
   });
 
@@ -140,6 +141,73 @@ module.exports = function rutasDeAdmin(app, { requierePermiso, enQuiniela }) {
   app.get('/api/football/leagues', requierePermiso('jornadas.escribir'), async (req, res) => {
     if (!proveedor.hayClave()) return sinClave(res);
     res.json(await proveedor.ligas());
+  });
+
+  /* ==================== El borrador de la próxima jornada ==================== */
+
+  /**
+   * Qué jornada toca crear, ya armada, si esta quiniela es de una liga.
+   *
+   * ⭐ LA CUOTA MANDA EN CÓMO ESTÁ ESCRITA ESTA RUTA.
+   *
+   * La de APIFootball es **una sola para todas las quinielas** y ya se agotó una
+   * vez este mes. Por eso:
+   *
+   *   · se apoya en la MISMA caché de diez minutos que las ligas disponibles,
+   *     con una clave propia —rango y liga— para que dos quinielas que sigan la
+   *     misma liga compartan la consulta;
+   *   · y la regla vive en `borradores.proponer()`, que no sabe de red: así no
+   *     puede colarse una consulta dentro de un bucle sin que se note.
+   * ⛔ Y la dirección NO es `/api/jornadas/borrador`, aunque fuera la natural.
+   *
+   * `dominio.js` monta `GET /api/jornadas/:nombre` y se monta ANTES que este
+   * archivo, así que se tragaba «borrador» como si fuera el nombre de una
+   * jornada y devolvía 404. Una dirección que depende del orden de montaje es
+   * una trampa que vuelve: basta con que alguien reordene los `require`.
+   */
+  app.get('/api/borrador-de-jornada', requierePermiso('jornadas.escribir'), async (req, res) => {
+    const configuracion = req.quiniela?.configuracion || {};
+
+    /*
+     * ⚠️ Sin liga no es un error: es una quiniela customizada, que es el caso
+     * por defecto y el de todas las que ya existían. Se contesta que no hay
+     * borrador y la pantalla no enseña el panel.
+     */
+    if (configuracion.tipo !== 'liga' || !configuracion.ligaId) {
+      return res.json({ ok: false, motivo: 'quiniela_customizada' });
+    }
+
+    if (!proveedor.hayClave()) return sinClave(res);
+
+    const rango = ligas.rangoDeBusqueda({ desde: req.query.desde, dias: req.query.dias || 21 });
+    const ligaId = String(configuracion.ligaId);
+    const clave = `borrador|${rango.desde}|${rango.hasta}|${ligaId}`;
+
+    let partidos = proveedor.leerCacheProveedor(clave);
+    if (!partidos) {
+      partidos = await proveedor.porRango({ desde: rango.desde, hasta: rango.hasta, ligaId });
+      proveedor.guardarCacheProveedor(clave, partidos);
+    }
+
+    /*
+     * Las rondas que esta quiniela ya tiene metidas. Es lo único que va a la
+     * base, y va con contexto de quiniela: `partidos` lleva RLS y sin él
+     * devolvería cero filas sin dar ningún error — y el borrador propondría una
+     * jornada que ya existe.
+     */
+    const rondasUsadas = await jornadasMod.rondasUsadas(req.quiniela.id);
+
+    const propuesta = borradores.proponer({ partidos, rondasUsadas });
+
+    res.json({
+      ...propuesta,
+      liga: { id: ligaId, nombre: configuracion.ligaNombre || '' },
+      /* El texto del motivo viaja resuelto: la pantalla no tiene que traducirlo. */
+      explicacion: propuesta.ok ? null : borradores.MOTIVOS[propuesta.motivo] || null,
+      precioPorDefecto: configuracion.precioPorDefecto || null,
+      desde: rango.desde,
+      hasta: rango.hasta
+    });
   });
 
   /* ==================== Sincronización a mano ==================== */
