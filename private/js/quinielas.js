@@ -206,8 +206,21 @@ document.addEventListener('DOMContentLoaded', async () => {
        * Por eso esta elección sólo decide a dónde se aterriza.
        */
       const tipo = document.querySelector('input[name="tipoQuiniela"]:checked')?.value;
+
+      /*
+       * ⛔ Se pasa por el Admin Mode ANTES de configurar, y hace falta:
+       * seleccionar una quiniela BORRA el Admin Mode a propósito —va atado a
+       * una quiniela concreta y arrastrarlo daría permisos en otra sin
+       * confirmar nada—, y crear una la selecciona.
+       *
+       * Sin esto se aterrizaba en la pantalla de configurar con la llave
+       * recién retirada: todo lo que se tocaba allí contestaba «confirma tu
+       * contraseña», sin que nadie entendiera por qué se la pedían si acababa
+       * de crear la quiniela.
+       */
+      const destino = '/configuracion-quiniela.html#liga';
       window.location.href = tipo === 'liga'
-        ? '/configuracion-quiniela.html#liga'
+        ? `/adminmode.html?volver=${encodeURIComponent(destino)}`
         : '/index.html';
     } catch (error) { mensaje.textContent = error.message; }
   });

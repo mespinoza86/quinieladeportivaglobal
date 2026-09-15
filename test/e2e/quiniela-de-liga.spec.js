@@ -24,8 +24,13 @@ test('al crear la quiniela se puede decir que es de una liga', async ({ page }) 
   /*
    * ⭐ La elección sólo decide a dónde se aterriza: la lista de ligas la sirve
    * una ruta que exige quiniela activa, y hasta crearla no había ninguna.
+   *
+   * ⛔ Y se pasa por el Admin Mode ANTES, con el destino a cuestas. Crear una
+   * quiniela la selecciona, y seleccionar BORRA el Admin Mode: sin este rodeo
+   * se aterrizaba en Configurar con la llave recién retirada.
    */
-  await page.waitForURL('**/configuracion-quiniela.html#liga');
+  await page.waitForURL('**/adminmode.html?volver=*');
+  expect(decodeURIComponent(page.url())).toContain('/configuracion-quiniela.html#liga');
 });
 
 test('⛔ la liga que no publica la jornada se ve, pero no se puede elegir', async ({ page }) => {
@@ -117,4 +122,85 @@ test('⛔ dejar de armarla por liga limpia la liga, no la deja colgando', async 
 
   const configuracion = await (await page.request.get('/api/quiniela-actual')).json();
   expect(configuracion.configuracion.ligaId).toBeNull();
+});
+
+test('⛔ crear una quiniela de liga y configurarla, SIN activar nada a mano', async ({ page }) => {
+  /*
+   * ⚠️ Ésta es la prueba que faltaba, y su ausencia costó un fallo que llegó a
+   * producción: las demás llaman a `activarAdminMode()` antes de tocar la
+   * pantalla, así que ninguna recorría lo que recorre una persona de verdad.
+   *
+   * ⛔ Y el fallo era éste: seleccionar una quiniela BORRA el Admin Mode —va
+   * atado a una quiniela concreta— y crear una la selecciona. Así que se
+   * aterrizaba en Configurar con la llave recién retirada, y todo contestaba
+   * «confirma tu contraseña» sin que se entendiera por qué la pedían justo
+   * después de crear la quiniela.
+   *
+   * Aquí NO se llama a `activarAdminMode`: el recorrido tiene que pasar por la
+   * puerta él solo.
+   */
+  const datos = await registrarse(page, 'entero');
+
+  await page.goto('/quinielas.html');
+  await page.locator('#nombreQuiniela').fill(`Entera ${Date.now()}`);
+  await page.locator('input[name="tipoQuiniela"][value="liga"]').check();
+  await page.getByRole('button', { name: 'Crear quiniela' }).click();
+
+  /* Primero la puerta, con el destino a cuestas. */
+  await page.waitForURL('**/adminmode.html?volver=*');
+  await page.locator('#adminPassword').fill(datos.password);
+  await page.getByRole('button', { name: /Entrar a Admin mode/i }).click();
+
+  /* Y de ahí, a configurar, ya con la llave puesta. */
+  await page.waitForURL('**/configuracion-quiniela.html#liga');
+  await page.locator('#panelLiga').waitFor({ state: 'visible' });
+
+  /* La lista se abre sola, y elegir funciona sin más pasos. */
+  await page.locator('.action-card', { hasText: 'Liga MX' }).first()
+    .getByRole('button', { name: 'Elegir' }).click();
+
+  await expect(page.locator('#ligaResumen')).toContainText('Liga MX');
+});
+
+test('⛔ «volver» no saca a nadie fuera del sitio', async ({ page }) => {
+  /*
+   * Una redirección abierta: un enlace con `?volver=https://otro-sitio` llevaría
+   * a alguien RECIÉN autenticado a un sitio ajeno, que es justo el momento en
+   * que menos desconfía. Sólo se admiten rutas de aquí.
+   */
+  const datos = await registrarse(page, 'abierta');
+  await crearQuiniela(page, 'Sin salir');
+
+  await page.goto('/adminmode.html?volver=https://ejemplo.invalido/robar');
+  await page.locator('#adminPassword').fill(datos.password);
+  await page.getByRole('button', { name: /Entrar a Admin mode/i }).click();
+
+  await page.locator('#admin-content').waitFor({ state: 'visible' });
+  expect(page.url()).toContain('/adminmode.html');
+});
+
+test('⛔ sin modo administrador se explica qué hacer, no se suelta el error crudo', async ({ page }) => {
+  /*
+   * El caso que queda vivo aunque el recorrido de crear pase por la puerta:
+   * volver a esta pantalla más tarde, cuando la hora del Admin Mode ya venció.
+   *
+   * ⚠️ «Confirma tu contraseña para entrar al modo administrador» es correcto y
+   * no dice QUÉ HACER. Aquí se convierte en un enlace, que es la diferencia
+   * entre un aviso y un callejón.
+   */
+  await registrarse(page, 'sinllave');
+  await crearQuiniela(page, 'Sin llave');
+
+  /* Se entra directo, sin activar el Admin Mode. */
+  await page.goto('/configuracion-quiniela.html');
+  await page.locator('#panelLiga').waitFor({ state: 'visible' });
+  await page.locator('#botonElegirLiga').click();
+
+  const aviso = page.locator('#ligaMensaje');
+  await expect(aviso).toContainText('modo administrador');
+  await expect(aviso.getByRole('link', { name: 'Entrar ahora' })).toBeVisible();
+
+  /* Y el enlace lleva de vuelta aquí, no a un sitio cualquiera. */
+  const destino = await aviso.getByRole('link', { name: 'Entrar ahora' }).getAttribute('href');
+  expect(decodeURIComponent(destino)).toContain('/configuracion-quiniela.html#liga');
 });

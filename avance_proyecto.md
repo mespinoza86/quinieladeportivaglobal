@@ -17332,6 +17332,99 @@ pueden sustituir.
 
 ---
 
+
+### 📌 Entrada 103 — 14 de septiembre de 2026 — La llave que se retiraba al entrar
+
+**Objetivo:** arreglar lo que Marco encontró al primer intento real: crear una
+quiniela de liga y, al ir a poner el precio, *«confirma tu contraseña para entrar
+al modo administrador»* — sin entender por qué se la pedían si acababa de crearla.
+
+## ⛔ El fallo, y por qué las pruebas no lo vieron
+
+```
+crear una quiniela        →  el servidor la SELECCIONA
+seleccionar una quiniela  →  el Admin Mode se BORRA, a propósito
+la pantalla de destino    →  todo lo que hace exige Admin Mode
+```
+
+El borrado es correcto y está ahí desde siempre: el Admin Mode va atado a una
+quiniela concreta, y arrastrarlo daría permisos administrativos en otra sin haber
+confirmado nada. Lo que estaba mal era **mandar a alguien a una habitación cuya
+llave se acababa de retirar**.
+
+⚠️ **Y ninguna de las 12 pruebas de navegador lo veía**, por una razón que
+conviene recordar: todas llamaban a `activarAdminMode()` antes de tocar la
+pantalla. Eran cómodas, y por eso **ninguna recorría lo que recorre una persona**.
+
+La prueba que faltaba no comprueba nada nuevo: recorre lo mismo **sin atajos**.
+
+## El arreglo, por los dos lados
+
+1. **Crear una quiniela de liga pasa por el Admin Mode**, con el destino a
+   cuestas: `/adminmode.html?volver=...`. Al confirmar la contraseña se sigue
+   sola hasta la pantalla de configurar.
+2. **Y si aun así falta** —volver más tarde, con la hora vencida—, el mensaje
+   deja de ser el crudo del servidor y pasa a ser un enlace:
+
+```
+antes:  «Confirma tu contraseña para entrar al modo administrador.»
+ahora:  «Para configurar la quiniela hace falta entrar al modo
+         administrador. [Entrar ahora]»
+```
+
+⚠️ El texto de antes era **correcto** y no decía qué hacer. Esa diferencia es la
+que hay entre un aviso y un callejón.
+
+## ⛔ Y una puerta que el arreglo abría
+
+`?volver=` es una redirección, y una redirección que admite cualquier destino es
+una **redirección abierta**: un enlace con `?volver=https://otro-sitio` llevaría a
+alguien **recién autenticado** fuera de la aplicación — justo el momento en que
+menos desconfía.
+
+Sólo se admiten rutas de aquí: tienen que empezar por una barra y no por dos.
+Hay prueba, y cae si se quita.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/quinielas.js` | Crear una de liga pasa por el Admin Mode con `volver` |
+| `private/js/adminmode.js` | Honra `volver`, sólo si es una ruta de aquí |
+| `private/js/liga-de-quiniela.js` | El 401 se convierte en un enlace |
+| `test/e2e/quiniela-de-liga.spec.js` | 3 pruebas: el recorrido SIN atajos, la redirección abierta y el mensaje |
+
+**Verificación:**
+
+```
+npm test             → 647/647
+npx playwright test  → 170/170  (eran 164)
+
+Rotas a proposito, 3 de 3 detectadas:
+  aterrizar sin pasar por la puerta · «volver» admite cualquier sitio ·
+  el error vuelve a ser el crudo
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una prueba que usa un atajo no prueba el recorrido.** Doce pruebas
+   llamaban a `activarAdminMode()` antes de empezar, así que ninguna pasaba por
+   donde pasa una persona. El fallo llegó a producción por eso.
+2. ⚠️ **Un mensaje correcto puede ser un callejón.** «Confirma tu contraseña» es
+   cierto y no dice qué hacer ni por qué aparece ahí.
+3. ⛔ **Añadir un `volver=` es añadir una redirección abierta** si no se valida.
+   Y el momento en que se usa —recién autenticado— es el peor para mandar a
+   alguien fuera.
+4. ⭐ **Lo encontró el primer uso real, no las pruebas.** Sigue mereciendo la pena
+   desplegar pronto y probar con datos de verdad.
+
+**Pendiente / siguiente paso:** que Marco vuelva a intentarlo, ahora sí, y cuente
+**qué jornada le propone** sin confirmarla.
+
+⚠️ Nada que correr en Neon.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

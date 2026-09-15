@@ -189,6 +189,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       adminLoginForm.reset();
+
+      /*
+       * ⛔ `volver` sólo admite rutas de ESTE sitio: tiene que empezar por una
+       * barra y no por dos. Sin esa comprobación, un enlace con
+       * `?volver=https://otro-sitio` llevaría a alguien recién autenticado
+       * fuera de la aplicación, que es como se monta una redirección abierta.
+       */
+      const pedido = new URLSearchParams(window.location.search).get('volver') || '';
+      const esDeAqui = pedido.startsWith('/') && !pedido.startsWith('//');
+
+      if (esDeAqui) { window.location.href = pedido; return; }
+
       mostrarEstado(true);
     } catch (error) {
       /*

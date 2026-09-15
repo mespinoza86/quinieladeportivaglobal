@@ -34,8 +34,28 @@ document.addEventListener('DOMContentLoaded', () => {
   async function api(url, opciones) {
     const respuesta = await fetch(url, opciones);
     const datos = await respuesta.json().catch(() => ({}));
-    if (!respuesta.ok) throw new Error(datos.error || 'No se pudo completar la operación.');
+
+    if (!respuesta.ok) {
+      /*
+       * ⚠️ «Confirma tu contraseña» a secas no dice qué hacer, y aquí es
+       * especialmente confuso: a quien acaba de crear la quiniela le parece
+       * que le piden la contraseña sin motivo. Se convierte en un enlace.
+       */
+      const fallo = new Error(datos.error || 'No se pudo completar la operación.');
+      fallo.requiereAdminMode = Boolean(datos.requiereAdminMode);
+      throw fallo;
+    }
     return datos;
+  }
+
+  /** Pone en el mensaje un enlace para entrar al modo administrador. */
+  function pedirAdminMode() {
+    mensaje.textContent = 'Para configurar la quiniela hace falta entrar al modo administrador. ';
+
+    const enlace = document.createElement('a');
+    enlace.href = `/adminmode.html?volver=${encodeURIComponent('/configuracion-quiniela.html#liga')}`;
+    enlace.textContent = 'Entrar ahora';
+    mensaje.appendChild(enlace);
   }
 
   const dinero = n => '₡' + Number(n || 0).toLocaleString('es-CR');
@@ -121,7 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       lista.hidden = false;
     } catch (error) {
-      mensaje.textContent = error.message;
+      if (error.requiereAdminMode) pedirAdminMode();
+      else mensaje.textContent = error.message;
     }
   }
 
@@ -161,7 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
       lista.hidden = true;
       mensaje.textContent = `Listo: cada semana se te propondrá la jornada de ${liga.nombre}.`;
     } catch (error) {
-      mensaje.textContent = error.message;
+      if (error.requiereAdminMode) pedirAdminMode();
+      else mensaje.textContent = error.message;
     }
   }
 
@@ -180,7 +202,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       mensaje.textContent = 'Precio guardado.';
     } catch (error) {
-      mensaje.textContent = error.message;
+      if (error.requiereAdminMode) pedirAdminMode();
+      else mensaje.textContent = error.message;
     }
   });
 
@@ -198,7 +221,8 @@ document.addEventListener('DOMContentLoaded', () => {
       lista.hidden = true;
       mensaje.textContent = 'A partir de ahora eliges tú los partidos.';
     } catch (error) {
-      mensaje.textContent = error.message;
+      if (error.requiereAdminMode) pedirAdminMode();
+      else mensaje.textContent = error.message;
     }
   });
 
@@ -209,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const q = await api('/api/quiniela-actual');
       configuracion = q.configuracion || {};
 
-      if (!(configuracion.capacidades || q.capacidades || []).includes('quiniela.configurar')) {
+      if (!(q.capacidades || []).includes('quiniela.configurar')) {
         return;                       // La guardia del servidor manda; esto es cortesía.
       }
 
