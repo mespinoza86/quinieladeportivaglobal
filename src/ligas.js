@@ -115,6 +115,44 @@ function rangoDeBusqueda({ desde, dias, ahora = new Date() } = {}) {
  */
 const SIN_PAIS = 'Internacional';
 
+/**
+ * ¿Se puede armar sola una quiniela de esta liga?
+ *
+ * ⭐ La regla NO es «ligas sí, copas no». Se comprobó contra los eventos reales
+ * guardados en producción y el reparto no va por ahí:
+ *
+ *   Liga MX, Primera de Costa Rica, Champions, Premier   →  traen ronda
+ *   Concacaf y Libertadores en cuartos                   →  «Quarter-finals»
+ *   MLS, Concacaf fase de grupos, Libertadores octavos   →  vienen vacías
+ *
+ * La MLS es una liga y falla; los cuartos de Concacaf son una copa y sirven. La
+ * regla es la única que importa: **se puede si el proveedor dice a qué ronda
+ * pertenece CADA partido**, venga número o nombre.
+ *
+ * ⛔ Se exigen TODOS, no la mayoría. Un partido sin ronda no se puede colocar en
+ * ninguna jornada: el borrador lo dejaría fuera en silencio y esa jornada
+ * saldría incompleta, que es justo el fallo que más cuesta ver.
+ */
+function puedeAutomatizarse({ partidos = 0, conRonda = 0, nombre = '' } = {}) {
+  if (partidos > 0 && conRonda === partidos) return { automatizable: true, motivo: null };
+
+  if (conRonda === 0) {
+    return {
+      automatizable: false,
+      motivo: `«${nombre}» no publica el número de jornada, así que no se puede armar sola.`
+    };
+  }
+
+  /*
+   * El caso a medias, y merece un motivo propio: decirle a alguien «no publica
+   * la jornada» cuando publica la mitad suena a error de la aplicación.
+   */
+  return {
+    automatizable: false,
+    motivo: `«${nombre}» sólo publica el número de jornada en ${conRonda} de ${partidos} partidos.`
+  };
+}
+
 function agruparLigasPorPais(partidos = []) {
   const porPais = new Map();
 
@@ -138,15 +176,24 @@ function agruparLigasPorPais(partidos = []) {
     const ligas = porPais.get(pais);
 
     if (!ligas.has(clave)) {
-      ligas.set(clave, { id, nombre: nombreLiga, partidos: 0 });
+      ligas.set(clave, { id, nombre: nombreLiga, partidos: 0, conRonda: 0 });
     }
     ligas.get(clave).partidos += 1;
+
+    /*
+     * ⚠️ `ronda` puede venir vacía, y eso ES un dato: significa que esta liga
+     * no se puede armar sola. Se cuenta aquí, sobre los partidos que ya están
+     * en la mano, así que saberlo no cuesta ni una consulta más al proveedor.
+     */
+    if (String(partido.ronda || '').trim()) ligas.get(clave).conRonda += 1;
   }
 
   return [...porPais.entries()]
     .map(([pais, ligas]) => ({
       pais,
-      ligas: [...ligas.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+      ligas: [...ligas.values()]
+        .map(liga => ({ ...liga, ...puedeAutomatizarse(liga) }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
     }))
     /*
      * Los internacionales al final: el caso común es buscar una liga nacional,
@@ -273,6 +320,7 @@ module.exports = {
   MAXIMO_FAVORITAS,
   normalizarTexto,
   esLigaNoPermitida,
+  puedeAutomatizarse,
   normalizarDias,
   rangoDeBusqueda,
   agruparLigasPorPais,

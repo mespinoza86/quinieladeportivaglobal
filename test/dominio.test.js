@@ -617,3 +617,88 @@ test('⛔ reordenar una jornada del proveedor conserva los ids y actualiza la ro
     'el partido 22 conserva su id, y con él sus pronósticos');
   assert.equal(idsDespues.find(x => x.api_fixture_id === '11').id, porFixture('11'));
 });
+
+/* ============ Qué ligas se pueden armar solas (tajada 2 de §22) ============ */
+
+/** Un partido tal y como lo devuelve `mapearEvento`. */
+const delProveedor = (liga, ronda, pais = 'Costa Rica') =>
+  ({ liga, pais, apiLeagueId: liga.length, ronda, fase: '' });
+
+const ligaDe = (partidos, nombre) =>
+  ligas.agruparLigasPorPais(partidos).flatMap(p => p.ligas).find(l => l.nombre === nombre);
+
+test('una liga que publica la jornada en TODOS sus partidos se puede armar sola', () => {
+  const liga = ligaDe([
+    delProveedor('Liga MX', '7'),
+    delProveedor('Liga MX', '7'),
+    delProveedor('Liga MX', '8')
+  ], 'Liga MX');
+
+  assert.equal(liga.automatizable, true);
+  assert.equal(liga.motivo, null);
+});
+
+test('⛔ «Quarter-finals» cuenta como jornada: la regla no es «ligas sí, copas no»', () => {
+  /*
+   * Comprobado contra los eventos reales de producción: los cuartos de Concacaf
+   * y de Libertadores traen la ronda como texto, y con ellas se arma una jornada
+   * igual de bien. Tratar sólo los números dejaría fuera media copa.
+   */
+  const copa = ligaDe([
+    delProveedor('Concacaf Central American Cup - Quarter-finals', 'Quarter-finals'),
+    delProveedor('Concacaf Central American Cup - Quarter-finals', 'Quarter-finals')
+  ], 'Concacaf Central American Cup - Quarter-finals');
+
+  assert.equal(copa.automatizable, true);
+});
+
+test('⛔ una liga que no publica la jornada NO se ofrece, y se dice por qué', () => {
+  /*
+   * La MLS es el caso real: es una liga —no una copa— y viene sin ronda. Si se
+   * ofreciera, el borrador no sabría dónde colocar sus partidos y saldrían
+   * jornadas vacías o con la temporada entera dentro.
+   */
+  const mls = ligaDe([
+    delProveedor('MLS - Regular season', ''),
+    delProveedor('MLS - Regular season', '')
+  ], 'MLS - Regular season');
+
+  assert.equal(mls.automatizable, false);
+  assert.match(mls.motivo, /no publica el número de jornada/);
+  assert.match(mls.motivo, /MLS - Regular season/, 'el motivo nombra la liga');
+});
+
+test('⛔ una liga a medias tampoco, y con un motivo distinto', () => {
+  /*
+   * ⚠️ Se exigen TODOS los partidos, no la mayoría: uno sin ronda no se puede
+   * colocar en ninguna jornada, y el borrador lo dejaría fuera EN SILENCIO. Esa
+   * jornada saldría incompleta y nadie lo vería hasta que alguien preguntara
+   * por qué falta un partido.
+   *
+   * Y el motivo es propio a propósito: decir «no publica la jornada» cuando
+   * publica la mitad suena a error de la aplicación, no a un dato del proveedor.
+   */
+  const rara = ligaDe([
+    delProveedor('Liga Rara', '3'),
+    delProveedor('Liga Rara', ''),
+    delProveedor('Liga Rara', '')
+  ], 'Liga Rara');
+
+  assert.equal(rara.automatizable, false);
+  assert.match(rara.motivo, /sólo publica el número de jornada en 1 de 3/);
+});
+
+test('saber si una liga se puede armar sola no cuesta ninguna consulta', () => {
+  /*
+   * Sale de los partidos que `ligas-disponibles` YA tiene en la mano para
+   * agrupar por país, y esa consulta tiene caché compartida entre quinielas. Si
+   * un día esto necesitara ir al proveedor por su cuenta, sería otra cosa: la
+   * cuota es una sola para todas las quinielas y ya se agotó una vez.
+   */
+  const agrupadas = ligas.agruparLigasPorPais([delProveedor('Liga MX', '7')]);
+
+  assert.ok('automatizable' in agrupadas[0].ligas[0],
+    'la respuesta lo trae ya resuelto, sin un segundo viaje');
+  assert.ok('conRonda' in agrupadas[0].ligas[0],
+    'y con el recuento, para poder explicar el motivo');
+});

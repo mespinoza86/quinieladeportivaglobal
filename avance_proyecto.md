@@ -4569,7 +4569,7 @@ esa fragilidad.
 | # | Qué | Tamaño |
 |---|---|---|
 | 1 | ✅ **HECHA** (Entrada 096). `mapearEvento` captura `match_round`. Migración 015: `partidos.api_round` | Pequeña |
-| 2 | `ligas.js` sabe decir, por liga, si se puede automatizar y por qué no | Pequeña |
+| 2 | ✅ **HECHA** (Entrada 097). `puedeAutomatizarse()`, con dos motivos distintos | Pequeña |
 | 3 | `src/borradores.js`: la próxima ronda de una liga, con sus partidos | **Mediana — el corazón** |
 | 4 | `GET /api/jornadas/borrador`, y `POST /api/jornadas` guardando la ronda | Pequeña |
 | 5 | Elegir tipo y liga al crear la quiniela | Mediana |
@@ -16714,6 +16714,93 @@ sigan en la caché.
 
 **Siguiente tajada:** la 2 de §22 — que `ligas.js` sepa decir, por liga, si se
 puede automatizar y por qué no.
+
+---
+
+
+### 📌 Entrada 097 — 14 de septiembre de 2026 — Tajada 2 de §22: qué ligas se pueden armar solas
+
+**Objetivo:** que la aplicación sepa decir, liga por liga, si se puede automatizar
+—y cuando no, **por qué**—, para no ofrecer una opción que dejaría jornadas
+incompletas.
+
+## ⭐ La regla, y por qué no es la que parece
+
+La intuición era «ligas sí, copas no». **Es falsa**, y lo dicen los eventos
+reales guardados en producción:
+
+```
+Liga MX · Primera de Costa Rica · Champions · Premier   →  traen ronda   ✅
+Concacaf y Libertadores en CUARTOS                      →  «Quarter-finals» ✅
+MLS - Regular season                                    →  vacía         ⛔
+Concacaf fase de grupos · Libertadores octavos          →  vacías        ⛔
+```
+
+La MLS es una liga y falla; los cuartos de Concacaf son una copa y sirven. La
+única regla que aguanta es: **se puede si el proveedor dice a qué ronda pertenece
+CADA partido**, venga número o nombre.
+
+## ⛔ Se exigen TODOS los partidos, no la mayoría
+
+Un partido sin ronda no se puede colocar en ninguna jornada. Si bastara con «la
+mayoría», el borrador lo dejaría fuera **en silencio**: esa jornada saldría
+incompleta y nadie lo vería hasta que alguien preguntara por qué falta un
+partido. Y para entonces ya habría gente con pronósticos puestos.
+
+## Dos motivos distintos, no uno
+
+| Caso | Qué se dice |
+|---|---|
+| Ninguno trae ronda | *«"MLS" no publica el número de jornada, así que no se puede armar sola»* |
+| Sólo algunos | *«"Liga Rara" sólo publica el número de jornada en 1 de 3 partidos»* |
+
+⚠️ El segundo motivo existe a propósito: decirle a alguien «no publica la
+jornada» cuando publica la mitad **suena a error de la aplicación**, no a un dato
+del proveedor. Y ahí se pierde la confianza en lo que dice la pantalla.
+
+## ⭐ Y no cuesta ni una consulta
+
+`ligas-disponibles` **ya tiene todos los partidos en la mano** para agruparlos
+por país, y su caché se comparte entre quinielas por rango de fechas. Contar
+cuántos traen ronda se hace sobre esos mismos datos.
+
+Importaba comprobarlo: la cuota del proveedor es **una sola para todas las
+quinielas** y ya se agotó una vez. Una función que pareciera barata y abriera su
+propia consulta por liga habría sido la tercera fuga del mes.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/ligas.js` | `puedeAutomatizarse()`, el recuento de rondas y los dos motivos |
+| `test/dominio.test.js` | 5 pruebas, incluida la de que no cuesta consultas |
+
+**Verificación:**
+
+```
+npm test             → 623/623  (eran 618)
+npx playwright test  → 142/142
+
+Rotas a proposito, 4 de 4 detectadas:
+  basta con que alguno traiga ronda   → cae «una liga a medias»
+  se ofrecen todas                    → 2 rojas
+  solo cuentan las rondas NUMERICAS   → cae «Quarter-finals»
+  el motivo no dice cuantos faltan    → 1 roja
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **«Ligas sí, copas no» era falso**, y sólo se supo mirando los datos. La
+   MLS falla y los cuartos de Concacaf sirven.
+2. ⛔ **«La mayoría» no vale cuando lo que se pierde se pierde callado.** Un
+   partido sin ronda desaparecería de la jornada sin avisar.
+3. ⚠️ **Un motivo impreciso se lee como un fallo de la aplicación.** De ahí que
+   el caso a medias tenga el suyo propio.
+
+**Pendiente / siguiente paso:** la tajada 3 de §22 —`src/borradores.js`, la
+próxima ronda de una liga con sus partidos—, que es el corazón de la función.
+
+⚠️ Nada que correr en Neon: esta tajada no toca la base.
 
 ---
 
