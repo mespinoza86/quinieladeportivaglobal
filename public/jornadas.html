@@ -11,6 +11,7 @@
 <script defer src="/js/html-seguro.js"></script>
   <script defer src="/js/equipos-es.js"></script>
   <script src="/js/jornadas.js" defer></script>
+  <script src="/js/borrador-de-jornada.js" defer></script>
 </head>
 
 <body class="app-body">
@@ -40,6 +41,41 @@
       Ahora es una sola pantalla y un solo camino: se elige la jornada arriba, se
       buscan los partidos en medio y se revisa lo que va a quedar guardado abajo.
     -->
+
+    <!--
+      La jornada que toca, ya armada (§22). Nace oculto: sólo aparece si esta
+      quiniela es de una liga y hay algo que proponer.
+
+      ⚠️ Va ARRIBA del todo a propósito. Si estuviera abajo, quien entra a armar
+      la jornada ya habría empezado a buscar partidos a mano antes de ver que no
+      le hacía falta.
+    -->
+    <section class="app-panel" id="panelBorrador" hidden>
+      <h2 id="borradorTitulo">La jornada que toca</h2>
+      <p id="borradorResumen" class="helper-text"></p>
+      <p id="borradorAviso" class="form-message" hidden></p>
+
+      <div id="borradorNombreBox" hidden>
+        <label class="field-label" for="borradorNombre">Cómo se va a llamar</label>
+        <input type="text" id="borradorNombre" />
+      </div>
+
+      <div id="borradorPartidos"></div>
+
+      <div class="button-row" id="borradorAcciones" hidden>
+        <button type="button" id="crearDelBorrador">Crear esta jornada</button>
+      </div>
+
+      <!--
+        Las tres salidas de fin de temporada. Marco las pidió así: «se le proponen
+        las opciones y él decide».
+      -->
+      <div class="button-row" id="borradorSalidas" hidden>
+        <a class="secondary-button" href="configuracion-quiniela.html#liga">Cambiar de liga</a>
+        <a class="secondary-button" href="configuracion-quiniela.html">Archivar la quiniela</a>
+        <button type="button" id="seguirAMano" class="ghost-button">Armarla a mano</button>
+      </div>
+    </section>
 
     <section class="app-panel">
       <h2>Jornada</h2>

@@ -4573,7 +4573,7 @@ esa fragilidad.
 | 3 | ✅ **HECHA** (Entrada 098). `proponer()` puro, `rondasUsadas()` y el aviso de ronda corta | **Mediana — el corazón** |
 | 4 | ✅ **HECHA** (Entrada 099). `GET /api/borrador-de-jornada` —la otra ruta la tapaba `:nombre`— y la ronda en la forma canónica | Pequeña |
 | 5 | ✅ **HECHA** (Entrada 100). La elección al crear decide a dónde aterrizas; la liga se elige en Configurar | Mediana |
-| 6 | El panel del borrador en `jornadas.html`, y las tres salidas de fin de temporada | Mediana |
+| 6 | ✅ **HECHA** (Entrada 101). El panel arriba del todo, y las salidas SÓLO al acabarse la liga | Mediana |
 | 7 | Pruebas de navegador | Mediana |
 
 **Una o dos sesiones** como las del 14 de septiembre.
@@ -17118,6 +17118,117 @@ npx playwright test  → 148/148  (eran 142)
 
 **Pendiente / siguiente paso:** la tajada 6 de §22 —el panel del borrador en
 `jornadas.html`, con las tres salidas de fin de temporada—.
+
+⚠️ Nada que correr en Neon.
+
+---
+
+
+### 📌 Entrada 101 — 14 de septiembre de 2026 — Tajada 6 de §22: la jornada que toca, para revisar y confirmar
+
+**Objetivo:** el panel que cierra la función. Entras a armar la jornada y ya está
+armada; revisas comodines, quitas lo que sobre, y confirmas.
+
+## ⛔ Antes de nada: un recuento que di por bueno y era falso
+
+Al cerrar la tajada 5 dije **«148/148»**. No era cierto: mi comando cortaba la
+salida de Playwright con `tail`, y la línea `2 failed` quedaba **por encima** del
+recuento de aprobadas. Se commiteó con dos pruebas en rojo.
+
+El fallo era de la aserción, no del código —`es-CR` separa los miles con un
+espacio duro, no con un punto— pero eso es lo de menos.
+
+⚠️ **La lección es sobre la sonda, no sobre el formato.** `tail -2` sobre la
+salida de Playwright enseña el número bonito y esconde el malo. Desde aquí se
+lee el recuento **completo**, con `grep -E "passed|failed"`, que trae las dos
+líneas o ninguna.
+
+Es la quinta vez este mes que una sonda contesta lo que no se le preguntó.
+
+## El panel
+
+Va **arriba del todo** en `jornadas.html`, y eso no es estética: si estuviera
+abajo, quien entra a armar la jornada ya habría empezado a buscar partidos a mano
+antes de ver que no le hacía falta.
+
+```
+Jornada 9 de Liga MX
+2 partidos, del vie 1 ene en adelante. Revísala y confírmala.
+
+  ☑ America vs Chivas    vie 1 ene, 15:00     ☐ Comodín
+  ☑ Pumas vs Cruz Azul   sáb 2 ene, 17:00     ☐ Comodín
+
+                                      [ Crear esta jornada ]
+```
+
+⭐ **Propone, no crea.** El nombre, los comodines y qué partidos entran se
+deciden aquí. Ésa es la diferencia con una creación automática y lo que evita los
+cuatro choques de §22 — sobre todo que «la jornada actual es la última creada»
+deje de ser verdad.
+
+⚠️ Quitar un partido es **desmarcarlo**, no borrarlo de la lista: quien revisa
+tiene que poder cambiar de idea sin volver a pedir el borrador.
+
+## Las tres salidas, y cuándo NO se enseñan
+
+Cuando se acaban las jornadas de la liga: **cambiar de liga**, **archivar la
+quiniela** o **seguir a mano**. Marco lo pidió así —«se le proponen las opciones y
+él decide»—.
+
+⛔ Pero **sólo con `sin_rondas_nuevas`**. Si el proveedor simplemente no devolvió
+nada esta semana, ofrecer «archiva tu quiniela» sería alarmante y equivocado: eso
+es un bache, no el fin de la temporada.
+
+Esa distinción **no la cazaba ninguna prueba**: enseñar las salidas siempre
+pasaba, porque la única que las miraba llegaba por el camino bueno. Hizo falta
+provocar el otro motivo.
+
+## Para poder provocarlo, el proveedor falso tuvo que volverse fiel
+
+Ignoraba `league_id` y devolvía siempre la lista entera. Con eso era **imposible**
+probar «esta liga no trae partidos», porque el borrador siempre encontraba algo.
+
+Ahora filtra, como el de verdad. ⚠️ Un sustituto más permisivo que el original
+deja ramas enteras sin poder probarse, y ésta decidía si se ofrece archivar una
+quiniela.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/jornadas.html` | El panel, arriba del todo |
+| `private/js/borrador-de-jornada.js` | **Nuevo.** Pintar, revisar, confirmar y las tres salidas |
+| `test/e2e/borrador-de-jornada.spec.js` | **Nuevo.** 7 pruebas del recorrido completo |
+| `test/e2e/arrancar.js` | El proveedor falso filtra por liga |
+| `test/e2e/quiniela-de-liga.spec.js` | La aserción del precio deja de depender del formato |
+
+**Verificación:**
+
+```
+npm test             → 644/644
+npx playwright test  → 164/164   ← leído entero, no con `tail`
+
+Rotas a proposito, 5 de 5 detectadas:
+  la ronda no viaja al confirmar (propondria la misma para siempre) · el panel
+  se enseña en quinielas customizadas · se incluyen los desmarcados · el comodin
+  se pierde · las salidas se enseñan siempre (NO caia; prueba nueva)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **`tail` sobre la salida de Playwright esconde los fallos.** El recuento de
+   aprobadas va DESPUÉS de la lista de rojas, así que las últimas líneas mienten
+   por omisión. Se lee con `grep -E "passed|failed"`.
+2. ⛔ **Un sustituto de pruebas más permisivo que el original deja ramas sin
+   probar.** El proveedor falso ignoraba el filtro por liga y por eso «no hay
+   partidos» era inalcanzable.
+3. ⚠️ **Dos «no hay nada» que llevan a sitios distintos necesitan pruebas
+   distintas.** Fin de temporada ofrece archivar; un bache del proveedor, no.
+4. **El panel va arriba**: abajo llegaría tarde, cuando ya se ha empezado a
+   armar a mano.
+
+**Pendiente / siguiente paso:** la tajada 7 —repasar qué falta por cubrir en el
+navegador—. Con lo de esta entrada, buena parte ya está hecha.
 
 ⚠️ Nada que correr en Neon.
 

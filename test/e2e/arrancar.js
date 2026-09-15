@@ -59,7 +59,15 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
    * distinguir. Una liga sin ronda no se puede armar sola, y eso hay que poder
    * verlo en el navegador, no sólo en una prueba de módulo.
    */
-  proveedor.usarFuente(async () => ([
+  /*
+   * ⚠️ FILTRA POR LIGA, como el proveedor de verdad.
+   *
+   * Ignoraba `league_id` y devolvía siempre la lista entera. Con eso era
+   * imposible probar «esta liga no trae partidos esta semana» —el borrador
+   * siempre encontraba algo— y esa rama decide si se ofrece archivar la
+   * quiniela, que no es poca cosa para dejarla sin comprobar.
+   */
+  const TODOS = [
     { match_id: '1', match_date: '2099-01-01', match_time: '15:00', match_status: 'NS',
       match_round: '9',
       league_name: 'Liga MX', country_name: 'Mexico', league_id: '101',
@@ -82,7 +90,11 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
       match_hometeam_name: 'Tigres', match_awayteam_name: 'Rayadas',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' }
-  ]));
+  ];
+
+  proveedor.usarFuente(async params => (params?.league_id
+    ? TODOS.filter(x => String(x.league_id) === String(params.league_id))
+    : TODOS));
 
   const { crearApp } = require('../../src/servidor');
   const { app } = crearApp({ pool: adaptador, secretoSesion: process.env.SESSION_SECRET });

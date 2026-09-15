@@ -70,12 +70,26 @@ test('elegir una liga la deja guardada, con su precio de partida', async ({ page
     .getByRole('button', { name: 'Elegir' }).click();
 
   await expect(page.locator('#ligaResumen')).toContainText('Liga MX');
-  await expect(page.locator('#ligaResumen')).toContainText('2.000');
+
+  /*
+   * ⚠️ NO se compara el número con formato. `es-CR` separa los miles con un
+   * espacio duro, no con un punto, así que fijar «2.000» hacía fallar la
+   * prueba por el FORMATO y no por el dato — y perseguir eso cuesta un rato
+   * tonto.
+   *
+   * Lo que la pantalla tiene que hacer es EXPLICAR de dónde sale el número;
+   * que el número sea correcto se comprueba abajo contra la configuración
+   * guardada, donde no hay formato que valga.
+   */
+  await expect(page.locator('#ligaResumen')).toContainText('acumulado');
 
   /* Y sobrevive a recargar: se guardó de verdad, no sólo en la pantalla. */
   await page.reload();
   await page.locator('#panelLiga').waitFor({ state: 'visible' });
   await expect(page.locator('#ligaResumen')).toContainText('Liga MX');
+
+  const { configuracion } = await (await page.request.get('/api/quiniela-actual')).json();
+  expect(configuracion.precioPorDefecto).toEqual({ precio: 2000, alAcumulado: 1000 });
 });
 
 test('⛔ dejar de armarla por liga limpia la liga, no la deja colgando', async ({ page }) => {
