@@ -80,23 +80,72 @@ test('una ronda de nombre se propone igual, y conserva su nombre', async () => {
 
 /* ==================== Qué cuenta como «ya jugada» ==================== */
 
-test('⛔ una ronda sigue viva mientras le quede UN partido por arrancar', async () => {
+test('⛔ una ronda que YA ARRANCÓ no se propone, aunque le queden partidos', async () => {
   /*
-   * Se mide sobre el partido MÁS TARDÍO. Mirar el más temprano daría por cerrada
-   * una jornada de sábado a domingo en cuanto empezara el primero, y el borrador
-   * saltaría a la siguiente con la actual a medias.
+   * ⚠️ Esta prueba afirmaba lo CONTRARIO hasta que se probó el borrador contra
+   * los datos de verdad. La regla vieja —«vive mientras le quede un partido»—
+   * resucitaba jornadas terminadas:
+   *
+   *   la «jornada 7» de Liga MX tenía tres partidos jugados hacía una semana y
+   *   un APLAZADO al 28 de octubre. Se proponía como la jornada que toca, y al
+   *   confirmarla habrían quedado dentro tres partidos que nadie puede
+   *   pronosticar porque ya se jugaron.
+   *
+   * Una ronda a medio jugar tampoco sirve: esa jornada nacería con partidos
+   * cerrados. Si alguien la quiere igual, el buscador de siempre sigue ahí —
+   * pero eso es una decisión suya, no una propuesta nuestra.
    */
   const r = borradores.proponer({
     ahora: AHORA,                                  // 20 sept, 14:00 en Costa Rica
     partidos: [
-      p('YaArranco', '2026-09-20 12:00', '9'),     // empezó hace dos horas
-      p('EstaTarde', '2026-09-20 19:00', '9'),     // todavía no
-      p('Siguiente', '2026-09-27 15:00', '10')
+      p('YaArranco', '2026-09-20 12:00', '7'),     // empezó hace dos horas
+      p('Aplazado', '2026-10-28 21:00', '7'),      // el que la «mantenía viva»
+      p('Siguiente', '2026-09-27 15:00', '8')
     ],
     rondasUsadas: []
   });
 
-  assert.equal(r.ronda, '9', 'le queda uno por jugar: sigue siendo la que toca');
+  assert.equal(r.ronda, '8', 'la 7 ya arrancó: se propone la siguiente entera');
+});
+
+test('una ronda entera en el futuro sí se propone, aunque dure días', async () => {
+  /* El caso normal: viernes a domingo, y todavía no ha empezado. */
+  const r = borradores.proponer({
+    ahora: AHORA,
+    partidos: [
+      p('Viernes', '2026-09-25 19:00', '9'),
+      p('Domingo', '2026-09-27 16:00', '9')
+    ],
+    rondasUsadas: []
+  });
+
+  assert.equal(r.ronda, '9');
+  assert.equal(r.partidos.length, 2, 'la ronda entera, no sólo el primero');
+});
+
+test('⛔ «ya las creaste todas» y «se acabó la temporada» son motivos distintos', async () => {
+  /*
+   * La pantalla ofrece cosas distintas según cuál sea: archivar la quiniela
+   * tiene sentido al acabarse la liga, y ninguno al ir por delante.
+   *
+   * ⚠️ Y decirle «ya tienes creadas todas las jornadas» a quien no ha creado
+   * NINGUNA —porque la liga terminó— es mentira, de las que hacen dudar de todo
+   * lo demás que dice la pantalla.
+   */
+  const vaPorDelante = borradores.proponer({
+    ahora: AHORA,
+    partidos: [p('A', '2026-09-27 15:00', '9')],
+    rondasUsadas: ['9']
+  });
+  assert.equal(vaPorDelante.motivo, 'sin_rondas_nuevas');
+
+  const seAcabo = borradores.proponer({
+    ahora: AHORA,
+    partidos: [p('A', '2026-09-01 15:00', '9')],      // todo en el pasado
+    rondasUsadas: []
+  });
+  assert.equal(seAcabo.motivo, 'temporada_terminada');
+  assert.match(borradores.MOTIVOS.temporada_terminada, /se acabó la temporada/);
 });
 
 test('una ronda con todos sus partidos jugados se salta', async () => {
@@ -242,4 +291,37 @@ test('⛔ los partidos salen ordenados aunque el proveedor los mande revueltos',
 
   assert.deepEqual(r.partidos.map(x => x.equipo1), ['Viernes', 'Sabado', 'Domingo']);
   assert.equal(r.arranque, '2026-09-21 19:00', 'y el arranque es el del primero');
+});
+
+test('⛔ una ronda recortada por la ventana no se cuela como nueva', async () => {
+  /*
+   * El hueco que abre pedirle al proveedor sólo «de hoy en adelante»: una ronda
+   * a medio jugar llega sin sus partidos pasados, y su arranque APARENTE está en
+   * el futuro. Sin más, se propondría como nueva.
+   *
+   * Aquí se comprueba el otro lado: si la ventana SÍ trae los partidos pasados
+   * de esa ronda —que es lo que hace la ruta, pidiendo desde hace una semana—,
+   * el arranque real se ve y la ronda se descarta.
+   */
+  const recortada = borradores.proponer({
+    ahora: AHORA,
+    partidos: [
+      p('SoloElFuturo', '2026-09-21 19:00', '9'),
+      p('Siguiente', '2026-09-28 15:00', '10')
+    ],
+    rondasUsadas: []
+  });
+  assert.equal(recortada.ronda, '9', 'sin los pasados, parece nueva');
+
+  const entera = borradores.proponer({
+    ahora: AHORA,
+    partidos: [
+      p('YaJugado', '2026-09-19 15:00', '9'),        // lo que la ventana ancha añade
+      p('SoloElFuturo', '2026-09-21 19:00', '9'),
+      p('Siguiente', '2026-09-28 15:00', '10')
+    ],
+    rondasUsadas: []
+  });
+  assert.equal(entera.ronda, '10',
+    'con la ronda entera se ve que ya arrancó, y se propone la siguiente');
 });

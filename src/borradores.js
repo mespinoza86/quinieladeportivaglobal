@@ -84,23 +84,55 @@ function proponer({ partidos = [], rondasUsadas = [], ahora = new Date() } = {})
     grupo.partidos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
     grupo.arranque = grupo.partidos[0]?.fecha || '';
 
-    /*
-     * «Sin jugar» se mide sobre el partido MÁS TARDÍO: mientras quede uno por
-     * arrancar, la ronda sigue viva. Mirar el más temprano daría por cerrada una
-     * jornada de sábado a domingo en cuanto empezara el primero.
-     */
     grupo.ultimo = grupo.partidos[grupo.partidos.length - 1]?.fecha || '';
     grupo.tienePendientes = String(grupo.ultimo) > ahoraTexto;
+
+    /*
+     * ⛔ Y ADEMÁS tiene que no haber arrancado todavía.
+     *
+     * La primera versión sólo miraba que quedara algún partido por jugar, y eso
+     * resucita jornadas terminadas. Se vio con los datos de verdad: la «jornada
+     * 7» de Liga MX tenía tres partidos jugados hace una semana y un APLAZADO
+     * al 28 de octubre. Con la regla vieja se habría propuesto como la jornada
+     * que toca, y al confirmarla habrían quedado tres partidos que nadie puede
+     * pronosticar porque ya se jugaron.
+     *
+     * Una ronda a medio jugar tampoco se propone: crear esa jornada deja dentro
+     * partidos cerrados desde el primer momento. Si alguien la quiere igual,
+     * el buscador de siempre sigue ahí — pero eso es una decisión suya, no una
+     * propuesta nuestra.
+     */
+    grupo.noHaArrancado = String(grupo.arranque) > ahoraTexto;
   }
 
   /* ---------- Elegir ---------- */
 
   const candidatas = [...porRonda.values()]
-    .filter(g => g.tienePendientes && !ya.has(g.ronda))
+    .filter(g => g.noHaArrancado && !ya.has(g.ronda))
     /* ⛔ Por FECHA, nunca por nombre. Ver la cabecera. */
     .sort((a, b) => String(a.arranque).localeCompare(String(b.arranque)));
 
-  if (!candidatas.length) return { ok: false, motivo: 'sin_rondas_nuevas' };
+  if (!candidatas.length) {
+    /*
+     * ⚠️ Dos «no hay nada» que NO son lo mismo, y la pantalla ofrece cosas
+     * distintas según cuál sea:
+     *
+     *   · quedan rondas por jugar, pero ya las tienes todas metidas → has ido
+     *     por delante, y no hay nada que hacer todavía;
+     *   · no queda NINGUNA ronda por jugar → se acabó la temporada, y ahí sí
+     *     tiene sentido ofrecer cambiar de liga o archivar.
+     *
+     * Decirle «ya tienes creadas todas las jornadas» a quien no ha creado
+     * ninguna —porque la liga terminó— es mentira, y de las que hacen dudar de
+     * todo lo demás que dice la pantalla.
+     */
+    const quedaAlgunaPorJugar = [...porRonda.values()].some(g => g.noHaArrancado);
+
+    return {
+      ok: false,
+      motivo: quedaAlgunaPorJugar ? 'sin_rondas_nuevas' : 'temporada_terminada'
+    };
+  }
 
   const elegida = candidatas[0];
 
@@ -149,7 +181,8 @@ function avisoDeRondaCorta(elegida, porRonda) {
 const MOTIVOS = {
   sin_partidos: 'El proveedor no devolvió partidos de esta liga en las próximas semanas.',
   liga_sin_rondas: 'Esta liga no publica el número de jornada, así que no se puede armar sola.',
-  sin_rondas_nuevas: 'Ya tienes creadas todas las jornadas publicadas de esta liga.'
+  sin_rondas_nuevas: 'Ya tienes creadas todas las jornadas que quedan por jugar de esta liga.',
+  temporada_terminada: 'Esta liga no tiene ninguna jornada por jugar: se acabó la temporada.'
 };
 
 module.exports = { proponer, nombreDeRonda, MOTIVOS };

@@ -4574,7 +4574,7 @@ esa fragilidad.
 | 4 | ✅ **HECHA** (Entrada 099). `GET /api/borrador-de-jornada` —la otra ruta la tapaba `:nombre`— y la ronda en la forma canónica | Pequeña |
 | 5 | ✅ **HECHA** (Entrada 100). La elección al crear decide a dónde aterrizas; la liga se elige en Configurar | Mediana |
 | 6 | ✅ **HECHA** (Entrada 101). El panel arriba del todo, y las salidas SÓLO al acabarse la liga | Mediana |
-| 7 | Pruebas de navegador | Mediana |
+| 7 | ✅ **HECHA** (Entrada 102). 11 pruebas de navegador en las tajadas 5 y 6, más el repaso contra datos reales que destapó la jornada zombi | Mediana |
 
 **Una o dos sesiones** como las del 14 de septiembre.
 
@@ -17231,6 +17231,104 @@ Rotas a proposito, 5 de 5 detectadas:
 navegador—. Con lo de esta entrada, buena parte ya está hecha.
 
 ⚠️ Nada que correr en Neon.
+
+---
+
+
+### 📌 Entrada 102 — 14 de septiembre de 2026 — Tajada 7 de §22: el repaso, y la jornada zombi que encontró
+
+**Objetivo:** repasar §22 entero antes de desplegarlo. La forma de repasar no fue
+releer el código: fue **correr el borrador contra los datos de verdad**.
+
+## ⛔ Lo que encontró: proponía una jornada terminada hace una semana
+
+Con los partidos reales cacheados en producción, el borrador proponía esto:
+
+```
+Liga MX · «Jornada 7»
+  2026-09-05 17:00  Atl. San Luis   ← ya se jugó
+  2026-09-05 19:00  Tigres UANL     ← ya se jugó
+  2026-09-10 21:05  UNAM Pumas      ← ya se jugó
+  2026-10-28 21:00  Club America    ← pendiente
+```
+
+Tres partidos jugados hacía una semana, y **un aplazado seis semanas después**.
+La regla decía «la ronda vive mientras le quede un partido por jugar», y ese
+aplazado la mantenía viva.
+
+Al confirmarla habrían quedado dentro tres partidos que nadie puede pronosticar.
+
+⭐ **Ninguna de las 15 pruebas lo veía**, y no por descuido: todas usaban rondas
+inventadas y limpias. **Un calendario real tiene aplazamientos**, y eso no se le
+ocurre a quien escribe los casos.
+
+La regla pasó a ser: **se propone la ronda más temprana que todavía NO HA
+ARRANCADO**. Una ronda a medio jugar tampoco sirve — esa jornada nacería con
+partidos cerrados—. Quien la quiera igual tiene el buscador de siempre, pero eso
+es decisión suya, no propuesta nuestra.
+
+## ⛔ Y un hueco que el ensayo no podía ver, pero el cambio destapó
+
+Si a la ruta se le pide al proveedor **sólo de hoy en adelante**, una ronda a
+medio jugar llega **recortada** —sin sus partidos pasados— y su arranque aparente
+está en el futuro. Volvería a colarse como nueva.
+
+La ventana pasó a empezar **una semana atrás**. Así la ronda se ve entera, su
+arranque es el real, y se descarta por haber empezado.
+
+⚠️ Cuesta una ventana más ancha, **no una consulta más**: sigue siendo una
+llamada, cacheada diez minutos y compartida entre quinielas.
+
+## Un motivo que mentía
+
+Al no haber nada que proponer se decía siempre *«ya tienes creadas todas las
+jornadas»*. A quien no ha creado **ninguna** —porque la liga terminó— eso es
+falso, y de las mentiras que hacen dudar de todo lo demás que dice la pantalla.
+
+Ahora son dos:
+
+| Motivo | Cuándo | Qué se ofrece |
+|---|---|---|
+| `sin_rondas_nuevas` | Quedan rondas por jugar, ya las tienes todas | Nada: vas por delante |
+| `temporada_terminada` | No queda ninguna ronda por jugar | Cambiar de liga, archivar, o seguir a mano |
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/borradores.js` | `noHaArrancado` sustituye a `tienePendientes` como filtro; los dos motivos |
+| `src/rutas/admin.js` | La ventana empieza una semana atrás |
+| `test/borradores.test.js` | La prueba que afirmaba lo contrario, reescrita; 3 nuevas |
+
+**Verificación:**
+
+```
+npm test             → 647/647
+npx playwright test  → 164/164
+
+Y el ensayo contra los datos de produccion, que es lo que encontro el fallo:
+  antes:   Liga MX → «Jornada 7» con 3 partidos ya jugados
+  ahora:   Liga MX → temporada_terminada (correcto para esos datos)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un calendario real tiene aplazamientos, y los casos inventados no.** Las
+   15 pruebas usaban rondas limpias; el fallo necesitaba un partido movido seis
+   semanas para aparecer.
+2. ⭐ **Correr la lógica contra los datos de producción es una forma de repasar
+   que las pruebas no sustituyen.** No cambia nada y encuentra lo que nadie
+   pensó en escribir.
+3. ⚠️ **Una ventana hacia adelante recorta lo que está a medias**, y lo recortado
+   parece nuevo. Mirar un poco hacia atrás cuesta ancho, no consultas.
+4. ⚠️ **Un motivo genérico acaba mintiendo en alguno de sus casos.** «Ya las
+   creaste todas» era falso justo cuando la liga había terminado.
+
+**Pendiente / siguiente paso:** §22 está completo. Falta desplegarlo y **usarlo
+con una jornada de verdad**, que es lo único que ni las pruebas ni el ensayo
+pueden sustituir.
+
+⚠️ Nada que correr en Neon: la 015 fue la última de §22.
 
 ---
 

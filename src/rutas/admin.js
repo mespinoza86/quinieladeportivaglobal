@@ -179,7 +179,27 @@ module.exports = function rutasDeAdmin(app, { requierePermiso, enQuiniela }) {
 
     if (!proveedor.hayClave()) return sinClave(res);
 
-    const rango = ligas.rangoDeBusqueda({ desde: req.query.desde, dias: req.query.dias || 21 });
+    /*
+     * ⛔ LA VENTANA EMPIEZA UNA SEMANA ATRÁS, Y ESO NO ES UN DESPISTE.
+     *
+     * Pidiendo sólo de hoy en adelante, una ronda a medio jugar llega RECORTADA
+     * —sólo sus partidos futuros— y su primer partido parecería estar por venir.
+     * El borrador la propondría como si fuera nueva, y esa jornada nacería con
+     * la mitad de sus partidos ya jugados y cerrados.
+     *
+     * Con siete días de margen la ronda se ve entera, su arranque es el de
+     * verdad, y `proponer()` la descarta por haber empezado ya.
+     *
+     * ⚠️ Cuesta una ventana más ancha, no una consulta más: sigue siendo UNA
+     * llamada, cacheada diez minutos y compartida entre quinielas.
+     */
+    const hace7Dias = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+
+    const rango = ligas.rangoDeBusqueda({
+      desde: req.query.desde || hace7Dias,
+      dias: req.query.dias || 28
+    });
     const ligaId = String(configuracion.ligaId);
     const clave = `borrador|${rango.desde}|${rango.hasta}|${ligaId}`;
 
