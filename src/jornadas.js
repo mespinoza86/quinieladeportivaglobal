@@ -543,10 +543,30 @@ async function cambiarPrecio(quinielaId, nombre, precio, alAcumulado) {
   });
 }
 
+/**
+ * Las rondas de la liga que esta quiniela YA tiene metidas (tajada 3 de §22).
+ *
+ * Es lo que impide que el borrador vuelva a proponer una jornada ya creada.
+ *
+ * ⚠️ Vive aquí y no en `borradores.js` a propósito: aquél es aritmética sobre
+ * una lista, sin base ni red, y así se puede probar entero sin levantar nada.
+ * Quien conoce los partidos es este módulo.
+ *
+ * Se devuelven en bruto, sin ordenar: quien las usa hace un `Set` y sólo
+ * pregunta si están. Ordenarlas por texto no significaría nada —«10» va antes
+ * que «9» alfabéticamente— y ordenarlas por fecha sería trabajo que nadie pide.
+ */
+async function rondasUsadas(quinielaId) {
+  const { rows } = await db.enQuiniela(quinielaId, async c => c.query(
+    `SELECT DISTINCT api_round FROM partidos WHERE api_round <> ''`));
+
+  return rows.map(r => r.api_round);
+}
+
 module.exports = {
   partidoPublico,
   actual, resumen, listar, porNombre, idDe,
   ordenarParaGuardar,
   guardar, agregarPartido, eliminarPartidos, fijarComodines, eliminar,
-  cambiarPrecio
+  cambiarPrecio, rondasUsadas
 };

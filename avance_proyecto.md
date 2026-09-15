@@ -4570,7 +4570,7 @@ esa fragilidad.
 |---|---|---|
 | 1 | ✅ **HECHA** (Entrada 096). `mapearEvento` captura `match_round`. Migración 015: `partidos.api_round` | Pequeña |
 | 2 | ✅ **HECHA** (Entrada 097). `puedeAutomatizarse()`, con dos motivos distintos | Pequeña |
-| 3 | `src/borradores.js`: la próxima ronda de una liga, con sus partidos | **Mediana — el corazón** |
+| 3 | ✅ **HECHA** (Entrada 098). `proponer()` puro, `rondasUsadas()` y el aviso de ronda corta | **Mediana — el corazón** |
 | 4 | `GET /api/jornadas/borrador`, y `POST /api/jornadas` guardando la ronda | Pequeña |
 | 5 | Elegir tipo y liga al crear la quiniela | Mediana |
 | 6 | El panel del borrador en `jornadas.html`, y las tres salidas de fin de temporada | Mediana |
@@ -16799,6 +16799,121 @@ Rotas a proposito, 4 de 4 detectadas:
 
 **Pendiente / siguiente paso:** la tajada 3 de §22 —`src/borradores.js`, la
 próxima ronda de una liga con sus partidos—, que es el corazón de la función.
+
+⚠️ Nada que correr en Neon: esta tajada no toca la base.
+
+---
+
+
+### 📌 Entrada 098 — 14 de septiembre de 2026 — Tajada 3 de §22: cuál es la próxima jornada
+
+**Objetivo:** el corazón del borrador. Dada una liga, decir **qué ronda toca** y
+con qué partidos.
+
+## ⭐ Aritmética, sin efectos
+
+`proponer()` no habla ni con la red ni con la base: recibe los partidos que el
+proveedor ya devolvió y las rondas que la quiniela ya tiene, y contesta.
+
+Es el mismo reparto que `cobros.js` frente a `pagos.js`, y compra dos cosas:
+
+1. **La regla se prueba entera sin levantar nada** — 13 pruebas, sin PGlite.
+2. ⛔ **No puede gastar cuota por su cuenta.** Si abriera su propia consulta al
+   proveedor, cada vez que alguien abriera la pantalla se gastaría cuota que es
+   **una sola para todas las quinielas** — y ya se agotó una vez este mes.
+
+La parte que sí toca la base, `jornadas.rondasUsadas()`, vive en `jornadas.js`,
+que es quien conoce los partidos.
+
+## La regla, y las tres trampas que esquiva
+
+> **La ronda más temprana que todavía tenga partidos sin jugar y que no esté ya
+> en una jornada de esta quiniela.**
+
+| Trampa | Qué pasa si se cae en ella |
+|---|---|
+| «La última creada + 1» | Se rompe al empezar a mitad de temporada, al saltarse una semana, y cuando el proveedor numera distinto |
+| Ordenar las rondas por nombre | «10» va antes que «9» alfabéticamente. Y «Quarter-finals» no se ordena contra ninguna de forma que signifique algo. **El orden lo da la fecha** |
+| Medir «ya jugada» por el primer partido | Una jornada de sábado a domingo se daría por cerrada al empezar el primero, y el borrador saltaría a la siguiente con la actual a medias. **Se mide por el último** |
+
+## ⚠️ El riesgo que el borrador introduce, y que armando a mano no existía
+
+El proveedor a veces publica **seis de los nueve partidos** de una jornada.
+Confirmarla así dejaría a la gente pronosticando seis, y los otros tres
+aparecerían con la jornada ya abierta —o no aparecerían nunca—.
+
+Se avisa comparando con la ronda anterior:
+
+```
+«La ronda anterior tuvo 9 partidos y ésta trae 6. Puede estar a medio publicar.»
+```
+
+⛔ **Y no se bloquea.** Hay jornadas que de verdad traen menos —una fecha FIFA,
+un aplazamiento— y bloquear dejaría la función inservible justo cuando hace
+falta. Se avisa y decide quien confirma, que es el punto entero del borrador.
+
+## Tres motivos, no uno
+
+Cuando no hay nada que proponer, el motivo importa porque **cada uno lleva a un
+sitio distinto**:
+
+| Motivo | Qué es |
+|---|---|
+| `sin_partidos` | Temporal: el proveedor no devolvió nada de esa liga |
+| `liga_sin_rondas` | La liga no se puede automatizar. No debería haberse podido elegir |
+| `sin_rondas_nuevas` | **Fin de temporada**: es cuando toca ofrecer cambiar de liga, archivar o seguir a mano |
+
+Un único «no hay nada» obligaría a la pantalla a adivinar cuál de los tres.
+
+## ⛔ Otra mutación que no caía, y otra prueba que probaba el resultado sin la causa
+
+Quitar el `sort` de dentro de la ronda **no rompía nada**: las demás pruebas ya
+le pasaban los partidos en orden, así que comprobaban el resultado sin ejercitar
+la causa.
+
+⚠️ **Es el mismo patrón que el del camino sin probar de la Entrada 096**, dos
+tajadas seguidas: los datos de prueba llegaban ya en el estado que el código
+debía producir. Hizo falta una prueba que se los diera revueltos.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/borradores.js` | **Nuevo.** `proponer()`, el aviso de ronda corta y los tres motivos |
+| `src/jornadas.js` | `rondasUsadas()` |
+| `test/borradores.test.js` | **Nuevo.** 13 pruebas, sin base ni red |
+| `test/dominio.test.js` | Las rondas usadas, con su prueba de aislamiento |
+| `package.json` | La suite nueva en `npm test` |
+
+**Verificación:**
+
+```
+npm test             → 637/637  (eran 623)
+npx playwright test  → 142/142
+
+Rotas a proposito, 10 de 10 detectadas:
+  ordenar rondas por nombre · «viva» por el primer partido · proponer una ya
+  metida · proponer una ya jugada · partidos desordenados (NO caia; prueba
+  nueva) · el aviso no salta · «Jornada Quarter-finals» · rondas vacias ·
+  sin DISTINCT · y consultar SIN contexto de quiniela
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Una regla pura no puede gastar cuota.** Separarla de quien trae los datos
+   no es purismo: es lo que impide que una pantalla abra una consulta al
+   proveedor cada vez que alguien la mira.
+2. ⛔ **«Ya jugada» se mide por el ÚLTIMO partido**, no por el primero. Una
+   jornada dura un fin de semana.
+3. ⚠️ **Un aviso sirve donde un bloqueo estorba.** Hay jornadas que de verdad
+   traen menos partidos, y bloquearlas rompería la función justo en los casos
+   raros, que son los que más ayuda necesitan.
+4. ⚠️ **Los datos de prueba llegaban ya ordenados**, así que la prueba
+   comprobaba el resultado sin ejercitar la causa. Segunda vez en dos tajadas.
+
+**Pendiente / siguiente paso:** la tajada 4 de §22 — la ruta
+`GET /api/jornadas/borrador`, que junta la caché de partidos del proveedor con
+`rondasUsadas` y devuelve la propuesta.
 
 ⚠️ Nada que correr en Neon: esta tajada no toca la base.
 

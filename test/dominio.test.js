@@ -702,3 +702,34 @@ test('saber si una liga se puede armar sola no cuesta ninguna consulta', () => {
   assert.ok('conRonda' in agrupadas[0].ligas[0],
     'y con el recuento, para poder explicar el motivo');
 });
+
+test('⛔ las rondas ya metidas se leen de la quiniela, y sólo de la suya', async () => {
+  /*
+   * Es lo que impide que el borrador vuelva a proponer una jornada ya creada.
+   *
+   * ⚠️ Y el aislamiento importa tanto como el dato: si se colaran las rondas de
+   * otra quiniela, a ésta le faltarían jornadas por proponer y nadie sabría por
+   * qué. `partidos` lleva RLS, así que esto va con contexto — pero se comprueba,
+   * porque «cero filas sin error» es exactamente lo que devuelve si se olvida.
+   */
+  const a = await quinielaNueva();
+  const b = await quinielaNueva();
+
+  await jornadas.guardar(a.quiniela.id, 'J1', [
+    partido('A', 'B', { apiFixtureId: '1', apiRound: '8' }),
+    partido('C', 'D', { apiFixtureId: '2', apiRound: '8' }),
+    partido('E', 'F', { apiFixtureId: '3', apiRound: 'Quarter-finals' }),
+    partido('G', 'H', { apiFixtureId: '4' })          // sin ronda: no cuenta
+  ]);
+
+  await jornadas.guardar(b.quiniela.id, 'J1', [
+    partido('X', 'Y', { apiFixtureId: '9', apiRound: '99' })
+  ]);
+
+  const usadas = await jornadas.rondasUsadas(a.quiniela.id);
+
+  assert.deepEqual([...usadas].sort(), ['8', 'Quarter-finals'],
+    'sin repetir, sin el vacío, y sin la de la otra quiniela');
+
+  assert.deepEqual(await jornadas.rondasUsadas(b.quiniela.id), ['99']);
+});
