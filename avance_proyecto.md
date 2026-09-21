@@ -17750,6 +17750,187 @@ si lo dejas así o si corres las pruebas»*.
 ---
 
 
+### 📌 Entrada 105 — 21 de septiembre de 2026 — La tarjeta de pronóstico, y el tráfico que ya no se pide
+
+**Objetivo:** Marco mandó una captura de otra aplicación: *«que en vez de un
+cuadro de texto, lo que hacemos es subir o restar, y que el logo se vea más
+grande, además cuando los resultados están cerrados... en el centro va saliendo
+el resultado en tiempo real y cuando el partido termina queda el marcador y lo
+que yo puse»*. Y una condición: *«quiero que cuides mucho lo del tráfico... no
+pedir cosas obvias... porque recuerda que el tráfico nos lo cobran»*.
+
+## ⭐ Lo caro ya estaba hecho, y se estaba tirando
+
+Antes de tocar nada se miró qué había. El sincronizador **ya** distingue `LIVE`,
+medio tiempo y terminado, **ya** guarda el marcador en vivo y el minuto, y
+consulta al proveedor más seguido mientras el partido corre.
+
+Y la pantalla de llenar **ya se descargaba ese dato**: pedía
+`/api/resultados-oficiales`, miraba el `estado` para decidir si bloqueaba, y
+**tiraba el marcador a la basura**. Estaba en el navegador, sin pintarse.
+
+⚠️ Así que «el resultado en tiempo real» no era construir nada: era **enseñar lo
+que ya había llegado**. Eso cambió por completo el tamaño del trabajo, y sólo se
+supo por mirar antes de opinar.
+
+## La tarjeta
+
+```
+┌──────────────────────────────────────────┐
+│  📅 19/09 20:00    🔒 Partido cerrado    │
+├──────────────────────────────────────────┤
+│  [escudo]      ┌───────┐      [escudo]   │
+│  Saprissa      │ 2 - 0 │     Herediano   │  ← el partido
+│                └───────┘                 │
+├──────────────────────────────────────────┤
+│               PUSISTE                    │
+│        [ 1 ]    │    [ 0 ]               │  ← lo tuyo
+└──────────────────────────────────────────┘
+```
+
+Dos renglones, y cada uno dice una cosa. ⚠️ Separados **a propósito**: hay DOS
+marcadores a la vista y mezclados se confunden. Por eso el rótulo, que además
+cambia de tiempo verbal —«Tu pronóstico» mientras se puede cambiar, «Pusiste»
+cuando ya no—. Cerrado, los `−`/`+` desaparecen: un botón que no hace nada es
+peor que ninguno.
+
+## ⛔ El `<input>` se queda, y eso no es pereza
+
+Los botones son `<button>` y el campo sigue siendo un `<input>` de texto.
+
+Tres sitios del archivo hacen `partidoDiv.querySelectorAll('input')` y cuentan
+con que `[0]` y `[1]` sean los dos marcadores. **Ahí cuelgan las defensas de la
+Entrada 068**, la que impedía que editar un partido borrara en silencio el
+pronóstico de otro. Conservando el `<input>` esas defensas siguen en pie sin
+tocarlas; sustituyéndolo por otra cosa habría que rehacerlas —y rehacer una
+defensa es cómo se pierde.
+
+Y Marco lo quiso escribible: *«quiero escribir 4-3»*. Para un 1-0 los botones
+son cómodos; para un 4-3 son siete toques.
+
+## ⛔ VACÍO NO ES CERO
+
+La captura de Marco enseñaba contadores que nacen en **0**. Aquí no pueden:
+
+| | |
+|---|---|
+| a medias | no se manda → lo guardado sigue intacto |
+| dos vacíos | **sí** borran el pronóstico |
+| cerrado | «no toques esto» |
+
+Naciendo en 0, **todos los partidos parecerían llenos** y esa distinción
+desaparece. Marco eligió vacío. El primer `+` pone 1, el primer `−` pone 0, y
+bajar desde 0 se queda en 0 en vez de vaciarse: **vaciar es una decisión, no un
+resbalón**.
+
+## El tráfico, medido y no supuesto
+
+**Cuatro** pantallas —no una— se bajaban los resultados oficiales de TODAS las
+jornadas de la quiniela para quedarse con una, filtrando en el navegador:
+
+```js
+const res = await fetch('/api/resultados-oficiales');        // ← todas
+const oficial = datos.find(o => o.nombre === nombreJornada); // ← usa una
+```
+
+El parámetro `?jornada=` existía desde la M-26 **con un comentario diciendo que
+se añadió justamente para esto**, y ninguna pantalla llegó a usarlo.
+
+⛔ **Y no tenía ni una prueba.** Montar cuatro pantallas sobre algo que nadie
+comprueba es cómo se cae una función entera en silencio: si `?jornada=` se
+ignorase, todo seguiría funcionando —la respuesta traería de más y el `find`
+acertaría igual— y el ahorro desaparecería sin que saltara nada. La prueba nueva
+comprueba **lo que NO viene**, y cae con la mutación.
+
+### Las cinco reglas del refresco en vivo
+
+| Regla | Por qué |
+|---|---|
+| Cada **60 s** | No es un número a ojo: `VENTANAS_MS.enVivo` es 60 s, así que preguntar más seguido devuelve LO MISMO |
+| Sólo si hay algo que mirar | Un partido que no empieza no cambia; uno terminado tampoco |
+| Pestaña escondida, nada | Un móvil en el bolsillo no necesita el minuto 37 |
+| Todo terminado, se para para siempre | |
+| Sólo esta jornada | |
+
+⚠️ La condición NO es «hay alguno en vivo»: así nunca se enteraría de que uno
+**empieza**. Es «ya debería haber empezado y todavía no ha terminado».
+
+⛔ **Y el refresco NO TOCA NI UN `input.value`.** Quien está llenando puede tener
+medio marcador escrito sin guardar; reescribir las casillas cada minuto se lo
+borraría sin avisar.
+
+**Medido con un contador de peticiones reales:**
+
+```
+sin partidos en vivo, 70 s  →  0 peticiones
+con uno empezado,     70 s  →  1 petición      ← el caso de CONTROL
+```
+
+⚠️ La segunda no sobra: sin ella, «0 peticiones» no se distingue de «el refresco
+está roto del todo».
+
+## Tres fallos que salieron por el camino
+
+1. ⛔ **La tarjeta no cabía en el móvil.** Los anchos fijos —44 + 56 + 44, dos
+   veces— sumaban ~340 px en una pantalla de 390. La página se iba en horizontal
+   y **el botón de Guardar quedaba fuera de alcance**. Lo cazó una prueba de
+   navegador que no lograba pulsarlo, chocando con lo mismo con lo que chocaría
+   un dedo. Y la primera hipótesis —que la barra de abajo lo tapaba— era falsa:
+   se comprobó mirando la captura del fallo, no suponiendo.
+2. **`.match-meta` no tenía NINGUNA regla CSS.** Se usaba desde el primer día con
+   un `style="justify-content:center"` a mano, que no hacía nada porque sin
+   `display:flex` esa propiedad se ignora.
+3. **El contador de «Cierra en:» creaba un `setInterval` nuevo en cada
+   repintado**, y ninguno se detenía. No se notaba porque todos escriben lo
+   mismo. De paso, ahora pinta una vez al arrancar: antes el primer segundo se
+   veía «Cierra en:» sin nada detrás.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/llenar_jornada_user.js` | La tarjeta, los botones, el marcador en vivo y su reloj |
+| `private/css/styles.css` | `.match-row`, `.match-score`, `.pick-row`, `.stepper`, `.match-meta` |
+| `private/js/llenar_trivia.js` | `?jornada=` |
+| `private/js/ver-resultados.js` | `?jornada=` |
+| `private/js/ver-resultados_puntos.js` | `?jornada=` |
+| `test/rutas.test.js` | La prueba del filtro que no tenía ninguna |
+
+**Verificación:**
+
+```
+npm test             -> 649/649   (era 648: la nueva del filtro)
+npx playwright test  -> 194/194   (codigo de salida real 0, no el de la tuberia)
+
+Mutaciones:
+  el servidor ignora ?jornada=        -> cae la prueba nueva
+  partido ya empezado (control)       -> 1 peticion, no 0
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Mirar antes de opinar cambió el tamaño del trabajo.** «El marcador en
+   tiempo real» parecía lo caro y ya estaba construido, descargándose y
+   tirándose.
+2. ⛔ **Un parámetro con comentario explicando para qué sirve, y que nadie usa,
+   es una pista de que hay desperdicio en otro sitio.**
+3. ⚠️ **Los anchos fijos en una fila flex son una apuesta sobre el ancho de la
+   pantalla.** `min-width: 0` y `flex-basis: 0` son lo que la deshacen.
+4. ⚠️ **Un elemento con clase pero sin regla CSS no da ningún error.** `.match-meta`
+   llevaba meses así, con un `justify-content` inerte al lado.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **El marcador en vivo no lo ha visto nadie con un partido de verdad.** Las
+  pruebas usan el proveedor falso del arnés: está comprobado que el dato se
+  pinta y que el refresco pide cuando debe, pero que el proveedor mande bien el
+  minuto en un partido real está por ver.
+- Sigue pendiente de antes: que llegue un aviso al teléfono, y el ciclo completo
+  del borrador de jornada.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

@@ -161,6 +161,249 @@ function logoHTML(url, nombre) {
     return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
 }
 
+/**
+ * La caja del centro: el marcador de verdad, si ya hay alguno.
+ *
+ * ⚠️ El dato YA venía en la página y se estaba tirando. Esta pantalla pedía los
+ * resultados oficiales sólo para mirar el `estado` y decidir si bloqueaba; el
+ * marcador y el minuto llegaban con él y nadie los pintaba.
+ *
+ * Tres situaciones, y cada una dice algo distinto:
+ *
+ *   en juego   →  el marcador de ahora, con el minuto
+ *   terminado  →  el marcador final, quieto
+ *   sin dato   →  un guion: todavía no hay nada que contar
+ */
+function cajaDeMarcador(oficial, cerrado) {
+    const hayMarcador = oficial
+        && oficial.marcador1 !== null && oficial.marcador1 !== undefined && oficial.marcador1 !== ''
+        && oficial.marcador2 !== null && oficial.marcador2 !== undefined && oficial.marcador2 !== '';
+
+    if (!hayMarcador) {
+        /*
+         * Un partido cerrado sin marcador NO es lo mismo que uno por jugar: es
+         * «ya no puedes cambiarlo y todavía no se sabe». El guion vale para los
+         * dos, pero el rótulo de arriba ya los distingue.
+         */
+        return html`<div class="match-score ${cerrado ? 'match-score-cerrado' : ''}">
+            <span class="match-score-vacio">–</span>
+        </div>`;
+    }
+
+    const enVivo = oficial.estado === 'LIVE' || oficial.estado === 'MT';
+
+    /* El minuto sólo mientras corre: en uno terminado sobra y confunde. */
+    const pie = enVivo
+        ? html`<span class="match-score-minuto">${
+            oficial.estado === 'MT' ? 'Medio tiempo' : (oficial.minuto ? oficial.minuto + "'" : 'En juego')
+          }</span>`
+        : '';
+
+    return html`<div class="match-score ${enVivo ? 'match-score-vivo' : 'match-score-final'}">
+        <span class="match-score-cifras">${oficial.marcador1} - ${oficial.marcador2}</span>
+        ${pie}
+    </div>`;
+}
+
+/*
+ * ============================================================================
+ * EL MARCADOR EN VIVO, SIN REGALARLE TRÁFICO A NADIE
+ * ============================================================================
+ *
+ * ⛔ CADA PETICIÓN SE PAGA. La cuota de transferencia ya se agotó una vez, y
+ * fue por algo que parecía inofensivo: una consulta cada minuto que crecía sola
+ * con el calendario. Así que aquí cada viaje a la red tiene que justificarse.
+ *
+ * Las cinco reglas, y por qué cada una:
+ *
+ *   1. **Cada 60 segundos, ni uno menos.** No es un número elegido a ojo: el
+ *      sincronizador consulta al proveedor cada 60 s mientras un partido está
+ *      en vivo (`VENTANAS_MS.enVivo`). Preguntar más seguido devolvería LO
+ *      MISMO — sería pagar por una respuesta que ya teníamos.
+ *
+ *   2. **Sólo si hay algo que mirar.** Un partido que aún no empieza no cambia,
+ *      y uno terminado tampoco. Sin nada en marcha no se pregunta: cero.
+ *
+ *   3. **Pestaña escondida, nada.** Un móvil con la pantalla en el bolsillo no
+ *      necesita el minuto 37.
+ *
+ *   4. **Todo terminado, se para para siempre.** El reloj se apaga y no vuelve.
+ *
+ *   5. **Sólo esta jornada.** Ya va en `?jornada=`.
+ */
+const MS_REFRESCO_EN_VIVO = 60 * 1000;
+
+let relojEnVivo = null;
+let ultimaConsultaEnVivo = 0;
+let refrescoVigente = null;
+let oyenteVisibilidadPuesto = false;
+
+/**
+ * ¿Merece la pena preguntar?
+ *
+ * ⚠️ La condición NO es «hay alguno en vivo»: entonces nunca se enteraría de
+ * que uno EMPIEZA. Es «ya debería haber empezado y todavía no ha terminado»,
+ * que incluye el hueco entre el pitido inicial y el momento en que el proveedor
+ * se da por enterado.
+ */
+function hayAlgoQueMirar(partidos, oficialDe) {
+    return partidos.some(partido => {
+        if (!fechaPartidoYaPaso(partido.apiDate)) return false;
+        return oficialDe(partido)?.estado !== 'TC';
+    });
+}
+
+/** ¿Se acabó del todo? Entonces el reloj sobra. */
+function todoTerminado(partidos, oficialDe) {
+    return partidos.every(partido =>
+        fechaPartidoYaPaso(partido.apiDate) && oficialDe(partido)?.estado === 'TC');
+}
+
+function vigilarMarcadores(nombreJornada, partidos, oficialesIniciales) {
+    /* Cambiar de jornada apaga el reloj anterior: si no, se acumularían. */
+    if (relojEnVivo) { clearInterval(relojEnVivo); relojEnVivo = null; }
+
+    const emparejar = (lista, partido) => lista.find(o =>
+        (o.equipo1 === partido.equipo1 && o.equipo2 === partido.equipo2) ||
+        (o.equipo1 === partido.equipo2 && o.equipo2 === partido.equipo1));
+
+    /*
+     * ⚠️ Se arranca con lo que YA se trajo al pintar, no con una lista vacía.
+     * Vacía, `hayAlgoQueMirar` no sabría que un partido ya terminó y pediría
+     * una vuelta de más en la primera pasada.
+     */
+    let ultimos = oficialesIniciales || [];
+
+    async function refrescar(forzado = false) {
+        if (document.hidden) return;                       // Regla 3
+        if (!hayAlgoQueMirar(partidos, p => emparejar(ultimos, p))) return;   // Regla 2
+
+        /*
+         * ⚠️ El cerrojo de los 60 s vale TAMBIÉN para el refresco al volver a
+         * la pestaña. Sin él, entrar y salir diez veces en un minuto serían
+         * diez peticiones por diez miradas que ven lo mismo.
+         */
+        const ahora = Date.now();
+        if (!forzado && ahora - ultimaConsultaEnVivo < MS_REFRESCO_EN_VIVO - 1000) return;
+        if (forzado && ahora - ultimaConsultaEnVivo < MS_REFRESCO_EN_VIVO) return;
+        ultimaConsultaEnVivo = ahora;
+
+        try {
+            const res = await fetch(
+                '/api/resultados-oficiales?jornada=' + encodeURIComponent(nombreJornada));
+            const datos = await res.json();
+            ultimos = (datos.find(o => o.nombre === nombreJornada) || {}).partidos || [];
+        } catch (e) {
+            /* Un fallo de red no apaga el reloj: al minuto se reintenta. */
+            return;
+        }
+
+        pintarMarcadoresEnVivo(partidos, p => emparejar(ultimos, p));
+
+        if (todoTerminado(partidos, p => emparejar(ultimos, p))) {   // Regla 4
+            clearInterval(relojEnVivo);
+            relojEnVivo = null;
+        }
+    }
+
+    /* Lo que ya se pintó al cargar cuenta como la consulta de este minuto. */
+    ultimaConsultaEnVivo = Date.now();
+    relojEnVivo = setInterval(refrescar, MS_REFRESCO_EN_VIVO);   // Regla 1
+
+    /*
+     * ⚠️ El oyente de visibilidad se registra UNA vez en toda la vida de la
+     * página, y llama a la vigilancia que esté vigente. Registrado aquí sin más,
+     * cada cambio de jornada dejaría otro encima y volver a la pestaña
+     * dispararía tantas peticiones como jornadas se hubieran mirado.
+     */
+    refrescoVigente = refrescar;
+
+    if (!oyenteVisibilidadPuesto) {
+        oyenteVisibilidadPuesto = true;
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && refrescoVigente) refrescoVigente(true);
+        });
+    }
+}
+
+/**
+ * Repinta SÓLO los marcadores, y cierra lo que se haya cerrado.
+ *
+ * ⛔ NO SE TOCA NI UN `input.value`. Quien está llenando su quiniela puede tener
+ * medio marcador escrito sin guardar; un refresco que reescriba las casillas le
+ * borraría lo que estaba haciendo, cada minuto, sin avisar. Aquí se cambia la
+ * caja del centro y, como mucho, se deshabilita lo que ya no se puede tocar.
+ */
+function pintarMarcadoresEnVivo(partidos, oficialDe) {
+    const tarjetas = document.querySelectorAll('.partido-container');
+
+    partidos.forEach((partido, i) => {
+        const tarjeta = tarjetas[i];
+        if (!tarjeta) return;
+
+        const oficial = oficialDe(partido);
+        const caja = tarjeta.querySelector('.match-score');
+        const cerrado = Boolean(oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado))
+            || fechaPartidoYaPaso(partido.apiDate);
+
+        if (caja) caja.outerHTML = String(cajaDeMarcador(oficial, cerrado));
+
+        if (cerrado) {
+            tarjeta.classList.add('partido-cerrado');
+            tarjeta.querySelectorAll('input, .stepper-btn')
+                .forEach(elemento => { elemento.disabled = true; });
+        }
+    });
+}
+
+/**
+ * Los botones de subir y bajar, por delegación.
+ *
+ * ⚠️ UN solo oyente en el contenedor y no uno por botón: una jornada de diez
+ * partidos son cuarenta botones, y cuarenta oyentes que además habría que
+ * retirar cada vez que se repinta la lista.
+ */
+function conectarBotonesDeMarcador(contenedor) {
+    /*
+     * ⛔ Una sola vez por contenedor.
+     *
+     * `mostrarPartidos` vacía el contenedor y lo vuelve a llenar, pero el
+     * contenedor MISMO sobrevive. Sin esta marca, cada repintado añadiría otro
+     * oyente encima del anterior y un toque en «+» sumaría dos, luego tres —un
+     * fallo que sólo aparece después de recargar la lista, que es justo cuando
+     * nadie está mirando.
+     */
+    if (contenedor.dataset.botonesConectados === 'si') return;
+    contenedor.dataset.botonesConectados = 'si';
+
+    contenedor.addEventListener('click', evento => {
+        const boton = evento.target.closest('.stepper-btn');
+        if (!boton || boton.disabled) return;
+
+        const campo = boton.parentElement.querySelector('input');
+        if (!campo || campo.disabled) return;
+
+        /*
+         * ⛔ VACÍO NO ES CERO, Y ESA DIFERENCIA GUARDA PRONÓSTICOS.
+         *
+         * El campo nace vacío a propósito: «no pronostiqué» y «pronostiqué 0»
+         * son cosas distintas para el que guarda —dos vacíos borran, uno solo
+         * no se manda—, y confundirlas ya borró marcadores una vez.
+         *
+         * Así que el primer toque en «+» pone 1, y el primero en «−» pone 0.
+         * Bajar desde vacío a −1 no existe; bajar desde 0 tampoco, y ahí se
+         * queda en 0 en vez de vaciarse: vaciar es una decisión, no un resbalón.
+         */
+        const vacio = campo.value.trim() === '';
+        const paso = Number(boton.dataset.paso);
+        const actual = vacio ? (paso > 0 ? 0 : 1) : Number(campo.value);
+
+        if (Number.isNaN(actual)) { campo.value = paso > 0 ? '1' : '0'; return; }
+
+        campo.value = String(Math.max(0, Math.min(99, actual + paso)));
+    });
+}
+
 function formatearFechaPartido(apiDate) {
     if (!apiDate) return 'Fecha no disponible';
 
@@ -189,8 +432,27 @@ function obtenerFechaPartido(apiDate) {
 
 
 
+let contadoresEnMarcha = false;
+
 function iniciarContadoresPartidos() {
-    setInterval(() => {
+    /*
+     * ⛔ Un solo reloj para toda la página.
+     *
+     * Esto se llamaba desde `mostrarPartidos`, que corre cada vez que se cambia
+     * de jornada: cada repintado dejaba OTRO `setInterval` vivo encima del
+     * anterior, y ninguno se detenía nunca. No se veía porque todos escriben lo
+     * mismo, pero se acumulaban mientras la pestaña siguiera abierta.
+     */
+    if (contadoresEnMarcha) { pintarContadores(); return; }
+    contadoresEnMarcha = true;
+
+    /* Una pasada YA: si no, el primer segundo se ve «Cierra en:» sin nada. */
+    pintarContadores();
+    setInterval(pintarContadores, 1000);
+}
+
+function pintarContadores() {
+    {
         document.querySelectorAll('.contador-partido').forEach(span => {
             const fechaCierre = new Date(span.dataset.fecha);
             const diff = fechaCierre - new Date();
@@ -209,7 +471,7 @@ function iniciarContadoresPartidos() {
                 ? `${dias}d ${horas}h ${minutos}m ${segundos}s`
                 : `${horas}h ${minutos}m ${segundos}s`;
         });
-    }, 1000);
+    }
 }
 
 function parseFechaPartidoCostaRica(apiDate) {
@@ -236,8 +498,23 @@ async function mostrarPartidos(partidos, nombreJornada) {
 
     let oficialesJornada = [];
 
+/*
+ * ⛔ SE PIDE **UNA** JORNADA, NO TODAS.
+ *
+ * Esto se traía los resultados oficiales de TODAS las jornadas de la quiniela
+ * y se quedaba con una, filtrando en el navegador. Las demás viajaban por la
+ * red para ser descartadas nada más llegar.
+ *
+ * El parámetro `?jornada=` existe en el servidor desde la M-26 y está puesto
+ * justamente para esto; esta pantalla nunca llegó a usarlo.
+ *
+ * ⚠️ Y el tráfico se PAGA: es la misma cuota de Neon que ya se agotó una vez.
+ * La respuesta sigue siendo un arreglo —con una sola jornada dentro—, así que
+ * el `find` de abajo vale igual y no hay nada más que cambiar.
+ */
 try {
-  const oficialesRes = await fetch('/api/resultados-oficiales');
+  const oficialesRes = await fetch(
+    '/api/resultados-oficiales?jornada=' + encodeURIComponent(nombreJornada));
   const oficialesData = await oficialesRes.json();
   const oficial = oficialesData.find(o => o.nombre === nombreJornada);
   oficialesJornada = oficial ? oficial.partidos : [];
@@ -312,10 +589,18 @@ const contadorHTML = !bloqueado && !fechaPaso && fechaPartido
       `
     : '';
 
+/*
+ * ⚠️ El distintivo de comodín va AQUÍ, en el renglón, y no flotando.
+ *
+ * Estaba con `position: absolute` en la esquina, y con la tarjeta nueva se
+ * montaba encima del rótulo de «Disponible»: dos cosas escritas en el mismo
+ * sitio. Dentro del renglón se coloca solo y no puede pisar a nadie.
+ */
 const fechaPartidoHTML = html`
-    <div class="match-meta" style="justify-content:center; margin-bottom:10px;">
+    <div class="match-meta">
         <span>📅 ${formatearFechaPartido(partido.apiDate)}</span>
         ${textoBloqueo}
+        ${partido.comodin ? html`<span class="comodin-badge">⭐ COMODÍN</span>` : ''}
         ${contadorHTML}
     </div>
 `;
@@ -324,58 +609,103 @@ const fechaPartidoHTML = html`
 
 
 
+        /*
+         * ====================================================================
+         * ⛔ EXACTAMENTE DOS `<input>` POR TARJETA, Y EN ESTE ORDEN
+         * ====================================================================
+         *
+         * Tres sitios del archivo hacen `partidoDiv.querySelectorAll('input')`
+         * y cuentan con que `[0]` sea el marcador local y `[1]` el visitante —
+         * ahí cuelgan las defensas de la Entrada 068, la que impedía que editar
+         * un partido borrara en silencio el pronóstico de otro.
+         *
+         * Por eso los botones de subir y bajar son `<button>` y NO `<input
+         * type="button">`: así la cuenta de inputs no cambia y esas defensas
+         * siguen en pie sin tocarlas.
+         */
+        const marcadorHTML = cajaDeMarcador(buscarOficial(partido), bloqueado || fechaPaso);
+
         partidoDiv.innerHTML = html`
            ${fechaPartidoHTML}
-            <div class="match-teams">
-                ${partido.comodin ? html`<div class="comodin-badge">⭐ COMODÍN</div>` : ''}
 
+            <div class="match-row">
                 <div class="team-side">
                     ${logoHTML(partido.logoEquipo1, partido.equipo1)}
-
-                    <label style="${estiloNegrita}">
-                        ${partido.equipo1}
-                    </label>
+                    <span class="team-name" style="${estiloNegrita}">${partido.equipo1}</span>
                 </div>
 
-                <input
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="2"
-                id="resultadoEquipo1_${i}"
-                ${bloqueado ? 'disabled' : ''}
->
-
-                <label style="${estiloNegrita}">
-                    vs
-                </label>
-
-            <input
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="2"
-            id="resultadoEquipo2_${i}"
-            ${bloqueado ? 'disabled' : ''}
->
+                ${marcadorHTML}
 
                 <div class="team-side">
                     ${logoHTML(partido.logoEquipo2, partido.equipo2)}
+                    <span class="team-name" style="${estiloNegrita}">${partido.equipo2}</span>
+                </div>
+            </div>
 
-                    <label style="${estiloNegrita}">
-                        ${partido.equipo2}
-                    </label>
+            <!--
+              ⚠️ El rótulo cambia de tiempo verbal, y no es adorno: con la
+              tarjeta partida en dos renglones hay DOS marcadores a la vista —el
+              del partido y el tuyo— y hay que decir cuál es cuál. Cerrado dice
+              «Pusiste», que es lo que Marco pidió ver cuando el partido acaba.
+            -->
+            <div class="pick-label">${bloqueado || fechaPaso ? 'Pusiste' : 'Tu pronóstico'}</div>
+
+            <div class="pick-row">
+                <div class="stepper">
+                    <button type="button" class="stepper-btn" data-paso="-1"
+                            aria-label="Bajar el marcador de ${partido.equipo1}"
+                            ${bloqueado ? 'disabled' : ''}>−</button>
+                    <input
+                        type="text"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="2"
+                        id="resultadoEquipo1_${i}"
+                        aria-label="Tu marcador para ${partido.equipo1}"
+                        ${bloqueado ? 'disabled' : ''}>
+                    <button type="button" class="stepper-btn" data-paso="1"
+                            aria-label="Subir el marcador de ${partido.equipo1}"
+                            ${bloqueado ? 'disabled' : ''}>+</button>
                 </div>
 
-                <label style="display:none;">
-                    Comodín: ${partido.comodin ? 'Sí' : 'No'}
-                </label>
+                <span class="pick-sep" aria-hidden="true"></span>
 
+                <div class="stepper">
+                    <button type="button" class="stepper-btn" data-paso="-1"
+                            aria-label="Bajar el marcador de ${partido.equipo2}"
+                            ${bloqueado ? 'disabled' : ''}>−</button>
+                    <input
+                        type="text"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="2"
+                        id="resultadoEquipo2_${i}"
+                        aria-label="Tu marcador para ${partido.equipo2}"
+                        ${bloqueado ? 'disabled' : ''}>
+                    <button type="button" class="stepper-btn" data-paso="1"
+                            aria-label="Subir el marcador de ${partido.equipo2}"
+                            ${bloqueado ? 'disabled' : ''}>+</button>
+                </div>
             </div>
+
+            <label style="display:none;">
+                Comodín: ${partido.comodin ? 'Sí' : 'No'}
+            </label>
         `;
 
         partidosContainer.appendChild(partidoDiv);
     });
+
+    conectarBotonesDeMarcador(partidosContainer);
+
+    /*
+     * ⚠️ DESPUES de pintar, no antes. La primera pasada del contador busca
+     * los `.contador-partido` en el DOM; llamada antes del bucle no
+     * encontraba ninguno y el renglon se veia vacio el primer segundo.
+     */
+    iniciarContadoresPartidos();
+
+    vigilarMarcadores(nombreJornada, partidos, oficialesJornada);
 }
 
 

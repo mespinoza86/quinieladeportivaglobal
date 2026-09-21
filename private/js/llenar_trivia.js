@@ -78,7 +78,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         jornadaData = await jornadaRes.json();
       }
 
-      const oficialesRes = await fetch('/api/resultados-oficiales');
+      /*
+       * ⚠️ Una jornada, no todas. Esto se traía los oficiales de la quiniela
+       * entera para quedarse con uno. El tráfico se paga: ver el porqué largo
+       * en `llenar_jornada_user.js`.
+       */
+      const oficialesRes = await fetch(
+        '/api/resultados-oficiales?jornada=' + encodeURIComponent(jornadaTrivia));
       const oficialesData = await oficialesRes.json();
 
       const oficial = oficialesData.find(o => o.nombre === jornadaTrivia);

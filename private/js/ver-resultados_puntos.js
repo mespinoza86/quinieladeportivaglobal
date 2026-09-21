@@ -272,7 +272,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const jornadaData = await obtenerJornada(jornada);
             const partidosJornada = jornadaData?.partidos || [];
 
-            const oficialesResponse = await fetch('/api/resultados-oficiales');
+            /*
+             * ⚠️ Una jornada, no todas. El tráfico se paga: ver el porqué
+             * largo en `llenar_jornada_user.js`.
+             */
+            const oficialesResponse = await fetch(
+                '/api/resultados-oficiales?jornada=' + encodeURIComponent(jornada));
             const resultadosOficiales = await oficialesResponse.json();
 
             const resultadoOficial = Array.isArray(resultadosOficiales)

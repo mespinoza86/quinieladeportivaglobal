@@ -77,7 +77,23 @@ body {
     var(--bg);
   color: var(--text);
   min-height: 100vh;
-  padding-bottom: 90px;
+
+  /*
+   * ⛔ HUECO PARA LA BARRA DE ABAJO, CON MARGEN DE VERDAD.
+   *
+   * `.bottom-nav` va fija a 14 px del suelo y mide unos 76, o sea 90 justos. Y
+   * aquí había exactamente 90: margen cero. El último botón de la página
+   * quedaba pegado al borde de la barra, y bastaba un redondeo para que se
+   * metiera DEBAJO — pulsable en apariencia y no en la práctica.
+   *
+   * Se destapó al hacer más altas las tarjetas de pronóstico: «Guardar
+   * Resultados» se iba bajo la barra en móvil y no había forma de pulsarlo. Lo
+   * encontró una prueba de navegador chocando con lo mismo que un dedo.
+   *
+   * ⚠️ Y el `env()` es para los teléfonos con barra de gestos: ahí el suelo de
+   * la pantalla no es el suelo de la ventana.
+   */
+  padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
 }
 
 .app-body {
@@ -2288,4 +2304,264 @@ button + button {
 .combo-lista li > span:first-child {
   min-width: 0;
   overflow-wrap: break-word;
+}
+
+/*
+ * ============================================================================
+ * La tarjeta de pronóstico: equipos arriba, tu apuesta abajo
+ * ============================================================================
+ *
+ * Marco la pidió con una captura: logos grandes, el marcador de verdad en el
+ * centro, y botones de subir y bajar en vez de escribir a pelo. El ambiente
+ * oscuro se queda; lo que cambia es la DISPOSICIÓN.
+ *
+ * Dos renglones, y cada uno dice una cosa:
+ *   arriba  → lo que pasa en el campo (equipos y marcador real)
+ *   abajo   → lo que dijiste tú
+ *
+ * ⚠️ Separados a propósito. Mezclados —como antes, todo en una fila— el
+ * marcador del partido y el tuyo se confundían a simple vista.
+ */
+.match-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.match-row .team-side {
+  /* En columna: el logo grande manda, y el nombre debajo. */
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+}
+
+.match-row .team-logo {
+  width: 56px;
+  height: 56px;
+  padding: 5px;
+}
+
+.match-row .team-name {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+
+/* ---------- La caja del centro: el marcador de verdad ---------- */
+
+.match-score {
+  flex: 0 0 auto;
+  min-width: 84px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.match-score-cifras {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-score-vacio {
+  display: block;
+  font-size: 1.35rem;
+  color: var(--muted);
+}
+
+/*
+ * En juego, en verde y con el minuto. Es el único sitio de la tarjeta que
+ * cambia solo, así que tiene que verse que está vivo.
+ */
+.match-score-vivo {
+  border-color: var(--primary);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.match-score-minuto {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--primary-claro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- El renglón de abajo: tu pronóstico ---------- */
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pick-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+
+  /*
+   * ⛔ ANCHOS FIJOS QUE NO CABÍAN EN UN MÓVIL.
+   *
+   * Eran 44 + 56 + 44 por cada marcador, dos marcadores: unos 340 px de fila
+   * que NO entran en una pantalla de 390. La tarjeta se salía por la derecha,
+   * la página se desplazaba en horizontal y el botón de guardar quedaba fuera
+   * de alcance — lo cazó una prueba de navegador que no lograba pulsarlo.
+   *
+   * ⚠️ `min-width: 0` no es adorno: un hijo de flex se niega por defecto a
+   * encogerse por debajo de su contenido, y sin eso `flex: 1` no sirve de nada.
+   */
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/*
+ * ⛔ `width: auto` contra el `width: 100%` que llevan TODOS los botones.
+ *
+ * Es la cuarta vez que esa regla global muerde: en una fila flex, un botón que
+ * pide el 100 % se queda la fila entera y aplasta lo que tenga al lado. Aquí
+ * aplastaría el campo del marcador.
+ */
+.stepper-btn {
+  /* Encoge si hace falta, pero nunca por debajo de lo que acierta un pulgar. */
+  width: 44px;
+  min-width: 36px;
+  flex: 0 1 auto;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+
+  /* 44px de lado: es el mínimo para acertar con el pulgar sin pelearse. */
+  font-size: 1.3rem;
+  line-height: 1;
+
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.stepper-btn:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: var(--primary);
+}
+
+.stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/*
+ * ⚠️ El campo sigue siendo un `<input>` de texto y se puede escribir dentro.
+ * Marco lo pidió así: para un 1-0 los botones son cómodos, para un 4-3 son
+ * siete toques. Y nace VACÍO, que no es lo mismo que cero.
+ */
+.stepper input {
+  width: 100%;
+  max-width: 56px;
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* En móvil estrecho, los nombres largos mandan: se reparte el hueco. */
+@media (max-width: 430px) {
+  .match-row .team-logo { width: 44px; height: 44px; }
+  .stepper-btn { width: 38px; }
+  .stepper input { width: 46px; }
+}
+
+/*
+ * El renglón de arriba de la tarjeta: fecha, estado, comodín y cuenta atrás.
+ *
+ * ⛔ `.match-meta` NO TENÍA NINGUNA REGLA.
+ *
+ * Se usaba desde el primer día con un `style="justify-content:center"` puesto a
+ * mano — que no hacía nada, porque sin `display:flex` esa propiedad se ignora.
+ * Así que las cuatro piezas salían pegadas una detrás de otra y partiéndose por
+ * donde caía. Con la tarjeta nueva, más alta, se notó.
+ */
+.match-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  margin-bottom: 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/*
+ * ⚠️ El comodín, dentro del renglón y no flotando.
+ *
+ * `.comodin-badge` es `position: absolute` en la esquina de la tarjeta, y con
+ * la disposición nueva aterrizaba ENCIMA del rótulo de «Disponible»: dos cosas
+ * escritas en el mismo sitio. Aquí se deshace esa colocación y se pone en fila
+ * con las demás, donde no puede pisar a nadie.
+ */
+.match-meta .comodin-badge {
+  position: static;
+  font-size: 0.72rem;
+  padding: 4px 9px;
+  box-shadow: none;
+}
+
+/*
+ * El rótulo del renglón de abajo.
+ *
+ * ⚠️ Con la tarjeta partida en dos hay DOS marcadores a la vista: el del
+ * partido, arriba, y el tuyo, abajo. Sin decir cuál es cuál, a primera vista se
+ * confunden — que es justo lo que la disposición nueva venía a arreglar.
+ */
+.pick-label {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* La raya ya la pone el rótulo: dos seguidas serían un renglón doble. */
+.pick-label + .pick-row {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/*
+ * ⛔ Cerrado, los botones SE VAN pero el campo SE QUEDA.
+ *
+ * Subir y bajar un marcador que ya no se puede cambiar es ofrecer algo que no
+ * funciona. El `<input>` en cambio no se toca: sigue enseñando lo que pusiste,
+ * y —lo que más importa— los tres sitios que cuentan `querySelectorAll('input')`
+ * seguirían encontrando dos por tarjeta aunque aquí se escondiera algo de más.
+ */
+.partido-cerrado .stepper-btn {
+  display: none;
 }

@@ -854,6 +854,46 @@ test('la carga manual bloquea los partidos y congela la jornada', async () => {
   assert.equal(tabla.body.clasificacion.find(f => f.jugador === jefe.datos.username).puntos, 5);
 });
 
+test('⛔ `?jornada=` devuelve UNA jornada, no todas', async () => {
+  /*
+   * ============================================================================
+   * EL FILTRO EXISTÍA DESDE LA M-26 Y NO LO PROBABA NADIE
+   * ============================================================================
+   *
+   * Cuatro pantallas pedían `/api/resultados-oficiales` A SECAS y luego
+   * buscaban su jornada en el navegador: las demás viajaban por la red para ser
+   * descartadas nada más llegar. Ahora las cuatro mandan `?jornada=`.
+   *
+   * ⚠️ Y el filtro no tenía ni una prueba. Montar cuatro pantallas sobre algo
+   * que nadie comprueba es cómo se cae una función entera sin que salte nada:
+   * si un día `?jornada=` se ignorase, seguiría funcionando —la respuesta
+   * traería de más y el `find` acertaría igual— y el ahorro desaparecería
+   * EN SILENCIO. Por eso se comprueba lo que NO viene, no sólo lo que viene.
+   */
+  const jefe = await admin('jefe');
+
+  for (const nombre of ['J1', 'J2', 'J3']) {
+    await jefe.agente.post('/api/jornadas').send({
+      nombre, partidos: [partido('Alfa', 'Beta')]
+    });
+    await jefe.agente.post('/api/resultados-oficiales')
+      .send({ jornada: nombre, resultados: [{ marcador1: 1, marcador2: 0 }] });
+  }
+
+  /* Sin filtro: están las tres. Si no, la prueba de abajo no probaría nada. */
+  const todas = await jefe.agente.get('/api/resultados-oficiales');
+  assert.equal(todas.body.length, 3, 'el caso de control: sin filtro vienen todas');
+
+  const una = await jefe.agente.get('/api/resultados-oficiales?jornada=J2');
+  assert.equal(una.body.length, 1, 'con filtro viene UNA, y las otras dos no viajan');
+  assert.equal(una.body[0].nombre, 'J2');
+  assert.equal(una.body[0].partidos.length, 1);
+
+  /* Y una que no existe da vacío, no la primera que pille. */
+  const ninguna = await jefe.agente.get('/api/resultados-oficiales?jornada=NoExiste');
+  assert.equal(ninguna.body.length, 0);
+});
+
 test('⚠️ el comodín que sale del API es el del PARTIDO, no el del formulario', async () => {
   const jefe = await admin('jefe');
   await jefe.agente.post('/api/jornadas').send({

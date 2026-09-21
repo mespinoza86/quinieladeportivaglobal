@@ -233,7 +233,12 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
             const jornadaData = await obtenerJornada(jornada);
             const partidosJornada = jornadaData?.partidos || [];
 
-            const oficialesRes = await fetch('/api/resultados-oficiales');
+            /*
+             * ⚠️ Una jornada, no todas. El tráfico se paga: ver el porqué
+             * largo en `llenar_jornada_user.js`.
+             */
+            const oficialesRes = await fetch(
+                '/api/resultados-oficiales?jornada=' + encodeURIComponent(jornada));
             const oficialesData = await oficialesRes.json();
 
             const oficialJornada = Array.isArray(oficialesData)
