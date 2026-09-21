@@ -152,8 +152,10 @@ function estadoPartidoHTML(partido) {
     });
 
     cargarDatosIniciales();
-    setInterval(() => {
-    cargarDatosIniciales();
-    }, 30000);
+    /* Una vez por minuto, y solo repinta si cambio. Ver `refresco-vivo.js`. */
+    refrescoEnVivo(
+        () => jornadaSelect.value || null,
+        cargarDatosIniciales
+    );
 
 });

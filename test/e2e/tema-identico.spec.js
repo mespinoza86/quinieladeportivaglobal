@@ -70,6 +70,55 @@ const PANTALLAS = {
   ]
 };
 
+/*
+ * Los colores del tema oscuro, tal y como estaban ANTES de la pasada de fichas.
+ * Capturados del CSS original, no del ya modificado — una base sacada del
+ * codigo que se quiere comprobar no demuestra nada.
+ */
+const COLORES_DEL_OSCURO = {
+  "quinielas.html": {
+    "body { background-color }": "rgb(7, 17, 31)",
+    "body { color }": "rgb(248, 250, 252)",
+    ".hero-card { background-image }": "linear-gradient(145deg, rgba(34, 197, 94, 0.25), rgba(16, 35, 61, 0.96))",
+    ".app-panel { background-color }": "rgba(255, 255, 255, 0.08)",
+    ".app-panel { border-color }": "rgba(255, 255, 255, 0.12)",
+    ".helper-text { color }": "rgb(159, 176, 199)",
+    ".field-label { color }": "rgb(250, 204, 21)",
+    "button { background-image }": "linear-gradient(135deg, rgb(34, 197, 94), rgb(22, 163, 74))",
+    "button { color }": "rgb(4, 19, 10)",
+    ".ghost-button { color }": "rgb(159, 176, 199)",
+    ".ghost-button { border-color }": "rgba(255, 255, 255, 0.12)",
+    "input { background-color }": "rgba(255, 255, 255, 0.92)",
+    "input { color }": "rgb(15, 23, 42)",
+    ".checkbox-fila { color }": "rgb(248, 250, 252)",
+    ".radio-grupo .checkbox-fila { background-color }": "rgba(34, 197, 94, 0.1)",
+    ".radio-grupo .checkbox-fila { border-color }": "rgb(34, 197, 94)"
+  },
+  "index.html": {
+    ".action-card { background-color }": "rgba(255, 255, 255, 0.08)",
+    ".action-card .icon { background-color }": "rgba(255, 255, 255, 0.14)",
+    ".bottom-nav { background-color }": "rgba(6, 16, 31, 0.88)",
+    ".bottom-nav a { color }": "rgb(248, 250, 252)",
+    ".bottom-nav a.active { background-color }": "rgba(34, 197, 94, 0.18)",
+    ".eyebrow { color }": "rgb(250, 204, 21)",
+    "h1 { color }": "rgb(248, 250, 252)"
+  },
+  "llenar_jornada_user.html": {
+    ".partido-container { background-color }": "rgba(255, 255, 255, 0.07)",
+    ".match-score { background-color }": "rgba(255, 255, 255, 0.05)",
+    ".match-score { border-color }": "rgba(255, 255, 255, 0.12)",
+    ".match-score-vacio { color }": "rgb(159, 176, 199)",
+    ".stepper-btn { background-color }": "rgba(255, 255, 255, 0.08)",
+    ".stepper-btn { color }": "rgb(248, 250, 252)",
+    ".stepper input { background-color }": "rgba(255, 255, 255, 0.92)",
+    ".pick-label { color }": "rgb(159, 176, 199)",
+    ".status-pill { color }": "rgb(255, 215, 0)",
+    ".comodin-badge { background-color }": "rgb(250, 204, 21)",
+    "select { background-color }": "rgba(255, 255, 255, 0.92)",
+    ".secondary-button { background-color }": "rgba(255, 255, 255, 0.12)"
+  }
+};
+
 test('⛔ la pasada de fichas no cambia NINGÚN color del tema oscuro', async ({ page }) => {
   const datos = await registrarse(page, 'tema');
   await crearQuiniela(page, 'Tema');
@@ -117,5 +166,18 @@ test('⛔ la pasada de fichas no cambia NINGÚN color del tema oscuro', async ({
     todos[pantalla] = colores;
   }
 
-  expect(JSON.stringify(todos, null, 2)).toMatchSnapshot("colores-oscuro.txt");
+  /*
+   * ⛔ LOS VALORES VAN AQUI DENTRO, NO EN UNA INSTANTANEA.
+   *
+   * Estaban en un archivo de `toMatchSnapshot`, y Playwright le pone el
+   * SISTEMA OPERATIVO al nombre: `colores-oscuro-movil-win32.txt`. En el
+   * ordenador de Marco existia; en el CI, que corre en Ubuntu, no — y las
+   * pruebas de navegador reventaron ahi sin haber roto nada.
+   *
+   * ⚠️ Y la instantanea era la herramienta equivocada de todos modos: esto son
+   * VALORES DE CSS, iguales en cualquier sistema y a cualquier anchura. Meter
+   * el sistema operativo en la comparacion no aportaba nada y anadia un sitio
+   * mas donde fallar.
+   */
+  expect(JSON.parse(JSON.stringify(todos))).toEqual(COLORES_DEL_OSCURO);
 });

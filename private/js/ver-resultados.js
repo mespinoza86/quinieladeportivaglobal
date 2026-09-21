@@ -370,11 +370,11 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
         }
     });
 
-    setInterval(() => {
-        if (jugadorSelect.value && jornadaSelect.value) {
-            buscarResultados(verTodosAutorizado);
-        }
-    }, 30000);
+    /* Una vez por minuto, y sólo repinta si cambió. Ver `refresco-vivo.js`. */
+    refrescoEnVivo(
+        () => (jugadorSelect.value && jornadaSelect.value) ? jornadaSelect.value : null,
+        () => buscarResultados(verTodosAutorizado)
+    );
 
     loadJugadores();
     loadJornadas();

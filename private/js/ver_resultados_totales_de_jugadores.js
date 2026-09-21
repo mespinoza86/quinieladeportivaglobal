@@ -84,7 +84,11 @@ document.addEventListener("DOMContentLoaded", async function () {
             window.location.href = '/index.html';
         });
 
-        setInterval(refrescarResultadosActuales, 30000);
+        /* Una vez por minuto, y sólo repinta si cambió. Ver `refresco-vivo.js`. */
+        refrescoEnVivo(
+            () => jornadaSelect.value || null,
+            refrescarResultadosActuales
+        );
 
     } catch (error) {
         console.error("Error al cargar los datos:", error);

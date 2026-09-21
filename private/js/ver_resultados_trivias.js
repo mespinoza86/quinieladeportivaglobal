@@ -94,11 +94,11 @@ document.addEventListener("DOMContentLoaded", async function () {
       window.location.href = '/index.html';
     });
 
-    setInterval(async () => {
-      if (jornadaSelect.value) {
-        await mostrarResultadosTrivia(jornadaSelect.value);
-      }
-    }, 30000);
+    /* Una vez por minuto, y solo repinta si cambio. Ver `refresco-vivo.js`. */
+    refrescoEnVivo(
+      () => jornadaSelect.value || null,
+      () => mostrarResultadosTrivia(jornadaSelect.value)
+    );
 
   } catch (error) {
     console.error('Error cargando resultados de trivias:', error);

@@ -450,11 +450,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    setInterval(() => {
-        if (jugadorSelect.value && jornadaSelect.value) {
-            buscarResultados(verTodosAutorizado);
-        }
-    }, 30000);
+    /*
+     * ⭐ Antes era un setInterval de 30 s que recargaba TODO. Marco: «se me
+     * reinicia todo cada 20 o 30 segundos». Ahora pregunta una vez por minuto
+     * y sólo recarga si de verdad cambió algo. Ver `refresco-vivo.js`.
+     */
+    refrescoEnVivo(
+        () => (jugadorSelect.value && jornadaSelect.value) ? jornadaSelect.value : null,
+        () => buscarResultados(verTodosAutorizado)
+    );
 
     async function iniciar() {
         await loadJugadores();

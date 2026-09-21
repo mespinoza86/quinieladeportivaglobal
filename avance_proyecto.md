@@ -18352,6 +18352,132 @@ Auditoria de contraste: 0 textos ilegibles en dia y en cancha, 17 pantallas
 ---
 
 
+### 📌 Entrada 109 — 21 de septiembre de 2026 — La pantalla que se reiniciaba sola, y el CI que llevaba tres commits en rojo
+
+**Objetivo:** dos cosas que Marco encontró usando la aplicación: *«si estoy en
+ver resultados puntos, se me reinicia todo, como cada 20 o 30 segundos»* y
+*«estaba viendo en render y las pruebas de navegador reventaron»*.
+
+## ⛔ EL CI LLEVABA TRES COMMITS EN ROJO, Y NO HABÍA NADA ROTO
+
+Las instantáneas de Playwright **llevan el sistema operativo en el nombre**:
+
+```
+colores-oscuro-movil-win32.txt     ← creada en la máquina de Marco
+colores-oscuro-movil-linux.txt     ← lo que busca GitHub Actions
+```
+
+El CI corre en `ubuntu-latest`, así que buscaba unas bases que no existían y
+fallaba desde la Entrada 106 (`87a7d92`), sin que una sola línea de la
+aplicación estuviera mal.
+
+⚠️ Y la instantánea era **la herramienta equivocada de todos modos**. Eso son
+valores de CSS —`rgb(7, 17, 31)`—, idénticos en cualquier sistema y a cualquier
+anchura. De hecho las dos bases guardadas, móvil y escritorio, eran **byte a
+byte iguales**. Meter el sistema operativo en la comparación no aportaba nada y
+añadía un sitio más donde fallar.
+
+⭐ Los valores pasan a estar **dentro de la prueba**, y los archivos se borran.
+
+## ⛔ LA PANTALLA QUE SE REINICIABA
+
+Cinco pantallas de resultados tenían, cada una por su cuenta:
+
+```js
+setInterval(() => recargarloTodo(), 30000);
+```
+
+Tres peticiones por vuelta, un `innerHTML = ''` y la lista redibujada entera —
+aunque no hubiera cambiado ni una coma. De ahí que se perdiera el sitio donde
+ibas leyendo.
+
+Tres cosas iban mal, y ninguna daba error:
+
+| | |
+|---|---|
+| Repintaba sin que hubiera nada nuevo | Un partido terminado hace tres días se redibujaba cada 30 s |
+| Refrescaba con la pestaña escondida | Un móvil en el bolsillo no necesita el minuto 37 |
+| Treinta segundos no adelantaban nada | El sincronizador consulta al proveedor cada SESENTA |
+
+⭐ **La idea: preguntar poco y repintar menos.** Lo único que cambia mientras
+miras son los resultados oficiales, así que cada minuto se pide SÓLO eso —una
+petición, no tres— y la pantalla se recarga entera únicamente si de verdad llegó
+algo distinto.
+
+Las cinco pasan ahora por `refresco-vivo.js`: cinco copias de esta lógica se
+habrían separado seguro.
+
+### El fallo que sólo apareció al probarlo
+
+⛔ **En la primera vuelta no hay con qué comparar.** La huella arrancaba en
+`null`, que no es igual a nada, así que la primera mirada daba el cambio por
+bueno SIEMPRE y repintaba al minuto de entrar — justo lo que se venía a quitar.
+
+Ahora esa primera mirada sólo recuerda. Y no hace falta repintar: la pantalla
+acaba de dibujarse con datos frescos.
+
+## ⚠️ UNA PRUEBA MÍA QUE HUBO QUE TIRAR
+
+La de «calla con la pestaña escondida» costaba **setenta segundos** de espera y
+no era fiable: Playwright no esconde una pestaña de forma reproducible cuando
+corre sin ventana, y devolvía una petición donde esperaba cero.
+
+⭐ **Una prueba lenta Y frágil es de las que se acaban borrando.** Esas reglas
+son lógica pura —mirar el reloj, comparar dos textos, decidir si llamar—, así
+que se fueron a `test/refresco.test.js`: siete comprobaciones con un reloj de
+mentira, en **cinco milisegundos** en vez de ciento cuarenta segundos.
+
+En el navegador queda sólo lo que allí no se puede probar de otra forma: que en
+una pantalla de verdad, con datos de verdad, la lista no se repinta sola.
+
+⚠️ Y entre las siete está el **caso de control**: que cuando SÍ cambia, la
+pantalla se entera. Sin él, «cero repintados» no se distingue de «el refresco
+está roto del todo» — que es como se queda una pantalla congelada sin que nadie
+lo note.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/refresco-vivo.js` | **Nuevo.** Las reglas, compartidas por las cinco pantallas |
+| `test/refresco.test.js` | **Nuevo.** Siete reglas con reloj de mentira |
+| `test/e2e/refresco-vivo.spec.js` | **Nuevo.** La demostración de punta a punta |
+| `private/js/ver-resultados*.js`, `ver_resultados*.js` (5) | Fuera el `setInterval` de 30 s |
+| `public/*.html` (5) | El módulo, antes de su consumidor |
+| `test/e2e/tema-identico.spec.js` | Los valores dentro, sin instantánea de sistema |
+| `package.json` | La suite nueva entra en `npm test` |
+
+**Verificación:**
+
+```
+npm run check        -> 0
+npm test             -> 657/657   (eran 650: siete reglas nuevas)
+npx playwright test  -> 208/208   (salida de PLAYWRIGHT)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una instantánea de Playwright ata la prueba al sistema operativo.** Para
+   valores que no dependen del sistema —colores, textos, números— es la
+   herramienta equivocada: se comparan dentro de la prueba y se acabó.
+2. ⛔ **Comparar contra `null` en la primera vuelta da «cambió» siempre.** Una
+   caché que arranca vacía necesita decidir qué hace la primera vez.
+3. ⭐ **Una prueba lenta y frágil se acaba borrando.** Mejor llevar la regla a
+   donde se pueda comprobar rápido y dejar en el navegador sólo lo que allí es
+   imprescindible.
+4. ⚠️ **El CI puede llevar días en rojo sin que nadie lo note** si sólo se mira
+   la aplicación desplegada. Conviene revisarlo después de cada empujón.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ Comprobar que el CI vuelve a verde con este empujón: es lo que no se puede
+  verificar desde aquí.
+- Sigue pendiente: el marcador en vivo con un partido real, el aviso al
+  teléfono, y el ciclo completo del borrador.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 
