@@ -18082,6 +18082,151 @@ Colores calculados, movil y escritorio, contra base del CSS ORIGINAL:
 ---
 
 
+### 📌 Entrada 107 — 21 de septiembre de 2026 — §23, tajada 2: el tema de día, y los quince textos que no se leían
+
+**Objetivo:** el tema claro, con su botón. Marco: *«por default entraría la
+oscura, y habría un botón para escoger si es la de día o la de fútbol»*.
+
+## El interruptor, y el destello que no se ve
+
+⛔ **`tema.js` se carga SIN `defer`, y eso no es un descuido.** Con `defer` el
+navegador pinta la página antes de ejecutarlo, así que quien tenga el tema de
+día vería medio segundo de pantalla negra en cada carga. Ese destello es de las
+cosas que más baratas parecen y más cantan.
+
+⚠️ Lo normal sería un `<script>` de cuatro líneas en el `<head>`, y aquí **no se
+puede**: `script-src` no admite código en línea desde la Entrada 024. Por eso es
+un archivo aparte, sin `defer`: es la única forma de marcar el `<html>` antes de
+que se pinte nada.
+
+⭐ Y si el archivo no cargara, la aplicación se ve **oscura**, que es lo que
+`:root` trae de fábrica. El fallo degrada a «no puedo cambiar de tema», nunca a
+«no se ve nada».
+
+El botón lo monta el propio script en las 39 páginas: añadirlo a mano habría
+sido 39 sitios donde olvidarse de uno.
+
+## ⛔ QUINCE TEXTOS QUE NO SE LEÍAN, Y UN SOLO ERROR REPETIDO
+
+Marco, probando: *«veo letras blancas que no se leen bien, porque el fondo
+blanco hace que no se aprecien»*. Tenía razón en tres pantallas, y al buscar
+aparecieron **diez**.
+
+La causa era una sola: tinta blanca puesta sobre fondos que son **velos**.
+
+| | |
+|---|---|
+| Tinta sobre una **pieza de color** | NO cambia: el botón de peligro es rojo en los tres temas |
+| Tinta sobre un **velo** | SÍ cambia: el velo es claro de noche y oscuro de día |
+
+Son dos papeles que parecen uno, y estaban compartiendo ficha. Ahora hay
+`--tinta-sobre-velo`, que acompaña al velo.
+
+Después Marco encontró un segundo grupo: *«unas letras amarillas Jugador,
+Pronóstico, Puntos»*. Cinco rótulos dorados, con la misma forma de error: el oro
+que se **pinta** —medallas, distintivos— sigue dorado en los tres temas, pero el
+oro que se **lee** no se ve sobre papel. Ficha aparte: `--oro-tinta`.
+
+## ⛔ Y `--primary-rgb` servía para dos cosas contrarias
+
+Rellenar botones y teñir tarjetas. De día el relleno tiene que ser **más oscuro**
+—para que el texto de encima se lea— y el tinte **más claro**, o la tarjeta se
+oscurece y se lleva por delante el contraste de todo lo que lleva escrito.
+
+⚠️ En el tema oscuro los dos valen lo mismo y parecen una cosa sola. Es la clase
+de confusión que **sólo aparece al añadir el segundo tema**.
+
+## La sonda que mintió tres veces antes de servir
+
+La auditoría de contraste recorre las pantallas y mide cada texto contra su
+fondo. Llegar a que dijera la verdad costó tres correcciones, y las tres valen
+más que el resultado:
+
+1. **No sabía leer hexadecimal.** De `#16a34a` sacaba «16» y «34» —dos canales— y
+   daba `NaN`. ⚠️ El `NaN` fue suerte: con `#224466` habría sacado tres números
+   creíbles y una cifra de contraste inventada, en verde.
+2. **No veía los degradados.** Un botón con degradado tiene el
+   `background-color` transparente, así que la sonda subía hasta el fondo de la
+   página y denunciaba el botón rojo de «Eliminar» por tener letra blanca.
+3. **Veía los degradados pero no los mezclaba.** Un verde al 25 % sobre blanco NO
+   es verde: es verde pálido. Comparando contra el color crudo del tramo
+   denunciaba media portada. Ahora **mezcla las capas**, que es lo que hace el
+   navegador.
+
+⭐ Una sonda de contraste que da falsas alarmas se deja de mirar a la tercera.
+Que sea exacta no es elegancia: es lo que decide si sirve.
+
+## ⛔ LO QUE LA AUDITORÍA NO ALCANZA, Y POR QUÉ SE PARÓ DE INTENTARLO
+
+Cuatro de los cinco rótulos dorados vivían **detrás de un desplegable y un
+botón**. La auditoría pasó por esas pantallas y las dio por buenas sin mirar una
+sola fila, porque sólo mide lo que está a la vista.
+
+Se intentó que navegara hasta ahí —marcar las secciones como abiertas, pulsar
+«Ver resultados», dar el partido por jugado— y no bastó: cada pantalla tiene su
+propio camino, y cubrirlos todos es una carrera sin final.
+
+⭐ **Se paró y se cambió de herramienta.** El centinela estático lee la hoja de
+estilos y exige que ningún oro se use como texto salvo por `--oro-tinta`. No
+necesita navegador, no depende de saber navegar, y cae con la mutación (79/1
+contra 80/0).
+
+⚠️ La limitación queda escrita y no escondida: **la auditoría cubre 17 pantallas
+en su estado inicial**. Lo que sólo aparece tras varios pasos no lo ve.
+
+## Un cambio en el tema oscuro, dicho y no escondido
+
+`.official-team-comodin` pasa de `#ffd92e` a `#ffd700`. Dos dorados casi
+idénticos, unificados porque el texto dorado necesitaba ficha propia para poder
+leerse de día. Es el único píxel del tema oscuro que se movió.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/tema.js` | **Nuevo.** Aplica el tema antes del pintado y monta el botón |
+| `private/css/styles.css` | El bloque del tema de día, las fichas nuevas, los 15 textos |
+| `public/*.html` (39) | `tema.js` en el `<head>`, sin `defer` |
+| `test/e2e/tema-dia.spec.js` | **Nuevo.** Contraste, persistencia, botón, y la auditoría de 17 pantallas |
+| `test/architecture.test.js` | Centinela estático del oro como texto |
+
+**Verificación:**
+
+```
+npm test             -> 650/650
+npx playwright test  -> 204/204   (salida de PLAYWRIGHT, no la del tail)
+
+Mutaciones:
+  el ámbar vuelve al amarillo de la noche  -> cae (1.40 contra 4.5)
+  el oro vuelve a usarse como texto        -> cae el centinela (79/1)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una ficha sin valor en el tema no da error: hereda.** El primer arreglo
+   de los textos blancos no hizo nada porque se creó la ficha y se olvidó darle
+   valor en el bloque del día. Parecía arreglado y seguía igual.
+2. ⛔ **Un mismo color puede tener dos papeles contrarios.** `--primary-rgb`
+   rellenaba y teñía; en el tema oscuro eso no se nota.
+3. ⚠️ **Una sonda de contraste inexacta es peor que ninguna**: tres falsas
+   alarmas seguidas y se deja de mirar.
+4. ⚠️ **Hay pruebas que no pueden alcanzar ciertas partes de la aplicación.**
+   Reconocerlo y cambiar de herramienta cuesta menos que perseguirlo.
+5. ⚠️ **Los `\s` de una expresión regular no sobreviven a la consola.** Pasó por
+   TERCERA vez en la sesión: el centinela del oro pasó en verde sin comprobar
+   nada hasta que se verificó con la mutación.
+
+**Pendiente / siguiente paso:**
+
+- Tajada 3: el tema de cancha. Sobre fondo verde el acento tendrá que ser
+  blanco, como las líneas de un campo. ⚠️ Y ojo con `--primary-rgb`: si el fondo
+  ya es verde, los tintes verdes dejan de distinguirse.
+- ⚠️ Marco revisó a mano las pantallas que la auditoría no alcanza; conviene
+  repetirlo al añadir la cancha.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

@@ -83,6 +83,42 @@
 
   /*
    * ---------------------------------------------------------------------------
+   * ⛔ TINTA SOBRE UN VELO — Y LA DIFERENCIA QUE MARCO ENCONTRÓ
+   * ---------------------------------------------------------------------------
+   *
+   * Marco, probando el tema de día: *«veo letras blancas que no se leen bien,
+   * porque el fondo blanco hace que no se aprecien»*. Tenía razón en seis
+   * sitios, y todos eran el MISMO error mío.
+   *
+   * `--tinta-sobre-color` es blanca porque va encima de una pieza de color
+   * fuerte —un botón rojo, un botón verde— que es roja o verde en los tres
+   * temas. Pero se había usado también sobre fondos que son VELOS
+   * —`rgba(var(--velo-rgb), 0.12)`—, y un velo SÍ se da la vuelta: claro de
+   * noche, oscuro de día. Blanco sobre un velo claro es invisible.
+   *
+   * Son dos papeles que parecen uno. Ésta es la tinta que acompaña al velo.
+   */
+  --tinta-sobre-velo: #ffffff;
+
+  /*
+   * ⚠️ Oro que se LEE, distinto del oro que se PINTA.
+   *
+   * `--oro-podio` y `--oro` son fondos de medalla y de distintivo: siguen
+   * siendo dorados en todos los temas. Pero usados como TEXTO sobre un fondo
+   * claro no se leen, así que el texto dorado tiene ficha aparte.
+   */
+  --oro-tinta: #ffd700;
+
+  /*
+   * El distintivo de comodín conserva su dorado en los tres temas: es una pieza
+   * de color, no un texto. Iba con `--accent`, que en el tema de día se oscurece
+   * para poder leerse sobre papel — y el distintivo se volvía marrón con letra
+   * negra encima.
+   */
+  --comodin-fondo: #facc15;
+
+  /*
+   * ---------------------------------------------------------------------------
    * Superficies claras, que ya eran claras en el tema oscuro
    * ---------------------------------------------------------------------------
    *
@@ -91,6 +127,15 @@
    * necesitan ficha propia en vez de heredar del fondo.
    */
   --superficie-clara: #ffffff;
+
+  /*
+   * ⚠️ Los campos de formulario, aparte de las demas superficies claras.
+   *
+   * En el tema oscuro son blanco al 92 %, no blanco puro: dejan translucir
+   * un punto del fondo. Con ficha propia, el tema de dia puede ponerlos en
+   * blanco entero sin tocar las tarjetas, y el oscuro no cambia ni un tono.
+   */
+  --campo-fondo: rgba(255, 255, 255, 0.92);
   --tinta-sobre-clara: #0f172a;
   --tinta-sobre-clara-rgb: 15, 23, 42;
 
@@ -157,6 +202,123 @@
   --oro-podio-rgb: 255, 215, 0;
   --plata-rgb: 203, 213, 225;
   --bronce-rgb: 180, 83, 9;
+}
+
+/*
+ * ============================================================================
+ * TEMA DE DÍA
+ * ============================================================================
+ *
+ * ⭐ Sólo redefine lo que TIENE que cambiar. Las fichas que no aparecen aquí
+ * heredan del bloque de arriba, y eso es a propósito: el rojo de peligro es
+ * rojo en los tres temas, y el blanco que va encima sigue siendo blanco.
+ *
+ * ⛔ LOS COLORES DE MARCA SE OSCURECEN, NO SE QUEDAN.
+ *
+ * El verde `#22c55e` y el amarillo `#facc15` se eligieron para BRILLAR sobre un
+ * fondo oscuro. Sobre blanco, el amarillo es prácticamente ilegible —un rótulo
+ * amarillo sobre papel no se lee— así que aquí baja a un ámbar oscuro. No es
+ * capricho: es que el mismo color no puede resaltar sobre dos fondos opuestos.
+ */
+:root[data-tema="dia"] {
+  --bg: #f1f5f9;
+  --bg-soft: #e2e8f0;
+  --card: rgba(15, 23, 42, 0.04);
+  --card-solid: #ffffff;
+
+  --text: #0f172a;
+  --muted: #334155;
+
+  /*
+   * ⛔ EL RELLENO Y EL TINTE VAN EN DIRECCIONES CONTRARIAS.
+   *
+   * `--primary` rellena botones: de día tiene que ser MÁS OSCURO, para que el
+   * texto de encima se lea. `--primary-rgb` hace tintes translúcidos sobre el
+   * fondo: de día tiene que ser MÁS CLARO, o la tarjeta se oscurece y se lleva
+   * por delante el contraste de todo lo que lleva escrito.
+   *
+   * ⚠️ En el tema oscuro los dos valen lo mismo y parecen una cosa sola. Es la
+   * clase de confusión que sólo aparece al añadir el segundo tema — y que la
+   * auditoría destapó como media portada ilegible.
+   */
+  --primary: #15803d;
+  --primary-dark: #14532d;
+  --primary-claro: #16a34a;
+  /*
+   * ⛔ `#facc15` sobre blanco no se lee, y `#a16207` TAMPOCO — por poco.
+   *
+   * El primer intento daba 4,49 de contraste contra el 4,5 que pide la WCAG:
+   * fallaba por una centésima. A ojo habría pasado sin que nadie dijera nada, y
+   * los rótulos amarillos son de lo que más se lee en esta aplicación.
+   *
+   * Lo cazó la prueba de contraste, no la vista. Éste da 6,2.
+   */
+  --accent: #713f12;
+  --danger: #dc2626;
+
+  --border: rgba(15, 23, 42, 0.14);
+  --shadow: 0 12px 30px rgba(15, 23, 42, 0.10);
+
+  /*
+   * ⭐ AQUÍ SE DAN LA VUELTA LOS CUARENTA Y DOS VELOS DE GOLPE.
+   *
+   * Cada `rgba(var(--velo-rgb), α)` de la hoja conserva su alfa y cambia de
+   * blanco a tinta. Es toda la razón por la que la tajada 1 guardó los colores
+   * sin el alfa: una línea hace aquí lo que si no serían cuarenta y dos.
+   */
+  --velo-rgb: 15, 23, 42;
+  --sombra-rgb: 15, 23, 42;
+  /* Verde CLARO: estos son tintes sobre el fondo, no rellenos. */
+  --primary-rgb: 134, 239, 172;
+  --accent-rgb: 253, 224, 71;   /* Ambar claro, por lo mismo */
+
+  /* Los campos, blancos enteros para separarse del fondo gris claro. */
+  --campo-fondo: #ffffff;
+
+  /*
+   * ⚠️ De dia el boton es verde OSCURO, asi que su texto es blanco. De noche
+   * el boton es verde brillante y el texto casi negro. La misma pieza, la
+   * tinta contraria — y por eso es una ficha y no un color escrito a mano.
+   */
+  --tinta-sobre-verde: #ffffff;
+  --tinta-sobre-verde-rgb: 255, 255, 255;
+
+  /* Superficies que eran oscuras y ahora son claras. */
+  --card-solid-rgb: 255, 255, 255;
+  --barra-rgb: 255, 255, 255;
+  --desplegable-fondo: #ffffff;
+  --verde-fondo: #dcfce7;
+  --verde-fondo-tenue: #f0fdf4;
+
+  /* Texto que era claro sobre oscuro, y ahora es tinta sobre claro. */
+  --texto-tenue: #475569;
+
+  /*
+   * ⛔ LA TINTA QUE ACOMPAÑA AL VELO SE DA LA VUELTA CON ÉL.
+   *
+   * Es el fallo que encontró Marco probando: rótulos blancos —«Partido
+   * cerrado», el marcador, «Todavía no hay partidos cerrados»— sobre velos que
+   * de día son claros. Blanco sobre claro no se ve.
+   *
+   * ⚠️ Y la primera corrección no bastó: se creó la ficha y se olvidó darle
+   * valor AQUÍ, así que seguía valiendo blanco. Una ficha sin valor en el tema
+   * no da ningún error — hereda, y parece que el arreglo no hizo nada.
+   */
+  --tinta-sobre-velo: #0f172a;
+
+  /* El dorado como TEXTO no se lee sobre papel; como fondo de medalla, sí. */
+  --oro-tinta: #854d0e;
+
+  /*
+   * ⚠️ El velo del modal SIGUE siendo oscuro. Un modal se destaca apagando lo
+   * de detrás, y apagar es oscurecer también de día — sólo que menos.
+   */
+  --velo-modal: rgba(15, 23, 42, 0.45);
+
+  /* Avisos: el azul claro se diluye sobre blanco. */
+  --info: #2563eb;
+  --info-rgb: 37, 99, 235;
+  --danger-rgb: 220, 38, 38;
 }
 
 * {
@@ -425,10 +587,21 @@ textarea {
   font-size: 1rem;
 }
 
+/*
+ * ⛔ SUPERFICIE CLARA, NO UN VELO. La distinción decide si esto se ve.
+ *
+ * En la pasada de fichas esto cayó en el saco de los velos —era
+ * `rgba(255, 255, 255, 0.92)` como otros cuarenta y uno— y era un error de
+ * clasificación: los velos se DAN LA VUELTA con el tema, y éste no debe.
+ *
+ * Un velo al 92 % de tinta oscura, con `--tinta-sobre-clara` encima, es un
+ * campo negro con letra negra: invisible, y sin dar ningún error. Lo destapó el
+ * tema de día antes de escribirlo, repasando qué haría cada ficha al voltearse.
+ */
 input,
 select,
 textarea {
-  background: rgba(var(--velo-rgb), 0.92);
+  background: var(--campo-fondo);
   color: var(--tinta-sobre-clara);
 }
 
@@ -1272,12 +1445,12 @@ button + button {
 
 .status-finished {
   background: rgba(var(--velo-rgb), 0.12);
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
 }
 
 .status-scheduled {
   background: rgba(var(--oro-podio-rgb), 0.15);
-  color: var(--oro-podio);
+  color: var(--oro-tinta);
 }
 
 .status-live {
@@ -1496,7 +1669,7 @@ button + button {
 }
 
 .reglamento-card h2 {
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   margin-bottom: 8px;
 }
 
@@ -1581,7 +1754,7 @@ button + button {
 .rules-point-number {
   font-size: 2rem;
   font-weight: 900;
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
 }
 
 .rules-point-box span:last-child {
@@ -1646,7 +1819,7 @@ button + button {
   position: absolute;
   top: 8px;
   right: 10px;
-  background: var(--accent);
+  background: var(--comodin-fondo);
   color: var(--tinta-sobre-oro);
   font-size: 12px;
   font-weight: 800;
@@ -1699,7 +1872,7 @@ button + button {
 .resultados-mensaje {
   padding: 18px;
   border-radius: 18px;
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   background: rgba(var(--sombra-rgb), 0.25);
   text-align: center;
   font-weight: 700;
@@ -1725,14 +1898,14 @@ button + button {
 }
 
 .match-title {
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   font-size: 1.05rem;
   font-weight: 900;
   line-height: 1.25;
 }
 
 .match-score {
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   text-align: center;
   line-height: 1.45;
   border-left: 1px solid rgba(var(--velo-rgb), 0.12);
@@ -1795,14 +1968,14 @@ button + button {
 }
 
 .players-header span {
-  color: var(--oro-claro);
+  color: var(--oro-tinta);
   font-weight: 900;
   padding: 12px;
   border-bottom: 1px solid rgba(var(--velo-rgb), 0.12);
 }
 
 .player-row span {
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   padding: 11px 12px;
   border-bottom: 1px solid rgba(var(--velo-rgb), 0.10);
 }
@@ -1856,7 +2029,7 @@ button + button {
   padding: 12px;
   border-radius: 14px;
   background: rgba(var(--velo-rgb), 0.08);
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   font-weight: 700;
 }
 
@@ -1871,13 +2044,13 @@ button + button {
   padding: 16px;
   border-radius: 20px;
   background: var(--verde-fondo);
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
 }
 
 .trivia-match-card h3 {
   margin: 0 0 14px;
   font-size: 1rem;
-  color: var(--oro-claro);
+  color: var(--oro-tinta);
 }
 
 .trivia-question-card {
@@ -1926,12 +2099,12 @@ button + button {
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  color: var(--tinta-sobre-color);
+  color: var(--tinta-sobre-velo);
   background: rgba(var(--sombra-rgb), 0.18);
 }
 
 .trivia-result-question strong {
-  color: var(--oro-claro);
+  color: var(--oro-tinta);
 }
 
 .trivia-result-question span {
@@ -1960,7 +2133,7 @@ button + button {
 
 .trivia-title-comodin {
   font-weight: 900;
-  color: var(--oro) !important;
+  color: var(--oro-tinta) !important;
 }
 
 .trivia-match-card .comodin-badge {
@@ -1995,7 +2168,7 @@ button + button {
 }
 
 .match-title-comodin {
-  color: var(--oro) !important;
+  color: var(--oro-tinta) !important;
   font-weight: 900;
 }
 
@@ -2021,7 +2194,7 @@ button + button {
 }
 
 .official-team-comodin {
-  color: var(--oro) !important;
+  color: var(--oro-tinta) !important;
   font-weight: 900;
 }
 
@@ -2708,4 +2881,52 @@ button + button {
  */
 .partido-cerrado .stepper-btn {
   display: none;
+}
+
+/*
+ * El botón que cambia de tema.
+ *
+ * Arriba a la derecha y fijo, para que esté en las 39 pantallas sin depender de
+ * dónde tenga cada una su cabecera.
+ *
+ * ⛔ `width: auto` contra el `width: 100%` que llevan TODOS los botones. Es la
+ * quinta vez que esa regla global muerde; sin esto sería una franja de lado a
+ * lado tapando el título de la página.
+ */
+.boton-tema {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  z-index: 60;
+
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+
+  /*
+   * ⚠️ Translúcido y discreto: está siempre a la vista en todas las pantallas,
+   * así que no puede competir con lo que uno vino a hacer.
+   */
+  /*
+   * ⚠️ Tinta propia: hereda de `button`, que de dia es BLANCA porque los
+   * botones son verde oscuro. Este no: su fondo es un velo claro, asi que el
+   * blanco heredado lo dejaba invisible.
+   */
+  color: var(--text);
+  background: rgba(var(--velo-rgb), 0.10);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(var(--sombra-rgb), 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.boton-tema:hover {
+  background: rgba(var(--primary-rgb), 0.22);
+  border-color: var(--primary);
 }

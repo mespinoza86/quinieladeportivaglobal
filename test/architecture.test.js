@@ -531,6 +531,42 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
 });
 
+test('⛔ el oro que se LEE y el oro que se PINTA no son la misma ficha', () => {
+  /*
+   * Marco, probando el tema de día: «tenemos unas letras amarillas Jugador,
+   * Pronóstico, Puntos, y eso no se ve bien». Eran cinco rótulos dorados, y
+   * cuatro estaban escondidos detrás de secciones que hay que desplegar.
+   *
+   * ⛔ LA REGLA: `--oro` y `--oro-claro` son FONDOS de medalla y de distintivo,
+   * y siguen dorados en los tres temas. Como TEXTO no se leen sobre papel, así
+   * que el texto dorado va por `--oro-tinta`, que sí tiene valor de día.
+   *
+   * ⚠️ Esto es un centinela ESTÁTICO a propósito. La auditoría de contraste del
+   * navegador no alcanza el contenido que vive detrás de un desplegable y un
+   * botón —ahí se escondían cuatro de los cinco—, y ampliarla a cada flujo de
+   * cada pantalla es una carrera sin final. Esta regla se comprueba leyendo la
+   * hoja, sin navegador y sin depender de que la prueba sepa navegar.
+   */
+  const css = leer(path.join('private', 'css', 'styles.css'));
+
+  /*
+   * ⚠️ Construida con `new RegExp` y no con una barra literal: este archivo se
+   * ha editado por consola más de una vez, y ahí los `\s` y los `\(` llegan
+   * pelados. Una expresión mal formada sigue siendo válida y deja de encontrar
+   * nada, en verde — que fue lo que pasó al escribirla la primera vez.
+   */
+  const comoTexto = [...css.matchAll(new RegExp('color:\\s*var\\((--oro[a-z-]*)\\)', 'g'))]
+    .map(m => m[1])
+    .filter(ficha => ficha !== '--oro-tinta');
+
+  assert.deepEqual(comoTexto, [],
+    'el oro usado como TEXTO tiene que ir por --oro-tinta, que se lee en los dos temas');
+
+  // Y esa ficha tiene que tener valor en el tema de día, o heredaría el dorado.
+  const dia = css.slice(css.indexOf('[data-tema="dia"]'));
+  assert.match(dia, /--oro-tinta:/,
+    '--oro-tinta sin valor en el tema de día: heredaría el dorado y no se leería');
+});
 test('⛔ un botón dentro de una fila flex recupera su ancho', () => {
   /*
    * La MISMA regla global de siempre, mordiendo en otro sitio:
