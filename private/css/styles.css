@@ -321,6 +321,111 @@
   --danger-rgb: 220, 38, 38;
 }
 
+/*
+ * ============================================================================
+ * TEMA CANCHA
+ * ============================================================================
+ *
+ * Marco: *«que sea tipo un verde, que uno se sienta como en una cancha de
+ * fútbol»*. El fondo es césped; lo demás se queda donde estaba.
+ *
+ * ⭐ LOS BOTONES SIGUEN SIENDO VERDES, y eso iba contra mi propia previsión.
+ *
+ * Al planearlo dije que sobre fondo verde el acento tendría que ser blanco,
+ * porque «verde sobre verde no resalta». Medido, es falso: el verde de marca
+ * sobre este césped da **5,63** de contraste, de sobra para destacar. Lo que no
+ * funcionaría es un verde CLARO sobre un verde CLARO — y el césped es oscuro.
+ *
+ * ⚠️ Así que la aplicación conserva su identidad: mismos botones, mismo ámbar,
+ * misma tinta. Cambia el campo donde se juega, no el equipo.
+ */
+:root[data-tema="cancha"] {
+  /*
+   * ⛔ CESPED OSCURO, Y NO POR GUSTO.
+   *
+   * El primer verde era #0a3a1e y las tarjetas salian en rgb(64,102,80): un
+   * verde MEDIO. Sobre un medio, ni el texto claro ni el oscuro se leen bien,
+   * y la auditoria denuncio veinte rotulos.
+   *
+   * ⚠️ Es un efecto que el tema oscuro no tiene: su fondo es casi negro, asi
+   * que tres velos blancos al 8 % siguen dejandolo oscuro. Partiendo de un
+   * verde ya claro, esos mismos velos lo empujan al centro — que es el unico
+   * sitio donde no se lee nada.
+   */
+  --bg: #062c13;
+  --bg-soft: #0a3a1e;
+  --card: rgba(255, 255, 255, 0.08);
+  --card-solid: #0a3a1e;
+
+  /* Un blanco con una gota de verde: el blanco puro sobre césped deslumbra. */
+  --text: #f4fbf6;
+  --muted: #d3ead9;
+
+  /*
+   * El borde sube de 0.12 a 0.16: sobre un fondo de color, una línea blanca al
+   * 12 % se diluye más que sobre el azul casi negro del tema oscuro.
+   */
+  --border: rgba(255, 255, 255, 0.16);
+  --shadow: 0 18px 45px rgba(2, 18, 9, 0.45);
+
+  --card-solid-rgb: 10, 58, 30;
+  --barra-rgb: 8, 45, 24;
+  --sombra-rgb: 2, 18, 9;
+
+  --desplegable-fondo: #0a3a1e;
+  --verde-fondo: #08301a;
+  --verde-fondo-tenue: #072a16;
+
+  /* Los campos, casi blancos: son el papel donde se escribe. */
+  --campo-fondo: rgba(255, 255, 255, 0.94);
+
+  --velo-modal: rgba(3, 20, 10, 0.82);
+  --texto-tenue: #cfe6d7;
+
+  /* Sobre verde, el amarillo medio se apaga: sube un paso. */
+  --accent: #ffe680;
+  /*
+   * ⛔ EL ROTULO SE ACLARA Y EL TINTE SE APAGA. Otra vez la misma trampa.
+   *
+   * `--accent` es texto: sobre verde tiene que subir para leerse.
+   * `--accent-rgb` tine fondos —el oro del podio sale de aqui—: subiendolo
+   * tambien, el primer puesto quedaba en un oliva claro donde no se lee ni el
+   * texto claro ni el oscuro. Van en direcciones contrarias, como ya pasaba
+   * con `--primary` y `--primary-rgb` en el tema de dia.
+   */
+  --accent-rgb: 120, 92, 6;
+  --oro-tinta: #ffe680;
+
+  /*
+   * ⛔ El oro del podio, APAGADO. Un dorado brillante al 28 % sobre verde da
+   * un oliva claro, y encima de el ni el texto claro ni el oscuro se leen: el
+   * podio quedaba en 3,19. Bajado de tono, sigue siendo oro y vuelve a 5,14.
+   */
+  --oro-podio-rgb: 201, 164, 20;
+}
+
+/*
+ * ⭐ LAS RAYAS DEL CÉSPED, QUE SON LO QUE HACE QUE PAREZCA UNA CANCHA.
+ *
+ * Sin ellas es «una pantalla verde»; con ellas se reconoce al instante. Van muy
+ * suaves —blanco al 2,5 %— porque tienen que sugerirse, no competir con lo que
+ * hay escrito encima.
+ *
+ * ⚠️ Se redefine el fondo entero del `body` y no sólo un trozo: la regla base
+ * lleva dos degradados radiales de la portada, y superponerles las rayas sin
+ * sustituirlos dejaba un verde sucio.
+ */
+:root[data-tema="cancha"] body {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 0 46px,
+      transparent 46px 92px
+    ),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 38%),
+    var(--bg);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -535,7 +640,12 @@ h1 {
 }
 
 .action-card.primary p {
-  color: rgba(var(--tinta-sobre-verde-rgb), 0.72);
+  /*
+   * ⚠️ 0.92 y no 0.72. El fondo es un DEGRADADO de dos verdes, y manda el
+   * extremo mas oscuro: sobre el, la tinta al 72 % daba 3,84 — por debajo del
+   * minimo legible. Y venia asi desde antes de los temas; lo destapo medirlo.
+   */
+  color: rgba(var(--tinta-sobre-verde-rgb), 0.92);
 }
 
 /* Layout general para las otras páginas */
@@ -1417,12 +1527,41 @@ button + button {
   padding: 3px;
 }
 
+/*
+ * La fila de equipos: local · marcador · visitante.
+ *
+ * ⛔ NO ENVUELVE: LOS EQUIPOS ENCOGEN.
+ *
+ * Llevaba `flex-wrap: wrap`, y con eso el visitante se caía a la línea de abajo
+ * en cuanto la fila no cabía — quedando DEBAJO del marcador, como si fuera otra
+ * cosa. Se destapó al rotular el marcador con «Tu pronóstico»: cuatro letras más
+ * de ancho y la fila se partió.
+ *
+ * ⚠️ Envolver es lo correcto para una lista de cosas sueltas, y lo contrario
+ * para una fila que SIGNIFICA algo por su orden. «Zeledon | 1-2 | Sporting» sólo
+ * se entiende si los tres están en la misma línea.
+ *
+ * `min-width: 0` es lo que permite encoger: un hijo de flex se niega por defecto
+ * a bajar del ancho de su contenido, y sin eso `flex: 1` no sirve de nada.
+ */
 .match-teams {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.match-teams > .team-side {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+
+/* El marcador manda: no encoge, y los nombres se reparten lo que quede. */
+.match-teams > .match-score {
+  flex: 0 0 auto;
 }
 
 
@@ -2929,4 +3068,22 @@ button + button {
 .boton-tema:hover {
   background: rgba(var(--primary-rgb), 0.22);
   border-color: var(--primary);
+}
+
+/*
+ * El rótulo bajo el marcador de la fila de equipos.
+ *
+ * ⚠️ Nació al quitar una caja que repetía el pronóstico. Esa caja llevaba la
+ * palabra «Pronóstico», así que al irse el número se quedaba sin decir qué era
+ * — y en esa misma tarjeta hay otro marcador, el oficial. Dos números iguales
+ * sin rótulo es peor que el dato repetido que se venía a quitar.
+ */
+.match-score-rotulo {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }

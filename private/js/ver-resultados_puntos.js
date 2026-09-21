@@ -350,11 +350,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                             </div>
 
-                            <div class="match-score">
-                                <span>Pronóstico</span>
-                                <strong>${partidoPronosticado.marcador1 ?? '-'} - ${partidoPronosticado.marcador2 ?? '-'}</strong>
-                                <span>Oficial: ${cerrado ? oficialTexto : 'Pendiente'}</span>
-                            </div>
+                            <!--
+                              ⛔ AQUÍ HABÍA UNA CAJA QUE REPETÍA TODA LA TARJETA.
+                              Enseñaba «Pronóstico 1-2» y «Oficial: 1-2», y doce
+                              líneas más abajo la fila de equipos volvía a poner
+                              el pronóstico y el renglón del pie volvía a poner
+                              el oficial. Lo mismo dos veces, en la misma tarjeta.
+                              Cada dato se dice UNA vez: el marcador con los
+                              equipos, y el oficial y los puntos en el pie.
+                            -->
 
                             <div class="match-status">
                                 ${cerrado
@@ -373,8 +377,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             <strong>${partidoPronosticado.equipo1}</strong>
                         </div>
 
+                        <!--
+                          ⚠️ El número va rotulado. Antes se entendía porque la
+                          caja de arriba decía «Pronóstico»; al quitarla, un
+                          «1 - 2» suelto entre dos escudos se lee igual de bien
+                          como marcador del partido que como apuesta, y son
+                          cosas distintas — la de al lado dice el oficial.
+                        -->
                         <span class="match-score">
-                            ${partidoPronosticado.marcador1 ?? '-'} - ${partidoPronosticado.marcador2 ?? '-'}
+                            <strong>${partidoPronosticado.marcador1 ?? '-'} - ${partidoPronosticado.marcador2 ?? '-'}</strong>
+                            <span class="match-score-rotulo">Tu pronóstico</span>
                         </span>
 
                         <div class="team-side">

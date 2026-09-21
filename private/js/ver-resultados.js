@@ -290,10 +290,11 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
                                 </div>
                             </div>
 
-                            <div class="match-score">
-                                <span>Pronóstico</span>
-                                <strong>${p.marcador1 ?? '-'} - ${p.marcador2 ?? '-'}</strong>
-                            </div>
+                            <!--
+                              ⛔ Quitada: repetía el pronóstico que la fila de
+                              equipos ya enseña doce líneas más abajo. Misma
+                              duplicación que en «Puntos», y el mismo arreglo.
+                            -->
 
                             <div class="match-status">
                                 ${cerrado
@@ -311,7 +312,8 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
                         </div>
 
                         <span class="match-score">
-                            ${p.marcador1 ?? '-'} - ${p.marcador2 ?? '-'}
+                            <strong>${p.marcador1 ?? '-'} - ${p.marcador2 ?? '-'}</strong>
+                            <span class="match-score-rotulo">Tu pronóstico</span>
                         </span>
 
                         <div class="team-side">

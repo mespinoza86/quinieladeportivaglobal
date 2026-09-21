@@ -27,15 +27,14 @@
    * El orden es el del botón al ir pulsando. El oscuro va primero porque es el
    * de fábrica: Marco lo pidió así.
    *
-   * ⛔ LA CANCHA NO ESTÁ AQUÍ TODAVÍA, Y ES A PROPÓSITO.
-   *
-   * Su bloque de fichas es la tajada siguiente. Ofrecerla ya haría un botón que
-   * lleva a un tema inexistente: se vería el oscuro fingiendo ser otra cosa, sin
-   * dar ningún error. Se añade el día que haya algo que enseñar.
+   * ⚠️ Cada uno de éstos tiene que tener su bloque de fichas en la hoja de
+   * estilos. Ofrecer un tema sin fichas no da error: se vería el oscuro
+   * fingiendo ser otra cosa, porque las fichas se heredan de `:root`.
    */
   var TEMAS = [
     { id: 'oscuro', icono: '🌙', nombre: 'Oscuro' },
-    { id: 'dia',    icono: '☀️', nombre: 'De día' }
+    { id: 'dia',    icono: '☀️', nombre: 'De día' },
+    { id: 'cancha', icono: '⚽', nombre: 'Cancha' }
   ];
 
   /*

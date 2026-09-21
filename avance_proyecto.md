@@ -18227,6 +18227,131 @@ Mutaciones:
 ---
 
 
+### 📌 Entrada 108 — 21 de septiembre de 2026 — §23, tajada 3: la cancha, y el dato que se decía dos veces
+
+**Objetivo:** el tercer tema. Marco: *«que sea tipo un verde, que uno se sienta
+como en una cancha de fútbol»*.
+
+## ⭐ La previsión que resultó falsa, y menos mal
+
+Al planear §23 quedó escrito que sobre fondo verde el acento tendría que ser
+**blanco**, porque «verde sobre verde no resalta». Medido antes de escribir una
+línea:
+
+```
+boton verde #22c55e sobre cesped #0a3a1e  ->  5.63
+```
+
+De sobra. **Lo que no funcionaría es un verde CLARO sobre un verde CLARO**, y el
+césped es oscuro. Así que la aplicación conserva su identidad: mismos botones,
+mismo ámbar, misma tinta. Cambia el campo donde se juega, no el equipo.
+
+⚠️ La previsión era razonable y era falsa. Medir cuesta dos minutos y evita
+rediseñar media aplicación por una intuición.
+
+## Las rayas del césped
+
+Sin ellas es «una pantalla verde»; con ellas se reconoce al instante. Van a
+blanco al 2,5 % porque tienen que **sugerirse**, no competir con lo que hay
+escrito encima.
+
+## ⛔ VEINTE TEXTOS ILEGIBLES, Y DOS CAUSAS DE FONDO
+
+La auditoría empezó con veinte y acabó en cero. Las causas valen más que la
+lista:
+
+**1. El césped estaba demasiado claro.** Con `#0a3a1e`, tres velos blancos al
+8 % dejaban las tarjetas en `rgb(64,102,80)`: un verde **MEDIO**. Y sobre un
+medio no se lee ni el texto claro ni el oscuro.
+
+⚠️ Es un efecto que el tema oscuro no tiene: su fondo es casi negro, así que los
+mismos velos lo dejan oscuro. Partiendo de un color ya claro, esos velos lo
+empujan al centro — el único sitio donde no se lee nada. Bajado a `#062c13`.
+
+**2. Y otra vez una ficha con dos papeles contrarios.** `--accent` es rótulo y
+sube para leerse sobre verde; `--accent-rgb` tiñe el oro del podio y tiene que
+BAJAR, o el primer puesto queda en un oliva claro. Es exactamente lo que pasó
+con `--primary` en el tema de día, en otra pieza.
+
+## Un fallo anterior a los temas, que sólo se vio al medir
+
+`.action-card.primary p` daba **3,84**: el fondo es un DEGRADADO de dos verdes y
+manda el extremo más oscuro. Venía así desde antes de §23. Subida la tinta de
+0,72 a 0,92 da 5,29.
+
+⚠️ Eso cambia también el tema oscuro, y la red de colores **no cubre esa pieza**,
+así que no lo habría detectado. Se deja dicho.
+
+## ⛔ EL DATO QUE SE DECÍA DOS VECES
+
+Marco, mirando «Puntos»: *«sale pronóstico, oficial, después otra vez el
+pronóstico, oficial y los puntos»*.
+
+La tarjeta tenía dos bloques diciendo lo mismo: una caja con «Pronóstico 1-2 /
+Oficial: 1-2», y doce líneas más abajo la fila de equipos repetía el pronóstico y
+el pie repetía el oficial. **La misma duplicación estaba en «Ver resultados»**, y
+se arregló en las dos para que no se separen.
+
+### Y dos cosas que salieron al arreglarlo
+
+⚠️ **Al quitar la caja, el número se quedaba sin rótulo.** Esa caja decía
+«Pronóstico»; sin ella, un `1 - 2` entre dos escudos se lee igual de bien como
+marcador del partido que como apuesta — y justo al lado está el oficial. Dos
+números iguales sin rótulo es peor que el dato repetido que se venía a quitar.
+
+⛔ **Y el rótulo rompió la fila.** Cuatro letras más de ancho y el visitante se
+caía DEBAJO del marcador, como si fuera otra cosa. La causa era
+`flex-wrap: wrap`:
+
+> Envolver es lo correcto para una lista de cosas sueltas, y lo contrario para
+> una fila que **significa algo por su orden**. «Zeledon | 1-2 | Sporting» sólo
+> se entiende si los tres están en la misma línea.
+
+Ahora los nombres encogen en vez de saltar, con `min-width: 0` — que es lo que
+permite encoger, porque un hijo de flex se niega por defecto a bajar del ancho de
+su contenido.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | El bloque del tema cancha, las rayas, la fila de equipos, el rótulo |
+| `private/js/tema.js` | La cancha entra en el ciclo del botón |
+| `private/js/ver-resultados_puntos.js` | Fuera la caja repetida; el marcador rotulado |
+| `private/js/ver-resultados.js` | La misma duplicación, el mismo arreglo |
+| `test/e2e/tema-dia.spec.js` | La auditoría corre para los DOS temas; el ciclo completo del botón |
+
+**Verificación:**
+
+```
+npm test             -> 650/650
+npx playwright test  -> 206/206   (salida de PLAYWRIGHT)
+
+Auditoria de contraste: 0 textos ilegibles en dia y en cancha, 17 pantallas
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Una intuición de diseño se mide antes de rediseñar nada.** «Verde sobre
+   verde no resalta» era falso y habría costado media aplicación.
+2. ⛔ **Un fondo de color MEDIO es el peor de todos**: no se lee ni con tinta
+   clara ni con oscura. Los velos empujan hacia el centro, así que el fondo base
+   tiene que estar lejos de él.
+3. ⚠️ **`flex-wrap: wrap` en una fila que significa algo por su orden es un
+   fallo esperando al primer nombre largo.**
+4. ⚠️ **Quitar un dato repetido puede quitar también su rótulo.** Lo que sobraba
+   era la repetición, no la explicación.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ El cambio de la fila de equipos toca SEIS pantallas y sólo se vio con los
+  ojos la de «Puntos»: las pruebas dicen que nada se rompió, no si algo se ve
+  apretado. Conviene un vistazo con nombres de equipo largos.
+- Subir las tres tajadas a Render juntas.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

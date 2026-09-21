@@ -153,7 +153,17 @@ test('⛔ el tema elegido sobrevive a cambiar de pantalla', async ({ page }) => 
   await page.goto('/index.html');
   await expect(page.locator('html')).toHaveAttribute('data-tema', 'dia');
 
-  /* Y vuelve al oscuro al pulsar otra vez, sin quedarse a medias. */
+  /*
+   * ⚠️ El ciclo COMPLETO, y con la vuelta al principio.
+   *
+   * Esta prueba daba por hecho que había dos temas: pulsaba una vez más y
+   * esperaba volver al oscuro. Al añadir la cancha se rompió — y menos mal,
+   * porque una prueba que cuenta pulsaciones sin mirar dónde acaba es una
+   * prueba que un día audita un tema distinto del que dice.
+   */
+  await page.locator('#botonTema').click();
+  await expect(page.locator('html')).toHaveAttribute('data-tema', 'cancha');
+
   await page.locator('#botonTema').click();
   await expect(page.locator('html')).toHaveAttribute('data-tema', 'oscuro');
 
@@ -337,11 +347,27 @@ const PANTALLAS_AUDITADAS = [
   'miembros.html', 'cobros.html', 'llenar_trivia.html'
 ];
 
-test('⛔ ningún texto se queda ilegible en modo día, en ninguna pantalla', async ({ page }) => {
+/*
+ * ⭐ LA MISMA AUDITORÍA, PARA CADA TEMA QUE NO SEA EL OSCURO.
+ *
+ * ⚠️ Escribirla una vez para el día y copiarla para la cancha habría sido la
+ * forma segura de que se separaran: se arregla un detalle en una y la otra se
+ * queda con el fallo. Y el tema nuevo es justo el que menos ojos ha tenido
+ * encima.
+ *
+ * El oscuro no entra porque es el de fábrica y su contraste lleva un año
+ * mirándose; lo que hace falta comprobar es lo que se añade encima.
+ */
+for (const { id, nombre, vueltas } of [
+  { id: 'dia',    nombre: 'de día', vueltas: 1 },
+  { id: 'cancha', nombre: 'de cancha', vueltas: 2 }
+]) {
+
+test(`⛔ ningún texto se queda ilegible en modo ${nombre}, en ninguna pantalla`, async ({ page }) => {
   test.setTimeout(180000);
 
-  const datos = await registrarse(page, 'audita');
-  await crearQuiniela(page, 'Audita');
+  const datos = await registrarse(page, 'audita' + id);
+  await crearQuiniela(page, 'Audita ' + id);
   await activarAdminMode(page, datos.password);
 
   await page.evaluate(async () => {
@@ -360,9 +386,14 @@ test('⛔ ningún texto se queda ilegible en modo día, en ninguna pantalla', as
     });
   });
 
+  /*
+   * El botón va pasando de tema en tema: una pulsación llega al día, dos a la
+   * cancha. Se comprueba el resultado, porque contar pulsaciones a ciegas es
+   * cómo una prueba acaba auditando un tema distinto del que dice.
+   */
   await page.goto('/index.html');
-  await page.locator('#botonTema').click();
-  await expect(page.locator('html')).toHaveAttribute('data-tema', 'dia');
+  for (let i = 0; i < vueltas; i++) await page.locator('#botonTema').click();
+  await expect(page.locator('html')).toHaveAttribute('data-tema', id);
 
   const problemas = [];
 
@@ -395,5 +426,7 @@ test('⛔ ningún texto se queda ilegible en modo día, en ninguna pantalla', as
   }
 
   expect(problemas.join('\n'),
-    'textos que no se leen en modo día:\n' + problemas.join('\n')).toBe('');
+    `textos que no se leen en modo ${nombre}:\n` + problemas.join('\n')).toBe('');
 });
+
+}
