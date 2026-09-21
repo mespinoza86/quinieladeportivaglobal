@@ -18,108 +18,169 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* ==================== Ligas favoritas ==================== */
 
   /*
-   * Se escogen de lo que juega la semana que viene, que es la misma lista que
-   * alimenta el desplegable al armar una jornada. Marcar favoritas sobre el
-   * catálogo entero del proveedor serían cientos de torneos y un buscador
-   * aparte; esto es lo que de verdad se usa.
+   * ============================================================================
+   * SE AÑADEN DE UNA EN UNA Y SE QUITAN DE LA LISTA
+   * ============================================================================
    *
-   * ⚠️ Las que ya están marcadas se pintan SIEMPRE, jueguen o no esta semana.
-   * Si sólo se listara lo que juega, una favorita en descanso no aparecería y
-   * NO HABRÍA MANERA DE QUITARLA.
+   * Antes era una lista de casillas con TODOS los torneos de la semana: cientos
+   * de filas por las que había que bajar y bajar. Es el mismo problema que hizo
+   * nacer el desplegable escribible al armar jornadas, así que es la misma
+   * solución y literalmente el mismo código —`combo-de-ligas.js`—.
+   *
+   * ⛔ LAS FAVORITAS QUE NO JUEGAN ESTA SEMANA SE TIENEN QUE PODER QUITAR
+   *
+   * Con las casillas, una favorita en descanso se pintaba aparte para eso
+   * mismo. Aquí sale sola: las elegidas viven en `elegidas`, no en lo que el
+   * proveedor devolvió, así que una favorita en descanso está en la lista de
+   * abajo con su botón de quitar como cualquier otra.
+   *
+   * ⚠️ Aquí CUALQUIER liga vale, al revés que al armar jornadas. Una favorita
+   * es sólo un atajo para que salga de primera; no hace falta que el proveedor
+   * sepa agruparla por rondas. Por eso el `estadoDe` de esta pantalla dice
+   * siempre que sí.
    */
   const panelFavoritas = document.getElementById('favoritasPanel');
-  const listaFavoritas = document.getElementById('favoritasLista');
+  const listaElegidas = document.getElementById('favoritasElegidas');
   const mensajeFavoritas = document.getElementById('favoritasMensaje');
 
-  function casillaDeLiga(liga, marcada) {
-    const fila = document.createElement('label');
-    fila.className = 'checkbox-fila';
+  /** Las favoritas de ahora mismo, en orden. Se guardan tal cual al pulsar. */
+  let elegidas = [];
 
-    const casilla = document.createElement('input');
-    casilla.type = 'checkbox';
-    casilla.value = liga.id;
-    casilla.dataset.nombre = liga.nombre;
-    casilla.checked = marcada;
+  /*
+   * ⚠️ UNA sola petición para las dos cosas: pintar lo que ya está marcado y
+   * llenar el desplegable. Guardada la promesa, el `await` de cada uno espera a
+   * la misma respuesta.
+   *
+   * Cada consulta al proveedor gasta cuota COMPARTIDA entre todas las
+   * quinielas: pedir lo mismo dos veces al abrir la pantalla es cuota tirada.
+   */
+  let promesaLigas = null;
+  const ligasDisponibles = () => {
+    if (!promesaLigas) promesaLigas = api('/api/football/ligas-disponibles?dias=7');
+    return promesaLigas;
+  };
 
-    const texto = liga.partidos
-      ? liga.nombre + ' (' + liga.partidos + ')'
-      : liga.nombre + ' — sin partidos esta semana';
+  const MAXIMO_FAVORITAS = 20;   // El mismo tope que `ligas.js` en el servidor.
 
-    const rotulo = document.createElement('span');
-    rotulo.textContent = texto;
+  function pintarElegidas() {
+    listaElegidas.innerHTML = '';
 
-    fila.appendChild(casilla);
-    fila.appendChild(rotulo);
-    return fila;
-  }
-
-  function pintarFavoritas(datos) {
-    listaFavoritas.innerHTML = '';
-
-    const favoritas = datos.favoritas || [];
-    const marcadas = new Set(favoritas.map(liga => String(liga.id)));
-
-    if (favoritas.length) {
-      const titulo = document.createElement('h3');
-      titulo.className = 'grupo-titulo';
-      titulo.textContent = 'Tus favoritas';
-      listaFavoritas.appendChild(titulo);
-      favoritas.forEach(liga => listaFavoritas.appendChild(casillaDeLiga(liga, true)));
-    }
-
-    const grupos = (datos.paises || []).filter(g => (g.ligas || []).length);
-
-    if (!grupos.length && !favoritas.length) {
-      listaFavoritas.innerHTML = '<p class="helper-text">No hay torneos con partidos esta semana.</p>';
+    if (!elegidas.length) {
+      const vacio = document.createElement('li');
+      vacio.className = 'helper-text';
+      vacio.textContent = 'Todavía no has marcado ninguna.';
+      listaElegidas.appendChild(vacio);
       return;
     }
 
-    grupos.forEach(grupo => {
-      const titulo = document.createElement('h3');
-      titulo.className = 'grupo-titulo';
-      titulo.textContent = grupo.pais;
-      listaFavoritas.appendChild(titulo);
-      grupo.ligas.forEach(liga => {
-        // Sin id no se puede guardar: el id es lo que sobrevive a un renombre.
-        if (liga.id) listaFavoritas.appendChild(casillaDeLiga(liga, marcadas.has(String(liga.id))));
+    elegidas.forEach((liga, i) => {
+      const fila = document.createElement('li');
+
+      const nombre = document.createElement('span');
+      nombre.textContent = liga.nombre;
+      fila.appendChild(nombre);
+
+      const quitar = document.createElement('button');
+      quitar.type = 'button';
+      quitar.className = 'ghost-button';
+      /* El nombre va en la etiqueta: «Quitar» a secas, repetido veinte veces,
+       * no le dice nada a quien navega con lector de pantalla. */
+      quitar.setAttribute('aria-label', `Quitar ${liga.nombre}`);
+      quitar.textContent = 'Quitar';
+
+      quitar.addEventListener('click', () => {
+        elegidas.splice(i, 1);
+        pintarElegidas();
+        /* Vuelve a estar disponible en el desplegable, si está abierto. */
+        comboFavoritas?.refrescar();
+        mensajeFavoritas.textContent = 'Sin guardar todavía.';
       });
+
+      fila.appendChild(quitar);
+      listaElegidas.appendChild(fila);
+    });
+  }
+
+  let comboFavoritas = null;
+
+  function montarComboFavoritas() {
+    const caja = document.getElementById('comboFavoritaCaja');
+    const entrada = document.getElementById('comboFavorita');
+    const lista = document.getElementById('comboFavoritaLista');
+    if (!caja || !entrada || !lista || !window.comboDeLigas) return null;
+
+    return window.comboDeLigas({
+      caja,
+      entrada,
+      lista,
+      cargar: ligasDisponibles,
+
+      /* Cualquiera sirve de favorita: no hace falta que se pueda automatizar. */
+      estadoDe: () => ({ elegible: true, motivo: null }),
+
+      /* Las que ya están marcadas no se ofrecen: marcarlas dos veces no existe. */
+      excluir: () => new Set(elegidas.map(liga => String(liga.id))),
+
+      alElegir: liga => {
+        entrada.value = '';
+
+        if (!liga.id) {
+          // Sin id no se puede guardar: el id es lo que sobrevive a un renombre.
+          mensajeFavoritas.textContent = `${liga.nombre} no se puede marcar: el proveedor no le da número.`;
+          return;
+        }
+
+        if (elegidas.length >= MAXIMO_FAVORITAS) {
+          mensajeFavoritas.textContent = `Ya son ${MAXIMO_FAVORITAS}, que es el máximo. Quita alguna para añadir otra.`;
+          return;
+        }
+
+        elegidas.push({ id: String(liga.id), nombre: liga.nombre });
+        pintarElegidas();
+        mensajeFavoritas.textContent = 'Sin guardar todavía.';
+      }
     });
   }
 
   async function cargarFavoritas() {
     try {
-      pintarFavoritas(await api('/api/football/ligas-disponibles?dias=7'));
+      const datos = await ligasDisponibles();
+      elegidas = (datos.favoritas || [])
+        .filter(liga => liga.id)
+        .map(liga => ({ id: String(liga.id), nombre: liga.nombre }));
+      pintarElegidas();
     } catch (error) {
       /*
        * Puede fallar por dos motivos corrientes y ninguno es un fallo del
        * programa: que no haya clave del proveedor, o que el modo administrador
        * haya caducado. Se dice lo que pasó en vez de dejar «Cargando…» eterno.
        */
-      listaFavoritas.innerHTML = '';
-      const aviso = document.createElement('p');
-      aviso.className = 'helper-text';
-      aviso.textContent = error.message;
-      listaFavoritas.appendChild(aviso);
+      listaElegidas.innerHTML = '';
+      mensajeFavoritas.textContent = error.message;
+
+      /*
+       * ⚠️ Se olvida la promesa fallida. Guardada, el desplegable heredaría el
+       * mismo fallo para siempre y no habría forma de reintentar sin recargar.
+       */
+      promesaLigas = null;
     }
   }
 
   if ((quiniela?.capacidades || []).includes('quiniela.configurar')) {
     panelFavoritas.hidden = false;
+    comboFavoritas = montarComboFavoritas();
     cargarFavoritas();
   }
 
   document.getElementById('guardarFavoritas')?.addEventListener('click', async () => {
-    const ligasFavoritas = [...listaFavoritas.querySelectorAll('input[type="checkbox"]:checked')]
-      .map(casilla => ({ id: casilla.value, nombre: casilla.dataset.nombre }));
-
     try {
       await api('/api/quiniela-actual/configuracion', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ligasFavoritas })
+        body: JSON.stringify({ ligasFavoritas: elegidas })
       });
-      mensajeFavoritas.textContent = ligasFavoritas.length
-        ? ligasFavoritas.length + ' liga(s) favorita(s) guardada(s).'
+      mensajeFavoritas.textContent = elegidas.length
+        ? elegidas.length + ' liga(s) favorita(s) guardada(s).'
         : 'Se quitaron todas las favoritas.';
     } catch (error) {
       mensajeFavoritas.textContent = error.message;

@@ -21,13 +21,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!panel) return;
 
   const resumen = document.getElementById('ligaResumen');
-  const boton = document.getElementById('botonElegirLiga');
-  const lista = document.getElementById('listaLigas');
   const mensaje = document.getElementById('ligaMensaje');
   const precio = document.getElementById('precioPorDefecto');
   const alAcumulado = document.getElementById('alAcumuladoPorDefecto');
   const guardar = document.getElementById('guardarLiga');
   const quitar = document.getElementById('quitarLiga');
+  const cajaCombo = document.getElementById('comboLigaCaja');
+  const combo = document.getElementById('comboLiga');
+  const listaCombo = document.getElementById('comboLigaLista');
+  const filtroResumen = document.getElementById('filtroResumen');
+  const precios = document.getElementById('ligaPrecios');
+  const selector = document.getElementById('selectorLiga');
+  const abrirSelector = document.getElementById('abrirSelector');
 
   let configuracion = {};
 
@@ -60,91 +65,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const dinero = n => '₡' + Number(n || 0).toLocaleString('es-CR');
 
+  /**
+   * Enseña el selector, y con él los precios.
+   *
+   * ⚠️ Van JUNTOS a propósito: al elegir liga, el precio viaja en la misma
+   * petición. Enseñar el selector sin los precios dejaría elegir una liga con
+   * el precio a cero sin haberlo visto.
+   */
+  function mostrarSelector() {
+    selector.hidden = false;
+    precios.hidden = false;
+    abrirSelector.hidden = true;
+    combo.focus();
+  }
+
+  /** Lo recoge otra vez: ya se eligió, y deja de hacer falta. */
+  function ocultarSelector() {
+    selector.hidden = true;
+    abrirSelector.hidden = false;
+  }
+
   function pintarResumen() {
     const esDeLiga = configuracion.tipo === 'liga' && configuracion.ligaId;
 
+    quitar.hidden = !esDeLiga;
+
+    /*
+     * El rótulo dice lo que va a pasar, no dónde lleva: desde una quiniela a
+     * mano es empezar algo nuevo; desde una de liga es sustituir lo que hay.
+     */
+    abrirSelector.textContent = esDeLiga ? 'Cambiar de liga' : 'Armarlas por liga';
+
+    /*
+     * Los precios acompañan a la liga: en una quiniela que se arma a mano no
+     * hay ninguna jornada que nazca sola, así que no hay precio de partida que
+     * poner. Si el selector está abierto mandan ellos y no se tocan.
+     */
+    if (selector.hidden) precios.hidden = !esDeLiga;
+
     if (!esDeLiga) {
       resumen.textContent = 'Ahora mismo eliges los partidos tú, jornada a jornada.';
-      quitar.hidden = true;
       return;
     }
 
     const p = configuracion.precioPorDefecto;
     resumen.textContent = `De ${configuracion.ligaNombre || 'una liga'}`
       + (p ? `. Cada jornada nace en ${dinero(p.precio)}, de los que ${dinero(p.alAcumulado)} van al acumulado.` : '.');
-    quitar.hidden = false;
   }
 
-  /** Una liga, pinchable o no según el proveedor sepa agruparla por jornada. */
-  function tarjetaDeLiga(liga, pais) {
-    const fila = document.createElement('div');
-    fila.className = 'action-card';
+  abrirSelector?.addEventListener('click', mostrarSelector);
 
-    const texto = document.createElement('div');
-    const titulo = document.createElement('h3');
-    titulo.textContent = liga.nombre;
+  /* ==================== El desplegable escribible ==================== */
 
-    const detalle = document.createElement('p');
-    detalle.className = 'helper-text';
+  /*
+   * El armazón —escribir, filtrar, agrupar, moverse con las flechas, cerrar al
+   * pinchar fuera— vive en `combo-de-ligas.js`, compartido con las favoritas.
+   * Aquí queda sólo lo propio de esta pantalla: de dónde salen las ligas y qué
+   * pasa al elegir una.
+   */
+  window.comboDeLigas({
+    caja: cajaCombo,
+    entrada: combo,
+    lista: listaCombo,
+    resumen: filtroResumen,
 
-    texto.appendChild(titulo);
-    texto.appendChild(detalle);
-    fila.appendChild(texto);
+    textoResumen: n => `${n} se pueden armar solas.`,
 
-    if (!liga.automatizable) {
-      /*
-       * ⚠️ Se enseña, no se esconde. Y el motivo es el del servidor, tal cual:
-       * distingue «no publica la jornada» de «sólo la publica en 3 de 8», y esa
-       * diferencia es lo que separa un dato del proveedor de un fallo nuestro.
-       */
-      fila.classList.add('ghost-button');
-      detalle.textContent = liga.motivo || 'No se puede armar sola.';
-      return fila;
-    }
+    cargar: async () => {
+      mensaje.textContent = 'Buscando ligas…';
 
-    detalle.textContent = `${pais} · ${liga.partidos} partidos esta semana`;
+      try {
+        const datos = await api('/api/football/ligas-disponibles');
+        mensaje.textContent = '';
 
-    const elegir = document.createElement('button');
-    elegir.type = 'button';
-    elegir.className = 'secondary-button';
-    elegir.textContent = 'Elegir';
-    elegir.onclick = () => seleccionar(liga);
+        /*
+         * ⚠️ Si NINGUNA se puede armar sola, la lista sale llena de motivos y
+         * ni una opción viva. Sin este aviso parece que la aplicación está rota;
+         * dicho, se entiende que es la semana y que hay salida.
+         */
+        const todas = [
+          ...(datos.favoritas || []),
+          ...(datos.paises || []).flatMap(pais => pais.ligas || [])
+        ];
 
-    fila.appendChild(elegir);
-    return fila;
-  }
-
-  async function cargarLigas() {
-    lista.innerHTML = '';
-    mensaje.textContent = 'Buscando ligas…';
-
-    try {
-      const datos = await api('/api/football/ligas-disponibles');
-      mensaje.textContent = '';
-
-      let cuantas = 0;
-
-      for (const pais of datos.paises || []) {
-        const titulo = document.createElement('h3');
-        titulo.textContent = pais.pais;
-        lista.appendChild(titulo);
-
-        for (const liga of pais.ligas) {
-          lista.appendChild(tarjetaDeLiga(liga, pais.pais));
-          if (liga.automatizable) cuantas += 1;
+        if (!todas.some(liga => liga.partidos && liga.automatizable !== false)) {
+          mensaje.textContent = 'Ninguna de las ligas de esta semana publica el número de jornada. '
+            + 'Prueba otra semana, o arma las jornadas a mano.';
         }
-      }
 
-      if (!cuantas) {
-        mensaje.textContent = 'Ninguna de las ligas de esta semana publica el número de jornada. '
-          + 'Prueba otra semana, o arma las jornadas a mano.';
+        return datos;
+      } catch (error) {
+        /*
+         * ⚠️ Se avisa aquí y se vuelve a lanzar: el módulo no sabe de qué
+         * pantalla es, y «confirma tu contraseña» necesita su enlace.
+         */
+        if (error.requiereAdminMode) pedirAdminMode();
+        else mensaje.textContent = error.message;
+        throw error;
       }
-      lista.hidden = false;
-    } catch (error) {
-      if (error.requiereAdminMode) pedirAdminMode();
-      else mensaje.textContent = error.message;
+    },
+
+    alElegir: async liga => {
+      combo.value = liga.nombre;
+      await seleccionar(liga);
     }
-  }
+  });
+
 
   async function seleccionar(liga) {
     mensaje.textContent = '';
@@ -178,8 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ...configuracion,
         tipo: 'liga', ligaId: liga.id, ligaNombre: liga.nombre, precioPorDefecto
       };
+      ocultarSelector();
       pintarResumen();
-      lista.hidden = true;
       mensaje.textContent = `Listo: cada semana se te propondrá la jornada de ${liga.nombre}.`;
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
@@ -217,8 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ tipo: 'customizada' })
       });
       configuracion = { ...configuracion, tipo: 'customizada', ligaId: null };
+      ocultarSelector();
       pintarResumen();
-      lista.hidden = true;
+      combo.value = '';
       mensaje.textContent = 'A partir de ahora eliges tú los partidos.';
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
@@ -226,7 +253,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  boton?.addEventListener('click', cargarLigas);
 
   (async () => {
     try {
@@ -250,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
        */
       if (window.location.hash === '#liga' && configuracion.tipo !== 'liga') {
         panel.scrollIntoView({ behavior: 'smooth' });
-        await cargarLigas();
+        mostrarSelector();
       }
     } catch (error) {
       /* Sin sesión o sin quiniela: el panel se queda oculto, que es lo correcto. */

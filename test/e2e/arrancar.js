@@ -54,6 +54,11 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
    * Se hace aquí y no en cada prueba porque es propiedad del ENTORNO —esta
    * aplicación de pruebas no habla con nadie de fuera—, no de un caso concreto.
    *
+   * ⚠️ Y el país se escribe «México», CON tilde, como lo manda el proveedor de
+   * verdad. Lo pedía la prueba del buscador de ligas: con «Mexico» a secas,
+   * teclear «mexico» encontraba la liga sin necesidad de quitar ninguna tilde,
+   * así que esa prueba pasaba aunque se borrara la normalización entera.
+   *
    * ⭐ Desde §22, Liga MX trae `match_round` y la Primera de Costa Rica NO. No
    * es adorno: son los dos casos que la pantalla de elegir liga debe
    * distinguir. Una liga sin ronda no se puede armar sola, y eso hay que poder
@@ -70,13 +75,13 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
   const TODOS = [
     { match_id: '1', match_date: '2099-01-01', match_time: '15:00', match_status: 'NS',
       match_round: '9',
-      league_name: 'Liga MX', country_name: 'Mexico', league_id: '101',
+      league_name: 'Liga MX', country_name: 'México', league_id: '101',
       match_hometeam_name: 'America', match_awayteam_name: 'Chivas',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' },
     { match_id: '2', match_date: '2099-01-02', match_time: '17:00', match_status: 'NS',
       match_round: '9',
-      league_name: 'Liga MX', country_name: 'Mexico', league_id: '101',
+      league_name: 'Liga MX', country_name: 'México', league_id: '101',
       match_hometeam_name: 'Pumas', match_awayteam_name: 'Cruz Azul',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' },
@@ -85,8 +90,19 @@ const PUERTO = Number(process.env.E2E_PUERTO || 3210);
       match_hometeam_name: 'Saprissa', match_awayteam_name: 'Alajuelense',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' },
+    /*
+     * ⚠️ Una SEGUNDA liga elegible, y hace falta: con una sola, «las favoritas
+     * van primero» no se puede comprobar —ordenar un elemento no cambia nada— y
+     * la mutación que las manda al final pasaba entera.
+     */
+    { match_id: '5', match_date: '2099-01-04', match_time: '13:00', match_status: 'NS',
+      match_round: '4',
+      league_name: 'Premier League', country_name: 'Inglaterra', league_id: '404',
+      match_hometeam_name: 'Arsenal', match_awayteam_name: 'Chelsea',
+      team_home_badge: '', team_away_badge: '',
+      match_hometeam_score: '', match_awayteam_score: '' },
     { match_id: '4', match_date: '2099-01-03', match_time: '11:00', match_status: 'NS',
-      league_name: 'Liga MX Femenil', country_name: 'Mexico', league_id: '303',
+      league_name: 'Liga MX Femenil', country_name: 'México', league_id: '303',
       match_hometeam_name: 'Tigres', match_awayteam_name: 'Rayadas',
       team_home_badge: '', team_away_badge: '',
       match_hometeam_score: '', match_awayteam_score: '' }

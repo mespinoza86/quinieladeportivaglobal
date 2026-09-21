@@ -17431,6 +17431,325 @@ Rotas a proposito, 3 de 3 detectadas:
 
 ---
 
+### 📌 Entrada 104 — 20 de septiembre de 2026 — Dejar de bajar y bajar: un desplegable que se escribe
+
+**Objetivo:** Marco lo dijo con las palabras exactas del problema: *«salen
+toooodas las ligas, entonces es un poco complicado ir bajando y bajando»*. Y
+después, al ver funcionando el primero: *«hagamos eso mismo para escoger las
+ligas favoritas también»*.
+
+## Dos intentos que no sirvieron, y por qué se cuentan
+
+⚠️ Antes de lo que quedó hubo **dos versiones que Marco rechazó**, y están
+guardadas en la rama `intento-selector-de-ligas` (`e571aaf`) por si algún día
+alguien piensa que son buena idea:
+
+1. **Un buscador encima de la lista.** *«no, no me gustó»*. Seguía siendo una
+   lista larga, sólo que ahora con un campo delante.
+2. **La lista desplegándose bajo el campo.** *«escribo en el cuadro de texto y no
+   me sale nada»*.
+
+⛔ **Y el primer día entero de arreglos fue persiguiendo el fallo equivocado.**
+El desplegable no salía por una cosa que no estaba en el navegador: la clave del
+proveedor en el `.env` local no valía, y la respuesta era
+
+```
+{ error: 404, message: 'Please make the payment for your account!' }
+```
+
+Se rehízo la pantalla tres veces sin mirar antes qué contestaba el proveedor.
+**Cuando algo no aparece, lo primero es preguntar si llegó a existir** — y eso se
+comprueba en la fuente, no en la interfaz. Lo cerró Marco: *«el problema siempre
+fue la variable de environment que no estaba bien»*.
+
+## Lo que quedó
+
+Un `<input>` que al pinchar abre la lista entera, y al escribir la filtra:
+
+```
+Liga o torneo
+┌────────────────────────────────────────────────┐
+│ costa                                          │
+├────────────────────────────────────────────────┤
+│ TUS FAVORITAS                                  │
+│   Primera División              Costa Rica     │
+│ COSTA RICA                                     │
+│   Liga de Ascenso               Costa Rica     │
+│ NO SE PUEDEN ARMAR SOLAS                       │
+│   Copa Costa Rica                              │
+│   «Copa Costa Rica» no publica el número de    │
+│   jornada, así que no se puede armar sola.     │
+└────────────────────────────────────────────────┘
+```
+
+Busca **por país y por competición a la vez**: sólo por país obligaría a saber de
+dónde es cada torneo, y los internacionales no son de ninguno. Y sin tildes:
+nadie escribe «México» con tilde cuando busca.
+
+⚠️ **No es un control nativo, y no puede serlo.** `<select>` no deja escribir;
+`<datalist>` no deja agrupar, ni deshabilitar una opción con su motivo, ni
+enseñar el país al lado. Por eso va a mano — y por eso lleva los atributos ARIA
+explícitos: sin ellos, para un lector de pantalla esto es una caja de texto y ya.
+
+## ⛔ Las favoritas venían aparte, y eso las borró de la pantalla
+
+El fallo que Marco encontró al probarlo: escribió «Costa Rica» y no salió nada.
+
+`aplicarFavoritas` **saca** las favoritas de `paises` y las devuelve en su propio
+arreglo. La primera versión leía sólo `paises`, así que las ocho ligas marcadas
+—Liga MX, Primera División, Champions…— no aparecían ni al abrir ni al buscar.
+Lo que se veía era el resto del mundo, que es justo lo que no se usa.
+
+⚠️ **Ninguna prueba podía verlo**: la quiniela de pruebas no tenía favoritas, así
+que `favoritas` llegaba vacío y leer sólo `paises` daba el resultado correcto.
+
+## Una sola lista, y de ella salen las dos cosas
+
+Dentro, lo que se pinta y por dónde se mueve el teclado **salen del mismo
+arreglo**:
+
+```js
+visibles = [...favoritas, ...demas];
+```
+
+Antes eran dos construcciones separadas y podían discrepar: resaltabas una liga
+con la flecha y Enter elegía otra. Con una sola fuente eso no se puede escribir.
+
+Y las que **no** se pueden armar solas se enseñan, al final y en gris, con su
+motivo. Esconderlas sería peor: quien busca la MLS y no la encuentra piensa que
+la aplicación no la conoce y se queda intentándolo.
+
+## El mismo desplegable en las favoritas, y por qué es el mismo código
+
+Marco pidió lo mismo para elegir favoritas. Son **doscientas líneas** de teclado,
+filtrado, agrupación y cierre al pinchar fuera. Copiadas dos veces se separan: se
+arregla un detalle en una pantalla y la otra se queda con el fallo, sin que nada
+avise. Así que salieron a `private/js/combo-de-ligas.js` y las dos lo usan.
+
+Las diferencias son sólo tres, y por eso son parámetros:
+
+| | Armar jornadas | Favoritas |
+|---|---|---|
+| Se elige | **una** | **varias** (tope 20) |
+| Sirve cualquiera | no: sólo las que traen ronda | **sí** |
+| Al elegir | se guarda la configuración | se añade a la lista de abajo |
+
+⛔ **Y las favoritas se eligen de una en una porque tienen que poder quitarse.**
+Con la lista de casillas de antes, una favorita que esa semana no jugaba se
+pintaba aparte justo para eso. Ahora sale solo: las elegidas viven en su propio
+arreglo, no en lo que devolvió el proveedor, así que una favorita en descanso
+está abajo con su botón de quitar como cualquier otra.
+
+⚠️ Una sola petición al proveedor para las dos cosas —pintar lo ya marcado y
+llenar el desplegable—, guardando la promesa. La cuota del proveedor es
+**compartida entre todas las quinielas**: pedir lo mismo dos veces al abrir la
+pantalla es cuota tirada. Y si falla, la promesa se olvida: guardada, el
+desplegable heredaría el mismo fallo para siempre.
+
+## ⛔ Cuatro fallos que salieron al probarlo, y el renglón que mentía
+
+Marco: *«si yo escribo se va filtrando, pero si lo borro no sale nada»*, y pegó
+la pantalla, que decía **«253 se pueden armar solas»** sin lista debajo.
+
+Lo primero fue comprobar el filtro con un DOM de mentira y 253 ligas: **borrar
+el texto repinta las 321 opciones**. La lógica estaba bien, así que la sospecha
+—recorte por `overflow`— se descartó mirando el CSS en vez de «arreglándola».
+
+⛔ **El renglón del recuento no se borraba al cerrar.** Ésa era la frase que
+Marco estaba leyendo: la lista estaba CERRADA y el renglón seguía anunciando
+253. Un texto que describe una lista abierta, cuando está cerrada, miente — y se
+lee exactamente como «dice que hay 253 y no me enseña ninguna».
+
+Y de paso, tres más que estaban en el mismo sitio:
+
+| Fallo | Por qué importa |
+|---|---|
+| Un click lanzaba **dos** peticiones (`focus` y `click`) | La cuota del proveedor es compartida entre todas las quinielas |
+| Escribir antes de que cargaran **no hacía nada y no decía nada** | La caja se quedaba muda hasta volver a pinchar |
+| Si la carga fallaba, la caja quedaba **muerta para siempre** | Ni pinchando ni escribiendo reintentaba: sólo recargando la página |
+
+⚠️ El tercero es el peligroso: la promesa rota guardada convierte un fallo
+pasajero —el Admin Mode vencido, un 500 del proveedor— en una pantalla rota
+hasta que a alguien se le ocurra recargar.
+
+## El selector, detrás de un botón
+
+Marco, mirando una quiniela ya asentada: *«¿por qué me sale liga o torneo si ya
+aquí es una quiniela generada? eso deberÍa salir sólo la primera vez»*.
+
+Tiene razón en que es ruido: un selector de 253 opciones abierto de par en par
+en una pantalla de ajustes. **Pero quitarlo del todo cierra dos puertas**, y por
+eso se recoge detrás de un botón en vez de desaparecer:
+
+| Sin el panel | Qué se pierde |
+|---|---|
+| Una quiniela hecha a mano | No podría pasar NUNCA a ser de liga |
+| Al acabarse la temporada | No habría dónde «cambiar de liga» — una de las tres salidas que el propio Marco eligió |
+
+```
+Cómo se arman las jornadas
+Ahora mismo eliges los partidos tú, jornada a jornada.
+
+[ Armarlas por liga ]        ← y «Cambiar de liga» si ya es de una
+```
+
+⚠️ **Los precios se recogen con el selector, no aparte.** El precio viaja en la
+MISMA petición que la liga —si fueran dos, un fallo en la segunda dejaría una
+quiniela de liga sin precio y la primera jornada nacería en cero—, así que
+enseñar el selector sin los precios dejaría elegir liga con el precio a cero sin
+haberlo visto. En una quiniela que se arma a mano no se enseñan: no hay ninguna
+jornada que nazca sola.
+
+## ⛔ La regla global que muerde por tercera vez
+
+Marco mandó la captura: «CONMEBOL Libertadores - Quarter-finals» partido en seis
+renglones dentro de una columna de dos centímetros, y un «Quitar» de lado a lado.
+
+```
+antes                          ahora
+┌───────────┬────────────┐     ┌────────────────────────────┬────────┐
+│ CONMEBOL  │            │     │ CONMEBOL Libertadores -    │ Quitar │
+│ Liberta-  │   Quitar   │     │ Quarter-finals             │        │
+│ dores -   │            │     └────────────────────────────┴────────┘
+│ Quarter-  │            │
+│ finals    │            │
+└───────────┴────────────┘
+```
+
+Es **la misma regla de siempre**, mordiendo en un sitio nuevo:
+
+```css
+button, textarea { width: 100%; }
+```
+
+En una fila flex, un botón que pide el 100 % se queda la fila entera y el nombre
+se aplasta. Ya había pasado con las casillas (`.checkbox-fila`) y con el
+`<select>` de roles que salía blanco sobre blanco.
+
+⚠️ **Y `flex-shrink: 0` no lo arregla: lo empeora.** Yo se lo había puesto
+pensando «que el botón no se encoja», y eso es justo lo contrario de lo que hace
+falta. Lo que hay que quitarle es el **ancho**, no la capacidad de encoger.
+
+La otra mitad es del nombre: `min-width: 0`. Un hijo de flex **se niega por
+defecto a encogerse por debajo de su contenido**, así que sin eso un nombre largo
+ensancha la fila en vez de partirse en dos renglones.
+
+**Hay centinela, y cae con la mutación:** se devolvió el CSS al `flex-shrink: 0`
+de antes y la prueba pasó de verde a roja. Es la tercera vez que esta regla
+global pilla a alguien; ahora está escrito dónde muerde.
+
+## ⛔ Y una CUARTA vez, en «¿Cómo se armarán las jornadas?»
+
+Marco mandó otra captura: los dos botones de opción despegados de su texto y
+sin alinear. **La misma regla global otra vez** — pero esta vez con un agravante:
+
+```css
+/* el arreglo que ya existía... y que sólo cubría la mitad */
+.checkbox-fila input[type="checkbox"] { width: auto; }
+```
+
+El día que se metió un `radio` dentro de una `.checkbox-fila`, se llevó el
+`width: 100%` global **sin que nada chistara**: el puntito pegado a la izquierda
+de una caja invisible del ancho de la fila, y el texto despegado. La prueba que
+vigila esto miraba `type="checkbox"` igual que el CSS, así que compartía el
+punto ciego exacto.
+
+⚠️ **Y aquí `flex-shrink: 0` SÍ es lo correcto**, al revés que en `.elegidas`.
+No es contradicción: con `width: auto` el control ya mide lo suyo —unos 16 px—
+y lo que se quiere es que nadie lo encoja. Lo que no se puede es pedirle las dos
+cosas a un elemento que **sigue pidiendo el 100 %**.
+
+De paso se rehízo el grupo, que eran dos renglones flotando sin nada que dijera
+que son las dos caras de una pregunta:
+
+```
+¿Cómo se armarán las jornadas?
+┌──────────────────────────────────────────┐
+│ ◉  Las armo yo                           │  ← borde verde, la escogida
+│    Eliges los partidos uno a uno,        │
+│    jornada a jornada.                    │
+└──────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ ○  De una liga o torneo                  │
+│    Cada semana se te propone la jornada  │
+│    que toca, y tú la confirmas.          │
+└──────────────────────────────────────────┘
+```
+
+⚠️ La escogida se marca con `:has(input:checked)`, **no con una clase puesta por
+JS**: así ninguna pantalla tiene que acordarse de repintarla.
+
+### El empate de especificidad que mataba el hover
+
+`.checkbox-fila:hover` y `.radio-grupo .checkbox-fila` **empatan** a (0,2,0), y
+la nueva iba después: el fondo de la tarjeta se comía el resaltado y las
+opciones quedaban muertas al ratón. Se le dio hover propio —(0,3,0)— y el
+`:has()` va el último para ganarle a los dos: pasar el ratón por encima de una
+opción no puede borrar de la vista cuál está escogida.
+
+### ⛔ Y dos mutaciones que mintieron antes de decir la verdad
+
+Las dos primeras mutaciones **pasaron en verde, y era falso**: `styles.css` está
+en CRLF y `quinielas.html` en LF, y cada mutación buscaba justo el final de línea
+contrario. **No se aplicó ninguna** — el centinela nunca llegó a probarse.
+
+Repetidas exigiendo que el fichero cambiara de verdad (`?
+` y comprobando el
+tamaño), las dos caen:
+
+| Mutación | Resultado |
+|---|---|
+| El CSS vuelve a cubrir sólo `checkbox` | ✅ roja |
+| Un `radio` se queda sin su clase de fila | ✅ roja |
+
+⚠️ Es **la sexta vez** que una sonda dice «no» queriendo decir «no sé». La
+lección repetida: antes de creerse un resultado negativo, comprobar que se está
+mirando lo que se cree que se mira.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/combo-de-ligas.js` | **Nuevo.** El desplegable escribible, para las dos pantallas |
+| `private/js/liga-de-quiniela.js` | Usa el módulo; se le quitó su copia |
+| `private/js/configuracion-quiniela.js` | Las favoritas dejan de ser casillas y pasan a desplegable + lista |
+| `public/configuracion-quiniela.html` | El marcado de los dos desplegables, y el módulo cargado antes |
+| `private/css/styles.css` | `.combo`, `.combo-lista`, y `.elegidas` |
+| `test/architecture.test.js` | Centinela del botón en fila flex, y el de las filas ampliado a los `radio` |
+| `public/quinielas.html` | Las dos opciones, en tarjetas con título y explicación |
+
+**Verificación:**
+
+```
+node --check private/js/*.js              → sin errores
+ids del JS contra el HTML                 → los 37 existen
+window.comboDeLigas se registra           → function
+Marco, contra datos reales                → eligió la liga tica y salieron
+                                            los partidos que tenían que salir
+```
+
+⚠️ **Las pruebas NO se han corrido**, a petición de Marco: *«no corras las
+pruebas, haz el cambio me dices para yo probarlo y después de probarlo yo te digo
+si lo dejas así o si corres las pruebas»*.
+
+**Hallazgos nuevos:**
+
+- ⛔ **Cuando algo no aparece, se comprueba en la fuente antes que en la
+  pantalla.** Un día de rehacer la interfaz por una clave de API mal puesta.
+- ⛔ **Un arreglo que ninguna prueba puede ver no es un arreglo probado.** Los
+  datos de prueba sin favoritas hacían que leer sólo `paises` diera bien.
+- ⭐ Marco pidió además no esperar a las pruebas para avisarle: *«pregúntame antes
+  que lo revise de forma local para no esperar tiempo en vano»*.
+
+**Pendiente / siguiente paso:**
+
+- `test/e2e/ligas-favoritas.spec.js` todavía busca las casillas viejas: hay que
+  reescribirlo contra el desplegable **cuando Marco dé el visto bueno**.
+- Nada de esto está en un commit todavía.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

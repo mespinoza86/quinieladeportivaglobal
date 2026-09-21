@@ -718,11 +718,91 @@ th,
  * ponia el texto debajo de la casilla en el movil y lejos de ella en el
  * escritorio. `flex-shrink` la protege de encogerse con nombres largos.
  */
-.checkbox-fila input[type="checkbox"] {
+/*
+ * ⛔ LOS DOS TIPOS, NO SÓLO LA CASILLA.
+ *
+ * Esta regla existía sólo para `checkbox`, y el día que se metió un `radio` en
+ * una `.checkbox-fila` se llevó el `width: 100%` global: el puntito se quedaba
+ * pegado a la izquierda de una caja invisible del ancho de la fila, y el texto
+ * salía despegado y desalineado. Se vio en «¿Cómo se armarán las jornadas?».
+ *
+ * ⚠️ Aquí `flex-shrink: 0` SÍ es lo correcto, al revés que en `.elegidas`:
+ * con `width: auto` el control ya mide lo suyo —unos 16 px— y lo que se quiere
+ * es que no lo encojan. Lo que no se puede es pedir las dos cosas a un elemento
+ * que sigue pidiendo el 100 %.
+ */
+.checkbox-fila input[type="checkbox"],
+.checkbox-fila input[type="radio"] {
   width: auto;
   padding: 0;
   margin: 3px 0 0;
   flex-shrink: 0;
+
+  /* El punto y la marca en verde: el azul del navegador es de otra aplicación. */
+  accent-color: var(--primary);
+}
+
+/*
+ * ============================================================================
+ * Un grupo de opciones excluyentes, cada una en su tarjeta.
+ * ============================================================================
+ *
+ * Sueltas eran dos renglones flotando bajo un rótulo, sin nada que dijera que
+ * son las dos caras de UNA pregunta. Con borde y con la elegida resaltada se
+ * ve de un vistazo qué hay y qué está escogido.
+ */
+.radio-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.radio-grupo .checkbox-fila {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+/*
+ * ⚠️ El hover, otra vez y aquí dentro.
+ *
+ * `.checkbox-fila:hover` y `.radio-grupo .checkbox-fila` EMPATAN en
+ * especificidad (0,2,0), y la de aquí va después — así que el fondo de la
+ * tarjeta se comía el resaltado al pasar por encima y las opciones quedaban
+ * muertas al ratón. Con el descendiente delante gana por (0,3,0).
+ */
+.radio-grupo .checkbox-fila:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/*
+ * ⚠️ `:has()` y no una clase puesta por JS: la elegida se marca sola, sin que
+ * ninguna pantalla tenga que acordarse de repintarla. Donde no exista, las
+ * tarjetas se quedan sin resaltado — que es perder un realce, no la función.
+ *
+ * Va la última y gana al hover por (0,3,1): pasar el ratón por encima de otra
+ * no puede borrar de la vista cuál está escogida.
+ */
+.radio-grupo .checkbox-fila:has(input:checked) {
+  border-color: var(--primary);
+  background: rgba(34, 197, 94, 0.10);
+}
+
+/* El rótulo pesa más que la explicación, para poder elegir de un vistazo. */
+.radio-grupo .checkbox-fila strong {
+  display: block;
+  font-weight: 600;
+}
+
+.radio-grupo .checkbox-fila small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 /* El pais que encabeza cada grupo de la lista. */
@@ -2048,4 +2128,164 @@ button + button {
   @page {
     margin: 1.5cm;
   }
+}
+
+/*
+ * El desplegable escribible de ligas (§22).
+ *
+ * ⚠️ La lista va ABSOLUTA sobre el resto, no empujando el contenido hacia abajo.
+ * Empujando, elegir una liga movía de sitio los botones de debajo mientras
+ * escribías, y el que ibas a pulsar se iba.
+ */
+.combo {
+  position: relative;
+}
+
+.combo-lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 4px);
+  left: 0;
+  right: 0;
+
+  /* Un tope, y desplazamiento propio: hay semanas con cien competiciones. */
+  max-height: 320px;
+  overflow-y: auto;
+
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+
+  background: #0f1d33;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.combo-lista li {
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.combo-lista li:hover,
+.combo-lista li.resaltada {
+  background: rgba(250, 204, 21, 0.16);
+}
+
+/* El país, a la derecha y en pequeño: ayuda a distinguir ligas homónimas. */
+.combo-lista .combo-pais {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/*
+ * Las que no se pueden armar solas. Se VEN —para quien vino buscándolas— pero
+ * no se pueden elegir, y el motivo va debajo en vez de a la derecha porque es
+ * una frase, no una etiqueta.
+ */
+.combo-lista li[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.combo-lista li[aria-disabled="true"]:hover {
+  background: none;
+}
+
+.combo-lista .combo-motivo {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Los encabezados de grupo: «Tus favoritas» y los países. */
+.combo-lista .combo-grupo {
+  padding: 10px 12px 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+
+.combo-lista .combo-grupo:hover {
+  background: none;
+}
+
+/*
+ * Las favoritas ya elegidas, debajo de su desplegable.
+ *
+ * ⚠️ Cada una lleva SU botón de quitar. Es la única manera de sacar una
+ * favorita que esta semana no juega: no sale en ninguna lista del proveedor, y
+ * si no estuviera aquí quedaría marcada para siempre.
+ */
+.elegidas {
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.elegidas li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/*
+ * El nombre se lleva el hueco que sobre y se parte si no cabe.
+ *
+ * ⚠️ `min-width: 0` no es adorno: un hijo de flex se niega por defecto a
+ * encogerse por debajo de su contenido, y sin esto «CONMEBOL Libertadores -
+ * Quarter-finals» empuja la fila a lo ancho en lugar de pasar a dos renglones.
+ */
+.elegidas li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* El aviso de «todavía ninguna» es texto, no una fila: sin caja ni botón. */
+.elegidas li.helper-text {
+  border: none;
+  padding: 0;
+}
+
+/*
+ * ⛔ `width: auto` ANULA EL `width: 100%` QUE LLEVAN TODOS LOS BOTONES.
+ *
+ * Sin esto el botón se queda con la fila entera y el nombre se parte palabra a
+ * palabra en una columna de dos centímetros — con un «Quitar» de lado a lado.
+ * Y `flex-shrink: 0` a secas no arregla nada: le dice al botón que NO encoja,
+ * que es justo lo contrario de lo que hace falta. Lo que hay que quitarle es el
+ * ancho, no la capacidad de encoger.
+ */
+.elegidas button {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+
+  /* Pequeño y sin peso: quitar no es la acción principal de esta pantalla. */
+  padding: 6px 14px;
+  font-size: 0.82rem;
+}
+
+/* Lo mismo en el desplegable: el nombre se parte, el país no. */
+.combo-lista li > span:first-child {
+  min-width: 0;
+  overflow-wrap: break-word;
 }

@@ -59,14 +59,22 @@
         una quiniela activa, y hasta crearla no la hay.
       -->
       <label class="field-label">¿Cómo se armarán las jornadas?</label>
-      <label class="checkbox-fila">
-        <input type="radio" name="tipoQuiniela" value="customizada" checked />
-        <span>Yo elijo los partidos, jornada a jornada</span>
-      </label>
-      <label class="checkbox-fila">
-        <input type="radio" name="tipoQuiniela" value="liga" />
-        <span>De una liga o torneo, y me propone la jornada cada semana</span>
-      </label>
+      <div class="radio-grupo">
+        <label class="checkbox-fila">
+          <input type="radio" name="tipoQuiniela" value="customizada" checked />
+          <span>
+            <strong>Las armo yo</strong>
+            <small>Eliges los partidos uno a uno, jornada a jornada.</small>
+          </span>
+        </label>
+        <label class="checkbox-fila">
+          <input type="radio" name="tipoQuiniela" value="liga" />
+          <span>
+            <strong>De una liga o torneo</strong>
+            <small>Cada semana se te propone la jornada que toca, y tú la confirmas.</small>
+          </span>
+        </label>
+      </div>
 
       <button type="submit">Crear quiniela</button>
     </form>

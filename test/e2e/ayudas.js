@@ -108,4 +108,43 @@ async function activarAdminMode(page, password) {
   await page.locator('#admin-content').waitFor({ state: 'visible' });
 }
 
-module.exports = { credenciales, registrarse, crearQuiniela, activarAdminMode };
+/**
+ * Abre el selector de liga de «Cómo se arman las jornadas».
+ *
+ * ⛔ ESTÁ AQUÍ, Y NO PEGADO EN VEINTICINCO SITIOS.
+ *
+ * El selector dejó de estar a la vista: ahora hay que pulsar «Armarlas por
+ * liga» —o «Cambiar de liga», si ya es de una— antes de poder escribir. Ese
+ * paso lo daban veinticinco pruebas repartidas en dos ficheros, cada una por su
+ * cuenta; con el cambio se habrían quedado todas buscando una caja escondida.
+ *
+ * ⚠️ Y el precio VIVE DENTRO del mismo bloque plegado, así que rellenarlo antes
+ * de abrir tampoco funciona. Quien llame a esto ya puede escribir en los dos.
+ */
+async function abrirSelectorDeLiga(page) {
+  await page.goto('/configuracion-quiniela.html');
+  await page.locator('#panelLiga').waitFor({ state: 'visible' });
+  await page.locator('#abrirSelector').click();
+  await page.locator('#comboLiga').waitFor({ state: 'visible' });
+}
+
+/**
+ * Deja la quiniela armándose por la liga que se le diga.
+ *
+ * El precio va aparte y antes a propósito: viaja en la MISMA petición que la
+ * liga, así que ponerlo después no lo guardaría.
+ */
+async function elegirLiga(page, nombre, { precio = 2000, alAcumulado = 1000 } = {}) {
+  await abrirSelectorDeLiga(page);
+
+  await page.locator('#precioPorDefecto').fill(String(precio));
+  await page.locator('#alAcumuladoPorDefecto').fill(String(alAcumulado));
+
+  await page.locator('#comboLiga').click();
+  await page.locator('#comboLigaLista li', { hasText: nombre }).first().click();
+}
+
+module.exports = {
+  credenciales, registrarse, crearQuiniela, activarAdminMode,
+  abrirSelectorDeLiga, elegirLiga
+};

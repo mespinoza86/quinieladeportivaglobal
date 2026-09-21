@@ -11,20 +11,12 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { registrarse, crearQuiniela, activarAdminMode } = require('./ayudas');
+const { registrarse, crearQuiniela, activarAdminMode, elegirLiga } = require('./ayudas');
 
 /** Deja la quiniela armándose por Liga MX. */
 async function conLigaMX(page, password) {
   await activarAdminMode(page, password);
-  await page.goto('/configuracion-quiniela.html');
-  await page.locator('#panelLiga').waitFor({ state: 'visible' });
-
-  await page.locator('#precioPorDefecto').fill('2000');
-  await page.locator('#alAcumuladoPorDefecto').fill('1000');
-  await page.locator('#botonElegirLiga').click();
-  await page.locator('.action-card', { hasText: 'Liga MX' }).first()
-    .getByRole('button', { name: 'Elegir' }).click();
-
+  await elegirLiga(page, 'Liga MX');
   await expect(page.locator('#ligaResumen')).toContainText('Liga MX');
 }
 

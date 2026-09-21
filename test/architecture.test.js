@@ -499,18 +499,61 @@ test('⚠️ ninguna casilla de verificación se queda sin su clase de fila', ()
    */
   const paginas = fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'));
 
+  /*
+   * ⛔ LOS RADIO TAMBIEN, Y ESO SE APRENDIO TARDE.
+   *
+   * Esta prueba miraba solo `type="checkbox"`, y la regla del CSS tambien. El
+   * dia que se metio un `radio` en una `.checkbox-fila` —«¿Como se armaran las
+   * jornadas?»— se llevo el `width: 100%` global sin que nada chistara: el
+   * puntito pegado a la izquierda de una caja invisible del ancho de la fila, y
+   * el texto despegado. Un control de formulario es un control de formulario.
+   */
   for (const pagina of paginas) {
     const html = leer(path.join('public', pagina));
-    for (const etiqueta of html.match(/<label[^>]*>\s*<input type="checkbox"/g) || []) {
+    for (const etiqueta of html.match(/<label[^>]*>\s*<input type="(checkbox|radio)"/g) || []) {
       assert.match(etiqueta, /checkbox-(card|fila)/,
-        `${pagina}: una casilla sin clase mide el ancho de la fila y despega el texto de su casilla`);
+        `${pagina}: un control sin clase mide el ancho de la fila y despega el texto`);
     }
   }
 
-  // Y la regla que lo deshace tiene que seguir ahi.
+  // Y la regla que lo deshace tiene que seguir ahi, para LOS DOS tipos.
   const css = leer(path.join('private', 'css', 'styles.css'));
-  assert.match(css, /\.checkbox-fila input\[type="checkbox"\]\s*\{[^}]*width:\s*auto/);
+
+  for (const tipo of ['checkbox', 'radio']) {
+    /*
+     * `[^{]*` entre el selector y la llave: los dos comparten bloque, asi que
+     * entre `input[type="checkbox"]` y el `{` hay una coma y el otro selector.
+     */
+    assert.match(css, new RegExp(`\\.checkbox-fila input\\[type="${tipo}"\\][^{]*\\{[^}]*width:\\s*auto`),
+      `un input[type="${tipo}"] sin width:auto mide el ancho de la fila`);
+  }
+
   assert.match(css, /\.checkbox-fila\s*\{[^}]*align-items:\s*flex-start/);
+});
+
+test('⛔ un botón dentro de una fila flex recupera su ancho', () => {
+  /*
+   * La MISMA regla global de siempre, mordiendo en otro sitio:
+   *
+   *     button, textarea { width: 100%; }
+   *
+   * En una fila flex —nombre a la izquierda, «Quitar» a la derecha— un botón
+   * que pide el 100% se queda la fila entera y el nombre se parte palabra a
+   * palabra en una columna de dos centímetros. Se vio en las ligas favoritas:
+   * «CONMEBOL Libertadores - Quarter-finals» en seis renglones.
+   *
+   * ⚠️ Y `flex-shrink: 0` NO lo arregla: le dice al botón que no encoja, que es
+   * justo lo contrario. Lo que hay que quitarle es el ancho.
+   *
+   * El `min-width: 0` del nombre es la otra mitad: un hijo de flex se niega por
+   * defecto a encogerse por debajo de su contenido.
+   */
+  const css = leer(path.join('private', 'css', 'styles.css'));
+
+  assert.match(css, new RegExp('\\.elegidas button\\s*\\{[^}]*width:\\s*auto'),
+    'sin width:auto el botón se queda toda la fila y aplasta el nombre');
+  assert.match(css, new RegExp('\\.elegidas li > span\\s*\\{[^}]*min-width:\\s*0'),
+    'sin min-width:0 el nombre largo ensancha la fila en vez de partirse');
 });
 
 test('⛔ ningún panel del rotador se muestra con un estilo en línea', () => {

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/navegacion.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script><script src="/js/liga-de-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="stylesheet" href="/css/styles.css" /><script src="/js/navegacion.js" defer></script><script src="/js/combo-de-ligas.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script><script src="/js/liga-de-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
 <section class="hero-card"><div class="hero-top"><div><p class="eyebrow">Administración</p><h1>Configurar quiniela</h1></div><div class="app-logo">🎛️</div></div></section>
 <section class="app-panel"><form id="configForm"><h2>Puntuación</h2>
 <label class="field-label">Marcador exacto</label><input type="number" min="0" id="marcadorExacto" required />
@@ -19,20 +19,51 @@
 <h2>Cómo se arman las jornadas</h2>
 <p id="ligaResumen" class="helper-text"></p>
 
-<label class="field-label" for="precioPorDefecto">Precio con el que nace cada jornada</label>
-<input type="number" min="0" id="precioPorDefecto" value="0" />
-<label class="field-label" for="alAcumuladoPorDefecto">De eso, al acumulado</label>
-<input type="number" min="0" id="alAcumuladoPorDefecto" value="0" />
-<p class="helper-text">Es un valor de partida: al confirmar cada jornada puedes cambiarlo esa semana sin tocar esto.</p>
+<!--
+  ⛔ EL SELECTOR NO SE ENSEÑA DE ENTRADA, SE PIDE.
+
+  Marco lo dijo mirando una quiniela ya asentada: «¿por qué me sale liga o
+  torneo si esto ya es una quiniela generada?». Tenía razón en que es ruido — un
+  selector de 253 opciones abierto de par en par en una pantalla de ajustes.
+
+  ⚠️ Pero NO se puede quitar del todo, y por eso está detrás de un botón en vez
+  de desaparecer: es la puerta en los dos sentidos. Sin ella, una quiniela hecha
+  a mano no podría pasar nunca a ser de liga, y al acabarse la temporada no
+  habría dónde «cambiar de liga» — que es una de las tres salidas que se ofrecen.
+-->
+<div id="ligaPrecios" hidden>
+  <label class="field-label" for="precioPorDefecto">Precio con el que nace cada jornada</label>
+  <input type="number" min="0" id="precioPorDefecto" value="0" />
+  <label class="field-label" for="alAcumuladoPorDefecto">De eso, al acumulado</label>
+  <input type="number" min="0" id="alAcumuladoPorDefecto" value="0" />
+  <p class="helper-text">Es un valor de partida: al confirmar cada jornada puedes cambiarlo esa semana sin tocar esto.</p>
+  <button type="button" id="guardarLiga" class="secondary-button">Guardar precio</button>
+</div>
+
+<div id="selectorLiga" hidden>
+  <!--
+    ⚠️ NO es un control nativo: `<select>` no deja escribir y `<datalist>` no
+    deja agrupar, ni deshabilitar opciones con su motivo, ni enseñar el país al
+    lado. Por eso va a mano, y por eso lleva los atributos ARIA: sin ellos, para
+    un lector de pantalla esto es una caja de texto cualquiera.
+  -->
+  <label class="field-label" for="comboLiga">Liga o torneo</label>
+  <div class="combo" id="comboLigaCaja">
+    <input type="text" id="comboLiga" autocomplete="off"
+           placeholder="Haz clic para ver todas, o escribe para buscar"
+           role="combobox" aria-expanded="false" aria-autocomplete="list"
+           aria-controls="comboLigaLista" />
+    <ul class="combo-lista" id="comboLigaLista" role="listbox" hidden></ul>
+  </div>
+  <p id="filtroResumen" class="helper-text"></p>
+</div>
 
 <div class="button-row">
-  <button type="button" id="botonElegirLiga" class="secondary-button">Elegir liga o torneo</button>
-  <button type="button" id="guardarLiga" class="secondary-button">Guardar precio</button>
+  <button type="button" id="abrirSelector" class="secondary-button">Armarlas por liga</button>
   <button type="button" id="quitarLiga" class="ghost-button" hidden>Dejar de armarla por liga</button>
 </div>
 
 <p id="ligaMensaje" class="form-message"></p>
-<div id="listaLigas" hidden></div>
 </section>
 
 <section class="app-panel" id="cobrosPanel" hidden><h2>Cobros</h2>
@@ -50,8 +81,26 @@
 <p class="helper-text">⚠️ Cambiar las cuotas afecta sólo a las jornadas que se creen de ahora en adelante. Las que ya existen conservan lo que costaron y cómo se repartían.</p>
 <button id="guardarCobros" type="button">Guardar cobros</button><p id="cobrosMensaje" class="form-message"></p></section>
 <section class="app-panel" id="favoritasPanel" hidden><h2>Ligas favoritas</h2>
-<p class="helper-text">Las que marques aquí salen de primero al armar una jornada. Si esa semana no tienen partidos, aparecen igual pero en gris.</p>
-<div id="favoritasLista"><p class="helper-text">Cargando torneos…</p></div>
+<p class="helper-text">Las que marques aquí salen de primero al armar una jornada, jueguen o no esa semana.</p>
+<!--
+  El mismo desplegable escribible que el de «Cómo se arman las jornadas», y por
+  eso los dos salen de `combo-de-ligas.js`.
+
+  ⚠️ La diferencia es que aquí se eligen VARIAS: el desplegable añade de una en
+  una y las elegidas quedan listadas debajo, cada una con su botón de quitar.
+  Una favorita que esta semana no juega tiene que poder quitarse igual — con la
+  lista de casillas de antes, en descanso desaparecía y no había manera.
+-->
+<label class="field-label" for="comboFavorita">Añadir una liga</label>
+<div class="combo" id="comboFavoritaCaja">
+  <input type="text" id="comboFavorita" autocomplete="off"
+         placeholder="Haz clic para ver todas, o escribe para buscar"
+         role="combobox" aria-expanded="false" aria-autocomplete="list"
+         aria-controls="comboFavoritaLista" />
+  <ul class="combo-lista" id="comboFavoritaLista" role="listbox" hidden></ul>
+</div>
+
+<ul id="favoritasElegidas" class="elegidas"><li class="helper-text">Cargando…</li></ul>
 <button id="guardarFavoritas" type="button">Guardar favoritas</button><p id="favoritasMensaje" class="form-message"></p></section>
 <section class="app-panel" id="cicloPanel" hidden><h2>Ciclo de vida</h2><button id="archivarButton" class="secondary-button">Archivar quiniela</button><div id="eliminarPanel" hidden><p class="helper-text">Para eliminar, escribe exactamente el nombre de la quiniela.</p><input id="confirmarEliminacion" /><button id="eliminarButton" class="ghost-button">Eliminar quiniela</button></div></section>
 <button data-ir-a="/adminmode.html" class="ghost-button">Volver</button></main></body></html>

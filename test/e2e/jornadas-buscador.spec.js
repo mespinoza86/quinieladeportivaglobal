@@ -28,12 +28,12 @@ test('el desplegable se llena con las ligas que tienen partidos, agrupadas por p
   const torneo = page.locator('#torneoSelect');
 
   // Arranca diciendo que carga; lo que importa es en qué se convierte.
-  await expect(torneo.locator('optgroup')).toHaveCount(2, { timeout: 10_000 });
+  await expect(torneo.locator('optgroup')).toHaveCount(3, { timeout: 10_000 });
 
   const paises = await torneo.locator('optgroup').evaluateAll(
     grupos => grupos.map(grupo => grupo.label)
   );
-  expect(paises).toEqual(['Costa Rica', 'Mexico']);
+  expect(paises).toEqual(['Costa Rica', 'Inglaterra', 'México']);
 
   /*
    * El número entre paréntesis es cuántos partidos trae la liga en el rango.
@@ -47,7 +47,7 @@ test('las competiciones bloqueadas no se ofrecen', async ({ page }) => {
   await comoAdministradora(page, 'impB', 'Quiniela Bloqueadas');
 
   await page.goto('/jornadas.html');
-  await expect(page.locator('#torneoSelect optgroup')).toHaveCount(2, { timeout: 10_000 });
+  await expect(page.locator('#torneoSelect optgroup')).toHaveCount(3, { timeout: 10_000 });
 
   /*
    * El proveedor falso devuelve «Liga MX Femenil». Una quiniela de la Primera
@@ -78,7 +78,7 @@ test('buscar por una liga trae solo sus partidos', async ({ page }) => {
   await comoAdministradora(page, 'impD', 'Quiniela Buscar');
 
   await page.goto('/jornadas.html');
-  await expect(page.locator('#torneoSelect optgroup')).toHaveCount(2, { timeout: 10_000 });
+  await expect(page.locator('#torneoSelect optgroup')).toHaveCount(3, { timeout: 10_000 });
 
   await page.locator('#torneoSelect').selectOption({ label: 'Primera Division (1)' });
   await page.locator('#buscarPartidosButton').click();
