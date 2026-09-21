@@ -17931,6 +17931,157 @@ Mutaciones:
 ---
 
 
+### 📌 Entrada 106 — 21 de septiembre de 2026 — §23, tajada 1: un solo sitio donde vive el color
+
+**Objetivo:** Marco quiere tres ambientes —el oscuro de ahora, uno de día y uno
+de cancha—: *«que uno se sienta como en una cancha de fútbol»*. Esta tajada no
+añade ningún tema: prepara el terreno para que añadirlos sea posible.
+
+## ⛔ Por qué hacía falta una pasada antes de cualquier tema
+
+Lo primero fue medir, no opinar:
+
+```
+variables de color definidas :  14
+usos de esas variables       :  88
+COLORES ESCRITOS A MANO      : 188
+```
+
+**Había más color suelto que fichas.** Cambiar `:root` no cambiaba ni la mitad
+de la pantalla, así que un tema nuevo era sencillamente imposible. La pregunta
+«¿qué tan complicado es?» tenía su respuesta entera en esos tres números.
+
+## ⭐ La pieza clave: guardar el color sin el alfa
+
+Cuarenta y dos de los 188 eran `rgba(255, 255, 255, algo)`: velos blancos que
+realzan una pieza sobre el fondo oscuro. ⚠️ Sobre un fondo BLANCO ese mismo velo
+**no se ve mal: no se ve**.
+
+Guardando sólo los tres números, cada sitio conserva su transparencia exacta:
+
+```css
+rgba(255, 255, 255, 0.08)   →   rgba(var(--velo-rgb), 0.08)
+```
+
+Así la pasada no cambia un píxel del oscuro, y el día del tema claro basta con
+que `--velo-rgb` sea tinta para que los cuarenta y dos se den la vuelta a la vez.
+
+⚠️ Una ficha por familia y no una por alfa: nombrar doce niveles de
+transparencia —`--velo-sutil`, `--velo-medio`…— habría sido inventar doce
+decisiones donde hacía falta una.
+
+## La distinción que más cuesta ver
+
+No toda la tinta se da la vuelta con el tema:
+
+| | |
+|---|---|
+| Tinta sobre el **fondo** | se da la vuelta: blanca en oscuro, negra en claro |
+| Tinta sobre una **pieza de color** | NO cambia: el botón de peligro es rojo en los tres temas, así que su texto es blanco en los tres |
+
+Confundirlas es exactamente cómo nace un texto blanco sobre fondo blanco — que
+ya pasó dos veces en este proyecto.
+
+## ⛔ Lo que NO se tocó, y por qué
+
+1. **Ningún color se unificó.** Hay tres amarillos casi iguales —`#facc15`,
+   `#ffd92e`, `#ffdf32`— que son deriva acumulada y piden ser uno solo.
+   Juntarlos **cambia el aspecto**, y esta pasada prometía no cambiar nada. Una
+   ficha por color distinto; unificar es otra decisión, otro día, con los ojos
+   de Marco delante.
+2. **`@media print` conserva sus seis colores literales.** El papel es blanco
+   aunque el tema sea oscuro: llevarlos a ficha imprimiría una página negra.
+
+## ⛔ EL INSTRUMENTO QUE HUBO QUE TIRAR
+
+La red de seguridad empezó siendo **fotos de pantalla** comparadas píxel a píxel.
+Falló, y el motivo vale más que la prueba:
+
+Las pantallas llevan datos generados al azar —el nombre de la quiniela lleva
+marca de tiempo, el código de ingreso es aleatorio—, así que **dos fotos del
+MISMO código salen distintas**. La prueba marcó 1.378 píxeles en rojo, todos en
+esos textos. Para callarla habría que subir la tolerancia hasta dejarla ciega
+justo para lo que importaba.
+
+⭐ Se cambió por medir el **color calculado** de 39 piezas en tres pantallas.
+Inmune al texto, a la fecha y al ancho; y cuando algo cambia dice **qué y dónde**
+en vez de «1.378 píxeles».
+
+⚠️ **Y la base se capturó del CSS ORIGINAL**, apartando la versión con fichas y
+restaurando la de git. Una base sacada del código ya modificado no demuestra
+nada — es el mismo error que un caso de control que no controla.
+
+La prueba además comprueba dos cosas que no son el color:
+
+- que **ninguna pieza falte** (`NO EXISTE EN ESTA PANTALLA` es un agujero en la
+  red, no un caso normal: si el selector desaparece, la prueba seguiría verde sin
+  comprobar nada);
+- que **ninguna se quede sin color** (`rgba(0, 0, 0, 0)`), que es lo que deja una
+  ficha mal escrita — `var(--que-no-existe)` no da error, deja la propiedad en su
+  valor inicial.
+
+**Resultado:**
+
+```
+antes:  188 colores a mano  ·   88 usos de ficha
+ahora:    0 colores a mano  ·  260 usos  ·  56 fichas
+```
+
+## Dos errores propios que conviene dejar escritos
+
+1. ⛔ **`echo $?` después de una tubería mide la tubería.** Se informó «salida
+   real: 0» cuando Playwright había salido con 1. Es el mismo fallo ya anotado en
+   la Entrada 093, repetido. Para leer el código de verdad: redirigir a archivo y
+   capturar `$?` del proceso, nunca detrás de un `|`.
+2. ⚠️ **Los `\s` de una expresión regular no sobreviven a la consola.** Un
+   patrón construido en `node -e` llegó como `s*` en vez de `\s*` y **no encontró
+   nada, sin dar error**: una expresión mal formada sigue siendo válida. Los
+   scripts con expresiones regulares se escriben a archivo, no por consola.
+3. ⚠️ **Las bases de Playwright son POR PROYECTO.** Capturada sólo la de `movil`,
+   la tanda completa falló en `escritorio` — y el fallo era de la prueba, no del
+   código.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | 56 fichas en `:root`; 188 colores sueltos a 0 |
+| `test/e2e/tema-identico.spec.js` | **Nuevo.** La red: 39 piezas, 3 pantallas, 2 anchuras |
+
+**Verificación:**
+
+```
+npm test             -> 649/649
+npx playwright test  -> 196/196   (codigo de salida de PLAYWRIGHT, no del tail)
+
+Colores calculados, movil y escritorio, contra base del CSS ORIGINAL:
+  identicos en las 39 piezas
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Guardar el color sin el alfa es lo que hace posible un tema claro** sin
+   renombrar doce niveles de transparencia.
+2. ⛔ **Una prueba visual sobre datos aleatorios no sirve como red.** Medir la
+   propiedad calculada es determinista y además dice qué cambió.
+3. ⚠️ **`var(--ficha-mal-escrita)` no da error**: deja la propiedad en su valor
+   inicial. Por eso la red comprueba que nada quede en `rgba(0, 0, 0, 0)`.
+4. ⚠️ **Una red con agujeros no es una red**: cubre 3 pantallas de 39, y las
+   otras 36 las revisó Marco a mano antes del commit.
+
+**Pendiente / siguiente paso:**
+
+- Tajada 2: el tema de día, con su botón. ⚠️ El interruptor tiene que aplicarse
+  **antes del primer pintado** o habrá un destello del tema contrario — y
+  `script-src` no admite código en línea desde la Entrada 024, así que tiene que
+  ser un archivo aparte cargado sin `defer`.
+- Tajada 3: la cancha. Sobre fondo verde el acento tendrá que ser blanco, como
+  las líneas de un campo.
+- Tajada 4: pruebas de contraste en los tres temas.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 
