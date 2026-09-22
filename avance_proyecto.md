@@ -18975,6 +18975,157 @@ icono bonito. Es la misma línea que ya se metió en las 39 páginas para iOS.
 
 ---
 
+### 📌 Entrada 113 — 22 de septiembre de 2026 — De lo que más se usa a lo que menos
+
+**Objetivo:** Marco: *«estoy tratando de ordenar mejor las cosas, de forma que
+sea de lo que más se usa a lo que menos se usa»*. Reordenar el menú de la
+portada y, de paso, la barra de abajo.
+
+## El menú de la portada
+
+El orden nuevo, tal cual lo pidió:
+
+Llenar Quiniela → Llenar Trivia → Resultados de todos los jugadores → **Puntos**
+→ Resultados Oficiales → **Pronósticos** → Resultados de Trivias → Tabla General
+→ Tabla por Jornada → Jornadas → Jugadores → Reglamento.
+
+⚠️ **«Llenar Trivia» no venía en la lista de Marco** porque casi siempre está
+escondida —sólo sale cuando hay una trivia por contestar—. Se dejó de segunda
+por el mismo criterio: es la otra cosa que *se hace* y no que se mira, y cuando
+aparece suele tener fecha límite. Enterrada abajo con las demás de trivias,
+pasaría desapercibida justo la semana que importa.
+
+## ⭐ LA BARRA DE ABAJO: LA PROPUESTA ERA MALA Y MARCO LA CORRIGIÓ
+
+Se le propuso **Inicio · Llenar · Puntos · General**, sacando «Por jornada».
+Marco lo paró:
+
+> *«no me gusta, porque llevamos dos competiciones, la de jornada a jornada y la
+> de puntos totales, ambas son importantes»*
+
+Tenía razón, y la propuesta además pedía un sacrificio **que no hacía falta**:
+meter Puntos era lo único que obligaba a elegir entre las dos tablas. Quitado
+eso, los cuatro huecos dan de sobra.
+
+Marco propuso a cambio que al pulsar «Tabla» se preguntara cuál de las dos. Se
+descartó, y no por opinión: en `index.html` estaba escrita una decisión anterior
+sobre esas dos tarjetas —
+
+> *«Van juntas porque son la misma pregunta con distinto alcance: quien busca
+> una, suele querer comparar con la otra.»*
+
+Si la gente compara, preguntar al entrar es justo lo que estorba: para pasar de
+una tabla a la otra habría que salir y volver a contestar. Y le cobra un toque
+de más a **todas** las visitas, incluidas las que ya sabían a cuál iban.
+
+⭐ **Si algún día hace falta ese hueco, la forma correcta son dos pestañas en
+una misma pantalla** —«Por jornada | General»—, no una pregunta: caes en una y
+cambias a la otra de un toque, que es exactamente el comparar que describe ese
+comentario. Hoy no hace falta.
+
+**Queda así, en las 15 pantallas del jugador:**
+
+| | Antes | Ahora |
+|---|---|---|
+| 1 | Inicio | Inicio |
+| 2 | Jornadas | **Llenar** 📝 |
+| 3 | Por jornada | Por jornada |
+| 4 | Tabla | **General** |
+
+Entra «Llenar» —el número 1 de la lista, y con fecha límite— y sale «Jornadas»,
+que era el número 9. Las dos competiciones conservan su toque directo.
+
+⚠️ **«Tabla» pasó a llamarse «General» también en las 11 pantallas de
+administrador**, aunque se había dicho que no se tocarían. Es el mismo botón al
+mismo sitio: dejarlo con dos nombres según la pantalla habría sido peor que lo
+que se venía a arreglar.
+
+## ⛔ UN FALLO QUE YA ESTABA, Y QUE SÓLO SE VIO AL LISTARLO
+
+Antes de tocar nada se sacó la lista de qué botón marca cada pantalla como
+activo. Ahí apareció:
+
+```
+resultados-totales.html      activo: index.html      ← está EN la barra
+```
+
+Entrabas a la Tabla General y la barra te decía que estabas en Inicio. Nadie lo
+había visto. Se arregló de paso, junto con marcar «Llenar» en su propia
+pantalla.
+
+⭐ La lección no es el fallo sino **cómo salió**: no se vio leyendo el código
+sino sacando una tabla de las 26 pantallas y mirándola entera. Lo que se revisa
+de una en una no deja ver las que se salen del patrón.
+
+## ⛔ LA TRAMPA DEL CRLF, OTRA VEZ
+
+Al mover bloques quedó un desorden de sangrías que ya venía de antes —de 2, 6 y
+12 espacios mezcladas—, y se alineó. El primer intento partía las líneas por
+`\n`, pero **`index.html` está en CRLF en disco**: cada línea quedaba con su
+`\r` colgando al final y el `trim()` se lo comía. Resultado: finales de línea
+mezclados.
+
+⚠️ Y la sonda que lo destapó **casi miente también**: comparaba las dos
+versiones con `tr -d ' \t\n'`, que **no quita los `\r`**. Dijo «cambió
+contenido» cuando lo que cambiaba eran 113 retornos de carro. Se comprobó
+aparte que el flujo de etiquetas era idéntico antes de creerle.
+
+Rehecho detectando el final de línea del archivo, y comprobado como se debe:
+quitando espacios **y `\r`**, las dos versiones son idénticas byte a byte
+(6.667 = 6.667), **con un caso de control** que sí detecta un cambio de un solo
+carácter (6.668). Sin ese control, «idénticas» no se distingue de «la sonda no
+mira nada».
+
+## Lo que se comprobó antes de mover, no después
+
+- **Ninguna prueba fija el orden del menú.** Las dos de portada buscan las
+  tarjetas por su `href` y miden alturas contra la mediana; la única que mira la
+  barra comprueba colores del tema.
+- **Las tarjetas se mueven con su comentario pegado.** Uno explica por qué la
+  tabla por jornada va junto a la general; clavado en su sitio habría acabado
+  describiendo otra tarjeta.
+- **`llenarTriviaCard` conserva su `id`**, que es por donde `index-contexto.js`
+  la enseña o la esconde.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/index.html` | Menú reordenado, barra nueva, sangría pareja |
+| `public/*.html` (14 más del jugador) | «Jornadas» → «Llenar»; «Tabla» → «General» |
+| `public/*.html` (11 de administrador) | Sólo «Tabla» → «General» |
+
+**Verificación:**
+
+```
+npm test  -> 659/659
+contenido del menú, quitando espacios y \r -> idéntico (6.667 = 6.667)
+  control con un carácter cambiado          -> detectado (6.668)
+flujo de etiquetas antes/después            -> sin una sola diferencia
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Una tabla de las 26 pantallas enseña lo que 26 lecturas sueltas no.**
+   Así salió el botón activo mal de `resultados-totales.html`.
+2. ⛔ **`tr -d ' \t\n'` NO quita los `\r`.** En este repo, donde los archivos
+   están en CRLF en disco y en LF en git, esa comparación acusa de perder
+   contenido cuando sólo cambiaron finales de línea.
+3. ⚠️ **El CRLF de `index.html` vuelve a morder.** Es la tercera vez que un
+   `split('\n')` sobre un archivo de este repo deja saltos mezclados.
+4. ⭐ **Preguntar al pulsar le cobra un toque a todas las visitas.** Cuando dos
+   pantallas son «la misma pregunta con distinto alcance», lo que se quiere son
+   pestañas, no un cuestionario.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Que Marco mire la portada y la barra en el teléfono.** El orden es suyo;
+  lo que hay que ver es si «Llenar» en la barra se siente bien toda la semana,
+  incluida la parte en que la jornada ya cerró.
+- Sigue pendiente lo del manifiesto en una sola página (entrada 112).
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 
