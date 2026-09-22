@@ -7,6 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalPuntosContainer = document.getElementById('totalPuntosContainer');
 
     let verTodosAutorizado = false;
+
+    /*
+     * Quien esta mirando. Se sabe al arrancar y sirve para dos cosas:
+     * seleccionarte solo, y no ponerte cortina en tu propia tabla.
+     */
+    let yoSoy = null;
     let passwordGuardada = '';
     let puntuacion = { marcadorExacto: 5, resultadoCorrecto: 3, comodinExacto: 7, comodinResultado: 4 };
     fetch('/api/quiniela-actual').then(r => r.json()).then(q => { puntuacion = { ...puntuacion, ...q.configuracion?.puntuacion }; });
@@ -156,24 +162,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /*
+     * ⭐ SE CAMBIA DE RUTA POR TRÁFICO, NO POR CORRECCIÓN.
+     *
+     * `/api/jornadas` a secas devuelve LA TEMPORADA ENTERA con todos sus
+     * partidos —equipos, escudos, fechas, comodines— para rellenar un
+     * desplegable de nombres. `/api/jornada-actual` trae los nombres Y cuál es
+     * la que toca, en una sola petición pequeña.
+     *
+     * ⚠️ Y CONVIENE DEJAR ESCRITO LO QUE **NO** ERA UN FALLO. Lo de antes era
+     * `jornadas[jornadas.length - 1]`, que parece «el último que salga, sin
+     * orden garantizado» — y no lo es: `listar()` hace `ORDER BY j.secuencia`,
+     * así que acertaba siempre. Se comprobó devolviendo el código al original:
+     * las pruebas seguían en verde, porque ahí no había nada roto.
+     *
+     * Usar la ruta que el servidor mantiene como única fuente sigue siendo lo
+     * correcto —ya lo hacen otras tres pantallas—, pero por consistencia y por
+     * peso, no porque esto estuviera eligiendo mal.
+     */
     async function loadJornadas() {
-        const response = await fetch('/api/jornadas');
-        const jornadas = await response.json();
+        const response = await fetch('/api/jornada-actual');
+        const data = await response.json();
+        const jornadas = data.jornadas || [];
 
         jornadaSelect.innerHTML = '<option value="">Selecciona una jornada</option>';
 
-        if (Array.isArray(jornadas)) {
-            jornadas.forEach(jornada => {
-                const option = document.createElement('option');
-                option.value = jornada.nombre;
-                option.textContent = jornada.nombre;
-                jornadaSelect.appendChild(option);
-            });
+        jornadas.forEach(jornada => {
+            const option = document.createElement('option');
+            option.value = jornada.nombre;
+            option.textContent = jornada.nombre;
+            jornadaSelect.appendChild(option);
+        });
 
-            if (jornadas.length > 0) {
-                jornadaSelect.value = jornadas[jornadas.length - 1].nombre;
-            }
-        }
+        if (data.sugerida) jornadaSelect.value = data.sugerida;
     }
 
     async function obtenerJornada(jornadaNombre) {
@@ -246,6 +267,26 @@ document.addEventListener('DOMContentLoaded', () => {
             resultadosContainer.textContent = 'Por favor, seleccione un jugador y una jornada.';
             return;
         }
+
+        /*
+         * ⛔ MIRANDO LO TUYO NO HAY CORTINA NI CONTRASEÑA.
+         *
+         * El servidor ya decide esto por identidad, y lo hace bien:
+         *
+         *     const todo = esAdmin(req) || yo === jugador;
+         *     const visible = todo || fila.bloqueado;
+         *
+         * O sea que tus propios pronósticos de partidos SIN cerrar ya te
+         * llegaron completos. La pantalla los escondía igual hasta que
+         * escribieras tu contraseña — un trámite que no protegía nada, porque el
+         * dato ya estaba en el navegador.
+         *
+         * ⚠️ Para los demás jugadores NO cambia nada: sus partidos sin cerrar
+         * llegan vacíos del servidor, así que la cortina y su contraseña siguen
+         * donde estaban. Esto sólo deja de estorbar en tu propia tabla.
+         */
+        const esMiTabla = Boolean(yoSoy) && jugador === yoSoy;
+        if (esMiTabla) mostrarTodos = true;
 
         resultadosContainer.innerHTML = 'Cargando resultados...';
         puntosContainer.innerHTML = '';
@@ -460,9 +501,54 @@ document.addEventListener('DOMContentLoaded', () => {
         () => buscarResultados(verTodosAutorizado)
     );
 
+    /*
+     * ============================================================================
+     * ⭐ AL ENTRAR, LO TUYO DE LA ÚLTIMA JORNADA — SIN TOCAR NADA
+     * ============================================================================
+     *
+     * Marco: *«cuando uno entra, por default salgan los resultados de la última
+     * jornada del user actual»*. Es lo que ya hace llenar quiniela, así que las
+     * dos pantallas dejan de comportarse distinto.
+     *
+     * ⚠️ Y SÓLO si estás en la lista. Un administrador que no juega esta
+     * quiniela no aparece entre los jugadores; en ese caso no se toca nada y la
+     * pantalla queda como siempre, esperando a que elijas. Marco lo pidió así:
+     * «si un administrador entra y no está jugando, queda como está ahora».
+     */
+    async function seleccionarmeSiJuego() {
+        try {
+            const datos = await (await fetch('/api/auth/me')).json();
+            yoSoy = datos?.usuario?.username || null;
+        } catch (error) {
+            return false;     // Sin sesión legible, la pantalla sigue como hoy.
+        }
+
+        const yo = yoSoy;
+        if (!yo) return false;
+
+        /*
+         * ⚠️ Se comprueba que la opción EXISTE antes de asignarla. A un
+         * `<select>` se le puede poner un valor que no está entre sus opciones y
+         * no da error: se queda vacío, y la pantalla parecería rota sin motivo.
+         */
+        const estoy = [...jugadorSelect.options].some(o => o.value === yo);
+        if (!estoy) return false;
+
+        jugadorSelect.value = yo;
+        return true;
+    }
+
     async function iniciar() {
         await loadJugadores();
         await loadJornadas();
+
+        /*
+         * El `change` es lo que dispara la búsqueda, y ya estaba enganchado. Se
+         * lanza a mano porque asignar `.value` desde código NO lo emite solo.
+         */
+        if (await seleccionarmeSiJuego()) {
+            jugadorSelect.dispatchEvent(new Event('change'));
+        }
     }
 
     iniciar();

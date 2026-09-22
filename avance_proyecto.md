@@ -18478,6 +18478,133 @@ npx playwright test  -> 208/208   (salida de PLAYWRIGHT)
 ---
 
 
+### 📌 Entrada 110 — 22 de septiembre de 2026 — Entrar y que ya esté lo tuyo
+
+**Objetivo:** Marco: *«cuando uno entra, por default salgan los resultados de la
+última jornada del user actual»*, en «Resultados por puntos» y en «Ver
+resultados». Y de paso, quitar la contraseña cuando miras lo tuyo.
+
+## Las tres reglas
+
+| | |
+|---|---|
+| Si juegas | sales tú, la última jornada, pintado sin pulsar nada |
+| Si no sales en la lista | no se toca nada: la pantalla espera, como siempre |
+| Mirando lo **tuyo** | sin cortina: los partidos sin cerrar se ven sin contraseña |
+
+Los desplegables y el botón de *Buscar* se quedan, para cuando quieras ver otra
+cosa. Es el mismo comportamiento que ya tenía llenar quiniela, así que las
+pantallas dejan de comportarse distinto entre sí.
+
+## ⛔ LA CORTINA QUE NO PROTEGÍA NADA
+
+Antes de tocar nada, Marco pidió comprobar que el permiso funcionaba como él
+creía. **Dos de sus tres suposiciones eran ciertas; la tercera no.**
+
+El servidor decide por **identidad**, y lo hace bien:
+
+```js
+const todo = esAdmin(req) || yo === jugador;
+const visible = todo || fila.bloqueado;
+```
+
+Medido contra el servidor: con un partido de 2099 —sin cerrar— pedir lo propio
+devuelve `{"marcador1":3,"marcador2":1,"oculto":false}`. Completo, sin pedir
+nada.
+
+⛔ **Pero el modal de contraseña sólo hacía esto:**
+
+```js
+verTodosAutorizado = true;
+```
+
+Una bandera **en el navegador**. No viaja al servidor. O sea que para tus
+propios datos era un trámite que no protegía nada —ya estaban descargados— y
+para los ajenos no revelaba nada, porque llegan vacíos.
+
+⚠️ La protección de verdad existe y está en el sitio correcto. Lo que engañaba
+era la pantalla, sugiriendo que la contraseña abría algo. **Se quita sólo en tu
+propia tabla**; para los demás jugadores todo sigue igual.
+
+## ⛔ UN FALLO QUE DENUNCIÉ Y NO EXISTÍA
+
+Al planear esto quedó dicho —y escrito en los comentarios— que «la última
+jornada» estaba mal calculada:
+
+```js
+jornadaSelect.value = jornadas[jornadas.length - 1].nombre;   // «sin orden garantizado»
+```
+
+**Es falso.** `listar()` hace `ORDER BY j.secuencia`, así que el último elemento
+ERA el correcto, siempre.
+
+⭐ Lo destapó una mutación: se devolvió el código al original —endpoint viejo
+incluido— y **las seis pruebas siguieron en verde**. Si se hubiera dado por
+buena la afirmación sin comprobarla, habría quedado escrita en el código una
+explicación falsa para quien viniera después.
+
+El cambio de ruta se queda, pero por **una razón y no dos**: `/api/jornadas` a
+secas devuelve **la temporada entera con todos sus partidos** —equipos, escudos,
+fechas, comodines— para rellenar un desplegable de nombres.
+`/api/jornada-actual` trae los nombres y cuál toca, en una petición pequeña. Es
+peso, no corrección. Los comentarios se reescribieron para decirlo así.
+
+## ⚠️ Y una prueba mal planteada
+
+La de «quien no juega la ve como siempre» creaba una quiniela y no pronosticaba
+nada, dando por hecho que eso dejaba a nadie jugando. Pero `/api/jugadores`
+devuelve **los miembros**, no quienes hayan pronosticado — y quien crea la
+quiniela es miembro. **El escenario nunca llegó a existir**, y la prueba
+comprobaba otra cosa mientras parecía comprobar ésa.
+
+Se reproduce interceptando qué dice el servidor sobre quién eres: es lo que ve
+la pantalla, y evita montar el caso raro —un miembro expulsado, un
+superadministrador de paso— sólo para llegar al mismo estado.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/ver-resultados_puntos.js` | Autoselección, ruta de jornadas, sin cortina en lo propio |
+| `private/js/ver-resultados.js` | Lo mismo, para que no se separen |
+| `test/e2e/resultados-al-entrar.spec.js` | **Nuevo.** Las tres reglas, en las dos pantallas |
+
+**Verificación:**
+
+```
+npm run check        -> 0
+npm test             -> 657/657
+npx playwright test  -> 220/220   (salida de PLAYWRIGHT)
+
+Mutaciones:
+  vuelve la cortina sobre lo propio   -> 2 fallan
+  se quita la autoseleccion           -> 2 fallan
+  vuelve el endpoint viejo            -> PASA (y por eso se corrigio el comentario)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una mutación que SOBREVIVE puede estar diciendo que el fallo no
+   existía.** No siempre significa que la prueba sea floja; aquí significaba que
+   la denuncia era falsa.
+2. ⛔ **Un candado en el navegador no es un candado.** El modal validaba la
+   contraseña contra el servidor y luego encendía una bandera local: el dato ya
+   estaba descargado.
+3. ⚠️ **«Jugador» son los MIEMBROS, no quien haya pronosticado.** Una prueba
+   montada sobre esa confusión pasa sin llegar a existir el escenario.
+4. ⚠️ **Asignar `.value` a un `<select>` no emite `change`**, y un valor que no
+   está entre las opciones se acepta sin error: el desplegable se queda vacío y
+   la pantalla parece rota sin motivo.
+
+**Pendiente / siguiente paso:**
+
+- Marco mencionó «dos cosas» y sólo contó una; queda por saber la segunda.
+- Lo de siempre: el marcador en vivo con un partido real, el aviso al teléfono y
+  el ciclo completo del borrador.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

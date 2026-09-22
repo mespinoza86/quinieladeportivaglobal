@@ -5,6 +5,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultadosContainer = document.getElementById('resultadosContainer');
 
     let verTodosAutorizado = false;
+
+    /* Quien esta mirando: para seleccionarte solo y no ponerte cortina. */
+    let yoSoy = null;
     let passwordGuardada = '';
 
     function logoHTML(url, nombre) {
@@ -150,8 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
         resultadosContainer.appendChild(btn);
     }
 
+    /* Devuelve la promesa: el arranque necesita esperar a que estén los dos. */
     function loadJugadores() {
-        fetch('/api/jugadores')
+        return fetch('/api/jugadores')
             .then(res => res.json())
             .then(jugadores => {
                 if (Array.isArray(jugadores)) {
@@ -167,23 +171,34 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(console.error);
     }
 
+    /*
+     * ⭐ SE CAMBIA DE RUTA POR TRÁFICO, NO POR CORRECCIÓN.
+     *
+     * `/api/jornadas` a secas trae LA TEMPORADA ENTERA con todos sus partidos
+     * para rellenar un desplegable de nombres. `/api/jornada-actual` trae los
+     * nombres y cuál es la que toca, en una petición pequeña.
+     *
+     * ⚠️ Lo de antes —`jornadas[jornadas.length - 1]`— NO estaba mal: `listar()`
+     * hace `ORDER BY j.secuencia`, así que acertaba siempre. Se comprobó
+     * volviendo al original y las pruebas seguían verdes. El motivo del cambio
+     * es el peso y la consistencia con las otras tres pantallas, nada más.
+     */
     function loadJornadas() {
-        fetch('/api/jornadas')
+        return fetch('/api/jornada-actual')
             .then(res => res.json())
-            .then(jornadas => {
-                if (Array.isArray(jornadas)) {
-                    jornadaSelect.innerHTML = '<option value="">Selecciona una jornada</option>';
-                    jornadas.forEach(j => {
-                        const option = document.createElement('option');
-                        option.value = j.nombre;
-                        option.textContent = j.nombre;
-                        jornadaSelect.appendChild(option);
-                    });
+            .then(data => {
+                const jornadas = data.jornadas || [];
 
-                    if (jornadas.length > 0) {
-                        jornadaSelect.value = jornadas[jornadas.length - 1].nombre;
-                    }
-                }
+                jornadaSelect.innerHTML = '<option value="">Selecciona una jornada</option>';
+
+                jornadas.forEach(j => {
+                    const option = document.createElement('option');
+                    option.value = j.nombre;
+                    option.textContent = j.nombre;
+                    jornadaSelect.appendChild(option);
+                });
+
+                if (data.sugerida) jornadaSelect.value = data.sugerida;
             })
             .catch(console.error);
     }
@@ -202,6 +217,20 @@ document.addEventListener('DOMContentLoaded', () => {
             resultadosContainer.textContent = 'Por favor, seleccione un jugador y una jornada.';
             return;
         }
+
+        /*
+         * ⛔ MIRANDO LO TUYO NO HAY CORTINA NI CONTRASEÑA.
+         *
+         * El servidor ya decide esto por identidad —`esAdmin(req) || yo ===
+         * jugador`— así que tus propios pronósticos de partidos SIN cerrar ya
+         * llegaron completos. La pantalla los escondía igual hasta que
+         * escribieras tu contraseña: un trámite que no protegía nada, porque el
+         * dato ya estaba en el navegador.
+         *
+         * ⚠️ Para los demás jugadores NO cambia nada: sus partidos sin cerrar
+         * llegan vacíos del servidor, así que la cortina sigue donde estaba.
+         */
+        if (yoSoy && jugador === yoSoy) mostrarTodos = true;
 
         resultadosContainer.textContent = 'Cargando resultados...';
 
@@ -376,6 +405,48 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
         () => buscarResultados(verTodosAutorizado)
     );
 
-    loadJugadores();
-    loadJornadas();
+    /*
+     * ============================================================================
+     * ⭐ AL ENTRAR, LO TUYO DE LA ÚLTIMA JORNADA — SIN TOCAR NADA
+     * ============================================================================
+     *
+     * Marco: *«cuando uno entra, por default salgan los resultados de la última
+     * jornada del user actual»*. Es lo que ya hace llenar quiniela.
+     *
+     * ⚠️ Y SÓLO si estás en la lista. Un administrador que no juega esta quiniela
+     * no aparece entre los jugadores; ahí no se toca nada y la pantalla queda
+     * esperando, como hoy.
+     */
+    async function seleccionarmeSiJuego() {
+        try {
+            const datos = await (await fetch('/api/auth/me')).json();
+            yoSoy = datos?.usuario?.username || null;
+        } catch (error) {
+            return false;     // Sin sesión legible, la pantalla sigue como hoy.
+        }
+
+        if (!yoSoy) return false;
+
+        /*
+         * ⚠️ Se comprueba que la opción EXISTE antes de asignarla: a un `<select>`
+         * se le puede poner un valor que no está entre sus opciones y no da error
+         * — se queda vacío, y la pantalla parecería rota sin motivo.
+         */
+        if (![...jugadorSelect.options].some(o => o.value === yoSoy)) return false;
+
+        jugadorSelect.value = yoSoy;
+        return true;
+    }
+
+    (async () => {
+        await Promise.all([loadJugadores(), loadJornadas()]);
+
+        /*
+         * El `change` es lo que dispara la búsqueda, y ya estaba enganchado. Se
+         * lanza a mano porque asignar `.value` desde código NO lo emite solo.
+         */
+        if (await seleccionarmeSiJuego()) {
+            jugadorSelect.dispatchEvent(new Event('change'));
+        }
+    })();
 });
