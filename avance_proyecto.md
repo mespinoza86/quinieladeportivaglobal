@@ -591,13 +591,13 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `476e2e1` — Entrada 111: la misma tarjeta de partido en todas las pantallas |
-| Árbol | ⚠️ **NO está limpio.** La entrada 112 —el icono propio— está hecha y **sin commitear**: esperando a que Marco la pruebe en el teléfono |
-| Producción | ✅ **Al día en `476e2e1`**, comprobado con marca leída dos veces y `tiempoActivoSegundos: 47`. **Lo del icono todavía NO está puesto** |
+| Último commit | `6c925b4` — Entrada 112: el escudo de Marco, como icono al instalar |
+| Árbol | ✅ Limpio |
+| Producción | ⚠️ **En `476e2e1`. Lo del icono está commiteado pero NO empujado todavía**: esperando a que Marco diga para subirlo |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **657** rápidas + **220** de navegador en verde y cero flaky a fecha del commit 476e2e1. ⚠️ Lo del icono sólo tiene corridas **las rápidas de arquitectura (82/82)** y las mutaciones; falta el juego completo |
+| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky** (corridas sobre `6c925b4`, con servidor limpio) |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111) y **el icono propio al instalar** (112, sin commitear) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111) y **el icono propio al instalar** (112) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -609,6 +609,10 @@ documento.
   debajo, marcador en caja.
 - **Resultados y Puntos**: al entrar sale lo tuyo de la última jornada, sin
   pulsar nada, y tus partidos sin cerrar se ven sin contraseña.
+- **Instalar en el teléfono**: desde `index.html` Chrome ofrece «Instalar» y
+  queda como aplicación de verdad, con el escudo y sin barra de direcciones.
+  ⚠️ **Desde otras pantallas todavía no** —ver la deuda de la entrada 112—, y
+  una app ya instalada conserva el icono viejo hasta que se desinstala.
 
 ##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
@@ -18890,7 +18894,8 @@ eso se vigila desde las pruebas rápidas y no a ojo.
 
 ```
 npm run check            -> 0
-npm run test:arquitectura -> 82/82
+npm test                 -> 659/659
+CI=true npx playwright test -> 220/220, «flaky» no aparece en el log
 
 mutaciones sobre los centinelas nuevos -> las 5 MUERDEN
   borrar el maskable del disco                 -> roja
@@ -18901,9 +18906,34 @@ mutaciones sobre los centinelas nuevos -> las 5 MUERDEN
   CONTROL sin mutar nada                       -> verde
 ```
 
-⚠️ **Falta el juego completo de pruebas** (rápidas y de navegador). Queda a la
-espera de que Marco lo pruebe, según lo acordado: primero lo mira él, y sólo
-entonces se manda todo.
+## ⭐ EL EFECTO QUE NADIE BUSCABA: DEJÓ DE SER UN MARCADOR
+
+Marco, al instalarlo: *«ya no es un link de chrome, parece una app
+independiente, ¿qué hicimos diferente?»*.
+
+Nada más que los iconos. Se comprobó comparando el manifiesto de `476e2e1` con
+el de ahora: lo único que entró fue la lista `icons`. El `display: standalone`,
+el `start_url`, el nombre, el service worker y el HTTPS llevaban meses puestos.
+
+**Chrome tiene una lista de requisitos para considerar algo instalable**, y la
+aplicación los cumplía todos menos uno: hacía falta **un icono de 192 píxeles
+como mínimo en el manifiesto**. Sin él, Chrome se niega a tratarlo como
+aplicación y sólo ofrece «añadir a pantalla de inicio», que es un marcador: se
+abre en una pestaña con la barra de direcciones y el logo de Chrome.
+
+Al completarse la lista, el botón pasó a decir **«Instalar»** y Android
+construye una aplicación de verdad —entrada propia en el cajón de apps, ventana
+sin barra de Chrome, su sitio en el selector de aplicaciones—.
+
+⚠️ **No estaba previsto.** Se anunció que cambiaría el icono; que además
+convirtiera el marcador en aplicación fue consecuencia del mismo cambio y no se
+vio venir.
+
+⛔ **Y ESO ASCIENDE LA DEUDA DE ABAJO A FALLO VISIBLE.** Mientras instalar daba
+un marcador, que el manifiesto estuviera enlazado sólo desde `index.html` daba
+igual. Ahora no: instalar desde la portada da la aplicación, y desde cualquier
+otra pantalla —`login.html`, por ejemplo— sigue dando un marcador, ahora con el
+icono bonito. Es la misma línea que ya se metió en las 39 páginas para iOS.
 
 **Hallazgos nuevos:**
 
@@ -18919,17 +18949,28 @@ entonces se manda todo.
 4. ⚠️ **El `badge` de Android es una silueta, no un icono**: tira el color.
 5. ⚠️ **Un icono mal enlazado no da ningún error**: sale el genérico del
    navegador y sólo se ve desde un teléfono.
+6. ⭐ **El icono no era sólo estética: era el requisito que faltaba para que
+   Chrome considerase la aplicación instalable.** Sin un icono de 192 px en el
+   manifiesto, «instalar» es un marcador con barra de direcciones. Con él,
+   Android construye una aplicación de verdad. Lo descubrió Marco al
+   instalarla, no nosotros al planificarlo.
 
 **Pendiente / siguiente paso:**
 
 - ⚠️ **Que Marco lo instale en el teléfono y vea el escudo.** Es lo único que
   comprueba esto de verdad; ninguna prueba automática mira una pantalla de
   inicio.
-- Después, el juego completo de pruebas y el commit.
-- ⚠️ **El manifiesto sigue enlazado sólo desde `index.html`.** Quien añada a la
-  pantalla de inicio desde otra página se lleva el icono bien, pero un marcador
-  en vez de una aplicación en modo `standalone`. No se tocó porque no era lo
-  pedido; queda anotado.
+
+  ⛔ **Y HAY QUE DESINSTALAR ANTES.** El icono se copia **al instalar**: una
+  aplicación que ya esté en la pantalla de inicio se queda con el dibujo de
+  Chrome por mucho que el servidor sirva otro. Hay que quitarla y volver a
+  añadirla. Sin saber esto, la comprobación sale «no funcionó» siendo que sí
+  —es otra sonda que dice «no» queriendo decir «no miré donde creía»—.
+- ⛔ **El manifiesto sigue enlazado sólo desde `index.html`**, y con la
+  instalación funcionando eso ya se nota: desde la portada se instala la
+  aplicación, desde cualquier otra pantalla sale un marcador. Se arregla con la
+  misma línea en las 39, igual que se hizo con el icono de iOS. **Pendiente de
+  que Marco decida si se hace ahora.**
 - Un `badge` monocromo para los avisos, si algún día se quiere.
 
 ---
