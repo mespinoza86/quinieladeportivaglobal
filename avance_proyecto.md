@@ -53,15 +53,15 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **615**, ~120 s |
-| Pruebas de navegador | **142**, ~6 min, contra el servidor de verdad |
+| Pruebas rápidas | **657**, ~110 s |
+| Pruebas de navegador | **220**, ~15 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ✅ **Las 14 migraciones corridas.** De la 011 a la 014, el 13 y 14 de septiembre |
-| Producción | ✅ Al día en `602f641`. En uso, con cuentas y quinielas de verdad |
+| Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
+| Producción | ✅ Al día en `476e2e1` (22 de septiembre). En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -587,43 +587,69 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 14 de septiembre de 2026
+#### 📍 Dónde quedó todo el 22 de septiembre de 2026
 
 | | |
 |---|---|
-| Último commit | `06ff139` — Entrada 103: la llave que se retiraba al entrar |
+| Último commit | `476e2e1` — Entrada 111: la misma tarjeta de partido en todas las pantallas |
 | Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Base de datos | ✅ **Las 15 migraciones corridas.** De la 011 a la 015, las corrió Marco y se comprobaron contra Neon una a una |
-| CI | ✅ En verde. Las tres corridas rojas de principios de mes eran la auditoría de dependencias, **nunca las pruebas** (087) |
-| Producción | ✅ **Al día en `06ff139`**, con las tres variables VAPID puestas |
-| Pruebas | **647** rápidas + **170** de navegador, todas en verde |
-| Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido contra producción. A principios de mes eran 20,4 |
-| ⭐ Lo que se acabó hoy | **Las notificaciones al teléfono** (094, 095) y **§22 entero: las quinielas de liga con borrador semanal** (096 a 103) |
-| ✅ §22, comprobado de verdad | Marco eligió la Primera de Costa Rica y **salieron los partidos que tenían que salir**. Era lo único que ni las pruebas ni el ensayo podían hacer |
+| Producción | ✅ **Al día en `476e2e1`**, comprobado con marca leída dos veces y `tiempoActivoSegundos: 47` |
+| Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos dos días no tocaron el esquema |
+| Pruebas | **657** rápidas + **220** de navegador, todas en verde y **cero flaky** |
+| Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
+| ⭐ Lo que se acabó estos dos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110) y **la tarjeta unificada** (111) |
 
-✅ **No queda nada a medias.** Los cinco trabajos del 13 y 14 —niveles de
-administrador, la caja, las dos fugas de tráfico y las notificaciones— están
-cerrados, probados, documentados, desplegados y con sus migraciones corridas.
+##### Qué se puede tocar y esperar que funcione
 
-⚠️ **DOS COSAS QUE SÓLO PUEDE CONFIRMAR EL MUNDO REAL**, y que conviene mirar el
-próximo fin de semana con partidos:
+- **Tres temas**: oscuro (de fábrica), de día y cancha. Botón redondo arriba a la
+  derecha, en las 39 pantallas. La elección se guarda en el navegador.
+- **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
+  escribible, y el marcador real en el centro.
+- **Las seis pantallas de partidos** comparten tarjeta: escudo grande, nombre
+  debajo, marcador en caja.
+- **Resultados y Puntos**: al entrar sale lo tuyo de la última jornada, sin
+  pulsar nada, y tus partidos sin cerrar se ven sin contraseña.
 
-1. **Que llegue una notificación a un teléfono.** Todo lo de aquí está probado
-   sin salir a la red: el envío se sustituye en las pruebas. Que Google y Apple
-   la entreguen sólo lo dice un partido de verdad. Si no llega, la pista está en
-   los registros de Render.
-2. **Que los marcadores oficiales sigan llegando solos**, sin tocar «sincronizar
-   esta jornada». Es lo único que el filtro del censo (093) podría haber roto.
+##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
-✅ **Y una que ya se comprobó:** el borrador de §22. Marco eligió la Primera de
-Costa Rica y salieron los partidos correctos. Faltaría confirmarlo una vez para
-ver el ciclo completo —crear la jornada y que a la semana siguiente proponga la
-de después—, pero la parte difícil ya está vista.
+Ninguna prueba puede hacerlo: hace falta que se juegue un partido.
 
-⚠️ Y una consecuencia del diseño nuevo que conviene tener en la cabeza: como la
-audiencia depende de **quién ha llenado qué**, el primer aviso real es también la
-primera prueba de esa consulta. Si llega un aviso de un partido ya pronosticado,
-o falta uno que sí faltaba, **el nombre del partido basta para encontrarlo**.
+1. **El marcador en vivo** de la tarjeta de pronóstico. Está comprobado que el
+   dato se pinta y que el refresco pide cuando debe, pero que el proveedor mande
+   bien el minuto en un partido de verdad **no lo ha visto nadie**.
+2. **Que llegue una notificación a un teléfono.** El envío se sustituye en las
+   pruebas; que Google y Apple la entreguen sólo lo dice un partido real.
+3. **El ciclo completo del borrador**: confirmar una jornada y que a la semana
+   siguiente proponga la de después. La parte difícil ya se vio funcionando.
+4. **Que los marcadores oficiales sigan llegando solos**, sin tocar «sincronizar
+   esta jornada».
+
+##### ⚠️ Deuda anotada a propósito, no olvidada
+
+- **La colisión `.match-score` sigue a medias.** Se iba a borrar la regla que
+  apila el marcador en vertical, y **no estaba huérfana**: «Resultados de
+  trivias» todavía la usa. Se comprobó antes de borrar (111).
+- **Tres amarillos casi iguales** —`#facc15`, `#ffd92e`, `#ffdf32`— sin
+  unificar. Es deriva acumulada; juntarlos cambia el aspecto y eso lo decide
+  Marco (106).
+- **La auditoría de contraste no alcanza lo que vive detrás de un desplegable.**
+  Cubre 17 pantallas en su estado inicial. Por eso existe además un centinela
+  estático para el oro como texto (107).
+- **El título de la cabecera en «Cargar resultados oficiales»** no se revisó con
+  nombres de equipo largos; sólo se vio la de «Puntos» (111).
+
+##### ⛔ DOS TRAMPAS QUE ENGAÑARON ESTOS DÍAS, Y VOLVERÁN
+
+1. **Playwright reutiliza el servidor de la corrida anterior**
+   (`reuseExistingServer: !process.env.CI`). Un cambio en `src/` NO llega y las
+   pruebas siguen mirando el código viejo — un arreglo bueno parece roto. Lo de
+   `private/` y `public/` sí se lee del disco en cada petición. **Al tocar el
+   servidor: `CI=true` o matar los procesos node antes** (111).
+
+2. **«Flaky» NO es verde.** El resumen dice «219 passed + 1 flaky» y se lee como
+   aprobado. Una prueba que pasa al reintentar no afirma nada. **Buscar `flaky`
+   en el log siempre**, y al arreglarla correrla con `--repeat-each=3` (111).
+
 
 **Cómo se comprobó el despliegue**, que es la forma que funciona:
 
