@@ -591,13 +591,13 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `6c925b4` — Entrada 112: el escudo de Marco, como icono al instalar |
+| Último commit | `41b93bd` — Entrada 113: el menú y la barra, de lo más usado a lo menos |
 | Árbol | ✅ Limpio |
-| Producción | ⚠️ **En `476e2e1`. Lo del icono está commiteado pero NO empujado todavía**: esperando a que Marco diga para subirlo |
+| Producción | ⚠️ **En `476e2e1`. Las entradas 112 y 113 están commiteadas pero NO empujadas**: esperando a que Marco diga para subirlas |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky** (corridas sobre `6c925b4`, con servidor limpio) |
+| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky** (corridas sobre `41b93bd`, con servidor limpio) |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111) y **el icono propio al instalar** (112) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112) y **el menú y la barra reordenados** (113) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -613,6 +613,10 @@ documento.
   queda como aplicación de verdad, con el escudo y sin barra de direcciones.
   ⚠️ **Desde otras pantallas todavía no** —ver la deuda de la entrada 112—, y
   una app ya instalada conserva el icono viejo hasta que se desinstala.
+- **La portada y la barra, ordenadas por uso** (113). El menú va de lo que más
+  se usa a lo que menos, y la barra de abajo del jugador es
+  **Inicio · Llenar · Por jornada · General**: las dos competiciones —la de
+  cada jornada y la de puntos totales— conservan su toque directo.
 
 ##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
@@ -19098,7 +19102,9 @@ mira nada».
 **Verificación:**
 
 ```
-npm test  -> 659/659
+npm test                    -> 659/659
+CI=true npx playwright test -> 220/220, «flaky» no aparece en el log
+
 contenido del menú, quitando espacios y \r -> idéntico (6.667 = 6.667)
   control con un carácter cambiado          -> detectado (6.668)
 flujo de etiquetas antes/después            -> sin una sola diferencia
