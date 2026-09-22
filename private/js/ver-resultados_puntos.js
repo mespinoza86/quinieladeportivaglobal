@@ -381,9 +381,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <div class="match-main">
                             <div class="match-left">
-                                <div class="match-title ${(resultadoOficialCorrespondiente?.comodin || partidoBase?.comodin) ? 'match-title-comodin' : ''}">
-                                    ${partidoPronosticado.equipo1} vs ${partidoPronosticado.equipo2}
-                                </div>
+                            <!--
+                              ⛔ AQUÍ ESTABA «Zeledon vs Sporting FC», Y SOBRABA.
+
+                              Los dos nombres vuelven a salir abajo, cada uno con su
+                              escudo. Decir lo mismo dos veces en la misma tarjeta es
+                              lo que se lleva quitando desde que Marco lo señaló.
+                            -->
 
                                 <div class="match-meta">
                                     <span>📅 ${formatearFechaPartido(partidoBase.apiDate)}</span>                                    

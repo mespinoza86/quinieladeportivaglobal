@@ -309,9 +309,13 @@ if (!Array.isArray(partidos) || partidos.length === 0) {
 
                         <div class="match-main">
                             <div class="match-left">
-                                <div class="match-title ${(partidoBase?.comodin || partidoOficial?.comodin) ? 'match-title-comodin' : ''}">
-                                    ${p.equipo1} vs ${p.equipo2}
-                                </div>
+                            <!--
+                              ⛔ AQUÍ ESTABA «Zeledon vs Sporting FC», Y SOBRABA.
+
+                              Los dos nombres vuelven a salir abajo, cada uno con su
+                              escudo. Decir lo mismo dos veces en la misma tarjeta es
+                              lo que se lleva quitando desde que Marco lo señaló.
+                            -->
 
                                 <div class="match-meta">
                                     <span>📅 ${formatearFechaPartido(partidoBase.apiDate)}</span>

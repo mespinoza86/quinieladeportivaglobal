@@ -18605,6 +18605,142 @@ Mutaciones:
 ---
 
 
+### 📌 Entrada 111 — 22 de septiembre de 2026 — La misma tarjeta en todas partes
+
+**Objetivo:** Marco: *«que veamos las cosas como se ve en llenar quiniela, que es
+el logo grande»*, en resultados, puntos y oficiales. Y luego, mirando el
+resultado: *«se puede hacer algo similar para ver_resultados_totales?»*.
+
+## ⭐ Casi todo era CSS, no marcado
+
+Las seis pantallas ya tenían la MISMA forma —escudo y nombre, marcador, escudo y
+nombre—; sólo cambiaban el tamaño y la colocación del nombre. Así que
+`.match-teams` pasó a compartir estilo con `.match-row`: escudos de 56 px,
+nombre debajo, marcador en caja.
+
+⚠️ Son SEIS y no las tres nombradas —también Jornadas, Ver jornadas y Cargar
+resultados oficiales—; Marco lo decidió así: dejar tres a medias reintroduce lo
+que se venía a quitar.
+
+## ⛔ PERO HABÍA UN FALLO DE VERDAD, Y NO ERA DE ESTILO
+
+En «Ver resultados» y «Puntos» los escudos no salían; en oficiales sí. La causa
+no era el CSS:
+
+```js
+res.json(filas.map(fila => ({
+  equipo1: fila.equipo1,
+  equipo2: fila.equipo2,
+  marcador1: ..., marcador2: ..., oculto: ...     // ← y nada más
+})));
+```
+
+`deJugador` los trae de la base, llegan hasta la ruta, y esta lista de campos
+escrita a mano los dejaba fuera. **Sin dar ningún error**: una lista blanca que
+olvida un campo simplemente no lo entrega. Es el mismo fallo que ya se coló una
+vez con `apiRound`, en otra ruta.
+
+## ⛔ Y VARIAS COMPROBACIONES MIRARON CÓDIGO VIEJO
+
+Arreglada la ruta, la foto **seguía sin escudos**. No era el arreglo:
+
+```js
+reuseExistingServer: !process.env.CI
+```
+
+Había un servidor de una corrida anterior sirviendo el código de antes. Sólo
+afecta a cambios en `src/` —lo de `private/` y `public/` se lee del disco en
+cada petición—, pero habría hecho dar por bueno un arreglo que no llegaba.
+
+⭐ Desde entonces, cualquier comprobación que toque el servidor se corre con
+`CI=true` o matando los procesos antes.
+
+## La cabecera de «Totales de jugadores»
+
+Antes: una rejilla de tres columnas con el título «Zeledon vs Sporting FC» a la
+izquierda y una caja que apilaba «Zeledon / 1-2 / Sporting FC» en vertical. Los
+nombres salían DOS veces en la misma tarjeta y ninguna de las dos llevaba escudo.
+
+Ahora: fecha y estado arriba, escudos a los lados, marcador en caja. **La tabla
+que se despliega al pulsar no se tocó**, como pidió Marco.
+
+⚠️ Aquí NO hizo falta tocar el servidor: `/api/jornadas/:nombre` ya traía los
+escudos y la pantalla no los usaba.
+
+Y el título repetido se fue también de «Puntos» y «Ver resultados»: los nombres
+ya salen abajo con su escudo.
+
+## ⚠️ UNA LIMPIEZA QUE NO SE HIZO, Y ESTÁ BIEN ASÍ
+
+Quedó anunciado que al cambiar esta pantalla se podría borrar la regla huérfana
+de la colisión `.match-score`:
+
+```css
+.match-score span, .match-score strong { display: block; }
+```
+
+**No estaba huérfana.** «Resultados de trivias» también apila —«Marcador / 1-2 /
+3 trivias»— y borrarla lo habría roto. Se comprobó antes de borrar. La colisión
+sigue resuelta a medias y queda anotado.
+
+## ⛔ DOS ERRORES PROPIOS
+
+1. **Acentos graves dentro de una plantilla `html`.** Un comentario HTML escrito
+   dentro de `` html`...` `` con un acento grave la CIERRA, y rompe el archivo
+   entero. Quedó anotado en el propio comentario.
+
+2. **Una prueba que se volvió inestable por un cambio mío.** Al añadir la
+   autoselección, la prueba del refresco seguía seleccionando el jugador a mano:
+   dos pintados compitiendo, y a veces el de la autoselección borraba el nodo
+   testigo DESPUÉS de marcarlo. La prueba acusaba de repintar a un refresco que
+   no había hecho nada.
+
+   ⚠️ Playwright lo dio por bueno al reintentar —salió «flaky», 219 passed + 1
+   flaky— que es la forma más cara de no enterarse: verde en el resumen y una
+   prueba que no dice nada. Se quitó la selección manual y se corrió **tres veces
+   cada proyecto: 6 de 6, cero flaky**.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/css/styles.css` | `.match-teams` comparte estilo con `.match-row`; una sola `.match-score` |
+| `src/rutas/puntuacion.js` | Los escudos dejan de caerse de la respuesta |
+| `private/js/ver_resultados_totales_de_jugadores.js` | Cabecera nueva, con escudos |
+| `private/js/ver-resultados*.js` (2) | Fuera el título repetido |
+| `private/js/ver-resultados-oficiales.js` | El marcador en grande, como el modelo |
+| `test/e2e/refresco-vivo.spec.js` | Sin la selección manual que la volvía inestable |
+
+**Verificación:**
+
+```
+npm run check        -> 0
+npm test             -> 657/657
+npx playwright test  -> 220/220, CERO flaky   (con servidor limpio)
+
+refresco-vivo repetida 3 veces por proyecto -> 6/6
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **`reuseExistingServer` puede dejarte comprobando código viejo.** Sólo
+   muerde en cambios de `src/`, y no avisa de nada.
+2. ⛔ **«Flaky» no es verde.** Una prueba que pasa al reintentar es una prueba
+   que no dice nada, y el resumen la esconde.
+3. ⚠️ **Un acento grave dentro de una plantilla `html` la cierra**, comentario
+   incluido.
+4. ⚠️ **Antes de borrar una regla «huérfana», buscar quién más la usa.** La de
+   `.match-score` tenía un usuario vivo en otra pantalla.
+
+**Pendiente / siguiente paso:**
+
+- La colisión `.match-score` sigue a medias: «Resultados de trivias» aún apila.
+- Lo de siempre: marcador en vivo con partido real, aviso al teléfono, ciclo del
+  borrador.
+
+---
+
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 

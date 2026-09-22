@@ -68,9 +68,22 @@ test('⛔ con nada nuevo que contar, la pantalla NO se repinta', async ({ page }
    * `<option>` dentro de un `<select>` cerrado nunca es visible para
    * Playwright, asi que esa espera se agota siempre.
    */
-  await expect(page.locator('#jugadorSelect option')).toHaveCount(2, { timeout: 15000 });
-  await page.locator('#jugadorSelect').selectOption({ index: 1 });
-  await page.locator('#resultadosContainer .match-card').first().waitFor();
+  /*
+   * ⛔ YA NO SE SELECCIONA A MANO, Y ESO ERA LA INESTABILIDAD.
+   *
+   * Esta pantalla ahora se autoselecciona al entrar. La prueba seleccionaba
+   * ADEMAS por su cuenta, asi que habia dos pintados compitiendo: a veces el de
+   * la autoseleccion llegaba DESPUES de marcar el nodo testigo, lo borraba, y
+   * la prueba acusaba de repintar a un refresco que no habia hecho nada.
+   *
+   * Playwright lo daba por bueno al reintentar —salia «flaky»— que es la forma
+   * mas cara de no enterarse: verde en el resumen y una prueba que no dice nada.
+   */
+  await page.locator('#resultadosContainer .match-card').first().waitFor({ timeout: 15000 });
+  await expect(page.locator('#jugadorSelect')).toHaveValue(datos.username);
+
+  /* Y se deja que la red se calme antes de marcar: si no, se marca a medias. */
+  await page.waitForLoadState('networkidle').catch(() => {});
 
   /*
    * ⭐ Se marca el nodo que hay en pantalla. Si la pantalla se repinta, ese

@@ -124,6 +124,18 @@ function formatearFecha(fecha) {
     });
 }
 
+/*
+ * El escudo del equipo, si el proveedor lo dio.
+ *
+ * ⚠️ Sin `url` no se pinta NADA —ni un hueco ni un icono roto—: hay partidos
+ * cargados a mano que no tienen escudo, y un recuadro vacío en su sitio se ve
+ * peor que la ausencia.
+ */
+function logoHTML(url, nombre) {
+    if (!url) return '';
+    return html`<img src="${url}" class="team-logo" alt="${nombre || 'Equipo'}">`;
+}
+
 function formatearFechaPartido(apiDate) {
     if (!apiDate) return 'Fecha no disponible';
 
@@ -276,29 +288,47 @@ function mostrarResultados(jornada, resultadosData, oficialesData) {
              * respetando la marca de cada elemento.
              */
             card.innerHTML = html`
-                <div class="match-card-header">
-                    ${esComodin ? html`<span class="match-comodin-badge">⭐ COMODÍN</span>` : ''}
+                <!--
+                  ⭐ LA CABECERA, COMO EN LAS DEMÁS PANTALLAS.
+                  ==================================================================
 
-                    <div class="match-main">
-                        <div class="match-left">
-                            <div class="match-title ${esComodin ? 'match-title-comodin' : ''}">
-                                ${data.partido.equipo1} vs ${data.partido.equipo2}
-                            </div>
+                  Marco lo pidió mirando ésta: que el partido se vea igual que en
+                  llenar quiniela — escudos grandes a los lados y el marcador en
+                  medio. La tabla que se despliega al pulsar NO se toca.
 
-                            <div class="match-meta">
-                                <span>📅 ${formatearFechaPartido(data.partido.apiDate)}</span>
-                            </div>
-                        </div>
+                  Antes había una rejilla de tres columnas con el título
+                  «Zeledon vs Sporting FC» a la izquierda y una caja que apilaba
+                  «Zeledon / 1-2 / Sporting FC» en vertical. Los nombres salían
+                  DOS veces en la misma tarjeta y ninguna de las dos llevaba
+                  escudo.
 
-                        <div class="match-score">
-                            <span>${oficialEquipo1}</span>
-                            <strong>${oficialMarcador1} - ${oficialMarcador2}</strong>
-                            <span>${oficialEquipo2}</span>
-                        </div>
+                  ⚠️ Los escudos ya venían en los datos: la ruta de la jornada
+                  los trae y esta pantalla no los usaba. Aquí no hizo falta tocar
+                  el servidor — al revés que en «Puntos», donde sí se caían.
 
-                        <div class="match-status">
-                            ${partidoOficial ? estadoPartidoHTML(partidoOficial) : html`<span class="status-pill status-finished">Cerrado</span>`}
-                        </div>
+                  ⛔ Y OJO CON LOS ACENTOS GRAVES EN ESTE COMENTARIO: está dentro
+                  de una plantilla html de acentos graves, así que uno suelto la
+                  cierra y rompe el archivo entero. Pasó al escribir esto.
+                -->
+                <div class="match-meta">
+                    <span>📅 ${formatearFechaPartido(data.partido.apiDate)}</span>
+                    ${partidoOficial ? estadoPartidoHTML(partidoOficial) : html`<span class="status-pill status-finished">Cerrado</span>`}
+                    ${esComodin ? html`<span class="comodin-badge">⭐ COMODÍN</span>` : ''}
+                </div>
+
+                <div class="match-teams">
+                    <div class="team-side">
+                        ${logoHTML(data.partido.logoEquipo1, oficialEquipo1)}
+                        <span class="team-name">${oficialEquipo1}</span>
+                    </div>
+
+                    <span class="match-score">
+                        <strong class="match-score-cifras">${oficialMarcador1} - ${oficialMarcador2}</strong>
+                    </span>
+
+                    <div class="team-side">
+                        ${logoHTML(data.partido.logoEquipo2, oficialEquipo2)}
+                        <span class="team-name">${oficialEquipo2}</span>
                     </div>
                 </div>
 

@@ -74,8 +74,14 @@ function estadoPartidoHTML(partido) {
                         <strong class="${partido.comodin ? 'official-team-comodin' : ''}">${partido.equipo1}</strong>
                     </div>
 
+                    <!--
+                      ⚠️ Sin rótulo debajo, y es lo correcto: aquí NO hay
+                      pronóstico con el que confundirlo. En puntos y en ver
+                      resultados el número lleva «Tu pronóstico» porque comparte
+                      tarjeta con el oficial; aquí el único número es el oficial.
+                    -->
                     <span class="match-score">
-                        ${marcador(partido.marcador1)} - ${marcador(partido.marcador2)}
+                        <strong class="match-score-cifras">${marcador(partido.marcador1)} - ${marcador(partido.marcador2)}</strong>
                     </span>
 
                     <div class="team-side">

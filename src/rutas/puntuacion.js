@@ -224,6 +224,26 @@ module.exports = function rutasDePuntuacion(app, { requierePermiso, enQuiniela }
       return {
         equipo1: fila.equipo1,
         equipo2: fila.equipo2,
+
+        /*
+         * ⚠️ LOS ESCUDOS SE CAÍAN AQUÍ.
+         *
+         * `deJugador` los trae de la base —`logoEquipo1`, `logoEquipo2`— y esta
+         * lista de campos, escrita a mano, los dejaba fuera. Resultado: en
+         * «Ver resultados» y en «Puntos» los equipos salían sin escudo, mientras
+         * que en «Resultados oficiales» —que usa otra ruta— sí aparecían.
+         *
+         * ⛔ Y no daba ningún error: una lista blanca que olvida un campo
+         * simplemente no lo entrega. Es el mismo fallo que ya se coló una vez
+         * con `apiRound`, en otra ruta.
+         *
+         * Un escudo no es un dato reservado: se entrega llegue o no llegue el
+         * marcador, porque quién juega se ve igual.
+         */
+        logoEquipo1: fila.logoEquipo1 ?? null,
+        logoEquipo2: fila.logoEquipo2 ?? null,
+        comodin: Boolean(fila.comodin),
+
         marcador1: visible ? (fila.marcador1 ?? '') : '',
         marcador2: visible ? (fila.marcador2 ?? '') : '',
         oculto: !visible
