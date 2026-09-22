@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 14 de septiembre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 22 de septiembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -592,12 +592,12 @@ documento.
 | | |
 |---|---|
 | Último commit | `476e2e1` — Entrada 111: la misma tarjeta de partido en todas las pantallas |
-| Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Producción | ✅ **Al día en `476e2e1`**, comprobado con marca leída dos veces y `tiempoActivoSegundos: 47` |
-| Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos dos días no tocaron el esquema |
-| Pruebas | **657** rápidas + **220** de navegador, todas en verde y **cero flaky** |
+| Árbol | ⚠️ **NO está limpio.** La entrada 112 —el icono propio— está hecha y **sin commitear**: esperando a que Marco la pruebe en el teléfono |
+| Producción | ✅ **Al día en `476e2e1`**, comprobado con marca leída dos veces y `tiempoActivoSegundos: 47`. **Lo del icono todavía NO está puesto** |
+| Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
+| Pruebas | **657** rápidas + **220** de navegador en verde y cero flaky a fecha del commit 476e2e1. ⚠️ Lo del icono sólo tiene corridas **las rápidas de arquitectura (82/82)** y las mutaciones; falta el juego completo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos dos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110) y **la tarjeta unificada** (111) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111) y **el icono propio al instalar** (112, sin commitear) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -612,8 +612,12 @@ documento.
 
 ##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
-Ninguna prueba puede hacerlo: hace falta que se juegue un partido.
+Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
 
+0. **El icono al instalar (112).** Las pruebas comprueban que las rutas existen
+   y que las etiquetas están puestas, pero **ninguna mira una pantalla de
+   inicio**. Que el escudo salga de verdad sólo lo dice instalarlo en un
+   teléfono: en Android e iPhone por separado, porque iOS no lee el manifiesto.
 1. **El marcador en vivo** de la tarjeta de pronóstico. Está comprobado que el
    dato se pinta y que el refresco pide cuando debe, pero que el proveedor mande
    bien el minuto en un partido de verdad **no lo ha visto nadie**.
@@ -18766,6 +18770,169 @@ refresco-vivo repetida 3 veces por proyecto -> 6/6
 
 ---
 
+
+### 📌 Entrada 112 — 22 de septiembre de 2026 — El icono propio al instalar
+
+**Objetivo:** Marco: *«cuando hago eso, el logo sale como de google chrome»*. Al
+añadir la aplicación a la pantalla de inicio salía el dibujo genérico del
+navegador. Se le propusieron tres diseños, los rechazó los tres —*«no me gusta
+ninguno»*— y entregó el suyo: un escudo azul marino con corona dorada y balón.
+
+## Por qué salía el icono de Chrome
+
+El manifiesto **no tenía la clave `icons`**. Sin ella el navegador no tiene nada
+que poner y recurre al suyo. No es un fallo: nunca se había puesto un icono,
+porque hasta hoy no había ninguno.
+
+## Los cinco tamaños, y el porqué de cada uno
+
+| Archivo | Para qué |
+|---|---|
+| `icono-512.png` | El grande de Android y la pantalla de arranque. **Es además el maestro**: de él salen los demás |
+| `icono-maskable-512.png` | El mismo, encogido. Android **recorta** el icono a un círculo |
+| `icono-192.png` | El de la pantalla de inicio, y el del aviso en `sw.js` |
+| `icono-180.png` | El de iOS (`apple-touch-icon`) |
+| `icono-32.png` | La pestaña del navegador |
+
+## ⭐ EL `maskable` NO SE ENCOGIÓ A OJO
+
+Android recorta el icono a un círculo —o a la forma que use el fabricante—, así
+que lo que caiga fuera se pierde. El dibujo llegaba al **6,5% del borde por
+arriba**: la corona se habría ido cortada.
+
+En vez de tantear, se recorrió el dibujo píxel a píxel buscando el más lejano
+del centro: la punta izquierda del escudo, a 575,7 px de un semiancho de 626,5,
+o sea al **91,9% del borde**. Como el círculo de seguridad llega al 40% del
+lado, el encogido máximo es `0,4 / 0,919 = 0,871`.
+
+Con 0,87 el escudo ocupa el **72% del alto**: entra entero y sigue grande. Y al
+ser una fracción vale para cualquier tamaño de origen.
+
+## ⛔ TRES SONDAS QUE MINTIERON, Y LA QUE LAS CAZÓ
+
+1. **PowerShell no distingue mayúsculas.** Dentro de la función llamé
+   `$destino` al mapa de bits, y el parámetro con la carpeta se llama
+   `$Destino`: **son la misma variable**. La imagen pisó la ruta y se intentaba
+   guardar en `System.Drawing.Bitmap\icono-1024.png`.
+
+   GDI+ sólo decía «**A generic error occurred in GDI+**». Se destapó al añadir
+   un `catch` que imprimiera **la ruta**; sin eso podía haber estado media hora
+   buscando en los permisos.
+
+2. **GDI+ exige rutas absolutas.** Las relativas no las resuelve contra el
+   directorio de PowerShell sino contra el del proceso. Y tampoco dice «no
+   encuentro la carpeta»: suelta el mismo «generic error».
+
+3. **La cuenta de colores dio «exactamente 256».** Con 262.144 píxeles, esa
+   cifra redonda era demasiada casualidad: PowerShell truncaba
+   `$byte -shl 16` al propio byte, así que sólo sobrevivía el último canal.
+
+   ⭐ **Lo cazó un caso de CONTROL**: una imagen fabricada con 7 colores que yo
+   conocía. La sonda arreglada dio 7 en el control y **31.395** en el icono.
+
+## Las decisiones de peso, medidas antes de tomarlas
+
+Los PNG salen gordos (el de 512, 381 KB) porque GDI+ comprime mal. Se midieron
+las salidas antes de decidir:
+
+| Opción | Peso del 512 | Veredicto |
+|---|---|---|
+| PNG 32 bits (lo que hay) | 381 KB | ✅ se queda |
+| PNG 24 bits, sin alfa | 350 KB | ❌ un 8% a cambio de que Play, que pide 32 bits, proteste |
+| Paleta de 256 colores | mucho menos | ❌ **el dibujo tiene 31.395 colores**: son degradados, y saldría bandeado |
+| JPEG calidad 92 | 52 KB | ❌ rompe lo que esperan Play y el `apple-touch-icon` |
+
+⚠️ **Se hizo un maestro de 1024 y se tiró.** Pesaba 1.431 KB —más que el
+original de Marco— y Play no acepta iconos de más de 1 MB, así que no habría
+servido ni para la tienda. El de 512 hace de maestro **y** es justo el tamaño
+que pide la ficha de Play: así el dibujo no queda de peso muerto.
+
+## ⚠️ iOS IGNORA EL MANIFIESTO PARA ESTO
+
+Necesita su propia etiqueta `apple-touch-icon` en el HTML. Con sólo el
+manifiesto, en Android sale bien y **en iPhone sigue saliendo el genérico**.
+
+Y va en **las 39 pantallas**, no sólo en la portada, porque «añadir a pantalla
+de inicio» se hace desde donde estés. Las cabeceras no son uniformes —27 con
+ruta absoluta, 9 relativa y dos minificadas en una sola línea—, así que se
+insertó anclando en el primer `<link rel="stylesheet">`, que es lo único que
+tienen las 39 en común. El diff salió de **2+/0- en 37 y 1+/1- en las dos
+minificadas**: ni una línea de ruido por finales de línea.
+
+## El aviso del teléfono ya lleva escudo
+
+`sw.js` tenía escrito desde hace tiempo: *«El día que haya un PNG de 192
+píxeles, se añaden aquí»*. Ya lo hay.
+
+⚠️ **Sigue sin `badge`, a propósito.** El `badge` es el dibujo diminuto de la
+barra de estado y Android lo pinta como **silueta**: coge la transparencia y
+tira el color. Un escudo a todo color acaba ahí como una mancha blanca. Haría
+falta un dibujo aparte, de una sola forma sobre fondo transparente.
+
+## Los centinelas
+
+Un icono mal enlazado **falla en silencio**: sale el dibujo del navegador y
+nadie se entera hasta que alguien instala la aplicación desde un teléfono. Por
+eso se vigila desde las pruebas rápidas y no a ojo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/iconos/*.png` | **Nuevos.** Los cinco tamaños |
+| `scripts/generar-iconos.ps1` | **Nuevo.** Rehace los iconos si cambia el dibujo |
+| `public/manifest.webmanifest` | La clave `icons`, con el `any` y el `maskable` |
+| `public/*.html` (39) | `rel="icon"` y `rel="apple-touch-icon"` |
+| `public/sw.js` | El escudo en la notificación |
+| `test/architecture.test.js` | Tres centinelas: rutas existentes, `maskable` presente, iOS en las 39 |
+
+**Verificación:**
+
+```
+npm run check            -> 0
+npm run test:arquitectura -> 82/82
+
+mutaciones sobre los centinelas nuevos -> las 5 MUERDEN
+  borrar el maskable del disco                 -> roja
+  quitar `purpose: maskable` del manifiesto    -> roja
+  quitar el icono de la notificación en sw.js  -> roja
+  quitar apple-touch-icon de una pantalla      -> roja
+  apuntar el manifiesto a un archivo ausente   -> roja
+  CONTROL sin mutar nada                       -> verde
+```
+
+⚠️ **Falta el juego completo de pruebas** (rápidas y de navegador). Queda a la
+espera de que Marco lo pruebe, según lo acordado: primero lo mira él, y sólo
+entonces se manda todo.
+
+**Hallazgos nuevos:**
+
+1. ⛔ **PowerShell no distingue mayúsculas en los nombres de variable.**
+   `$destino` y `$Destino` son la misma. Dentro de una función, una local puede
+   pisar un parámetro del guion sin avisar.
+2. ⛔ **GDI+ contesta «A generic error occurred» a casi todo**: ruta relativa,
+   carpeta ausente, ruta absurda. Sin imprimir **qué ruta** se intentó, el
+   mensaje no vale nada.
+3. ⛔ **Una cifra redonda sospechosa es una sonda rota**, no una casualidad.
+   «Exactamente 256 colores» entre 262.144 píxeles era un desplazamiento
+   truncado a un byte. **El caso de control lo cazó en un segundo.**
+4. ⚠️ **El `badge` de Android es una silueta, no un icono**: tira el color.
+5. ⚠️ **Un icono mal enlazado no da ningún error**: sale el genérico del
+   navegador y sólo se ve desde un teléfono.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Que Marco lo instale en el teléfono y vea el escudo.** Es lo único que
+  comprueba esto de verdad; ninguna prueba automática mira una pantalla de
+  inicio.
+- Después, el juego completo de pruebas y el commit.
+- ⚠️ **El manifiesto sigue enlazado sólo desde `index.html`.** Quien añada a la
+  pantalla de inicio desde otra página se lleva el icono bien, pero un marcador
+  en vez de una aplicación en modo `standalone`. No se tocó porque no era lo
+  pedido; queda anotado.
+- Un `badge` monocromo para los avisos, si algún día se quiere.
+
+---
 
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS

@@ -1375,11 +1375,11 @@ test('la migración es simulación por defecto y separa origen de destino', () =
   assert.match(migrator, /No se escribió ningún documento/);
 });
 
-test('todas las referencias locales JS y CSS de HTML existen', () => {
+test('todas las referencias locales JS, CSS e imágenes de HTML existen', () => {
   const pages = fs.readdirSync(path.join(root, 'public')).filter(file => file.endsWith('.html'));
   for (const page of pages) {
     const html = fs.readFileSync(path.join(root, 'public', page), 'utf8');
-    for (const match of html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css))["']/g)) {
+    for (const match of html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css|png|svg|ico|webmanifest))["']/g)) {
       const url = match[1];
       if (/^https?:/.test(url)) continue;
       const relative = url.replace(/^\//, '');
@@ -1389,6 +1389,59 @@ test('todas las referencias locales JS y CSS de HTML existen', () => {
       assert.ok(fs.existsSync(file), `${page} referencia un archivo ausente: ${url}`);
     }
   }
+});
+
+test('el manifiesto y el service worker apuntan a iconos que existen', () => {
+  /*
+   * Los iconos son de las poquísimas cosas que fallan EN SILENCIO y sólo se ven
+   * desde un teléfono: si la ruta está mal, la pantalla de inicio enseña el
+   * dibujo genérico del navegador y nadie se entera hasta que alguien instala
+   * la aplicación. Por eso van comprobados aquí y no a ojo.
+   */
+  const manifiesto = JSON.parse(fs.readFileSync(path.join(root, 'public', 'manifest.webmanifest'), 'utf8'));
+
+  assert.ok(Array.isArray(manifiesto.icons) && manifiesto.icons.length > 0,
+    'el manifiesto se quedó sin iconos: al instalar saldría el dibujo del navegador');
+
+  for (const icono of manifiesto.icons) {
+    const archivo = path.join(root, 'public', icono.src.replace(/^\//, ''));
+    assert.ok(fs.existsSync(archivo), `el manifiesto apunta a un icono ausente: ${icono.src}`);
+  }
+
+  /*
+   * Android RECORTA el icono a un círculo o a la forma que use el fabricante.
+   * Sin una entrada `maskable` se queda el `any`, y le come los bordes al
+   * escudo. Se genera aparte, encogido: ver `scripts/generar-iconos.ps1`.
+   */
+  assert.ok(manifiesto.icons.some(i => String(i.purpose).includes('maskable')),
+    'falta el icono `maskable`: Android recortaría el escudo por los bordes');
+
+  assert.ok(manifiesto.icons.some(i => i.sizes === '512x512' && String(i.purpose).includes('any')),
+    'falta el `any` de 512, que es el que usa la pantalla de arranque de Android');
+
+  /* El del aviso: si esta ruta se rompe, la notificación sale con un hueco. */
+  const worker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  const enAviso = worker.match(/icon:\s*'([^']+)'/);
+  assert.ok(enAviso, 'sw.js dejó de poner icono en la notificación');
+  assert.ok(fs.existsSync(path.join(root, 'public', enAviso[1].replace(/^\//, ''))),
+    `sw.js apunta a un icono ausente: ${enAviso[1]}`);
+});
+
+test('todas las pantallas llevan el icono de iOS, que no lee el manifiesto', () => {
+  /*
+   * ⚠️ iOS IGNORA el manifiesto para esto. Sin su propia etiqueta
+   * `apple-touch-icon` en el HTML, «añadir a pantalla de inicio» guarda una
+   * miniatura de la propia página, borrosa y distinta cada vez.
+   *
+   * Y va en LAS 39, no sólo en la portada, porque se puede añadir a la
+   * pantalla de inicio desde cualquier página en la que estés.
+   */
+  const sinIcono = fs.readdirSync(path.join(root, 'public'))
+    .filter(archivo => archivo.endsWith('.html'))
+    .filter(archivo => !fs.readFileSync(path.join(root, 'public', archivo), 'utf8').includes('apple-touch-icon'));
+
+  assert.deepEqual(sinIcono, [],
+    `estas pantallas no llevan apple-touch-icon: ${sinIcono.join(', ')}`);
 });
 
 test('el proveedor externo tiene un plazo máximo de espera', () => {

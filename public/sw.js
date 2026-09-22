@@ -43,10 +43,17 @@ self.addEventListener('push', evento => {
     self.registration.showNotification(datos.titulo, {
       body: datos.cuerpo,
       /*
-       * ⚠️ SIN `icon` ni `badge`: el proyecto no tiene ningún icono, y apuntar
-       * a un archivo que no existe deja la notificación con un hueco en vez de
-       * con el dibujo por defecto del navegador. El día que haya un PNG de 192
-       * píxeles, se añaden aquí y se ven bastante mejor.
+       * El escudo de la quiniela, que ya existe. Antes no se ponía ninguno
+       * porque apuntar a un archivo ausente deja la notificación con un hueco
+       * en vez de con el dibujo por defecto del navegador.
+       */
+      icon: '/iconos/icono-192.png',
+      /*
+       * ⚠️ SIGUE SIN `badge`, y es a propósito. El `badge` es el dibujo
+       * diminuto de la barra de estado, y Android lo pinta como SILUETA: coge
+       * la transparencia y tira el color. Un escudo a todo color acaba ahí
+       * como una mancha blanca cuadrada. Hace falta un dibujo aparte, de una
+       * sola forma sobre fondo transparente, y ese no lo tenemos.
        */
       /*
        * Une los avisos del mismo partido: si por lo que sea llegaran dos, el
