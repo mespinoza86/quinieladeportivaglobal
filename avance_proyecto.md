@@ -22,8 +22,8 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 615/615
-npm run test:e2e            # 142/142, ~6 min
+npm test                    # 659/659
+npm run test:e2e            # 220/220, ~11 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **657**, ~110 s |
+| Pruebas rápidas | **659**, ~75 s |
 | Pruebas de navegador | **220**, ~15 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -61,7 +61,7 @@ entradas de bitácora (040 a 052).
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
-| Producción | ✅ Al día en `476e2e1` (22 de septiembre). En uso, con cuentas y quinielas de verdad |
+| Producción | ✅ Al día en `cfdd7bd` (22 de septiembre, comprobado sirviendo el menú nuevo). En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -591,11 +591,11 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `41b93bd` — Entrada 113: el menú y la barra, de lo más usado a lo menos |
-| Árbol | ✅ Limpio |
-| Producción | ⚠️ **En `476e2e1`. Las entradas 112 y 113 están commiteadas pero NO empujadas**: esperando a que Marco diga para subirlas |
+| Último commit | `cfdd7bd` — cierra la entrada 113 con el resultado de las pruebas |
+| Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
+| Producción | ✅ **Al día en `cfdd7bd`.** Empujado a las 17:01, Render arrancó a las 17:03. Comprobado con un control («manifest.webmanifest», que existe en todas las versiones) más tres marcas que sólo existen en las nuevas: el icono, `<span>General</span>` presente y `<span>Jornadas</span>` ausente. El menú que sirve viene en el orden nuevo |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky** (corridas sobre `41b93bd`, con servidor limpio) |
+| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky**. Corridas sobre el código de `41b93bd`, que es el último que toca código; `cfdd7bd` sólo cambia la bitácora |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112) y **el menú y la barra reordenados** (113) |
 
@@ -622,10 +622,14 @@ documento.
 
 Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
 
-0. **El icono al instalar (112).** Las pruebas comprueban que las rutas existen
-   y que las etiquetas están puestas, pero **ninguna mira una pantalla de
-   inicio**. Que el escudo salga de verdad sólo lo dice instalarlo en un
-   teléfono: en Android e iPhone por separado, porque iOS no lee el manifiesto.
+0. ~~**El icono al instalar (112).**~~ ✅ **COMPROBADO EN UN TELÉFONO** el 22 de
+   septiembre. Marco lo instaló: *«la instalé y todo bien, pero ya no es un link
+   de chrome, parece una app independiente»*. Salió el escudo **y** además dejó
+   de ser un marcador.
+
+   ⚠️ **Falta el iPhone.** Lo comprobado fue Android; iOS va por otro camino
+   —ignora el manifiesto y usa la etiqueta `apple-touch-icon`— así que no se
+   puede dar por visto.
 1. **El marcador en vivo** de la tarjeta de pronóstico. Está comprobado que el
    dato se pinta y que el refresco pide cuando debe, pero que el proveedor mande
    bien el minuto en un partido de verdad **no lo ha visto nadie**.
@@ -726,7 +730,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las catorce migraciones corridas**, **615 + 142** pruebas en
+funcionando, **las quince migraciones corridas**, **659 + 220** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1133,11 +1137,11 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 615 pruebas rápidas, ~120 s
+npm test                   # las 659 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 142 de navegador (~6 min, escritorio y móvil)
+npm run test:e2e           # las 220 de navegador (~11 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1695,7 +1699,7 @@ otros dos son las Fases 6 y 5.
 borró el 22 al cerrar la tajada 7.7 (Entrada 052).
 
 **Directorios:** `src/` (la aplicación), `db/` (el esquema SQL **y las
-migraciones**), `public/` (35 pantallas), `private/` (CSS y JS servidos),
+migraciones**), `public/` (39 pantallas y los iconos), `private/` (CSS y JS servidos),
 `test/`, `scripts/`, `legacy-data/`, `.github/workflows/`.
 
 ### 2.2 `src/` — la aplicación
@@ -1813,8 +1817,9 @@ consulta está en «Lo siguiente».
 | Archivo | Líneas | Rol |
 |---|---:|---|
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
+| `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 615 pruebas rápidas y 142 de navegador
+### 2.5 `test/` — 659 pruebas rápidas y 220 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -1859,9 +1864,16 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `portada.spec.js` | 83 | La tarjeta nueva y que ninguna se estire |
 | `csp.spec.js` | 76 | Recorre las pantallas buscando violaciones de CSP. Hace falta porque una violación **no da error visible**: el botón carga, se pulsa y no pasa nada |
 
-### 2.6 `public/` — 38 pantallas HTML
+### 2.6 `public/` — 39 pantallas HTML
 
 Servidas con `express.static`.
+
+⚠️ **Aquí viven también los iconos de la aplicación**, en `public/iconos/`:
+`icono-512.png` (el maestro, y el tamaño que pide Google Play), `icono-192.png`,
+`icono-180.png` (iOS), `icono-32.png` (la pestaña) y `icono-maskable-512.png`,
+que va encogido al 87% porque Android recorta el icono a un círculo. Los enlaza
+`manifest.webmanifest`, y además **las 39 pantallas llevan su propia etiqueta
+`apple-touch-icon`**, porque iOS ignora el manifiesto para esto (112).
 
 **Públicas / de cuenta:** `login.html`, `registro.html`, `quinielas.html`,
 `index.html`, `reglamento_quiniela.html`, `verificar-correo.html`,
@@ -1895,7 +1907,7 @@ lista. No cubre las que usen otras rutas.
 ⛔ **`importar_partidos.html` ya no existe:** su buscador se integró en
 `jornadas.html` en la Fase D, y los partidos salen sólo del API.
 
-### 2.7 `private/js/` — 48 scripts
+### 2.7 `private/js/` — 55 scripts
 
 Servidos por `GET /js/:filename`. Es un pseudo-ocultamiento: el navegador los
 descarga igual. **No hay ningún secreto ahí, pero tampoco protección real** — la
@@ -18961,9 +18973,9 @@ icono bonito. Es la misma línea que ya se metió en las 39 páginas para iOS.
 
 **Pendiente / siguiente paso:**
 
-- ⚠️ **Que Marco lo instale en el teléfono y vea el escudo.** Es lo único que
-  comprueba esto de verdad; ninguna prueba automática mira una pantalla de
-  inicio.
+- ✅ **HECHO el mismo día: Marco lo instaló y salió el escudo.** Y de paso
+  apareció lo de arriba, que no estaba previsto: dejó de ser un marcador.
+  ⚠️ Falta verlo en un iPhone, que va por la etiqueta y no por el manifiesto.
 
   ⛔ **Y HAY QUE DESINSTALAR ANTES.** El icono se copia **al instalar**: una
   aplicación que ya esté en la pantalla de inicio se queda con el dibujo de
