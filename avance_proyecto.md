@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 659/659
+npm test                    # 660/660
 npm run test:e2e            # 220/220, ~11 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **659**, ~75 s |
+| Pruebas rápidas | **660**, ~75 s |
 | Pruebas de navegador | **220**, ~15 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -61,7 +61,7 @@ entradas de bitácora (040 a 052).
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
-| Producción | ✅ Al día en `cfdd7bd` (22 de septiembre, comprobado sirviendo el menú nuevo). En uso, con cuentas y quinielas de verdad |
+| Producción | ⚠️ **Corriendo el código de `41b93bd`**, comprobado el 2 de octubre. **Lo de las ligas con su país (`39b9474`) está commiteado y SIN EMPUJAR.** En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -591,11 +591,11 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `4c8a8a4` — pone al día las cifras de este mismo resumen. **El último que toca código es `41b93bd`** |
+| Último commit | `39b9474` — Entrada 114: qué liga elegiste, y de dónde es |
 | Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Producción | ✅ **Al día**, y **comprobada otra vez el 2 de octubre**: sigue sirviendo el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente y el menú en el orden nuevo (con el control de «manifest.webmanifest», que existe en todas las versiones). ⭐ **Lleva 859.502 s —casi diez días— sin reiniciarse**: ni se cayó ni se quedó sin memoria en todo ese tiempo |
+| Producción | ⚠️ **Corre el código de `41b93bd`: lo de las ligas con su país (`39b9474`) está commiteado y SIN EMPUJAR.** Comprobada el 2 de octubre —sirve el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente, el menú en el orden nuevo— con el control de «manifest.webmanifest», que existe en todas las versiones. ⭐ **Llevaba 859.502 s —casi diez días— sin reiniciarse**: ni se cayó ni se quedó sin memoria |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky**. Corridas sobre el código de `41b93bd`, que es el último que toca código; `cfdd7bd` sólo cambia la bitácora |
+| Pruebas | **660** rápidas + **220** de navegador, todas en verde y **cero flaky**, corridas sobre `39b9474` |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112) y **el menú y la barra reordenados** (113) |
 
@@ -756,7 +756,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **659 + 220** pruebas en
+funcionando, **las quince migraciones corridas**, **660 + 220** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1163,7 +1163,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 659 pruebas rápidas, ~75 s
+npm test                   # las 660 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -1845,7 +1845,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 659 pruebas rápidas y 220 de navegador
+### 2.5 `test/` — 660 pruebas rápidas y 220 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
