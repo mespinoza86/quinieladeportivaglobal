@@ -420,19 +420,27 @@ test('las favoritas sin id o sin nombre se descartan', () => {
    * tiene de dónde sacar su rótulo: los nombres llegan con los partidos.
    */
   assert.deepEqual(ligas.normalizarFavoritas([
-    { id: '7', nombre: 'Vale' },
+    { id: '7', nombre: 'Vale', pais: 'Inglaterra' },
     { id: '', nombre: 'Sin id' },
     { id: '8', nombre: '   ' },
     null,
     'basura'
-  ]), [{ id: '7', nombre: 'Vale' }]);
+  ]), [{ id: '7', nombre: 'Vale', pais: 'Inglaterra' }]);
+
+  /*
+   * ⚠️ El país es opcional y sale como cadena vacía, NO se descarta la liga.
+   * Las competiciones internacionales llegan sin país del proveedor, y exigirlo
+   * las dejaría fuera de las favoritas.
+   */
+  assert.deepEqual(ligas.normalizarFavoritas([{ id: '9', nombre: 'Champions' }]),
+    [{ id: '9', nombre: 'Champions', pais: '' }]);
 });
 
 test('las favoritas repetidas se quedan en una, y hay un tope', () => {
   assert.deepEqual(ligas.normalizarFavoritas([
-    { id: '7', nombre: 'Primera' },
-    { id: '7', nombre: 'Primera otra vez' }
-  ]), [{ id: '7', nombre: 'Primera' }]);
+    { id: '7', nombre: 'Primera', pais: 'Costa Rica' },
+    { id: '7', nombre: 'Primera otra vez', pais: 'México' }
+  ]), [{ id: '7', nombre: 'Primera', pais: 'Costa Rica' }]);
 
   const muchas = Array.from({ length: ligas.MAXIMO_FAVORITAS + 5 },
     (_, i) => ({ id: String(i), nombre: 'Liga ' + i }));

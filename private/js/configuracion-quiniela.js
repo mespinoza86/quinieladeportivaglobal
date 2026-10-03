@@ -77,7 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const fila = document.createElement('li');
 
       const nombre = document.createElement('span');
-      nombre.textContent = liga.nombre;
+      /* Con su país: el nombre solo no distingue dos ligas homónimas, y una
+         ficha repetida parece un fallo de la pantalla. */
+      nombre.textContent = window.ligaConPais(liga.nombre, liga.pais);
       fila.appendChild(nombre);
 
       const quitar = document.createElement('button');
@@ -121,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       /* Las que ya están marcadas no se ofrecen: marcarlas dos veces no existe. */
       excluir: () => new Set(elegidas.map(liga => String(liga.id))),
 
-      alElegir: liga => {
+      alElegir: (liga, pais) => {
         entrada.value = '';
 
         if (!liga.id) {
@@ -135,7 +137,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
 
-        elegidas.push({ id: String(liga.id), nombre: liga.nombre });
+        /* El país viaja con ella: sin él, dos «Liga Premier» de países
+           distintos quedan como dos fichas idénticas. */
+        elegidas.push({ id: String(liga.id), nombre: liga.nombre, pais: pais || '' });
         pintarElegidas();
         mensajeFavoritas.textContent = 'Sin guardar todavía.';
       }
@@ -147,7 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const datos = await ligasDisponibles();
       elegidas = (datos.favoritas || [])
         .filter(liga => liga.id)
-        .map(liga => ({ id: String(liga.id), nombre: liga.nombre }));
+        .map(liga => ({ id: String(liga.id), nombre: liga.nombre, pais: liga.pais || '' }));
       pintarElegidas();
     } catch (error) {
       /*

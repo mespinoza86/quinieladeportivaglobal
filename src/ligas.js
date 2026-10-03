@@ -241,7 +241,19 @@ function normalizarFavoritas(valor) {
     if (!id || !nombre || vistas.has(id)) continue;
 
     vistas.add(id);
-    limpias.push({ id, nombre });
+
+    /*
+     * ⚠️ EL PAÍS SE GUARDA CON LA FAVORITA, y antes se tiraba aquí.
+     *
+     * `aplicarFavoritas` le vuelve a pegar el país cuando la liga aparece entre
+     * los partidos de la semana, así que parecía que no hacía falta guardarlo.
+     * Pero una favorita SIN partidos esta semana sale con `pais: null` —y ésas
+     * son justo las que se pintan en gris y cuesta más reconocer—. Guardado, se
+     * sabe siempre de cuál se trata.
+     *
+     * Vacío es válido: las competiciones internacionales no tienen país.
+     */
+    limpias.push({ id, nombre, pais: String(cruda.pais ?? '').trim() });
     if (limpias.length >= MAXIMO_FAVORITAS) break;
   }
 
@@ -296,7 +308,17 @@ function aplicarFavoritas(agrupado, favoritas = []) {
   for (const favorita of buscadas) {
     const hallada = halladas.get(favorita.id);
     if (hallada) conPartidos.push(hallada);
-    else sinPartidos.push({ id: favorita.id, nombre: favorita.nombre, partidos: 0, pais: null });
+    /*
+     * ⚠️ El país que se GUARDÓ, no `null`. Ésta es la favorita que no juega
+     * esta semana, así que el proveedor no la ha nombrado y no hay de dónde
+     * sacarlo. Antes salía sin país, que son justo las que cuesta reconocer:
+     * se pintan en gris y sólo queda el nombre, que puede repetirse entre
+     * países. Si se marcó antes de guardar el país, viene vacío y se pinta sin
+     * él, como siempre.
+     */
+    else sinPartidos.push({
+      id: favorita.id, nombre: favorita.nombre, partidos: 0, pais: favorita.pais || null
+    });
   }
 
   const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, 'es');

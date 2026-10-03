@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const combo = document.getElementById('comboLiga');
   const listaCombo = document.getElementById('comboLigaLista');
   const filtroResumen = document.getElementById('filtroResumen');
+  const paisElegido = document.getElementById('ligaPaisElegido');
   const precios = document.getElementById('ligaPrecios');
   const selector = document.getElementById('selectorLiga');
   const abrirSelector = document.getElementById('abrirSelector');
@@ -109,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const p = configuracion.precioPorDefecto;
-    resumen.textContent = `De ${configuracion.ligaNombre || 'una liga'}`
+    resumen.textContent = `De ${window.ligaConPais(configuracion.ligaNombre, configuracion.ligaPais) || 'una liga'}`
       + (p ? `. Cada jornada nace en ${dinero(p.precio)}, de los que ${dinero(p.alAcumulado)} van al acumulado.` : '.');
   }
 
@@ -165,14 +166,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     },
 
-    alElegir: async liga => {
+    alElegir: async (liga, pais) => {
+      /*
+       * ⚠️ En la caja va SÓLO el nombre. El país se pinta debajo: ver el
+       * comentario de `ligaPaisElegido` en el HTML — meterlo aquí rompería el
+       * filtro la próxima vez que se pulse la caja.
+       */
       combo.value = liga.nombre;
-      await seleccionar(liga);
+      mostrarPais(pais);
+      await seleccionar(liga, pais);
     }
   });
 
+  /** El país de lo que acabas de elegir, debajo de la caja. */
+  function mostrarPais(pais) {
+    if (!paisElegido) return;
+    paisElegido.textContent = pais ? `Es la de ${pais}.` : '';
+    paisElegido.hidden = !pais;
+  }
 
-  async function seleccionar(liga) {
+
+  async function seleccionar(liga, pais) {
     mensaje.textContent = '';
 
     /*
@@ -190,7 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tipo: 'liga', ligaId: liga.id, ligaNombre: liga.nombre, precioPorDefecto
+          tipo: 'liga', ligaId: liga.id, ligaNombre: liga.nombre, ligaPais: pais || '',
+          precioPorDefecto
         })
       });
 
@@ -202,11 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
        */
       configuracion = {
         ...configuracion,
-        tipo: 'liga', ligaId: liga.id, ligaNombre: liga.nombre, precioPorDefecto
+        tipo: 'liga', ligaId: liga.id, ligaNombre: liga.nombre, ligaPais: pais || '',
+        precioPorDefecto
       };
       ocultarSelector();
       pintarResumen();
-      mensaje.textContent = `Listo: cada semana se te propondrá la jornada de ${liga.nombre}.`;
+      mensaje.textContent = `Listo: cada semana se te propondrá la jornada de ${window.ligaConPais(liga.nombre, pais)}.`;
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
       else mensaje.textContent = error.message;

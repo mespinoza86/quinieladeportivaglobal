@@ -50,7 +50,7 @@ test('crear una jornada: los partidos salen del API y no se piden a mano', async
   // Se busca en el API y se elige de la lista.
   /* Tres paises desde que el proveedor falso trae tambien Inglaterra. */
   await expect(page.locator('#torneoSelect optgroup')).toHaveCount(3, { timeout: 10_000 });
-  await page.locator('#torneoSelect').selectOption({ label: 'Primera Division (1)' });
+  await page.locator('#torneoSelect').selectOption({ label: 'Primera Division · Costa Rica (1)' });
   await page.locator('#buscarPartidosButton').click();
 
   await expect(page.locator('#partidosApiContainer .match-card')).toHaveCount(1, { timeout: 10_000 });

@@ -68,7 +68,14 @@ test('una liga favorita sale de primera al armar la jornada, y no se repite abaj
    */
   expect(grupos).toEqual(['⭐ Favoritas', 'Costa Rica', 'Inglaterra']);
 
-  await expect(torneo.locator('optgroup[label="⭐ Favoritas"] option')).toHaveText([/Liga MX \(2\)/]);
+  /*
+   * ⛔ CON SU PAÍS, y aquí hace MÁS falta que en las demás: las favoritas se
+   * sacan de su `optgroup` de país a propósito, para que salgan arriba. O sea
+   * que son justamente las que se quedan sin ninguna pista de dónde son si el
+   * país no va en la propia opción (114).
+   */
+  await expect(torneo.locator('optgroup[label="⭐ Favoritas"] option'))
+    .toHaveText([/Liga MX · México \(2\)/]);
 
   // Y no se repite en su país: verla dos veces confunde más de lo que ayuda.
   const textos = await torneo.locator('option').allTextContents();
@@ -83,7 +90,7 @@ test('una favorita se puede elegir y busca sólo sus partidos', async ({ page })
   await page.goto('/jornadas.html');
   await expect(page.locator('#torneoSelect optgroup')).toHaveCount(3, { timeout: 10_000 });
 
-  await page.locator('#torneoSelect').selectOption({ label: 'Liga MX (2)' });
+  await page.locator('#torneoSelect').selectOption({ label: 'Liga MX · México (2)' });
   await page.locator('#buscarPartidosButton').click();
 
   await expect(page.locator('#estadoBusqueda')).toContainText('2 partidos', { timeout: 10_000 });

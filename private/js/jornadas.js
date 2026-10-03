@@ -269,10 +269,19 @@ document.addEventListener('DOMContentLoaded', () => {
                      * pensar que la configuración se perdió, y dejarla elegible
                      * daría una búsqueda vacía sin explicar por qué.
                      */
+                    /*
+                     * ⛔ CON SU PAÍS. Las favoritas no cuelgan de ningún
+                     * `optgroup` de país —se sacaron a propósito, para que
+                     * salgan arriba—, así que sin esto el nombre va solo: hay
+                     * una «Liga Premier» en Inglaterra y otras homónimas en más
+                     * países, y no había forma de distinguirlas.
+                     */
+                    const conPais = window.ligaConPais(liga.nombre, liga.pais);
+
                     if (liga.partidos) {
-                        opcion.textContent = liga.nombre + ' (' + liga.partidos + ')';
+                        opcion.textContent = conPais + ' (' + liga.partidos + ')';
                     } else {
-                        opcion.textContent = liga.nombre + ' — sin partidos esta semana';
+                        opcion.textContent = conPais + ' — sin partidos esta semana';
                         opcion.disabled = true;
                     }
 
@@ -293,7 +302,19 @@ document.addEventListener('DOMContentLoaded', () => {
                      * El número de partidos no es adorno: dice de un vistazo si
                      * vale la pena entrar en esa liga esta semana.
                      */
-                    opcion.textContent = liga.nombre + ' (' + liga.partidos + ')';
+                    /*
+                     * ⛔ EL PAÍS SE REPITE AQUÍ AUNQUE YA ESTÉ EN EL `optgroup`,
+                     * y no es descuido.
+                     *
+                     * El rótulo del grupo sólo se ve con la lista ABIERTA. Al
+                     * cerrarse, un `<select>` enseña únicamente el texto de la
+                     * opción elegida — y ahí volvía a quedar «Liga Premier» a
+                     * secas, que es justo la confusión que se venía a quitar.
+                     * Repetirlo mientras está abierto es el precio de que se
+                     * entienda cuando está cerrado, que es el 99% del tiempo.
+                     */
+                    opcion.textContent = window.ligaConPais(liga.nombre, grupo.pais)
+                        + ' (' + liga.partidos + ')';
                     optgroup.appendChild(opcion);
                 });
 

@@ -1688,11 +1688,18 @@ test('guardar favoritas no se lleva por delante la puntuación', async () => {
   const jefe = await admin('jefe');
   const antes = (await jefe.agente.get('/api/quiniela-actual')).body.configuracion;
 
-  await marcarFavoritas(jefe, [{ id: '7', nombre: 'Primera División' }]);
+  await marcarFavoritas(jefe, [{ id: '7', nombre: 'Primera División', pais: 'Costa Rica' }]);
 
   const despues = (await jefe.agente.get('/api/quiniela-actual')).body.configuracion;
   assert.deepEqual(despues.puntuacion, antes.puntuacion);
-  assert.deepEqual(despues.ligasFavoritas, [{ id: '7', nombre: 'Primera División' }]);
+
+  /*
+   * ⚠️ El país se guarda CON la favorita. Sin él, una favorita que esta semana
+   * no juega sale sólo con su nombre —y hay ligas homónimas en varios países—,
+   * que es justo la confusión que se vino a quitar.
+   */
+  assert.deepEqual(despues.ligasFavoritas,
+    [{ id: '7', nombre: 'Primera División', pais: 'Costa Rica' }]);
 });
 
 test('mandar una lista vacía quita todas las favoritas', async () => {

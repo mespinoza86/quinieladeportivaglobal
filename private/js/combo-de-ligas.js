@@ -83,6 +83,9 @@
    * marca para que salga primero, juegue o no— mientras que para armar jornadas
    * sólo sirven las que el proveedor sabe agrupar por ronda.
    */
+  /* `window.ligaConPais` junta liga y país y vive en `liga-con-pais.js`: lo
+     usa también «Armar la jornada», que no carga este archivo. */
+
   window.comboDeLigas = function comboDeLigas({
     caja, entrada, lista, resumen,
     cargar, alElegir,
@@ -174,7 +177,7 @@
       li.addEventListener('mousedown', evento => {
         /* `mousedown` y no `click`: cerrar al perder el foco llegaría antes. */
         evento.preventDefault();
-        elegir(x.liga);
+        elegir(x.liga, x.pais);
       });
 
       return li;
@@ -231,9 +234,22 @@
       resaltar(0);
     }
 
-    function elegir(liga) {
+    /*
+     * ⛔ EL PAÍS VIAJA CON LA LIGA, y antes no lo hacía.
+     *
+     * El país no está dentro de `liga`: vive en el objeto que la envuelve,
+     * porque en la respuesta del servidor las ligas vienen agrupadas POR país y
+     * cada una sólo conoce su nombre. Al elegir se mandaba sólo `x.liga`, así
+     * que el país se quedaba aquí y la pantalla de destino ya no tenía forma de
+     * saberlo.
+     *
+     * Eso es lo que hacía que, tras elegir, quedara «Liga Premier» a secas: hay
+     * una en Inglaterra y otra en varios países más, y una vez cerrada la lista
+     * no había manera de saber cuál habías cogido.
+     */
+    function elegir(liga, pais) {
       cerrar();
-      alElegir(liga);
+      alElegir(liga, pais || '');
     }
 
     /*
@@ -298,7 +314,10 @@
       if (evento.key === 'Enter' && !lista.hidden) {
         evento.preventDefault();
         const elegida = visibles[resaltada];
-        if (elegida) elegir(elegida.liga);
+        /* El país también aquí: con el teclado se elige igual que con el ratón,
+           y dejarlo sólo en el `mousedown` daba dos resultados distintos según
+           cómo hubieras elegido. */
+        if (elegida) elegir(elegida.liga, elegida.pais);
       }
     });
 

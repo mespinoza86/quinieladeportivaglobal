@@ -39,8 +39,16 @@ test('el desplegable se llena con las ligas que tienen partidos, agrupadas por p
    * El número entre paréntesis es cuántos partidos trae la liga en el rango.
    * No es adorno: dice de un vistazo si vale la pena entrar en esa liga.
    */
-  await expect(torneo.locator('option', { hasText: 'Liga MX (2)' })).toHaveCount(1);
-  await expect(torneo.locator('option', { hasText: 'Primera Division (1)' })).toHaveCount(1);
+  /*
+   * ⛔ Y EL PAÍS VA EN LA PROPIA OPCIÓN, aunque ya esté en el `optgroup`.
+   *
+   * Un `<select>` cerrado enseña sólo el texto de la opción elegida: el rótulo
+   * del grupo desaparece. Sin el país ahí dentro, al cerrarse volvía a quedar
+   * «Liga Premier» a secas, que es exactamente la confusión que esto vino a
+   * quitar (114). Por eso se comprueba el texto COMPLETO y no sólo el nombre.
+   */
+  await expect(torneo.locator('option', { hasText: 'Liga MX · México (2)' })).toHaveCount(1);
+  await expect(torneo.locator('option', { hasText: 'Primera Division · Costa Rica (1)' })).toHaveCount(1);
 });
 
 test('las competiciones bloqueadas no se ofrecen', async ({ page }) => {
@@ -80,7 +88,7 @@ test('buscar por una liga trae solo sus partidos', async ({ page }) => {
   await page.goto('/jornadas.html');
   await expect(page.locator('#torneoSelect optgroup')).toHaveCount(3, { timeout: 10_000 });
 
-  await page.locator('#torneoSelect').selectOption({ label: 'Primera Division (1)' });
+  await page.locator('#torneoSelect').selectOption({ label: 'Primera Division · Costa Rica (1)' });
   await page.locator('#buscarPartidosButton').click();
 
   await expect(page.locator('#estadoBusqueda')).toContainText('1 partidos', { timeout: 10_000 });

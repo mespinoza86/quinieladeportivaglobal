@@ -452,6 +452,24 @@ function conQuiniela(app, { requierePermiso, limiteAdminMode }) {
       parcial.ligaId = req.body.tipo === 'liga' ? ligaId : null;
       parcial.ligaNombre = req.body.tipo === 'liga'
         ? String(req.body.ligaNombre ?? '').trim() : null;
+
+      /*
+       * ⭐ EL PAÍS SE GUARDA, no se vuelve a pedir.
+       *
+       * Hay una «Liga Premier» en Inglaterra y otras con el mismo nombre en más
+       * países, así que el nombre a secas no identifica nada: la pantalla decía
+       * «De Liga Premier» y no había forma de saber cuál se había elegido.
+       *
+       * Se guarda en lugar de deducirlo del `ligaId` cuando haga falta, porque
+       * deducirlo cuesta una llamada al proveedor —y la cuota es UNA, compartida
+       * entre todas las quinielas—. Esto es un texto corto en un bloque JSON que
+       * ya se escribía entero: no cuesta nada y no necesita migración.
+       *
+       * ⚠️ Vacío es un valor válido: las competiciones internacionales llegan
+       * sin país del proveedor.
+       */
+      parcial.ligaPais = req.body.tipo === 'liga'
+        ? String(req.body.ligaPais ?? '').trim() : null;
     }
 
     /*

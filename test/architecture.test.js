@@ -1391,6 +1391,65 @@ test('todas las referencias locales JS, CSS e imágenes de HTML existen', () => 
   }
 });
 
+test('⛔ el país acompaña a la liga en todas partes, y NUNCA dentro de la caja que filtra', () => {
+  /*
+   * Hay una «Liga Premier» en Inglaterra y otras homónimas en más países. El
+   * nombre solo no identifica nada, y al elegir una la pantalla se quedaba con
+   * el nombre pelado: no había forma de saber cuál se había cogido.
+   */
+  const combo = leer(path.join('private', 'js', 'combo-de-ligas.js'));
+
+  /*
+   * El país viaja con la liga al elegir, con el ratón Y con el teclado.
+   *
+   * ⚠️ El patrón exige el punto —`algo.liga, algo.pais`— para mirar sólo las
+   * LLAMADAS. Sin él encajaba también la declaración `function elegir(liga,
+   * pais)`, salían tres y el centinela se contaba a sí mismo.
+   */
+  assert.equal((combo.match(/elegir\([^)]*\.liga,\s*[^)]*\.pais\)/g) || []).length, 2,
+    'el país tiene que viajar en las DOS formas de elegir: el clic y la tecla Enter');
+
+  /*
+   * ⛔ LA CAJA DE TEXTO LLEVA SÓLO EL NOMBRE.
+   *
+   * Es la que filtra, y el filtro compara por nombre O por país, nunca por los
+   * dos juntos. Con «Liga Premier · Inglaterra» dentro, al volver a pulsarla no
+   * saldría ninguna liga — la queja de «no sale nada» que ya costó un arreglo.
+   */
+  const ligaQuiniela = leer(path.join('private', 'js', 'liga-de-quiniela.js'));
+  assert.match(ligaQuiniela, /combo\.value = liga\.nombre;/,
+    'en la caja va sólo el nombre: con el país dentro, el filtro deja de encontrar nada');
+
+  /* Una sola definición del formato, para que no se separen. */
+  const ayudante = leer(path.join('private', 'js', 'liga-con-pais.js'));
+  assert.match(ayudante, /window\.ligaConPais/);
+
+  const definiciones = fs.readdirSync(path.join(root, 'private', 'js'))
+    .filter(f => f.endsWith('.js'))
+    .filter(f => /window\.ligaConPais\s*=/.test(leer(path.join('private', 'js', f))));
+
+  assert.deepEqual(definiciones, ['liga-con-pais.js'],
+    `el formato «liga · país» se define en más de un sitio: ${definiciones.join(', ')}`);
+
+  /* Y toda pantalla que lo use tiene que cargarlo: si no, es `undefined` al pulsar. */
+  const usan = fs.readdirSync(path.join(root, 'private', 'js'))
+    .filter(f => f.endsWith('.js') && f !== 'liga-con-pais.js')
+    .filter(f => /window\.ligaConPais\(/.test(leer(path.join('private', 'js', f))));
+
+  assert.ok(usan.length >= 3, `esperaba al menos tres pantallas usándolo, hay ${usan.length}`);
+
+  for (const pagina of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'))) {
+    const html = leer(path.join('public', pagina));
+    const cargados = [...html.matchAll(/src=["']\/?js\/([^"']+\.js)["']/g)].map(m => m[1]);
+
+    const loNecesita = usan.some(script => cargados.includes(script));
+    if (!loNecesita) continue;
+
+    assert.ok(cargados.includes('liga-con-pais.js'),
+      `${pagina} usa ligaConPais a través de ${usan.filter(s => cargados.includes(s)).join(', ')} pero no carga liga-con-pais.js`);
+  }
+});
+
 test('el manifiesto y el service worker apuntan a iconos que existen', () => {
   /*
    * Los iconos son de las poquísimas cosas que fallan EN SILENCIO y sólo se ven

@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="es"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Configurar quiniela</title><link rel="icon" href="/iconos/icono-32.png" sizes="32x32" type="image/png" /><link rel="apple-touch-icon" href="/iconos/icono-180.png" /><link rel="stylesheet" href="/css/styles.css" />
-  <script src="/js/tema.js"></script><script src="/js/navegacion.js" defer></script><script src="/js/combo-de-ligas.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script><script src="/js/liga-de-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
+  <script src="/js/tema.js"></script><script src="/js/navegacion.js" defer></script><script src="/js/liga-con-pais.js" defer></script><script src="/js/combo-de-ligas.js" defer></script><script src="/js/configuracion-quiniela.js" defer></script><script src="/js/liga-de-quiniela.js" defer></script></head><body class="app-body"><main class="mobile-shell">
 <section class="hero-card"><div class="hero-top"><div><p class="eyebrow">Administración</p><h1>Configurar quiniela</h1></div><div class="app-logo">🎛️</div></div></section>
 <section class="app-panel"><form id="configForm"><h2>Puntuación</h2>
 <label class="field-label">Marcador exacto</label><input type="number" min="0" id="marcadorExacto" required />
@@ -56,6 +56,16 @@
            aria-controls="comboLigaLista" />
     <ul class="combo-lista" id="comboLigaLista" role="listbox" hidden></ul>
   </div>
+  <!--
+    ⛔ EL PAÍS VA AQUÍ FUERA, Y NO DENTRO DE LA CAJA.
+
+    Es tentador dejar «Liga Premier · Inglaterra» como texto de la caja, y sería
+    un fallo: esa caja es la que FILTRA. Al volver a pulsarla buscaría esa
+    cadena entera, y el filtro compara por nombre O por país, nunca por los dos
+    juntos — así que no saldría ninguna liga. Es exactamente la queja de «no
+    sale nada» que ya se arregló una vez en este mismo desplegable.
+  -->
+  <p id="ligaPaisElegido" class="helper-text" hidden></p>
   <p id="filtroResumen" class="helper-text"></p>
 </div>
 

@@ -617,6 +617,9 @@ documento.
   se usa a lo que menos, y la barra de abajo del jugador es
   **Inicio · Llenar · Por jornada · General**: las dos competiciones —la de
   cada jornada y la de puntos totales— conservan su toque directo.
+- **Las ligas se identifican con su país** (114): «Liga Premier · Inglaterra»
+  al armar la jornada, en las favoritas y en la liga de la quiniela. Hay
+  homónimas en varios países y el nombre solo no decía cuál era.
 
 ##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
@@ -19164,6 +19167,234 @@ flujo de etiquetas antes/después            -> sin una sola diferencia
   lo que hay que ver es si «Llenar» en la barra se siente bien toda la semana,
   incluida la parte en que la jornada ya cerró.
 - Sigue pendiente lo del manifiesto en una sola página (entrada 112).
+
+---
+
+### 📌 Entrada 114 — 2 de octubre de 2026 — Qué liga elegiste, y de dónde es
+
+**Objetivo:** Marco: *«encuentro Liga Premier y la selecciono, resulta que una
+vez seleccionada me sale liga premier y eso puede confundir, porque creo que
+estoy seleccionando la liga premier de Inglaterra»*. Quería que al elegir un
+torneo saliera también el país.
+
+## ⭐ ESTABA EN TRES PANTALLAS, NO EN UNA
+
+Marco señaló la configuración de la quiniela. Al rastrearlo, el mismo fallo
+salía en tres sitios, y el que más le afecta **no era el que señaló**:
+
+| Pantalla | Qué se veía |
+|---|---|
+| **Armar la jornada** (semana a semana) | `Liga Premier (10)` — y es la que usa cada semana |
+| **Ligas favoritas** | Fichas con el nombre pelado: dos homónimas, idénticas |
+| **La liga de la quiniela** | La caja, el resumen y el mensaje de confirmación |
+
+⚠️ Lo dijo él sin saberlo: *«las ligas se escogen semana a semana»*. Esa frase
+es la que llevó a mirar «Armar la jornada», que era donde más dolía.
+
+## Dónde se perdía el país
+
+La lista desplegada **sí** lo enseñaba —agrupada por país y con el país al lado
+de cada liga—. Se perdía justo al elegir:
+
+```js
+elegir(x.liga);          // el país vive en `x`, no en `x.liga`
+```
+
+Las ligas llegan del servidor **agrupadas por país**, así que cada una conoce su
+nombre y nada más. El país es del grupo. Al mandar sólo `x.liga`, se quedaba por
+el camino.
+
+## ⛔ EL PAÍS NO PUEDE IR DENTRO DE LA CAJA DE TEXTO
+
+Lo natural era dejar `combo.value = 'Liga Premier · Inglaterra'`. **Habría
+reintroducido un fallo que ya costó un arreglo en este mismo componente.**
+
+Esa caja es la que FILTRA, y el filtro compara lo escrito contra el nombre **o**
+contra el país, nunca contra los dos juntos. Con la cadena entera dentro, al
+volver a pulsarla no saldría ninguna liga: la queja de *«no sale nada»* otra vez.
+
+⭐ Por eso el país va **debajo** de la caja («Es la de Inglaterra»), y hay un
+centinela que lo fija.
+
+## ⚠️ Y EN EL DESPLEGABLE NATIVO SE REPITE A PROPÓSITO
+
+En «Armar la jornada» las ligas cuelgan de un `<optgroup>` con el país por
+rótulo. Pero **un `<select>` cerrado enseña sólo el texto de la opción elegida**:
+el rótulo del grupo desaparece y volvía a quedar «Liga Premier» a secas.
+
+Así que el país va también en cada opción. Se ve dos veces con la lista abierta
+—y eso es el precio— para que se entienda cerrada, que es el 99% del tiempo.
+
+## El país se guarda, no se deduce
+
+Se añade `ligaPais` a la configuración y `pais` a cada liga favorita.
+
+⭐ **Guardarlo en vez de deducirlo del identificador** es a propósito: deducirlo
+costaría una llamada al proveedor, y **la cuota es UNA, compartida entre todas
+las quinielas**. Es un texto corto dentro de un bloque JSON que ya se escribía
+entero.
+
+⚠️ **No hace falta migración**: `configuracion` es `jsonb`.
+
+⚠️ Y en las favoritas importa más de lo que parece: `aplicarFavoritas` le vuelve
+a pegar el país cuando la liga juega esa semana, pero **una favorita que no
+juega salía con `pais: null`** — y ésas son justo las que se pintan en gris y
+cuesta reconocer.
+
+## Un archivo de cinco líneas, y por qué
+
+`window.ligaConPais` vive en `private/js/liga-con-pais.js`, él solo.
+
+Lo usan tres pantallas. Dos cargan `combo-de-ligas.js`; **«Armar la jornada» no,
+y no tendría sentido que lo hiciera** —son trescientas líneas de desplegable que
+allí no se usan—. Las opciones eran copiarlo o sacarlo: copiado, el día que
+alguien cambie el separador quedarían dos formas de decir lo mismo. Hay un
+centinela que exige **una sola definición** y que toda pantalla que lo use lo
+cargue.
+
+## ⛔ EL CENTINELA SE CONTABA A SÍ MISMO
+
+La primera versión exigía dos llamadas con país y encontraba tres:
+
+```js
+/elegir\([^)]*,\s*[^)]*pais\)/     // también encaja `function elegir(liga, pais)`
+```
+
+La **declaración** de la función casaba con el patrón de las **llamadas**.
+Arreglado exigiendo el punto (`algo.liga, algo.pais`). Es la enésima variante de
+lo mismo: un centinela que comprueba una FORMA y no una CONDICIÓN.
+
+## ⛔ Y DIEZ DE NAVEGADOR, QUE CASI SE DAN POR BUENAS
+
+Al cambiar el texto de las opciones, **diez pruebas de navegador se cayeron** —
+cinco, en escritorio y en móvil—. Todas comprueban la pantalla de armar la
+jornada, y todas buscaban la opción por su texto exacto: `'Liga MX (2)'`, que
+ahora es `'Liga MX · México (2)'`. El comportamiento estaba intacto; lo que
+cambió fue el rótulo, a propósito.
+
+⭐ Se actualizaron para comprobar **lo nuevo** —que el país está— en vez de
+aflojarlas para que pasaran. Una prueba relajada deja de vigilar.
+
+### ⛔ LA TRAMPA: EL AVISO DIJO «exited with code 0» CON DIEZ EN ROJO
+
+La corrida iba en segundo plano con esta forma:
+
+```sh
+npx playwright test > log 2>&1; echo "salida real: $?"
+```
+
+El aviso de fin de tarea dijo **«exited with code 0»** — y es cierto, pero es el
+código del **`echo`**, que es el último comando de la línea, no el de Playwright.
+Playwright había salido con 1.
+
+⚠️ Es la misma trampa de la tubería que ya está anotada, con otra cara: **lo que
+se mide es el ÚLTIMO comando, no el que importa**. Antes fue un `| tail`; esta
+vez, el propio `echo` que se puso para informar.
+
+⭐ La forma correcta es capturar el código **en una variable, inmediatamente**, y
+sólo después imprimir:
+
+```sh
+npx playwright test > log 2>&1; CODIGO=$?; echo "salida: $CODIGO"
+```
+
+Y la salvaguarda que lo cazó: **leer el resumen del log** —«10 failed»— en vez
+de fiarse del código.
+
+## ⚠️ TRES PRUEBAS EN ROJO, Y TENÍAN QUE ESTARLO
+
+Al guardar el país con las favoritas, `normalizarFavoritas` pasó de devolver
+`{id, nombre}` a `{id, nombre, pais}`, y tres pruebas comparaban la forma
+antigua con `deepEqual`. **Las pruebas eran lo que había que actualizar**, no el
+código: la forma cambió a propósito.
+
+⭐ Se corrieron precisamente por eso. El cambio tocaba `src/`, y ahí es donde un
+«parece que no rompí nada» sale caro.
+
+## Lo que NO se hizo
+
+**Equipos favoritos.** Marco preguntó qué tan complicado sería, *«como lo tiene
+fotmob»*, y al oír la respuesta decidió dejarlo. Queda anotado **por qué**, para
+no volver a investigarlo desde cero:
+
+- Las ligas favoritas salieron baratas porque la liga **ya tenía identidad**: el
+  proveedor manda un número, se guardaba, y el servidor ya las agrupaba.
+- ⛔ **Un equipo, en este proyecto, es texto suelto.** `equipo1` y `equipo2` son
+  columnas `text` más la dirección del escudo. **No hay identificador de equipo
+  en ninguna parte**: ni en `mapearEvento`, ni en la base, ni en el navegador.
+- ⚠️ Y el nombre no sirve de ancla: existe `equipos-es.js`, una tabla **a mano
+  con 147 nombres de selección**, porque el proveedor los manda en inglés. Un
+  favorito guardado como «Brasil» no casaría con «Brazil». Y esa tabla **sólo
+  cubre selecciones**: para los clubes no hay nada.
+- Hacerlo bien sería arrastrar el identificador de equipo del proveedor y añadir
+  dos columnas a `partidos` —eso sí con migración—.
+- ⭐ **Pista para el día que se retome:** las direcciones de los escudos que ya
+  se guardan suelen llevar el número del equipo dentro de la URL. Si es así, el
+  identificador ya está guardado y se ahorra la migración. Se comprueba mirando
+  una sola dirección.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/liga-con-pais.js` | **Nuevo.** El formato «liga · país», una sola vez |
+| `private/js/combo-de-ligas.js` | El país viaja al elegir, con ratón y con teclado |
+| `private/js/liga-de-quiniela.js` | El país debajo de la caja, y guardado |
+| `private/js/configuracion-quiniela.js` | Las fichas de favoritas, con país |
+| `private/js/jornadas.js` | Las opciones del desplegable semanal, con país |
+| `public/configuracion-quiniela.html`, `public/jornadas.html` | Cargan el ayudante |
+| `src/rutas/plataforma.js` | Acepta y guarda `ligaPais` |
+| `src/ligas.js` | Las favoritas recuerdan su país |
+| `test/architecture.test.js` | Centinela nuevo |
+| `test/dominio.test.js`, `test/rutas.test.js` | La forma nueva de las favoritas |
+| `test/e2e/jornadas-buscador.spec.js`, `ligas-favoritas.spec.js`, `jornadas.spec.js` | Las opciones, con su país |
+
+**Verificación:**
+
+```
+npm test                    -> 660/660   (3 en rojo primero: esperaban la forma antigua)
+CI=true npx playwright test -> 220/220, «flaky» no aparece en el log
+                               (10 en rojo primero: buscaban el rótulo antiguo)
+
+⚠️ El código de salida, capturado en variable ANTES de imprimirlo. La primera
+   corrida dijo «exited with code 0» con diez en rojo: era el del `echo`.
+
+mutaciones sobre el centinela nuevo -> las 5 MUERDEN
+  el clic deja de llevar el país        -> roja
+  el teclado deja de llevar el país     -> roja
+  el país DENTRO de la caja que filtra  -> roja
+  no cargar el ayudante en «Jornadas»   -> roja
+  definir el formato por segunda vez    -> roja
+  CONTROL sin mutar nada                -> verde
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un `<select>` cerrado enseña sólo el texto de la opción.** El rótulo del
+   `<optgroup>` desaparece, así que lo que distingue tiene que ir en la opción
+   aunque se repita.
+2. ⛔ **En un desplegable escribible, la caja es el filtro.** Todo lo que se le
+   meta como adorno cambia lo que se busca.
+3. ⚠️ **Un centinela que busca una forma puede contarse a sí mismo**: la
+   declaración de la función encajaba con el patrón de sus llamadas.
+4. ⭐ **Lo que el usuario señala no siempre es donde más duele.** Marco apuntó a
+   la configuración; la pantalla que usa cada semana tenía el mismo fallo y no
+   la había nombrado.
+5. ⛔ **`comando; echo "$?"` mide el `echo`, no el comando.** El aviso de fin de
+   tarea dijo «exited with code 0» con diez pruebas en rojo. Es la trampa de la
+   tubería con otra cara: **se mide el último comando de la línea**. Capturar en
+   una variable **inmediatamente** —`CODIGO=$?`— y leer siempre el resumen del
+   log además del código.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Falta saber qué manda el proveedor como país de una competición
+  internacional.** El servidor pone «Internacional» cuando llega vacío, pero
+  nadie ha visto un caso real. Marco lo puede responder abriendo el desplegable
+  y buscando «Champions»: lo que salga al lado es la respuesta. De ahí depende
+  si se puede enseñar «UEFA» o hay que conformarse con «Internacional».
+- Sigue lo de siempre: la notificación al teléfono y el ciclo del borrador —este
+  último bloqueado hasta que exista una quiniela de liga.
 
 ---
 
