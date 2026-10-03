@@ -591,9 +591,9 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `cfdd7bd` — cierra la entrada 113 con el resultado de las pruebas |
+| Último commit | `4c8a8a4` — pone al día las cifras de este mismo resumen. **El último que toca código es `41b93bd`** |
 | Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Producción | ✅ **Al día en `cfdd7bd`.** Empujado a las 17:01, Render arrancó a las 17:03. Comprobado con un control («manifest.webmanifest», que existe en todas las versiones) más tres marcas que sólo existen en las nuevas: el icono, `<span>General</span>` presente y `<span>Jornadas</span>` ausente. El menú que sirve viene en el orden nuevo |
+| Producción | ✅ **Al día**, y **comprobada otra vez el 2 de octubre**: sigue sirviendo el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente y el menú en el orden nuevo (con el control de «manifest.webmanifest», que existe en todas las versiones). ⭐ **Lleva 859.502 s —casi diez días— sin reiniciarse**: ni se cayó ni se quedó sin memoria en todo ese tiempo |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
 | Pruebas | **659** rápidas + **220** de navegador, todas en verde y **cero flaky**. Corridas sobre el código de `41b93bd`, que es el último que toca código; `cfdd7bd` sólo cambia la bitácora |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
@@ -622,6 +622,12 @@ documento.
 
 Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
 
+> **Al 2 de octubre quedan dos de cuatro.** Los diez días de partidos entre el
+> 22 de septiembre y el 2 de octubre resolvieron el marcador en vivo y los
+> marcadores oficiales. Faltan la notificación y el ciclo del borrador — y este
+> último no por dejadez, sino porque **hace falta una quiniela de liga para
+> poder probarlo**.
+
 0. ~~**El icono al instalar (112).**~~ ✅ **COMPROBADO EN UN TELÉFONO** el 22 de
    septiembre. Marco lo instaló: *«la instalé y todo bien, pero ya no es un link
    de chrome, parece una app independiente»*. Salió el escudo **y** además dejó
@@ -630,15 +636,32 @@ Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
    ⚠️ **Falta el iPhone.** Lo comprobado fue Android; iOS va por otro camino
    —ignora el manifiesto y usa la etiqueta `apple-touch-icon`— así que no se
    puede dar por visto.
-1. **El marcador en vivo** de la tarjeta de pronóstico. Está comprobado que el
-   dato se pinta y que el refresco pide cuando debe, pero que el proveedor mande
-   bien el minuto en un partido de verdad **no lo ha visto nadie**.
-2. **Que llegue una notificación a un teléfono.** El envío se sustituye en las
-   pruebas; que Google y Apple la entreguen sólo lo dice un partido real.
+1. ~~**El marcador en vivo** de la tarjeta de pronóstico.~~ ✅ **COMPROBADO** con
+   partidos de verdad entre el 22 de septiembre y el 2 de octubre. Marco: *«el
+   marcador en vivo también funciona bien»*.
+2. **Que llegue una notificación a un teléfono.** Sigue sin probarse: Marco iba
+   a hacerlo en los días siguientes al 2 de octubre.
+
+   ⭐ **Pero ya no es la duda que era.** Lo que más miedo daba era que el reloj
+   de Render no corriera —y eso quedó descartado por el punto 4: los marcadores
+   entraron solos durante diez días, o sea que el ciclo dispara—. Lo que falta
+   por ver es **sólo la entrega**: que Google y Apple la pongan en la pantalla.
 3. **El ciclo completo del borrador**: confirmar una jornada y que a la semana
-   siguiente proponga la de después. La parte difícil ya se vio funcionando.
-4. **Que los marcadores oficiales sigan llegando solos**, sin tocar «sincronizar
-   esta jornada».
+   siguiente proponga la de después.
+
+   ⛔ **NO SE PUEDE PROBAR CON LA QUINIELA QUE HAY.** El borrador es «la próxima
+   jornada **de una liga**», y hay una prueba de navegador que se llama
+   literalmente *«una quiniela customizada NO ve el panel»*. Marco no tiene
+   ninguna quiniela de liga creada, así que esto **no está pendiente de
+   probarlo: está pendiente de poder probarlo**. Crear una quiniela de liga es
+   el paso que lo desbloquea.
+4. ~~**Que los marcadores oficiales sigan llegando solos.**~~ ✅ **COMPROBADO
+   DURANTE DIEZ DÍAS** (22 de septiembre – 2 de octubre). Marco: *«los
+   marcadores oficiales sí entraron solos, no tuve que sincronizar nada»*.
+
+   ⭐ Esto es más grande de lo que parece: valida el planificador y el
+   sincronizador corriendo solos en Render, **sin un reinicio en diez días**, y
+   es lo que hacía dudar del punto 2.
 
 ##### ⚠️ Deuda anotada a propósito, no olvidada
 
