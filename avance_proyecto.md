@@ -587,17 +587,17 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 22 de septiembre de 2026
+#### 📍 Dónde quedó todo el 4 de octubre de 2026
 
 | | |
 |---|---|
-| Último commit | `39b9474` — Entrada 114: qué liga elegiste, y de dónde es |
-| Árbol | ✅ Limpio, `main` al día con `origin/main`, **todo empujado** |
-| Producción | ⚠️ **Corre el código de `41b93bd`: lo de las ligas con su país (`39b9474`) está commiteado y SIN EMPUJAR.** Comprobada el 2 de octubre —sirve el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente, el menú en el orden nuevo— con el control de «manifest.webmanifest», que existe en todas las versiones. ⭐ **Llevaba 859.502 s —casi diez días— sin reiniciarse**: ni se cayó ni se quedó sin memoria |
+| Último commit | `fc5794b` — cierra la entrada 114 con las cifras al día |
+| Árbol | ⚠️ Limpio de cambios, pero **`main` va TRES commits por delante de `origin/main`**: `030fd81`, `39b9474` y `fc5794b` siguen sin empujar. Y `conversion.md` sigue sin decidir si entra al repositorio |
+| Producción | ⚠️ **Corre el código de `41b93bd`, del 22 de septiembre: lo de las ligas con su país NO está puesto.** Comprobada otra vez el 4 de octubre —sirve el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente, el menú en el orden nuevo— con el control de «manifest.webmanifest», que existe en todas las versiones. ⭐ **Lleva 1.000.178 s —once días y medio— sin reiniciarse** |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
 | Pruebas | **660** rápidas + **220** de navegador, todas en verde y **cero flaky**, corridas sobre `39b9474` |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112) y **el menú y la barra reordenados** (113) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) y **las ligas con su país** (114) |
 
 ##### Qué se puede tocar y esperar que funcione
 
