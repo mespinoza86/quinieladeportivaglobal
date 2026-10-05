@@ -1086,15 +1086,34 @@ th,
  *
  * Vacío no ocupa: sin esto quedaría un hueco permanente bajo cada formulario.
  */
+/*
+ * ⛔ EL COLOR POR DEFECTO ES NEUTRO, Y ESO SE APRENDIÓ A GOLPES.
+ *
+ * La primera versión de esta regla lo puso VERDE, de acierto. Y resultó que en
+ * el proyecto hay **38 sitios que escriben un error en este mismo renglón** y
+ * sólo uno que marca que lo es. O sea que «Código de quiniela inválido» salía
+ * en verde, como si hubiera ido bien.
+ *
+ * Se vio recorriendo la aplicación como un usuario nuevo, no leyendo el código:
+ * el fallo estaba en una pantalla que nadie había vuelto a mirar.
+ *
+ * ⭐ Neutro por defecto NO MIENTE NUNCA. El verde y el rojo se piden a
+ * propósito, y se pueden ir añadiendo pantalla a pantalla sin prisa.
+ */
 .form-message {
   margin: 10px 0 0;
   font-size: 0.92rem;
   line-height: 1.45;
-  color: var(--primary-claro);
+  color: var(--text);
 }
 
 .form-message:empty {
   display: none;
+}
+
+/* Verde sólo cuando quien escribe dice que salió bien. */
+.form-message--ok {
+  color: var(--primary-claro);
 }
 
 /*

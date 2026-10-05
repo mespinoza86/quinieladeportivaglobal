@@ -847,7 +847,7 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
   const PAGINAS = [
     '/', '/jugadores', '/jornada', '/ver-jugadores', '/resultados', '/ver-resultados',
     '/ver-jornadas', '/adminmode.html', '/ver_resultados_totales_de_jugadores',
-    '/agregar-resultados-oficiales', '/generar_reporte', '/llenar_jornada',
+    '/agregar-resultados-oficiales', '/generar_reporte',
     '/resultados-totales', '/ver-resultados-oficiales', '/verResultados',
     '/verResultados_puntos', '/ver_resultados_trivias'
   ];

@@ -15,8 +15,15 @@ function avisar(texto, esFallo) {
     if (!renglon) return;
 
     renglon.textContent = texto || '';
-    /* El color lo pone la clase: un fallo y una confirmación no se leen igual. */
+
+    /*
+     * El color lo pone la clase: un fallo y una confirmación no se leen igual.
+     * ⚠️ Y el verde se PIDE, no viene de serie: el renglón nace neutro porque
+     * en el proyecto hay 38 sitios que escriben errores en uno igual sin
+     * marcarlos, y un error en verde es peor que un error sin color.
+     */
     renglon.classList.toggle('form-message--error', Boolean(esFallo));
+    renglon.classList.toggle('form-message--ok', Boolean(texto) && !esFallo);
 }
 
 /*
@@ -37,14 +44,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let jugadorValidado = null;
 
     /*
-     * El selector puede no estar: este mismo script lo cargan dos pantallas
-     * —llenar_jornada_user.html y llenar_jornada.html, gemelas desde antes de
-     * la Fase 6— y solo una lo tiene. Sin esta comprobación el script moría en
-     * la primera línea y la otra pantalla se quedaba en blanco, que es
-     * exactamente lo que destapó la prueba de CSP.
+     * ⚠️ LA COMPROBACIÓN SE QUEDA AUNQUE YA NO HAGA FALTA.
      *
-     * Sin selector la pantalla sigue funcionando: abre en la jornada sugerida y
-     * ya no se puede cambiar, que es lo que hacía antes de la Fase B.
+     * Este script lo cargaban DOS pantallas gemelas —`llenar_jornada_user.html`
+     * y `llenar_jornada.html`— y sólo una tenía el selector. La segunda era la
+     * versión anterior al arreglo que permitió llenar dos jornadas a la vez: no
+     * la enlazaba nadie, se llegaba sólo escribiendo la dirección, y **se borró
+     * el 5 de octubre de 2026**.
+     *
+     * Aun así no se quita el `if`: cuesta nada y lo que evita es que el script
+     * muera en la primera línea dejando la pantalla EN BLANCO. Sin selector
+     * sigue funcionando —abre en la jornada sugerida y no se puede cambiar—,
+     * que es como se comportaba antes de la Fase B.
      */
     const selectorJornada = document.getElementById('jornadaSelect');
 

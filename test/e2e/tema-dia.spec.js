@@ -340,7 +340,7 @@ function auditarContraste() {
 
 const PANTALLAS_AUDITADAS = [
   'index.html', 'quinielas.html', 'jornadas.html', 'llenar_jornada_user.html',
-  'llenar_jornada.html', 'ver_jornadas.html', 'ver-resultados-oficiales.html',
+  'ver_jornadas.html', 'ver-resultados-oficiales.html',
   'agregar-resultados-oficiales.html', 'resultados-totales.html',
   'ver_resultados_totales_de_jugadores.html', 'clasificacion-jornada.html',
   'configuracion-quiniela.html', 'adminmode.html', 'jugadores.html',
