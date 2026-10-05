@@ -591,7 +591,7 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `(este)` — Entrada 115: que lo entienda alguien que entra por primera vez |
+| Último commit | `8e26915` — Entrada 115: que lo entienda alguien que entra por primera vez |
 | Árbol | ✅ Limpio. **`main` va por delante de `origin/main`**: todo lo del 2 y el 5 de octubre está commiteado y sin empujar |
 | Producción | ⚠️ **Corre el código de `41b93bd`, del 22 de septiembre.** Ni las ligas con su país ni la revisión de usabilidad están puestas 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
