@@ -144,41 +144,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!jugador) return;
 
-        const jugadorData = await fetch(`/api/jugador/${encodeURIComponent(jugador)}`).then(r => r.json());
-
-        if (!jugadorData.password) {
-            avisar('Tu jugador todavía no tiene contraseña. Pídesela a quien administra la quiniela.', true);
-            combo.value = '';
-            return;
-        }
-
-        let passwordCorrecta = false;
-
-        while (!passwordCorrecta) {
-            const passwordIngresada = await pedirPasswordModal(jugador);
-
-            if (passwordIngresada === null) {
-                combo.value = '';
-                limpiarMarcadores();
-                return;
-            }
-
-            const resp = await fetch(`/api/jugadores/${encodeURIComponent(jugador)}/verificar-password`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ password: passwordIngresada })
-            });
-
-        const data = await resp.json();
-
-            if (!resp.ok || !data.success) {
-                    avisar(data.error || 'Esa contraseña no es la tuya. Inténtalo otra vez.', true);
-            } else {
-                passwordCorrecta = true;
-                jugadorValidado = jugador;
-                await cargarResultadosGuardados(jugador, jornadaSeleccionada);
-            }
-        }
+        /*
+         * ⛔ AQUÍ HABÍA UN MURO DE CONTRASEÑA, Y SE QUITÓ.
+         *
+         * Al entrar a llenar salía un cuadro que tapaba la pantalla entera:
+         * «Validar jugador — Ingrese la contraseña del jugador». Se vio
+         * recorriendo la aplicación como alguien nuevo, y chirriaba por tres
+         * cosas a la vez:
+         *
+         *   1. Pedía una contraseña que la persona ACABABA DE TECLEAR para
+         *      entrar. La ruta que la comprobaba llamaba a
+         *      `usuariosMod.autenticar` con su propio usuario: era la de su
+         *      cuenta, ni más ni menos.
+         *   2. Pero se llamaba «la contraseña del jugador», que suena a otra
+         *      distinta — y el aviso de cuando faltaba mandaba a pedírsela al
+         *      administrador, cosa que no tenía ningún sentido.
+         *   3. Y NO PROTEGÍA NADA. `POST /api/resultados` ya responde
+         *      «Solo puedes guardar tus propios pronósticos» con un 403, y el
+         *      desplegable de jugadores sólo trae tu propio nombre.
+         *
+         * O sea: un paso de más, en la acción que todo el mundo hace cada
+         * semana, a cambio de una seguridad que el servidor ya daba.
+         *
+         * ⚠️ El muro de «Pronósticos» y «Puntos» NO es éste y se queda: aquél
+         * tapa lo de OTRA gente antes de que empiece su partido, que sí es un
+         * secreto que proteger.
+         */
+        jugadorValidado = jugador;
+        await cargarResultadosGuardados(jugador, jornadaSeleccionada);
     });
 
 
@@ -186,19 +179,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
 });
 
+/*
+ * ⛔ EL PINTADO DE LOS PARTIDOS, GUARDADO COMO PROMESA. NO ES ADORNO.
+ *
+ * `cargarResultadosGuardados` escribe en los campos `resultadoEquipoN_i`, y si
+ * todavía no existen **no hace nada y no reintenta**: tus pronósticos guardados
+ * no aparecen nunca y la pantalla parece vacía.
+ *
+ * Antes eso lo tapaba el muro de «Validar jugador»: mientras la persona
+ * escribía su contraseña, daba tiempo de sobra a pintar. Al quitar el muro
+ * —5 de octubre de 2026— esa pausa desapareció y la carrera quedó al aire, así
+ * que ahora se espera de verdad en vez de confiar en que alguien teclee lento.
+ *
+ * ⚠️ La carrera estaba ANOTADA COMO DEUDA en la Entrada 068 y descrita en un
+ * comentario de su prueba de navegador. Quitar el muro sin mirarlo habría
+ * convertido una deuda conocida en un fallo a la vista de todos.
+ */
+let pintadoDePartidos = Promise.resolve();
+
 function loadPartidos(nombreJornada) {
     /*
      * Se pide la jornada concreta y no la lista entera: esta pantalla solo
      * pinta una. Antes traía todas las jornadas con todos sus partidos y
      * buscaba la suya dentro, dos veces por carga.
      */
-    fetch(`/api/jornadas/${encodeURIComponent(nombreJornada)}`)
+    pintadoDePartidos = fetch(`/api/jornadas/${encodeURIComponent(nombreJornada)}`)
         .then(response => {
             if (!response.ok) throw new Error('Jornada no encontrada: ' + nombreJornada);
             return response.json();
         })
         .then(jornada => mostrarPartidos(jornada.partidos, jornada.nombre))
         .catch(error => console.error('Error al cargar los partidos:', error));
+
+    return pintadoDePartidos;
 }
 
 function logoHTML(url, nombre) {
@@ -866,38 +879,6 @@ function enviarPorWhatsapp() {
 
 
 
-function pedirPasswordModal(jugador) {
-    return new Promise((resolve, reject) => {
-        const modal = document.getElementById('modalPassword');
-        const input = document.getElementById('inputPassword');
-        const btnOk = document.getElementById('btnPasswordOk');
-        const btnCancel = document.getElementById('btnPasswordCancel');
-
-        modal.style.display = 'flex';
-        input.value = '';
-        input.focus();
-
-        function cerrarModal() {
-            modal.style.display = 'none';
-            btnOk.removeEventListener('click', okHandler);
-            btnCancel.removeEventListener('click', cancelHandler);
-        }
-
-        function okHandler() {
-            const val = input.value;
-            cerrarModal();
-            resolve(val);
-        }
-
-        function cancelHandler() {
-            cerrarModal();
-            resolve(null);
-        }
-
-        btnOk.addEventListener('click', okHandler);
-        btnCancel.addEventListener('click', cancelHandler);
-    });
-}
 
 
 function limpiarMarcadores() {
@@ -922,6 +903,13 @@ function limpiarMarcadores() {
 
 async function cargarResultadosGuardados(jugador, jornada) {
     if (!jugador || !jornada) return;
+
+    /*
+     * ⛔ PRIMERO QUE ESTÉN LOS CAMPOS. Ver el comentario de `loadPartidos`:
+     * escribir en campos que aún no existen no falla, no avisa y no reintenta —
+     * simplemente deja la pantalla en blanco con los pronósticos guardados.
+     */
+    await pintadoDePartidos;
 
     try {
         const res = await fetch(`/api/resultados/${encodeURIComponent(jugador)}/${encodeURIComponent(jornada)}`);

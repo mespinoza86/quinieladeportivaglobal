@@ -157,15 +157,18 @@ test('las trivias se crean, se responden y se ven en su pantalla', async ({ page
 
   // La pantalla muestra las dos preguntas con sus opciones.
   /*
-   * Las preguntas NO se pintan hasta que el jugador se identifica: la pantalla
-   * carga sus respuestas previas y solo entonces dibuja. Es la misma
-   * comprobación que protege los pronósticos en el móvil de uno delante de los
-   * demás.
+   * Las preguntas se pintan en cuanto la pantalla sabe de quién son: carga sus
+   * respuestas previas y entonces dibuja.
+   *
+   * ⚠️ Antes eso pasaba «al validarse la contraseña», porque había un muro.
+   * Ahora el jugador sale ya elegido de la sesión y el muro sobraba: pedía la
+   * contraseña de su propia cuenta y no protegía nada que el servidor no
+   * protegiera ya.
    */
   await page.goto('/llenar_trivia.html');
   await page.locator('#jugadorSelect').selectOption(datos.username);
-  await page.locator('#inputPassword').fill(datos.password);
-  await page.locator('#btnPasswordOk').click();
+  /* El muro de contraseña de esta pantalla se quitó el 5-oct-2026: pedía la de
+     tu propia cuenta y la ruta de guardar ya rechaza lo ajeno con un 403. */
 
   const preguntas = page.locator('.trivia-question-card');
   await expect(preguntas).toHaveCount(2);
@@ -207,8 +210,8 @@ test('las trivias se crean, se responden y se ven en su pantalla', async ({ page
   // Y al volver, la respuesta sigue ahí.
   await page.goto('/llenar_trivia.html');
   await page.locator('#jugadorSelect').selectOption(datos.username);
-  await page.locator('#inputPassword').fill(datos.password);
-  await page.locator('#btnPasswordOk').click();
+  /* El muro de contraseña de esta pantalla se quitó el 5-oct-2026: pedía la de
+     tu propia cuenta y la ruta de guardar ya rechaza lo ajeno con un 403. */
   await expect(page.locator('select.respuesta-trivia').first()).toHaveValue(elegida);
 });
 

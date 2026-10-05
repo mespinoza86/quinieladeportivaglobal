@@ -46,48 +46,34 @@ async function jornadaAbierta(page) {
 }
 
 /**
- * Abre la pantalla y pasa el modal de contraseña.
+ * Abre la pantalla de llenar, lista para escribir.
  *
- * El combo se autoselecciona con el usuario de la sesión y eso dispara el
- * modal, así que no hay que elegir a nadie: sólo responderlo.
+ * ⛔ YA NO HAY MURO DE CONTRASEÑA, y por eso esta ayuda ya no recibe una.
+ *
+ * «Llenar quiniela» pedía la contraseña de tu propia cuenta antes de dejarte
+ * ver nada. Se quitó el 5 de octubre de 2026: no protegía nada —la ruta de
+ * guardar ya rechaza con un 403 lo que no es tuyo— y costaba un paso en la
+ * acción que todo el mundo hace cada semana.
+ *
+ * ⚠️ AQUEL MURO TAPABA UNA CARRERA, y al quitarlo hubo que arreglarla de
+ * verdad. «Cargar los pronósticos guardados» escribe en campos que puede que
+ * todavía no existan, y cuando eso pasa no falla ni reintenta: deja la pantalla
+ * vacía teniendo pronósticos guardados. Mientras alguien tecleaba su contraseña
+ * daba tiempo de sobra a pintarlos; sin muro, no. Ahora la pantalla espera al
+ * pintado antes de escribir, y esto lo comprueba.
  */
-async function abrirPantalla(page, password) {
+async function abrirPantalla(page) {
+  /*
+   * ⚠️ El oyente se prepara ANTES de navegar: la respuesta puede llegar
+   * mientras se carga la página, y suscribirse después sería perdérsela.
+   */
+  const cargados = page.waitForResponse(respuesta =>
+    /^\/api\/resultados\/[^/]+\/[^/]+$/.test(new URL(respuesta.url()).pathname)
+    && respuesta.request().method() === 'GET');
+
   await page.goto('/llenar_jornada_user.html');
 
-  /*
-   * ⚠️ Se espera a que los partidos estén pintados ANTES de responder el modal,
-   * y no es un capricho de la prueba: `cargarResultadosGuardados` corre en
-   * cuanto se valida la contraseña, y si para entonces los `input` todavía no
-   * existen, **los pronósticos guardados no se pintan nunca** — nadie vuelve a
-   * intentarlo, y la pantalla queda en blanco como si no hubiera nada guardado.
-   *
-   * Una persona tarda segundos en escribir su contraseña, así que en uso real
-   * los partidos ya están; Playwright la escribe en milisegundos y gana la
-   * carrera. Aquí se espera para probar lo que se quiere probar, y la carrera
-   * queda anotada como deuda en la Entrada 068.
-   */
   await page.locator('#resultadoEquipo1_0').waitFor({ state: 'visible' });
-
-  await page.locator('#inputPassword').waitFor({ state: 'visible' });
-  await page.locator('#inputPassword').fill(password);
-
-  /*
-   * ⚠️ Y se espera a que los guardados TERMINEN de cargarse, no a que el modal
-   * se cierre. El modal se cierra al instante, pero `cargarResultadosGuardados`
-   * sigue en vuelo y, cuando llega, **escribe en las casillas** —incluida la
-   * cadena vacía donde no hay pronóstico—.
-   *
-   * Sin esta espera, lo que se escriba en ese hueco se pierde: la respuesta
-   * llega después y lo pisa. Es una segunda carrera de la pantalla, hermana de
-   * la de arriba, y también queda anotada en la Entrada 068.
-   */
-  const cargados = page.waitForResponse(r =>
-    /\/api\/resultados\/[^/]+\/[^/]+$/.test(new URL(r.url()).pathname)
-    && r.request().method() === 'GET');
-
-  await page.locator('#btnPasswordOk').click();
-
-  await page.locator('#modalPassword').waitFor({ state: 'hidden' });
   await cargados;
 }
 
@@ -100,16 +86,16 @@ const marcadores = page => page.evaluate(() =>
 /**
  * Espera a que la pantalla enseñe estos marcadores.
  *
- * ⚠️ Con `poll` y no con una lectura suelta, y la razón es un hallazgo de la
- * aplicación, no de la prueba: `cargarResultadosGuardados` corre **en cuanto se
- * valida la contraseña**, que es una carrera contra la carga de los partidos.
- * Si gana la contraseña, los `input` todavía no existen y **los pronósticos
- * guardados no se pintan**: la pantalla queda en blanco como si no hubiera
- * nada. Se ve solo cuando la red va rápida y el orden se invierte, que es
- * justo lo que pasa contra PGlite en memoria.
+ * ⚠️ Con `poll` y no con una lectura suelta. La razón era una carrera de la
+ * aplicación: «cargar los guardados» competía con «pintar los partidos», y si
+ * ganaba la primera escribía en campos que aún no existían — la pantalla
+ * quedaba en blanco teniendo pronósticos guardados. Se veía sólo cuando la red
+ * iba muy rápida, que es justo lo que pasa contra PGlite en memoria.
  *
- * Queda anotado en la Entrada 068 como deuda: aquí se espera, pero la
- * aplicación debería encadenar las dos cosas en vez de dejarlas competir.
+ * ⭐ **Esa carrera SE ARREGLÓ el 5 de octubre de 2026**, al quitar el muro de
+ * contraseña que la disimulaba: ahora la pantalla espera al pintado. El `poll`
+ * se queda de todas formas, porque lo que se quiere comprobar es que los
+ * marcadores ACABAN estando, no en qué milisegundo llegan.
  */
 async function esperarMarcadores(page, esperados, mensaje) {
   await expect.poll(() => marcadores(page), { timeout: 10_000, message: mensaje })
@@ -167,7 +153,7 @@ test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async 
   await activarAdminMode(page, datos.password);
   await jornadaAbierta(page);
 
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   // 1. Los dos partidos, completos. El segundo es un 0-0 a propósito: tiene que
   //    guardarse como pronóstico de verdad, no confundirse con «vacío».
@@ -176,7 +162,7 @@ test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async 
   await guardar(page);
 
   await page.reload();
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   await esperarMarcadores(page, [['2', '1'], ['0', '0']],
     'el 0-0 tiene que sobrevivir a la recarga');
@@ -192,7 +178,7 @@ test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async 
 
   // 3. Y lo guardado sigue intacto. Esto es lo que se rompía.
   await page.reload();
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   await esperarMarcadores(page, [['2', '1'], ['0', '0']],
     'el 2-1 no lo pidió borrar nadie');
@@ -204,13 +190,13 @@ test('borrar los DOS marcadores sí quita el pronóstico', async ({ page }) => {
   await activarAdminMode(page, datos.password);
   await jornadaAbierta(page);
 
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
   await llenar(page, 0, '2', '1');
   await llenar(page, 1, '3', '3');
   await guardar(page);
 
   await page.reload();
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   // Los dos en blanco es la forma de decir «no quiero pronosticar éste».
   await page.locator('#resultadoEquipo1_0').fill('');
@@ -222,7 +208,7 @@ test('borrar los DOS marcadores sí quita el pronóstico', async ({ page }) => {
     'vaciar los dos es una decisión, no un descuido: no tiene que preguntar').toBe('');
 
   await page.reload();
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   await esperarMarcadores(page, [['', ''], ['3', '3']],
     'el primero se quitó; el segundo sigue');
@@ -234,7 +220,7 @@ test('el texto que se copia no inventa ceros donde no hay pronóstico', async ({
   await activarAdminMode(page, datos.password);
   await jornadaAbierta(page);
 
-  await abrirPantalla(page, datos.password);
+  await abrirPantalla(page);
 
   // Uno con 0-0 de verdad, y el otro sin nada.
   await llenar(page, 0, '0', '0');

@@ -231,41 +231,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!jugador) return;
 
-    const jugadorData = await fetch(`/api/jugador/${encodeURIComponent(jugador)}`).then(r => r.json());
-
-    if (!jugadorData.password) {
-      alert('Su jugador no tiene contraseña aún, hable con el administrador.');
-      jugadorSelect.value = '';
-      return;
-    }
-
-    let passwordCorrecta = false;
-
-    while (!passwordCorrecta) {
-      const passwordIngresada = await pedirPasswordModal();
-
-      if (passwordIngresada === null) {
-        jugadorSelect.value = '';
-        limpiarRespuestas();
-        return;
-      }
-
-      const resp = await fetch(`/api/jugadores/${encodeURIComponent(jugador)}/verificar-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordIngresada })
-      });
-
-      const data = await resp.json();
-
-      if (!resp.ok || !data.success) {
-        alert(data.error || 'Contraseña incorrecta.');
-      } else {
-        passwordCorrecta = true;
-        jugadorValidado = jugador;
-        await cargarRespuestasGuardadas(jugador);
-      }
-    }
+    /*
+     * ⛔ EL MURO DE CONTRASEÑA SE QUITÓ, igual que en «Llenar quiniela».
+     *
+     * Pedía la contraseña de la propia cuenta —la ruta que la comprobaba
+     * llamaba a `usuariosMod.autenticar` con tu usuario— pero la llamaba «la
+     * contraseña del jugador», como si fuera otra. Y no protegía nada:
+     * `POST /api/respuestas-trivia` ya contesta «Solo puedes guardar tus
+     * propias respuestas» con un 403.
+     *
+     * ⚠️ Esta pantalla sale de «Llenar quiniela», así que llevaba el mismo
+     * tropiezo dos veces seguidas para quien contesta las dos cosas.
+     */
+    jugadorValidado = jugador;
+    await cargarRespuestasGuardadas(jugador);
   }
 
   async function cargarRespuestasGuardadas(jugador) {
@@ -349,46 +328,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  function pedirPasswordModal() {
-    return new Promise(resolve => {
-      const modal = document.getElementById('modalPassword');
-      const input = document.getElementById('inputPassword');
-      const btnOk = document.getElementById('btnPasswordOk');
-      const btnCancel = document.getElementById('btnPasswordCancel');
-
-      modal.style.display = 'flex';
-      input.value = '';
-      input.focus();
-
-      function cerrarModal() {
-        modal.style.display = 'none';
-        btnOk.removeEventListener('click', okHandler);
-        btnCancel.removeEventListener('click', cancelHandler);
-        input.removeEventListener('keydown', enterHandler);
-      }
-
-      function okHandler() {
-        const val = input.value;
-        cerrarModal();
-        resolve(val);
-      }
-
-      function cancelHandler() {
-        cerrarModal();
-        resolve(null);
-      }
-
-      function enterHandler(e) {
-        if (e.key === 'Enter') {
-          okHandler();
-        }
-      }
-
-      btnOk.addEventListener('click', okHandler);
-      btnCancel.addEventListener('click', cancelHandler);
-      input.addEventListener('keydown', enterHandler);
-    });
-  }
 
   async function guardarRespuestas() {
     mensaje.textContent = '';

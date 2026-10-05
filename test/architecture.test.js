@@ -1677,7 +1677,20 @@ test('toda pantalla con campo de contraseña carga el ojo para mostrarla', () =>
       fs.readFileSync(path.join(root, 'public', archivo), 'utf8')
     ));
 
-  assert.ok(conPassword.length >= 9, `Se esperaban al menos 9 pantallas, hubo ${conPassword.length}`);
+  /*
+   * ⚠️ EL SUELO BAJÓ DE 9 A 8 EL 5 DE OCTUBRE DE 2026, Y FUE A PROPÓSITO.
+   *
+   * No es que el centinela deje de vigilar: es que desaparecieron dos campos de
+   * contraseña de verdad. «Llenar quiniela» y «Llenar trivia» tenían un muro
+   * —«Validar jugador»— que pedía la contraseña de TU PROPIA CUENTA, la que
+   * acababas de teclear para entrar, y que no protegía nada: las dos rutas de
+   * guardar ya rechazan con un 403 lo que no es tuyo.
+   *
+   * El número está aquí para que «todas las pantallas cumplen» no pueda
+   * significar «no hay ninguna pantalla». Si vuelve a bajar sin que nadie haya
+   * quitado un muro a conciencia, es que algo se perdió.
+   */
+  assert.ok(conPassword.length >= 8, `Se esperaban al menos 8 pantallas, hubo ${conPassword.length}`);
 
   for (const archivo of conPassword) {
     const html = fs.readFileSync(path.join(root, 'public', archivo), 'utf8');
