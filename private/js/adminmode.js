@@ -27,6 +27,44 @@ document.addEventListener('DOMContentLoaded', () => {
   const logoutForm = document.getElementById('logoutForm');
   const exitAdminMode = document.getElementById('exitAdminMode');
 
+  /*
+   * ⛔ DECIR A DÓNDE VA DESPUÉS DE CONFIRMAR.
+   *
+   * A este muro se llega casi siempre EMPUJADO: pulsaste algo, o acabas de
+   * crear una quiniela, y la aplicación te mandó aquí con un `volver` en la
+   * dirección. Sin contarlo, el muro parece un trámite suelto y la persona ya
+   * no se acuerda de qué iba a hacer.
+   *
+   * ⚠️ Se nombra la pantalla, no se pinta la ruta. «Vas a /configuracion-
+   * quiniela.html#liga» no le dice nada a nadie.
+   */
+  const NOMBRES_DE_PANTALLA = {
+    'configuracion-quiniela.html': 'configurar la quiniela',
+    'jornadas.html': 'armar jornadas',
+    'miembros.html': 'los miembros',
+    'cobros.html': 'los cobros',
+    'admin_trivias.html': 'crear trivias',
+    'agregar-resultados-oficiales.html': 'cargar marcadores oficiales',
+    'compartir.html': 'compartir al grupo',
+    'compartir-texto.html': 'copiar resultados y trivias',
+    'generar_reporte.html': 'generar el reporte',
+    'resultados.html': 'llenar por un jugador'
+  };
+
+  (function contarADondeVa() {
+    const hueco = document.getElementById('destinoTrasConfirmar');
+    if (!hueco) return;
+
+    const pedido = new URLSearchParams(window.location.search).get('volver') || '';
+    if (!pedido.startsWith('/') || pedido.startsWith('//')) return;
+
+    /* Sin la barra inicial, sin parámetros y sin almohadilla. */
+    const archivo = pedido.replace(/^\//, '').split(/[?#]/)[0];
+    const nombre = NOMBRES_DE_PANTALLA[archivo];
+
+    if (nombre) hueco.textContent = `, y de ahí sigues a ${nombre}`;
+  })();
+
   let esAdmin = false;
 
   /** Enseña una sección y esconde las otras tres. Nunca hay dos a la vez. */

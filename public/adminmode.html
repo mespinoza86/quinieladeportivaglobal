@@ -33,15 +33,36 @@
     </section>
 
     <section id="admin-login" class="app-panel" style="display: none;">
+      <!--
+        ⛔ ESTA PANTALLA TIENE QUE DECIR POR QUÉ TE PARA.
+
+        Recorriendo la aplicación como alguien nuevo salió que, nada más crear
+        tu quiniela, lo PRIMERO que ves es este muro: un título que decía
+        «Confirmar acceso», una contraseña, y ni una palabra de qué venías a
+        hacer ni a dónde vas después. Acabas de escribir esa misma contraseña
+        para entrar, así que se lee como que la aplicación no sabe quién eres.
+
+        El motivo de que exista es bueno —tocar cosas serias pide confirmar que
+        eres tú, y elegir quiniela borra la confirmación a propósito— pero eso
+        no se contaba en ningún sitio.
+
+        ⚠️ `destinoTrasConfirmar` lo rellena `adminmode.js` cuando la dirección
+        trae un `volver`: así la frase dice a dónde va, en vez de dejarlo a la
+        imaginación.
+      -->
       <div class="section-title-row"><div>
-        <h2>Confirmar acceso</h2>
-        <p class="helper-text">Escribe la contraseña de tu cuenta para entrar al modo administrador.</p>
+        <h2>Confirma que eres tú</h2>
+        <p class="helper-text">
+          Administrar la quiniela —jornadas, cobros, miembros— pide escribir tu
+          contraseña una vez más<span id="destinoTrasConfirmar"></span>. Es la
+          misma de tu cuenta, y vale para la próxima hora.
+        </p>
       </div></div>
       <form id="adminLoginForm" class="auth-form">
-        <label for="adminPassword">Contraseña</label>
+        <label for="adminPassword">Tu contraseña</label>
         <input id="adminPassword" name="password" type="password" autocomplete="current-password" required />
-        <button type="submit" class="primary-button">Entrar a Admin mode</button>
-        <p id="adminLoginMessage" class="form-message" role="alert"></p>
+        <button type="submit" class="primary-button">Confirmar y seguir</button>
+        <p id="adminLoginMessage" class="form-message form-message--error" role="alert"></p>
       </form>
     </section>
 
@@ -115,7 +136,8 @@
 
 
       <form id="logoutForm" class="logout-box">
-        <button id="exitAdminMode" type="button" class="ghost-button">Salir de Admin mode</button>
+        <!-- «Admin mode» era lo último en inglés que quedaba a la vista. -->
+        <button id="exitAdminMode" type="button" class="ghost-button">Dejar de administrar</button>
         <button type="submit" class="secondary-button">Cerrar sesión</button>
       </form>
     </section>

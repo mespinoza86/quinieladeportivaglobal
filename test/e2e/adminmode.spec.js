@@ -114,7 +114,7 @@ test('salir del modo administrador lleva a la portada, no al formulario', async 
   await page.getByRole('button', { name: /Confirmar|Entrar|Activar/i }).click();
   await expect(page.locator('#admin-content')).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole('button', { name: 'Salir de Admin mode' }).click();
+  await page.getByRole('button', { name: 'Dejar de administrar' }).click();
   await page.waitForURL('**/index.html', { timeout: 15_000 });
 
   // Y sigue con la sesión abierta: salir del modo admin no es cerrar sesión.

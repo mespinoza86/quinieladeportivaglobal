@@ -104,7 +104,7 @@ async function activarAdminMode(page, password) {
   await page.goto('/adminmode.html');
   await page.locator('#adminPassword').waitFor({ state: 'visible' });
   await page.locator('#adminPassword').fill(password);
-  await page.getByRole('button', { name: /Entrar a Admin mode/i }).click();
+  await page.getByRole('button', { name: /Confirmar y seguir/i }).click();
   await page.locator('#admin-content').waitFor({ state: 'visible' });
 }
 

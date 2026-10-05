@@ -120,7 +120,7 @@ test('⛔ crear una quiniela de liga y configurarla, SIN activar nada a mano', a
   /* Primero la puerta, con el destino a cuestas. */
   await page.waitForURL('**/adminmode.html?volver=*');
   await page.locator('#adminPassword').fill(datos.password);
-  await page.getByRole('button', { name: /Entrar a Admin mode/i }).click();
+  await page.getByRole('button', { name: /Confirmar y seguir/i }).click();
 
   /* Y de ahí, a configurar, ya con la llave puesta. */
   await page.waitForURL('**/configuracion-quiniela.html#liga');
@@ -153,7 +153,7 @@ test('⛔ «volver» no saca a nadie fuera del sitio', async ({ page }) => {
 
   await page.goto('/adminmode.html?volver=https://ejemplo.invalido/robar');
   await page.locator('#adminPassword').fill(datos.password);
-  await page.getByRole('button', { name: /Entrar a Admin mode/i }).click();
+  await page.getByRole('button', { name: /Confirmar y seguir/i }).click();
 
   await page.locator('#admin-content').waitFor({ state: 'visible' });
   expect(page.url()).toContain('/adminmode.html');
