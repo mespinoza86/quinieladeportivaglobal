@@ -29,6 +29,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const salidas = document.getElementById('borradorSalidas');
   const crear = document.getElementById('crearDelBorrador');
   const seguirAMano = document.getElementById('seguirAMano');
+  const armadoAMano = document.getElementById('armadoAMano');
+  const preferirManoBox = document.getElementById('borradorPreferirMano');
+  const preferirMano = document.getElementById('preferirMano');
+
+  /**
+   * Recoge o saca las tres secciones de armar la jornada a mano.
+   *
+   * ⚠️ El botón de «prefiero armarla yo» sale JUNTO con el recogido y se va con
+   * él: un botón para desplegar algo que ya está desplegado no dice nada.
+   */
+  function recogerArmadoAMano(recoger) {
+    if (armadoAMano) armadoAMano.hidden = recoger;
+    if (preferirManoBox) preferirManoBox.hidden = !recoger;
+  }
 
   let propuesta = null;
 
@@ -122,6 +136,20 @@ document.addEventListener('DOMContentLoaded', () => {
     acciones.hidden = false;
     salidas.hidden = true;
     panel.hidden = false;
+
+    /*
+     * ⛔ UNA SOLA COSA EN PANTALLA CUANDO HAY ALGO QUE PROPONER.
+     *
+     * Antes, con el borrador puesto, debajo seguían las tres secciones de
+     * armarla a mano: otro campo de nombre, otro buscador y otro «Guardar
+     * jornada». Tres caminos a la vez para lo mismo, y el de abajo decía «No
+     * hay partidos en esta jornada todavía» mientras aquí arriba había uno
+     * listo — la misma pantalla contradiciéndose.
+     *
+     * ⚠️ Se RECOGE, no se quita: quien prefiera armarla él tiene el botón. Lo
+     * que no puede es tropezarse con las dos cosas sin haberlo pedido.
+     */
+    recogerArmadoAMano(true);
   }
 
   /** Se acabó la temporada: las tres salidas, y decide quien mira. */
@@ -199,7 +227,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   crear?.addEventListener('click', confirmar);
-  seguirAMano?.addEventListener('click', () => { panel.hidden = true; });
+  /* Fin de temporada: se cierra el panel entero y queda lo de armar a mano. */
+  seguirAMano?.addEventListener('click', () => {
+    panel.hidden = true;
+    recogerArmadoAMano(false);
+  });
+
+  /*
+   * «Prefiero armarla yo»: saca lo de abajo y DEJA el borrador puesto. No se
+   * esconde a propósito — quien cambie de idea a mitad lo tiene ahí arriba, en
+   * vez de tener que recargar la pantalla para recuperarlo.
+   */
+  preferirMano?.addEventListener('click', () => {
+    recogerArmadoAMano(false);
+    document.getElementById('armadoAMano')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   (async () => {
     try {

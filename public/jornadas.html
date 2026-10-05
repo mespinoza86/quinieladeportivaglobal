@@ -70,6 +70,25 @@
       </div>
 
       <!--
+        ⛔ LA SALIDA A MANO, VISIBLE PERO APARTE.
+
+        Recorriendo la pantalla como alguien nuevo salió que ofrecía TRES formas
+        de crear una jornada a la vez —confirmar el borrador, elegir «Nueva
+        jornada» en el desplegable, o buscar partidos y guardar— con DOS campos
+        de nombre distintos. Y abajo del todo decía «No hay partidos en esta
+        jornada todavía» mientras aquí arriba el borrador ya tenía uno listo:
+        dos partes de la misma pantalla diciendo cosas contrarias.
+
+        Ahora, cuando hay algo que proponer, lo de abajo se recoge y esto es lo
+        único que hay que mirar. Quien quiera armarla a mano pulsa aquí.
+      -->
+      <div class="button-row" id="borradorPreferirMano" hidden>
+        <button type="button" id="preferirMano" class="ghost-button">
+          Prefiero armarla yo
+        </button>
+      </div>
+
+      <!--
         Las tres salidas de fin de temporada. Marco las pidió así: «se le proponen
         las opciones y él decide».
       -->
@@ -80,6 +99,14 @@
       </div>
     </section>
 
+    <!--
+      ⛔ TODO LO DE ARMARLA A MANO VA AQUI DENTRO, PARA PODER RECOGERLO.
+
+      Cuando el borrador tiene algo que proponer, esto se esconde entero y la
+      pantalla ensena UNA sola cosa. Antes convivian las tres formas de crear
+      una jornada, con dos campos de nombre distintos.
+    -->
+    <div id="armadoAMano">
     <section class="app-panel">
       <h2>Jornada</h2>
       <p class="helper-text">
@@ -160,6 +187,7 @@
 
       <button data-ir-a="adminmode.html" class="ghost-button" type="button">Volver</button>
     </section>
+    </div>
 
   </main>
 
