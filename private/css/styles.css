@@ -1047,6 +1047,91 @@ th,
   grid-template-columns: 1fr;
 }
 
+/*
+ * El rótulo de cada grupo del panel de administración.
+ *
+ * ⚠️ Es un `h3` y no un `h2` a propósito: cuelga de «Herramientas de
+ * administrador», que es el `h2` de la sección. Saltarse un nivel rompe el
+ * recorrido por encabezados de un lector de pantalla, que es como se navega
+ * una página larga sin ver.
+ *
+ * El color apagado y la letra pequeña son los de un rótulo, no los de un
+ * título: separa sin competir con los nombres de las tarjetas, que es lo que
+ * de verdad se viene a leer.
+ */
+.admin-grupo {
+  margin: 26px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* El primero no separa de nada: pegarlo arriba deja un hueco raro. */
+.admin-grupo:first-of-type {
+  margin-top: 4px;
+}
+
+/*
+ * ⛔ EL RENGLÓN DONDE LA APLICACIÓN CONTESTA — Y HASTA HOY NO TENÍA ESTILO.
+ *
+ * `.form-message` se usa en DIECIOCHO pantallas y no había ni una regla para
+ * ella: el mensaje salía como texto corriente, del mismo color y tamaño que el
+ * resto, debajo de un botón. O sea que la aplicación contestaba y no se notaba.
+ *
+ * ⭐ Eso explica las ochenta y nueve ventanas del navegador repartidas por el
+ * proyecto: cuando el mensaje de la página no se ve, se acaba tirando de
+ * `alert()`. Dándole forma, el sitio correcto deja de ser el peor.
+ *
+ * Vacío no ocupa: sin esto quedaría un hueco permanente bajo cada formulario.
+ */
+.form-message {
+  margin: 10px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--primary-claro);
+}
+
+.form-message:empty {
+  display: none;
+}
+
+/*
+ * ⚠️ El fallo NO se distingue sólo por el color: lleva también un símbolo.
+ * Quien no distingue el rojo del verde —y es bastante gente— se quedaría sin
+ * la única pista de que algo salió mal.
+ */
+.form-message--error {
+  color: var(--danger);
+}
+
+.form-message--error::before {
+  content: "⚠️ ";
+}
+
+/*
+ * ⛔ UN ENLACE DENTRO DE UN TEXTO DE AYUDA VA EN TINTA, NO EN VERDE.
+ *
+ * El verde de marca sobre el fondo claro del tema de día da **3,88** de
+ * contraste, y el mínimo legible es 4,5. Lo cazó la auditoría al añadir el
+ * enlace a «Inicio» en el panel de administración — a ojo no se notaba.
+ *
+ * ⚠️ Y SE SUBRAYA. Es la única excepción a la regla del proyecto de no
+ * subrayar: aquí el enlace va EN MEDIO de un párrafo, del mismo color que el
+ * resto, así que sin subrayado no hay forma de saber que se puede pulsar. En
+ * un botón o en una tarjeta la forma ya lo dice; dentro de una frase, no.
+ */
+.helper-text a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.helper-text a:hover {
+  color: var(--primary-claro);
+}
+
 .logout-box {
   margin-top: 18px;
   background: transparent;

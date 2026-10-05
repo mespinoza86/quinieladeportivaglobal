@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selector.value = datos.jornada || '';
     estado.textContent = datos.jornada
       ? `Resultado ${datos.estado === 'confirmada' ? 'confirmado' : 'provisional'} de ${datos.jornada}.`
-      : 'No hay jornadas creadas todavía.';
+      : 'Todavía no hay ninguna jornada. Cuando se cree la primera, aquí saldrá su tabla.';
 
     cuerpo.innerHTML = '';
     datos.clasificacion.forEach(fila => {

@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const data = await res.json();
 
     if (!res.ok || !data.trivias || data.trivias.length === 0) {
-      triviasContainer.innerHTML = '<div class="resultados-mensaje">No hay trivias disponibles.</div>';
+      triviasContainer.innerHTML = '<div class="resultados-mensaje">Esta jornada no trae trivias. No hay nada que contestar aquí.</div>';
       guardarBtn.style.display = 'none';
       infoCierreTrivia.innerHTML = '';
       return;

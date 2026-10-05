@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Se acabó la temporada: las tres salidas, y decide quien mira. */
   function pintarFinDeTemporada(datos) {
     titulo.textContent = 'No hay más jornadas por ahora';
-    resumen.textContent = datos.explicacion || 'No hay ninguna jornada nueva que proponer.';
+    resumen.textContent = datos.explicacion || 'No hay ninguna jornada nueva que proponer. Puedes armar una a mano cuando quieras.';
 
     aviso.hidden = true;
     nombreBox.hidden = true;

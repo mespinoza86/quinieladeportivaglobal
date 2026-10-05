@@ -121,25 +121,44 @@ async function llenar(page, indice, local, visitante) {
   await page.locator(`#resultadoEquipo2_${indice}`).fill(visitante);
 }
 
-/** Guarda y devuelve los textos de los diálogos que salieron. */
-async function guardar(page, { aceptar = true } = {}) {
-  const dialogos = [];
+/*
+ * ⛔ ESTA PANTALLA YA NO ABRE VENTANAS DEL NAVEGADOR.
+ *
+ * Tenía once `alert()` y un `confirm()`. Ahora contesta en el renglón
+ * `#avisoLlenar`, que está debajo de los botones, como el resto de la
+ * aplicación. Por eso la ayuda ya no escucha diálogos: lee ese renglón.
+ *
+ * ⚠️ Y el aviso de «partidos a medias» pasó a ser de DOS CLICS: el primero
+ * advierte y el segundo guarda igual. Era un `confirm()`, que es una pregunta
+ * de verdad —hay que poder decir que no—, así que no se podía cambiar por un
+ * aviso a secas.
+ */
+const aviso = page => page.locator('#avisoLlenar');
 
-  const manejador = async dialogo => {
-    dialogos.push({ tipo: dialogo.type(), texto: dialogo.message() });
-    if (dialogo.type() === 'confirm' && !aceptar) return dialogo.dismiss();
-    return dialogo.accept();
-  };
-
-  page.on('dialog', manejador);
+/** Pulsa «Guardar» una vez y devuelve lo que quedó escrito en el aviso. */
+async function pulsarGuardar(page) {
+  await aviso(page).evaluate(nodo => { nodo.textContent = ''; }).catch(() => {});
   await page.getByRole('button', { name: /Guardar/i }).first().click();
 
-  // El alert del resumen es lo último que hace `guardarResultados`.
-  await expect.poll(() => dialogos.some(d => d.tipo === 'alert'), { timeout: 10_000 })
-    .toBe(aceptar);
+  await expect.poll(() => aviso(page).textContent(), { timeout: 10_000 })
+    .not.toBe('');
 
-  page.off('dialog', manejador);
-  return dialogos;
+  return (await aviso(page).textContent()) || '';
+}
+
+/**
+ * Guarda del todo: pulsa, y si lo que sale es la advertencia de los partidos a
+ * medias, vuelve a pulsar para confirmar.
+ *
+ * Devuelve `{ advertencia, resumen }`: la advertencia es '' cuando no hizo
+ * falta confirmar nada.
+ */
+async function guardar(page) {
+  const primero = await pulsarGuardar(page);
+
+  if (!/Pulsa otra vez/i.test(primero)) return { advertencia: '', resumen: primero };
+
+  return { advertencia: primero, resumen: await pulsarGuardar(page) };
 }
 
 test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async ({ page }) => {
@@ -165,11 +184,10 @@ test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async 
   // 2. Se borra SÓLO el marcador visitante del primero: queda a medias.
   await page.locator('#resultadoEquipo2_0').fill('');
 
-  const dialogos = await guardar(page);
-  const confirmacion = dialogos.find(d => d.tipo === 'confirm');
+  const { advertencia } = await guardar(page);
 
-  expect(confirmacion, 'un partido a medias tiene que avisar antes de guardar').toBeTruthy();
-  expect(confirmacion.texto, 'el aviso tiene que decir que lo guardado se respeta')
+  expect(advertencia, 'un partido a medias tiene que avisar antes de guardar').toBeTruthy();
+  expect(advertencia, 'el aviso tiene que decir que lo guardado se respeta')
     .toMatch(/se queda como está/i);
 
   // 3. Y lo guardado sigue intacto. Esto es lo que se rompía.
@@ -198,10 +216,10 @@ test('borrar los DOS marcadores sí quita el pronóstico', async ({ page }) => {
   await page.locator('#resultadoEquipo1_0').fill('');
   await page.locator('#resultadoEquipo2_0').fill('');
 
-  const dialogos = await guardar(page);
+  const { advertencia } = await guardar(page);
 
-  expect(dialogos.some(d => d.tipo === 'confirm'),
-    'vaciar los dos es una decisión, no un descuido: no tiene que preguntar').toBe(false);
+  expect(advertencia,
+    'vaciar los dos es una decisión, no un descuido: no tiene que preguntar').toBe('');
 
   await page.reload();
   await abrirPantalla(page, datos.password);

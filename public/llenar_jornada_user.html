@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Llenar Jornada</title>
+  <title>Llenar quiniela</title>
 
   <link rel="icon" href="/iconos/icono-32.png" sizes="32x32" type="image/png" />
   <link rel="apple-touch-icon" href="/iconos/icono-180.png" />
@@ -40,7 +40,7 @@
       <div class="hero-top">
         <div>
           <p class="eyebrow">Pronósticos</p>
-          <h1>Llenar Jornada</h1>
+          <h1>Llenar quiniela</h1>
         </div>
         <div class="app-logo">📝</div>
       </div>
@@ -79,6 +79,20 @@
       </div>
 
       <div id="partidosContainer" class="matches-container"></div>
+
+      <!--
+        ⛔ AQUÍ VAN LOS AVISOS, Y NO EN UNA VENTANA DEL NAVEGADOR.
+
+        Esta pantalla tenía once `alert()`. Son ventanas grises que tapan lo que
+        acabas de escribir, hay que cerrarlas para seguir, y en el móvil salen
+        con el nombre del sitio encima — parecen un error del navegador y no un
+        mensaje de la quiniela.
+
+        Encima, el resto de la aplicación ya avisaba dentro de la página. Que la
+        pantalla que todo el mundo usa cada semana fuera la excepción era lo
+        peor que podía pasar.
+      -->
+      <p id="avisoLlenar" class="form-message" role="status"></p>
 
       <div class="button-stack">
         <button id="guardarResultadosButton">Guardar Resultados</button>

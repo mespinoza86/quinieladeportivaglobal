@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copiar resultados y trivias</title>
+  <link rel="icon" href="/iconos/icono-32.png" sizes="32x32" type="image/png" />
+  <link rel="apple-touch-icon" href="/iconos/icono-180.png" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="/js/tema.js"></script>
+  <script src="/js/navegacion.js" defer></script>
+  <script src="/js/marcador-visible.js" defer></script>
+  <script src="/js/compartir-texto.js" defer></script>
+</head>
+<body class="app-body">
+<main class="mobile-shell">
+
+  <section class="hero-card">
+    <div class="hero-top">
+      <div>
+        <p class="eyebrow">Administración</p>
+        <h1>Copiar resultados y trivias</h1>
+      </div>
+      <div class="app-logo">📋</div>
+    </div>
+  </section>
+
+  <!--
+    ⛔ ESTA PANTALLA SUSTITUYE A CINCO.
+
+    Había «Enviar Resultados», «Enviar resultados por partido», «Enviar
+    Trivias», «Enviar Trivias por Partido» y «Copiar Resultado Jugador». En el
+    panel de administración, TRES de ellas se describían con la misma frase
+    —«Compartir información»—, así que no había forma de saber cuál abrir.
+
+    En el fondo eran una rejilla: QUÉ se copia (resultados o trivias) y DE
+    CUÁNTO (toda la jornada, un partido o un jugador). Puestas como dos
+    preguntas, caben en una sola pantalla y se entiende sin adivinar.
+
+    ⚠️ NO se pierde nada: los cinco textos se arman igual que antes, con el
+    mismo formato, en `compartir-texto.js`.
+  -->
+
+  <section class="app-panel">
+    <h2>Qué quieres copiar</h2>
+
+    <div class="radio-fila" role="radiogroup" aria-label="Qué copiar">
+      <label class="checkbox-fila">
+        <input type="radio" name="que" value="resultados" checked />
+        <span>Los pronósticos</span>
+      </label>
+      <label class="checkbox-fila">
+        <input type="radio" name="que" value="trivias" />
+        <span>Las trivias</span>
+      </label>
+    </div>
+
+    <label class="field-label" for="jornadaSelect">De qué jornada</label>
+    <select id="jornadaSelect"></select>
+
+    <label class="field-label" for="alcanceSelect">De cuánto</label>
+    <select id="alcanceSelect">
+      <option value="jornada">Toda la jornada</option>
+      <option value="partido">Un partido</option>
+      <option value="jugador">Un jugador</option>
+    </select>
+
+    <div id="cajaPartido" hidden>
+      <label class="field-label" for="partidoSelect">Partido</label>
+      <select id="partidoSelect"></select>
+    </div>
+
+    <div id="cajaJugador" hidden>
+      <label class="field-label" for="jugadorSelect">Jugador</label>
+      <select id="jugadorSelect"></select>
+    </div>
+
+    <p id="aviso" class="form-message"></p>
+  </section>
+
+  <section class="app-panel">
+    <h2>El texto</h2>
+    <p class="helper-text">
+      Se arma solo en cuanto eliges. Revísalo antes de mandarlo: si algún
+      partido no había empezado, su pronóstico sale en blanco a propósito.
+    </p>
+
+    <textarea id="texto" rows="14" readonly
+              placeholder="Elige una jornada arriba y el texto aparece aquí."></textarea>
+
+    <div class="button-row">
+      <button type="button" id="copiar">Copiar</button>
+      <button type="button" id="whatsapp" class="secondary-button">Abrir WhatsApp</button>
+    </div>
+
+    <p id="mensaje" class="form-message"></p>
+
+    <div class="button-row">
+      <button data-ir-a="adminmode.html" class="ghost-button" type="button">Volver</button>
+    </div>
+  </section>
+
+</main>
+
+<nav class="bottom-nav">
+  <a href="index.html">
+    🏠
+    <span>Inicio</span>
+  </a>
+
+  <a href="llenar_jornada_user.html">
+    📝
+    <span>Llenar</span>
+  </a>
+
+  <a href="clasificacion-jornada.html">
+    🥇
+    <span>Por jornada</span>
+  </a>
+
+  <a href="resultados-totales.html">
+    🏆
+    <span>General</span>
+  </a>
+</nav>
+</body>
+</html>

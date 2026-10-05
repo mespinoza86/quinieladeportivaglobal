@@ -700,10 +700,16 @@ function crearApp({ pool = null, secretoSesion = process.env.SESSION_SECRET } = 
    *
    * El criterio del reparto: las pantallas que EXISTEN para actuar piden la
    * capacidad de esa acción; las que existen para mirar piden `admin.ver`.
-   * `copiarresultadojugador.html` está entre las de mirar porque sólo hace
-   * GET —cosa que hubo que comprobar, porque el nombre no lo dice—, y
-   * `resultados.html` está entre las de escribir por lo contrario: publica en
-   * `/api/admin/resultados`.
+   * `resultados.html` está entre las de escribir porque publica en
+   * `/api/admin/resultados`, y `generar_reporte.html` entre las de mirar
+   * porque sólo hace GET — cosa que hay que comprobar leyendo, porque el
+   * nombre de una pantalla no dice si escribe.
+   *
+   * ⚠️ `compartir-texto.html` pide `compartir` y no `admin.ver` aunque sólo
+   * lea: lo que hace es sacar texto para mandarlo FUERA de la quiniela, y eso
+   * es una capacidad propia. Heredó la de las cuatro pantallas de «enviar» que
+   * sustituye, no la de `copiarresultadojugador`, que era la quinta y pedía
+   * `admin.ver`.
    */
   /*
    * El mapa vive en `src/permisos.js`, con la tabla de capacidades: es dato de

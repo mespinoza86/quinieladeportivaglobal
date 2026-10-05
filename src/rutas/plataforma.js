@@ -75,7 +75,21 @@ function sinQuiniela(app, { requireLogin }) {
       codigoIngreso: q.codigo_ingreso ?? undefined,
       estadoQuiniela: q.estado_quiniela,
       rol: q.rol,
-      estadoMembresia: q.estado_membresia
+      estadoMembresia: q.estado_membresia,
+
+      /*
+       * ⛔ EL NOMBRE DEL ROL EN CASTELLANO, dicho por el servidor.
+       *
+       * La pantalla pintaba `q.rol` tal cual, así que en «Mis quinielas» se
+       * leía «user · activo · activa»: palabras de la base de datos, con guión
+       * bajo incluido, delante de quien sólo quiere entrar a jugar.
+       *
+       * Y la tabla que las traduce YA EXISTÍA —`permisos.NOMBRES`—, sólo que
+       * vive en el servidor y el navegador no puede leerla. Mandarla resuelta
+       * es mejor que copiarla al navegador: cuando se añada un rol, habrá un
+       * solo sitio que cambiar.
+       */
+      rolNombre: permisos.NOMBRES[q.rol] || q.rol
     })));
   });
 

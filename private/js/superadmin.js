@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const VACIO = {
     todas: 'Ninguna cuenta coincide.',
     sin_confirmar: 'Nadie tiene el correo sin confirmar. 👍',
-    desactivadas: 'No hay ninguna cuenta desactivada.'
+    desactivadas: 'No hay ninguna cuenta desactivada. Las que desactives aparecerán aquí.'
   };
 
   async function cargarCuentas(buscar = '') {

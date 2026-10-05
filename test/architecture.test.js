@@ -1076,10 +1076,14 @@ test('⛔ quien imprime pronósticos ajenos mira si todavía son secretos', () =
    * `src/compartir.js`, pero imprime exactamente lo mismo y por el mismo
    * WhatsApp, asi que le toca la misma regla.
    */
+  /*
+   * ⚠️ Las tres que leían `resultados-con-equipos` —`enviarresultados`,
+   * `copiarresultadojugador` y `enviarresultadospartido`— se fundieron en
+   * `compartir-texto.js`, junto con las dos de trivias. Eran cinco pantallas
+   * para la misma rejilla: qué se copia y de cuánto.
+   */
   const consumidores = {
-    'enviarresultados.js': 'resultados-con-equipos',
-    'copiarresultadojugador.js': 'resultados-con-equipos',
-    'enviarresultadospartido.js': 'resultados-con-equipos',
+    'compartir-texto.js': 'resultados-con-equipos',
     'compartir.js': 'compartir/pendientes'
   };
 

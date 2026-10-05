@@ -1,3 +1,37 @@
+/*
+ * ⛔ AQUÍ NO SE USA `alert()`. Se avisa dentro de la página.
+ *
+ * Esta pantalla tenía once ventanas del navegador, y es la que usa TODO el
+ * mundo cada semana. Tapan lo que acabas de escribir, obligan a cerrarlas para
+ * seguir, y en el móvil llevan el nombre del sitio encima: parecen un error del
+ * navegador y no un mensaje de la quiniela. El resto de la aplicación ya
+ * avisaba en la propia página; ésta era la excepción.
+ *
+ * `avisar(texto)` escribe en el renglón que hay bajo los botones.
+ * `avisar('')` lo borra.
+ */
+function avisar(texto, esFallo) {
+    const renglon = document.getElementById('avisoLlenar');
+    if (!renglon) return;
+
+    renglon.textContent = texto || '';
+    /* El color lo pone la clase: un fallo y una confirmación no se leen igual. */
+    renglon.classList.toggle('form-message--error', Boolean(esFallo));
+}
+
+/*
+ * ⛔ VA AQUÍ FUERA, Y NO DENTRO DEL ARRANQUE.
+ *
+ * Quien lo lee es `guardarResultados`, que es una función de este archivo y no
+ * de dentro del `DOMContentLoaded`. Declarado ahí dentro, el guardado reventaba
+ * con «avisadoDeMedias is not defined» — y `node --check` NO lo ve, porque es
+ * sintaxis correcta: el fallo sólo aparece al pulsar el botón.
+ *
+ * Es el aviso de «hay partidos con un solo marcador»: el primer clic avisa, el
+ * segundo guarda igual.
+ */
+let avisadoDeMedias = false;
+
 document.addEventListener('DOMContentLoaded', () => {
     let jornadaSeleccionada = null;
     let jugadorValidado = null;
@@ -102,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const jugadorData = await fetch(`/api/jugador/${encodeURIComponent(jugador)}`).then(r => r.json());
 
         if (!jugadorData.password) {
-            alert("Su jugador no tiene contraseña aún, hable con el administrador");
+            avisar('Tu jugador todavía no tiene contraseña. Pídesela a quien administra la quiniela.', true);
             combo.value = '';
             return;
         }
@@ -127,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await resp.json();
 
             if (!resp.ok || !data.success) {
-                    alert(data.error || "Contraseña incorrecta.");
+                    avisar(data.error || 'Esa contraseña no es la tuya. Inténtalo otra vez.', true);
             } else {
                 passwordCorrecta = true;
                 jugadorValidado = jugador;
@@ -376,12 +410,37 @@ function conectarBotonesDeMarcador(contenedor) {
     if (contenedor.dataset.botonesConectados === 'si') return;
     contenedor.dataset.botonesConectados = 'si';
 
+    /*
+     * ⚠️ Tocar cualquier marcador borra el aviso de «partidos a medias».
+     *
+     * Ese aviso pide una segunda pulsación para guardar igual. Si entre medias
+     * has corregido un marcador, la advertencia ya no habla de lo que hay en
+     * pantalla: dejarla puesta haría que el siguiente «Guardar» se la saltara
+     * sin volver a comprobar nada.
+     *
+     * Va aquí, en el mismo contenedor y por delegación, para no añadir un
+     * oyente por campo — la misma razón que explica el comentario de arriba.
+     */
+    contenedor.addEventListener('input', () => {
+        if (!avisadoDeMedias) return;
+        avisadoDeMedias = false;
+        avisar('');
+    });
+
     contenedor.addEventListener('click', evento => {
         const boton = evento.target.closest('.stepper-btn');
         if (!boton || boton.disabled) return;
 
         const campo = boton.parentElement.querySelector('input');
         if (!campo || campo.disabled) return;
+
+        /*
+         * ⚠️ También aquí, y NO sólo en el oyente de `input` de arriba: cambiar
+         * el valor de un campo desde el código —que es lo que hacen estos
+         * botones— no dispara `input`. Sin esta línea, quien corrige con − / +
+         * se saltaría la segunda comprobación.
+         */
+        if (avisadoDeMedias) { avisadoDeMedias = false; avisar(''); }
 
         /*
          * ⛔ VACÍO NO ES CERO, Y ESA DIFERENCIA GUARDA PRONÓSTICOS.
@@ -746,11 +805,11 @@ function copiarResultados() {
 
     navigator.clipboard.writeText(textoResultado)
         .then(() => {
-            alert('Texto copiado al portapapeles');
+            avisar('Copiado. Ya lo puedes pegar donde quieras.');
         })
         .catch(error => {
             console.error('Error copiando texto:', error);
-            alert('No se pudo copiar el texto.');
+            avisar('Tu navegador no dejó copiar solo. Selecciona el texto y usa Ctrl+C.', true);
         });
 }
 
@@ -837,6 +896,17 @@ function limpiarMarcadores() {
         if (inputs[0]) inputs[0].value = '';
         if (inputs[1]) inputs[1].value = '';
     });
+
+    /*
+     * ⚠️ Se olvida el aviso de los partidos a medias, y el renglón se limpia.
+     *
+     * Aquí se llega al cambiar de jugador o de jornada. Dejarlo puesto haría
+     * que la siguiente pulsación de «Guardar» se saltara la advertencia sin
+     * haberla enseñado — guardaría a medias en silencio, que es justo lo que la
+     * advertencia viene a evitar.
+     */
+    avisadoDeMedias = false;
+    avisar('');
 }
 
 async function cargarResultadosGuardados(jugador, jornada) {
@@ -868,13 +938,13 @@ async function guardarResultados(jornada, jugadorValidado) {
     const combo = document.getElementById('comboJugadores');
     const jugador = combo.value;
     if (!jugador) {
-        alert("Seleccione un jugador");
+        avisar('Primero elige tu nombre en la lista de arriba.', true);
         return;
     }
 
 
     if (jugador !== jugadorValidado) {
-        alert("Debe seleccionar el jugador y validar la contraseña antes de guardar.");
+        avisar('Antes de guardar hay que elegir el jugador y poner su contraseña.', true);
         return;
     }
 
@@ -932,7 +1002,7 @@ async function guardarResultados(jornada, jugadorValidado) {
 
         // Validación de números
         if (isNaN(marcador1) || isNaN(marcador2)) {
-            alert(`Error: solo se permiten valores numéricos en el partido ${index + 1}`);
+            avisar(`En el partido ${index + 1} hay algo que no es un número. Repásalo.`, true);
             errorDetectado = true;
             pronosticos.push(null);
             return;
@@ -958,14 +1028,27 @@ async function guardarResultados(jornada, jugadorValidado) {
         const cuales = partidosAMedias.join(', ');
         const plural = partidosAMedias.length > 1;
 
-        const continuar = confirm(
-            `${plural ? 'Los partidos' : 'El partido'} ${cuales} ${plural ? 'tienen' : 'tiene'} `
-            + `un solo marcador, así que no se ${plural ? 'guardan' : 'guarda'}.\n\n`
-            + `Si ya ${plural ? 'tenían' : 'tenía'} algo guardado, se queda como está. `
-            + 'El resto sí se guarda.\n\n¿Continuar?'
-        );
+        /*
+         * ⛔ DOS CLICS EN VEZ DE UNA VENTANA.
+         *
+         * Era un `confirm()`, que es una pregunta de verdad y por eso no se
+         * podía cambiar por un aviso a secas: hay que poder decir que no y
+         * volver a arreglar el marcador.
+         *
+         * El primer clic avisa y el botón pasa a decir que guardará igual; el
+         * segundo guarda. `avisadoDeMedias` se borra al tocar cualquier
+         * marcador, porque entonces la advertencia ya hablaba de otra cosa.
+         */
+        if (!avisadoDeMedias) {
+            avisadoDeMedias = true;
 
-        if (!continuar) {
+            avisar(
+                `${plural ? 'Los partidos' : 'El partido'} ${cuales} ${plural ? 'tienen' : 'tiene'} `
+                + `un solo marcador, así que no se ${plural ? 'guardan' : 'guarda'}. `
+                + `Si ya ${plural ? 'tenían' : 'tenía'} algo guardado, se queda como está. `
+                + 'El resto sí se guarda. Pulsa otra vez para guardar de todos modos.',
+                true
+            );
             return;
         }
     }
@@ -982,13 +1065,13 @@ async function guardarResultados(jornada, jugadorValidado) {
 const data = await res.json();
 
 if (!res.ok || !data.success) {
-    alert(data.error || "No se pudieron guardar los resultados.");
+    avisar(data.error || 'No se pudieron guardar. Vuelve a intentarlo.', true);
     return;
 }
 
 await cargarResultadosGuardados(jugador, jornada);
 
-alert(resumenDeGuardado(data, partidosAMedias));
+avisar(resumenDeGuardado(data, partidosAMedias));
 
 
 }

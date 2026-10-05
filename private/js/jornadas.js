@@ -333,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             rangoTexto.textContent = cuantasLigas
                 ? cuantasLigas + ' torneos con partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.'
-                : 'No hay partidos entre el ' + datos.desde + ' y el ' + datos.hasta + '.';
+                : 'No hay partidos de ese torneo entre el ' + datos.desde + ' y el ' + datos.hasta + '. Prueba con otra fecha o con otro torneo.';
 
         } catch (error) {
             console.error('Error cargando torneos:', error);

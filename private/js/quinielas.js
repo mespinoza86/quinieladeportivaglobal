@@ -92,13 +92,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     shell.appendChild(document.getElementById('cerrarSesion'));
   }
 
+  /*
+   * ⛔ LO QUE SE LEE DEBAJO DEL NOMBRE DE LA QUINIELA.
+   *
+   * Antes era `rol · estadoMembresia · estadoQuiniela` tal cual sale de la base
+   * de datos, así que la mayoría de la gente leía «user · activo · activa»
+   * —tres palabras de programador, con guión bajo incluido— antes de haber
+   * entrado siquiera.
+   *
+   * ⭐ Y NO SE TRADUCEN LAS TRES, se dicen sólo las que aportan algo. «Activo»
+   * y «activa» es lo normal: decirlo cada vez es ruido que entrena a no leer la
+   * línea, y entonces tampoco se lee el día que pone «archivada». Así que el
+   * rol siempre, y el estado únicamente cuando NO es el corriente.
+   */
+  const ESTADO_MEMBRESIA = {
+    pendiente_ingreso: 'esperando que te aprueben',
+    pendiente_retiro: 'has pedido salirte',
+    rechazado: 'no te aceptaron',
+    expulsado: 'te sacaron de esta quiniela'
+  };
+
+  const ESTADO_QUINIELA = {
+    archivada: 'quiniela archivada',
+    eliminada: 'quiniela eliminada'
+  };
+
+  function describir(q) {
+    const partes = [q.rolNombre || q.rol];
+
+    const membresia = ESTADO_MEMBRESIA[q.estadoMembresia];
+    if (membresia) partes.push(membresia);
+
+    const quiniela = ESTADO_QUINIELA[q.estadoQuiniela];
+    if (quiniela) partes.push(quiniela);
+
+    return partes.join(' · ');
+  }
+
   function tarjetaDe(q) {
     const card = document.createElement('article');
     card.className = 'action-card';
 
     const puedeEntrar = ['activo', 'pendiente_retiro'].includes(q.estadoMembresia);
 
-    card.innerHTML = html`<div><h3>${q.nombre}</h3><p>${q.rol} · ${q.estadoMembresia} · ${q.estadoQuiniela}</p>${q.codigoIngreso ? html`<p>Código: <strong>${q.codigoIngreso}</strong></p>` : ''}</div>`;
+    card.innerHTML = html`<div><h3>${q.nombre}</h3><p>${describir(q)}</p>${q.codigoIngreso ? html`<p>Código: <strong>${q.codigoIngreso}</strong></p>` : ''}</div>`;
 
     if (!puedeEntrar) {
       /*

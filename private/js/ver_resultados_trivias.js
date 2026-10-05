@@ -64,8 +64,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     jornadaSelect.innerHTML = '';
 
     if (!Array.isArray(jornadasTrivia) || jornadasTrivia.length === 0) {
-      jornadaSelect.innerHTML = '<option value="">No hay trivias creadas</option>';
-      mostrarMensaje('No hay trivias creadas todavía.');
+      jornadaSelect.innerHTML = '<option value="">Todavía no hay trivias</option>';
+      mostrarMensaje('Todavía no hay trivias en ninguna jornada. Las crea quien administra la quiniela.');
       return;
     }
 

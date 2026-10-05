@@ -110,15 +110,24 @@ const PAGINAS = {
   '/admin_trivias.html': 'jornadas.escribir',
   '/resultados.html': 'resultados.escribir',
   '/agregar-resultados-oficiales.html': 'resultados.escribir',
-  '/copiarresultadojugador.html': 'admin.ver',
   '/generar_reporte.html': 'admin.ver',
   '/cobros.html': 'admin.ver',
   '/reporte-cobros.html': 'admin.ver',
   '/compartir.html': 'compartir',
-  '/enviarresultados.html': 'compartir',
-  '/enviarresultadostrivias.html': 'compartir',
-  '/enviarresultadospartido.html': 'compartir',
-  '/enviarresultadostriviaspartido.html': 'compartir'
+
+  /*
+   * ⛔ UNA ENTRADA DONDE HABÍA CINCO.
+   *
+   * `enviarresultados`, `enviarresultadospartido`, `enviarresultadostrivias`,
+   * `enviarresultadostriviaspartido` y `copiarresultadojugador` se fundieron en
+   * `compartir-texto.html`: eran la misma rejilla —qué se copia y de cuánto—
+   * repartida en cinco pantallas, y tres se anunciaban con el mismo texto.
+   *
+   * ⚠️ Pide `compartir` y no `admin.ver`, que es lo que pedía
+   * `copiarresultadojugador`. Es la capacidad que ya tenían las otras cuatro, y
+   * la que describe lo que se hace aquí: sacar texto para mandarlo fuera.
+   */
+  '/compartir-texto.html': 'compartir'
 };
 
 /** El escalón de un rol, o -1 si el rol no existe. */

@@ -93,7 +93,7 @@ function estadoPartidoHTML(partido) {
             </div>
             `).join('');
         } else {
-            resultadosOficialesContainer.innerHTML = '<p>No hay resultados oficiales para esta jornada.</p>';
+            resultadosOficialesContainer.innerHTML = '<p>Esta jornada todavía no tiene marcadores. Llegan solos cuando los partidos terminan.</p>';
         }
     }
 
@@ -123,7 +123,7 @@ function estadoPartidoHTML(partido) {
             const jornadas = actual.jornadas || [];
 
             if (!jornadas.length) {
-                resultadosOficialesContainer.innerHTML = '<p>No hay jornadas registradas.</p>';
+                resultadosOficialesContainer.innerHTML = '<p>Todavía no hay ninguna jornada. Las crea quien administra la quiniela.</p>';
                 return;
             }
 

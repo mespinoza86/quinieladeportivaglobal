@@ -587,17 +587,17 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 4 de octubre de 2026
+#### 📍 Dónde quedó todo el 5 de octubre de 2026
 
 | | |
 |---|---|
-| Último commit | `fc5794b` — cierra la entrada 114 con las cifras al día |
-| Árbol | ⚠️ Limpio de cambios, pero **`main` va TRES commits por delante de `origin/main`**: `030fd81`, `39b9474` y `fc5794b` siguen sin empujar. Y `conversion.md` sigue sin decidir si entra al repositorio |
-| Producción | ⚠️ **Corre el código de `41b93bd`, del 22 de septiembre: lo de las ligas con su país NO está puesto.** Comprobada otra vez el 4 de octubre —sirve el icono, `<span>General</span>` presente, `<span>Jornadas</span>` ausente, el menú en el orden nuevo— con el control de «manifest.webmanifest», que existe en todas las versiones. ⭐ **Lleva 1.000.178 s —once días y medio— sin reiniciarse** |
+| Último commit | `(este)` — Entrada 115: que lo entienda alguien que entra por primera vez |
+| Árbol | ✅ Limpio. **`main` va por delante de `origin/main`**: todo lo del 2 y el 5 de octubre está commiteado y sin empujar |
+| Producción | ⚠️ **Corre el código de `41b93bd`, del 22 de septiembre.** Ni las ligas con su país ni la revisión de usabilidad están puestas 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **660** rápidas + **220** de navegador, todas en verde y **cero flaky**, corridas sobre `39b9474` |
+| Pruebas | **660** rápidas + **220** de navegador, todas en verde y **cero flaky**, corridas sobre la revisión de usabilidad |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) y **las ligas con su país** (114) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) , **las ligas con su país** (114) y **la revisión de usabilidad: seis cambios** (115) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -19395,6 +19395,182 @@ mutaciones sobre el centinela nuevo -> las 5 MUERDEN
   si se puede enseñar «UEFA» o hay que conformarse con «Internacional».
 - Sigue lo de siempre: la notificación al teléfono y el ciclo del borrador —este
   último bloqueado hasta que exista una quiniela de liga.
+
+---
+
+### 📌 Entrada 115 — 5 de octubre de 2026 — Que lo entienda alguien que entra por primera vez
+
+**Objetivo:** Marco pidió una revisión completa *«pensando como un usuario que
+nunca ha usado esto»*, y de ahí salieron seis cambios. Los aprobó los seis de
+una vez: *«dale a las 6»*.
+
+## ⭐ EL CRITERIO, QUE NO ES EL GUSTO DE NADIE
+
+Para renombrar no se discutieron nombres bonitos. Se usó una regla que se puede
+comprobar con un guion:
+
+> **Una pantalla debe llamarse igual que el botón que lleva a ella, y dos
+> pantallas distintas no pueden llamarse igual.**
+
+Medido antes de tocar nada: **24 de 38 accesos no cumplían**, y había dos
+parejas de pantallas compartiendo el `<title>`. Después: **5 descuadres** —los
+cinco que resolvió la fusión— y **ninguna repetida**.
+
+⚠️ **Se renombró lo que lee la gente, NO los archivos.** Cambiar nombres de
+archivo arrastraría rutas, permisos, pruebas y documentación sin que nadie viera
+nada distinto en pantalla.
+
+Lo más dañino era que **«Resultados» significaba seis cosas**: los marcadores
+reales (en DOS pantallas con el mismo nombre, la de cargar y la de ver), los
+pronósticos, los puntos, la clasificación, el detalle por jugador y las trivias.
+
+## ⛔ ERAN CINCO PANTALLAS DE COMPARTIR, NO CUATRO
+
+Marco contó cuatro. Al rastrearlo apareció la quinta, «Copiar Resultado
+Jugador». Y **tres de las cinco se anunciaban en el panel con la misma frase**:
+«Compartir información».
+
+⭐ **Fundirlas no tocó el servidor**, y eso se supo antes de empezar: las cinco
+usaban sólo tres rutas, y **tres de ellas llamaban exactamente a la misma**. Lo
+único que cambiaba era cómo pegaban el texto.
+
+Ahora es `compartir-texto.html` —«Copiar resultados y trivias»— con dos
+preguntas: **qué** (pronósticos o trivias) y **de cuánto** (la jornada, un
+partido o un jugador).
+
+⚠️ **Los cinco formatos de texto se conservan intactos.** Son los que la gente
+ya reconoce pegados en el grupo; cambiarlos «de paso» habría sido meter una
+sorpresa que nadie pidió.
+
+## ⭐ EL HALLAZGO QUE EXPLICA LAS 89 VENTANAS DEL NAVEGADOR
+
+La pantalla «Llenar quiniela» tenía **once `alert()`**, y es la que usa todo el
+mundo cada semana. Al cambiarlas por el renglón de aviso de la página apareció
+el porqué de que existieran:
+
+> **`.form-message` se usa en DIECIOCHO pantallas y no tenía ni una regla de
+> CSS.**
+
+El mensaje salía como texto corriente, del mismo color y tamaño que el resto,
+debajo de un botón. O sea: **la aplicación contestaba y no se notaba**. Con el
+sitio bueno invisible, se acababa tirando del `alert()`.
+
+Dándole forma —y un símbolo además del color, para quien no distingue el rojo—
+mejoran las dieciocho de una vez.
+
+⚠️ **El `confirm()` de los partidos a medias NO se borró sin más**: es una
+pregunta de verdad y hay que poder decir que no. Pasó a dos clics: el primero
+advierte, el segundo guarda. Y el aviso **se olvida al tocar cualquier
+marcador**, porque entonces ya hablaba de otra cosa.
+
+## El panel, y lo que se dejó de repetir
+
+De **17 accesos sueltos a 10 en tres grupos**: «Cada semana», «Compartir con el
+grupo» y «La quiniela» — ordenados por **cuándo** se usan.
+
+Salieron «Pronósticos», «Puntos» y «Tabla general», que eran las mismas
+pantallas de la portada. ⚠️ Pero **queda escrito dónde están**: borrar un acceso
+sin decir nada se lee como que se perdió algo.
+
+## Y el `user · activo · activa`
+
+«Mis quinielas» enseñaba tres palabras de la base de datos, con guión bajo,
+antes de que nadie hubiera entrado. **La tabla que las traduce ya existía** en
+`permisos.NOMBRES`; sólo vivía en el servidor.
+
+⭐ **No se traducen las tres, se dicen sólo las que aportan algo.** «Activo ·
+activa» es lo normal: repetirlo entrena a no leer esa línea, y entonces tampoco
+se lee el día que pone «archivada».
+
+## ⛔ TRES ERRORES PROPIOS, Y CÓMO SALIERON
+
+1. **Una variable fuera de alcance que `node --check` da por buena.** Declaré
+   `avisadoDeMedias` dentro del `DOMContentLoaded` y la usa `guardarResultados`,
+   que está fuera. Es **sintaxis correcta**: habría reventado al pulsar Guardar,
+   en la pantalla que usa todo el mundo. Lo cazó revisar el ámbito a mano, no
+   ninguna herramienta.
+
+2. **Un `require` duplicado.** Añadí `permisos` a `plataforma.js` y ya estaba
+   importado. Ése sí lo cazó `node --check`.
+
+3. ⛔ **Un enlace ilegible, que sólo vio la auditoría.** El «Inicio» que puse en
+   el panel daba **3,88 de contraste** sobre el fondo claro del tema de día,
+   cuando el mínimo es 4,5. A ojo no se nota. Pasó a tinta normal con subrayado
+   — y el subrayado no es adorno: va en medio de una frase, así que sin él nada
+   dice que se puede pulsar.
+
+## ⚠️ OCHO PRUEBAS DE NAVEGADOR EN ROJO, Y TENÍAN QUE ESTARLO
+
+Cinco esperaban la ventana del navegador que se acababa de quitar: se reescribió
+la ayuda para que lea el renglón de la página y pulse dos veces cuando sale la
+advertencia. **Comprobando lo nuevo, no aflojadas para que pasaran.**
+
+Las otras tres eran el enlace ilegible de arriba: un fallo de verdad.
+
+## ⛔ UNA PANTALLA HUÉRFANA, ENCONTRADA DE PASO Y NO TOCADA
+
+`llenar_jornada.html` **no la enlaza nadie**. Carga exactamente el mismo script
+que `llenar_jornada_user.html` y la única diferencia real es que **le falta el
+selector de jornada**: es la versión anterior al arreglo que permitió llenar dos
+jornadas a la vez. Sólo se llega por la ruta `/llenar_jornada`.
+
+⚠️ **No se borró**: no estaba entre las seis cosas aprobadas, y retirar una
+pantalla es decisión de Marco. Queda anotada.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/compartir-texto.html`, `private/js/compartir-texto.js` | **Nuevos.** Sustituyen a cinco pantallas |
+| `public/*.html` (20) | Títulos, encabezados y rótulos de los botones |
+| `public/adminmode.html` | Panel agrupado: 17 accesos → 10 |
+| `private/css/styles.css` | `.form-message` (¡no tenía estilo!), `.admin-grupo`, enlaces en textos de ayuda |
+| `private/js/llenar_jornada_user.js` | Once ventanas fuera; el aviso, de dos clics |
+| `private/js/quinielas.js` | Fuera el `user · activo · activa` |
+| `private/js/*.js` (6) | Los «no hay nada», con salida |
+| `src/rutas/plataforma.js` | Manda el rol en castellano |
+| `src/permisos.js`, `src/servidor.js` | Una entrada donde había cinco |
+| `test/e2e/llenar-quiniela.spec.js` | Lee el aviso de la página, no diálogos |
+| `test/architecture.test.js`, `docs/06-frontend.html` | Al día |
+| **Retirados (10)** | Las cinco pantallas de enviar/copiar y sus cinco scripts |
+
+**Verificación:**
+
+```
+npm test                    -> 660/660
+CI=true npx playwright test -> 220/220, «flaky» no aparece en el log
+                               (8 en rojo primero: 5 esperaban diálogos, 3 eran
+                                el enlace ilegible — un fallo de verdad)
+
+el mapa de nombres: 24 descuadres de 38 -> 5, y 0 títulos repetidos
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **`.form-message` no tenía estilo en 18 pantallas.** Eso explica las 89
+   ventanas del navegador del proyecto: cuando el sitio correcto es invisible,
+   se usa el que se ve.
+2. ⛔ **`node --check` no ve una variable fuera de alcance.** Es sintaxis
+   correcta; el fallo sale al pulsar el botón.
+3. ⛔ **Un `<select>` cerrado y un enlace de 3,88 de contraste no se notan a
+   ojo.** Para eso están la auditoría y las pruebas.
+4. ⭐ **«Se llama igual que el botón que lleva a ella» es una regla que se puede
+   medir.** Da un número antes y después, en vez de una discusión de gustos.
+5. ⚠️ **Lo que el usuario cuenta suele quedarse corto**: Marco dijo cuatro
+   pantallas de compartir y eran cinco; señaló una pantalla con el nombre de
+   liga y eran tres.
+
+**Pendiente / siguiente paso:**
+
+- ⭐ **El recorrido como jugador nuevo.** Levantar la aplicación en local con el
+  proveedor falso y hacer el camino entero —crear cuenta, crear quiniela de
+  liga, armar jornada, entrar como segundo jugador, pedir ingreso, llenar— para
+  ver lo que leyendo no se ve: cuántos toques cuesta cada paso y dónde hay que
+  adivinar. **Acordado con Marco: se recorre y se anota, no se arregla sobre la
+  marcha.**
+- La pantalla huérfana `llenar_jornada.html`, a decisión de Marco.
+- Lo de siempre: la notificación al teléfono, y el ciclo del borrador —que la
+  quiniela de liga del recorrido podría desbloquear.
 
 ---
 

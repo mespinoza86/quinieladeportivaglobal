@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableHead.innerHTML = '<th>Jugador</th>';
 
             if (jugadores.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="2">No hay resultados disponibles.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="2">Todavía no hay puntos. Aparecerán cuando se cargue el primer marcador oficial.</td></tr>';
                 paginacion.innerHTML = '';
                 return;
             }
