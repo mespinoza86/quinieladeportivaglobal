@@ -130,7 +130,7 @@ test('el interruptor del aviso nace apagado, se enciende y se queda', async ({ p
   await expect(casilla).not.toBeChecked();
 
   await casilla.check();
-  await page.getByRole('button', { name: 'Guardar configuración' }).click();
+  await page.getByRole('button', { name: 'Guardar puntuación y avisos' }).click();
   await expect(page.locator('#configMensaje')).toContainText('guardada', { timeout: 10_000 });
 
   await page.reload();
@@ -140,7 +140,7 @@ test('el interruptor del aviso nace apagado, se enciende y se queda', async ({ p
   await expect(page.locator('#marcadorExacto')).not.toHaveValue('');
 
   await page.locator('#avisarAlCompartir').uncheck();
-  await page.getByRole('button', { name: 'Guardar configuración' }).click();
+  await page.getByRole('button', { name: 'Guardar puntuación y avisos' }).click();
   await expect(page.locator('#configMensaje')).toContainText('guardada', { timeout: 10_000 });
 
   await page.reload();

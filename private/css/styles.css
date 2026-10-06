@@ -1130,6 +1130,35 @@ th,
 }
 
 /*
+ * ⛔ LO QUE NO TIENE VUELTA ATRÁS, SEPARADO A LA VISTA.
+ *
+ * «Eliminar quiniela» estaba pegado justo debajo de las ligas favoritas, con
+ * el mismo aspecto que el resto: la misma caja, el mismo color, ningún aviso.
+ * Un ajuste de todos los días y «esto desaparece para todos los jugadores»
+ * contados con la misma voz.
+ *
+ * ⚠️ El borde es de aviso, pero el fondo NO se tiñe de rojo: una pantalla con
+ * una mancha roja permanente enseña a ignorarla, y entonces el rojo deja de
+ * significar nada el día que sí hace falta.
+ */
+.panel-peligro {
+  border: 1px solid rgba(var(--danger-rgb), 0.45);
+  margin-top: 34px;
+}
+
+/*
+ * ⛔ EL TÍTULO NO VA EN ROJO, Y SE INTENTÓ.
+ *
+ * `--danger` sobre el fondo claro del tema de día da **3,73** de contraste
+ * cuando el mínimo legible es 4,5. Lo cazó la auditoría; a ojo se veía bien.
+ *
+ * En vez de buscar un rojo que pase en los tres temas, se quita: el borde de
+ * aviso y la frase que explica que eliminar no se puede deshacer ya dicen lo
+ * que hay que decir. Un color que hay que afinar por tema es una trampa que
+ * vuelve cada vez que alguien toca la paleta.
+ */
+
+/*
  * ⛔ UN ENLACE DENTRO DE UN TEXTO DE AYUDA VA EN TINTA, NO EN VERDE.
  *
  * El verde de marca sobre el fondo claro del tema de día da **3,88** de
