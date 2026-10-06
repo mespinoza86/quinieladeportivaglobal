@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 22 de septiembre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 6 de octubre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -587,11 +587,11 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 5 de octubre de 2026
+#### 📍 Dónde quedó todo el 6 de octubre de 2026
 
 | | |
 |---|---|
-| Último commit | `9e2f6a8` — Entrada 117: los dos últimos puntos de la lista de siete |
+| Último commit | `77f20ae`. **El último que toca código es `9e2f6a8`** (entrada 117) |
 | Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
 | Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 117. Los SIETE puntos del recorrido están hechos, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
@@ -1890,7 +1890,7 @@ minutos y la suite rápida tiene que seguir siendo rápida.
 | `portada.spec.js` | 83 | La tarjeta nueva y que ninguna se estire |
 | `csp.spec.js` | 76 | Recorre las pantallas buscando violaciones de CSP. Hace falta porque una violación **no da error visible**: el botón carga, se pulsa y no pasa nada |
 
-### 2.6 `public/` — 39 pantallas HTML
+### 2.6 `public/` — 34 pantallas HTML
 
 Servidas con `express.static`.
 
@@ -1905,19 +1905,28 @@ que va encogido al 87% porque Android recorta el icono a un círculo. Los enlaza
 `index.html`, `reglamento_quiniela.html`, `verificar-correo.html`,
 `olvide-password.html`, `restablecer-password.html`
 
-**De participante:** `llenar_jornada.html`, `llenar_jornada_user.html`,
+**De participante:** `llenar_jornada_user.html`,
 `llenar_trivia.html`, `ver_jornadas.html`, `ver_jugadores.html`,
 `verResultados.html`, `verResultados_puntos.html`, `resultados-totales.html`,
 `clasificacion-jornada.html`, `ver-resultados-oficiales.html`,
 `ver_resultados_trivias.html`, `ver_resultados_totales_de_jugadores.html`
 
-**De administración (las 15 de `PAGINAS_ADMIN`, en `src/servidor.js`):**
+**De administración (las de `PAGINAS_ADMIN`, en `src/servidor.js`):**
 `jugadores.html`, `jornadas.html`, `resultados.html`,
 `agregar-resultados-oficiales.html`, `generar_reporte.html`,
-`enviarresultados.html`, `copiarresultadojugador.html`, `admin_trivias.html`,
-`enviarresultadostrivias.html`, `enviarresultadospartido.html`,
-`enviarresultadostriviaspartido.html`, `miembros.html`,
-`configuracion-quiniela.html`, `cobros.html`, `reporte-cobros.html`
+`compartir.html`, `compartir-texto.html`, `admin_trivias.html`,
+`miembros.html`, `configuracion-quiniela.html`, `cobros.html`,
+`reporte-cobros.html`
+
+⚠️ **AQUÍ SE BORRARON SEIS PANTALLAS EL 5 Y 6 DE OCTUBRE DE 2026**, y por eso
+el número bajó de 39 a 34:
+
+- `enviarresultados`, `enviarresultadospartido`, `enviarresultadostrivias`,
+  `enviarresultadostriviaspartido` y `copiarresultadojugador` se fundieron en
+  **`compartir-texto.html`**. Eran la misma rejilla —qué se copia y de cuánto—
+  repartida en cinco, y tres se anunciaban con el mismo texto (115).
+- `llenar_jornada.html` era una versión vieja de `llenar_jornada_user.html`
+  **que no enlazaba nadie**: el mismo script, sin el selector de jornada (116).
 
 **Del jugador, sobre su dinero:** `mi-cuenta.html` (Entrada 082). NO es de
 administración: cada quien ve lo suyo, resuelto desde la sesión.
@@ -1933,7 +1942,7 @@ lista. No cubre las que usen otras rutas.
 ⛔ **`importar_partidos.html` ya no existe:** su buscador se integró en
 `jornadas.html` en la Fase D, y los partidos salen sólo del API.
 
-### 2.7 `private/js/` — 55 scripts
+### 2.7 `private/js/` — 53 scripts
 
 Servidos por `GET /js/:filename`. Es un pseudo-ocultamiento: el navegador los
 descarga igual. **No hay ningún secreto ahí, pero tampoco protección real** — la
@@ -1950,6 +1959,14 @@ Los más grandes:
 | `ver_resultados_totales_de_jugadores.js` | 386 | Tabla comparativa completa |
 | `ver-resultados.js` | 374 | Vista de pronósticos |
 | `admin_trivias.js` | 301 | Configuración de trivias por jornada |
+
+**Los tres ayudantes compartidos, que son pequeños y se olvidan:**
+
+| Script | Qué hace | Por qué vive aparte |
+|---|---|---|
+| `aviso.js` | `avisoFallo` / `avisoBien` / `avisoNada`: escribe en el renglón de mensajes **y le pone el color** | Lo usan 16 scripts. ⚠️ La pantalla que lo use **tiene que cargarlo antes**, o la llamada revienta justo cuando algo ha ido mal. Hay centinela (117) |
+| `liga-con-pais.js` | «Liga Premier · Inglaterra» | Lo usan tres pantallas y una de ellas **no carga** `combo-de-ligas.js`. Copiarlo daría dos formas de decir lo mismo. Hay centinela (114) |
+| `compartir-texto.js` | Copiar resultados o trivias: de la jornada, de un partido o de un jugador | **Sustituye a cinco pantallas** que pedían los mismos datos y sólo cambiaban cómo pegaban el texto (115) |
 
 ### 2.8 `private/css/`
 
