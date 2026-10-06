@@ -591,7 +591,7 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `(este)` — Entrada 117: los dos últimos puntos de la lista de siete |
+| Último commit | `9e2f6a8` — Entrada 117: los dos últimos puntos de la lista de siete |
 | Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
 | Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 117. Los SIETE puntos del recorrido están hechos, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
