@@ -23,7 +23,7 @@
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 npm test                    # 660/660
-npm run test:e2e            # 220/220, ~11 min
+npm run test:e2e            # 222/222, ~11 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -54,14 +54,14 @@ entradas de bitácora (040 a 052).
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **660**, ~75 s |
-| Pruebas de navegador | **220**, ~15 min, contra el servidor de verdad |
+| Pruebas de navegador | **222**, ~12 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
-| Producción | ⚠️ **Corriendo el código de `41b93bd`**, comprobado el 2 de octubre. **Lo de las ligas con su país (`39b9474`) está commiteado y SIN EMPUJAR.** En uso, con cuentas y quinielas de verdad |
+| Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo —hasta `894a95e`—, pero producción se queda donde se jaló la última vez. En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -591,11 +591,11 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `8e26915` — Entrada 115: que lo entienda alguien que entra por primera vez |
-| Árbol | ✅ Limpio. **`main` va por delante de `origin/main`**: todo lo del 2 y el 5 de octubre está commiteado y sin empujar |
-| Producción | ⚠️ **Corre el código de `41b93bd`, del 22 de septiembre.** Ni las ligas con su país ni la revisión de usabilidad están puestas 
+| Último commit | `894a95e` — el arreglo de los tres avisos de seguridad. **El de la entrada 116 va justo detrás** |
+| Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
+| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta `894a95e`: las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **660** rápidas + **220** de navegador, todas en verde y **cero flaky**, corridas sobre la revisión de usabilidad |
+| Pruebas | **660** rápidas + **222** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) , **las ligas con su país** (114) y **la revisión de usabilidad: seis cambios** (115) |
 
@@ -756,7 +756,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **660 + 220** pruebas en
+funcionando, **las quince migraciones corridas**, **660 + 222** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1167,7 +1167,7 @@ npm test                   # las 660 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 220 de navegador (~11 min, escritorio y móvil)
+npm run test:e2e           # las 222 de navegador (~11 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1845,7 +1845,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 660 pruebas rápidas y 220 de navegador
+### 2.5 `test/` — 660 pruebas rápidas y 222 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -19571,6 +19571,195 @@ el mapa de nombres: 24 descuadres de 38 -> 5, y 0 títulos repetidos
 - La pantalla huérfana `llenar_jornada.html`, a decisión de Marco.
 - Lo de siempre: la notificación al teléfono, y el ciclo del borrador —que la
   quiniela de liga del recorrido podría desbloquear.
+
+---
+
+### 📌 Entrada 116 — 5 de octubre de 2026 — El recorrido, y los cinco primeros puntos
+
+**Objetivo:** Marco pidió lo que faltaba después de la revisión leída:
+*«entrar vos mismo y usar todo como un jugador»*. De ahí salió una lista de
+siete cambios, y se hicieron los cinco primeros, **punto a punto y con commit**,
+como él pidió.
+
+## ⭐ EL RECORRIDO: LO QUE LEYENDO NO SE VE
+
+Se levantó la aplicación en local con la base en memoria y el proveedor falso
+—sin tocar nada real ni gastar cuota— y se recorrió entera: crear cuenta, crear
+quiniela de liga, elegir liga, armar jornada, entrar como SEGUNDO jugador,
+pedir ingreso con el código, aprobarlo y llenar. **21 capturas.**
+
+⚠️ **Tres de los cuatro primeros intentos fallaron por el guion, no por la
+aplicación.** Conviene saberlo porque los tres volverán:
+
+1. Las opciones de un `<select>` **nunca están «visibles»** para Playwright. Hay
+   que esperar por cuántas hay, no por que se vean.
+2. La dirección del modo administrador **lleva el destino dentro**
+   (`?volver=/configuracion-quiniela.html`), así que buscar «configuracion-
+   quiniela» en la URL daba por buena una pantalla donde no estaba. Hay que
+   mirar la RUTA, no la dirección entera.
+3. Y el código de ingreso se cogía del texto de la página, donde sale pegado al
+   botón de al lado: «8601056AD1Entrar».
+
+⭐ **Lo que el recorrido destapó y la lectura no:**
+
+| | |
+|---|---|
+| ⛔ El muro de «Validar jugador» | Tapa la pantalla entera para pedir una contraseña que acabas de teclear |
+| ⛔ El muro de administración | Lo primero que ves al crear tu quiniela, sin decir por qué |
+| ⛔ «Armar jornadas» | Tres formas de crear una jornada a la vez, y contradiciéndose |
+| ⛔ `.form-message` **en verde** | Un fallo mío de la entrada anterior: «Código inválido» salía como si fuera un acierto |
+| ⛔ `llenar_jornada.html` | Una pantalla huérfana que no enlaza nadie |
+
+## ⛔ EL ERROR EN VERDE: LO QUE SE ROMPE AL ARREGLAR ALGO
+
+En la entrada 115 se le dio estilo por fin a `.form-message`, que se usa en 18
+pantallas y no tenía ninguno. Se le puso **verde de acierto**.
+
+Y resulta que hay **38 sitios que escriben un ERROR en ese mismo renglón y sólo
+uno marca que lo es**. O sea que «Código de quiniela inválido» salía en verde.
+
+⭐ No se vio leyendo: se vio **usando la aplicación**, en una pantalla que nadie
+había vuelto a mirar. Ahora el color por defecto es neutro —que no miente
+nunca— y el verde se pide a propósito.
+
+## Los cinco puntos
+
+**1 · Fuera el muro de «Validar jugador»** (`00d6682`). Pedía la contraseña de
+TU PROPIA cuenta —la ruta llamaba a `usuariosMod.autenticar` con tu usuario—
+pero la llamaba «la contraseña del jugador». Y no protegía nada:
+`POST /api/resultados` ya contesta «Solo puedes guardar tus propios
+pronósticos» con un 403.
+
+⚠️ El muro de «Pronósticos» y «Puntos» **se queda**: aquél tapa lo de OTRA
+gente antes de que empiece su partido, que sí es un secreto.
+
+**2 · El muro de administración dice por qué te para** (`ece717a`). Y la frase
+«y de ahí sigues a…» no es fija: lee el `volver` de la dirección y lo traduce a
+un nombre legible. Se fue el último inglés a la vista: «Admin mode».
+
+**3 · «Armar jornadas» deja de ofrecer tres caminos** (`0efa332`). Con borrador,
+lo de armar a mano se recoge. Dos campos de nombre a la vez, y un «no hay
+partidos» que contradecía al borrador de arriba.
+
+**4 · «Configurar quiniela», en el orden de quien llega** (`b65569d`). La liga
+primero —a lo que vienes—, y «Eliminar quiniela» al final, apartado y con
+borde. Se movieron bloques enteros y se comprobó **con un diff que conserva los
+mismos `id` y los mismos botones**.
+
+**5 · Se acabaron las palabras de la base de datos** (`9f6b8d0`). `· user` en la
+portada, `Dueño · activo` en Miembros, el subtítulo que trataba de
+administrador a los jugadores, y la pantalla del superadministrador.
+
+## ⛔⛔ EL FALLO MÁS IMPORTANTE DEL DÍA: MI ARREGLO DEL PUNTO 1 ERA INCOMPLETO
+
+Marco, usándolo de verdad: *«cuando entro a llenar jornadas, a veces no me
+carga los marcadores que yo puse. Quedan los cuadros grises sin nada»*.
+
+Al quitar el muro desapareció la pausa que tapaba una carrera. Y **lo que puse
+entonces no bastaba, porque diagnostiqué mal**.
+
+Creí que se escribía en casillas que aún no existían, y por eso hice que se
+esperara al pintado. El fallo real era anterior:
+
+```js
+if (!jugador || !jornada) return;     // ← se iba por aquí
+```
+
+La pantalla lanza dos peticiones a la vez. Si gana `/api/auth/me` —y suele,
+porque es la más ligera—, `jornadaSeleccionada` todavía vale `null` y **los
+pronósticos NI SIQUIERA SE PEDÍAN**. No es que se pintaran tarde: es que nunca
+se pidieron.
+
+⭐ **LO DESTAPÓ MIRAR LA FOTO DEL FALLO, NO SEGUIR RAZONANDO.** La pantalla
+salía perfecta —jornada puesta, partidos pintados— y aun así faltaba la
+petición. Eso descartaba el pintado y señalaba el dato vacío. Llevaba dos
+intentos teorizando.
+
+⚠️ Y `Promise.resolve()` como valor inicial **convertía la espera en nada**
+cuando `loadPartidos` aún no se había llamado. Ahora nace sin resolver.
+
+⭐ **La prueba nueva RETRASA `/api/jornada-actual` medio segundo** para que
+pierda SIEMPRE. Sin eso el fallo es intermitente y pasa por casualidad, que es
+como llevaba meses colándose. Comprobado quitando el arreglo: se pone roja.
+
+## ⛔ Y CI EN ROJO POR ALGO QUE NO ERA NUESTRO
+
+GitHub empezó a mandar correos. No era el código: eran **tres avisos de
+seguridad** publicados desde la última vez que estuvo verde.
+
+| | | |
+|---|---|---|
+| CRÍTICO | `proxy-addr` | 2.0.7 → 2.0.8 |
+| ALTO | `axios` | 1.19.0 → 1.20.0 |
+| MODERADO | `ip-address` | 10.5.0 → 10.7.3 |
+
+⛔ **El crítico nos tocaba de verdad.** Va de falsear la IP de quien llama, y
+este servidor hace `trust proxy` en producción con **cinco limitadores que
+cuentan por IP**: login, registro, reenvío, superadministrador y modo
+administrador. Con la IP falseable, los cinco dejan de frenar.
+
+⚠️ `package.json` **no cambia**: las tres caben en los rangos ya declarados. Se
+simuló antes sobre una copia con `--package-lock-only` para saber qué se movía
+**antes** de moverlo, y coincidió exactamente.
+
+### ⛔ Y UN SUSTO QUE ME PROVOQUÉ YO
+
+Tras el arreglo, las rápidas dieron **218 FALLOS**.
+
+No era el arreglo: **`npm audit fix --omit=dev` no sólo audita ignorando las
+dependencias de desarrollo, LAS DESINSTALA.** Se llevó PGlite, Playwright y
+supertest. Un `npm install` lo restauró.
+
+⚠️ **Si llego a mirar sólo el «218» habría deshecho un arreglo bueno.** Lo
+aclaró leer el mensaje —«Cannot find module 'supertest'»— en vez del número. Es
+la lección de siempre con otra cara: **el resumen dice CUÁNTO, no QUÉ**.
+
+**Archivos modificados:** ocho commits, de `8925491` a `894a95e`. Las pantallas
+tocadas: llenar quiniela, llenar trivia, administración, armar jornadas,
+configurar quiniela, mis quinielas, miembros, portada y superadministrador, más
+`styles.css`, `permisos.js`, `superadmin.js` y seis suites de pruebas.
+
+**Verificación:**
+
+```
+npm run check               -> 0
+npm audit --omit=dev        -> 0 vulnerabilidades   (era el fallo de CI)
+npm test                    -> 660/660
+CI=true npx playwright test -> 222/222, sin flaky
+
+⭐ Y la comparación que de verdad importa para las dependencias:
+   ANTES del arreglo  -> 222/222 sin flaky
+   DESPUÉS            -> 222/222 sin flaky
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Recorrer la aplicación encuentra lo que leerla no.** Cinco de los
+   hallazgos de hoy —incluido un fallo propio de ayer— sólo salieron usándola.
+2. ⛔ **Mirar la foto del fallo antes que seguir razonando.** Dos intentos de
+   diagnóstico equivocados se resolvieron en un minuto al ver la pantalla.
+3. ⛔ **`npm audit fix --omit=dev` desinstala las dependencias de desarrollo.**
+4. ⛔ **Un «218 fallos» puede no ser lo que parece.** El número dice cuánto; el
+   mensaje dice qué.
+5. ⚠️ **`Promise.resolve()` como valor inicial de una espera es no esperar.**
+6. ⚠️ **Las opciones de un `<select>` nunca están «visibles»** para Playwright.
+7. ⚠️ **Una dirección con un `volver=` dentro contiene el nombre del destino**,
+   así que buscarlo en la URL entera da falsos positivos.
+
+**Pendiente / siguiente paso:**
+
+- **Los puntos 6 y 7** de la lista: marcar los 37 sitios que escriben errores
+  sin decir que lo son, y los remates de un minuto (iconos repetidos, «envíos»
+  que ya no existe, «Buscar Partidos» con mayúscula, «Texto del torneo»).
+- ⚠️ **El punto ciego de `axios`:** se usa en UN solo sitio —llamar al
+  proveedor— y TODAS las pruebas sustituyen esa fuente por una falsa. Se
+  comprueba pulsando «sincronizar» una jornada con la versión nueva puesta.
+- La tarjeta del partido dentro del borrador se ve apretada: el nombre se parte
+  en tres líneas dentro de una caja medio vacía. Visto en el recorrido, no
+  tocado.
+- Y lo de siempre: la notificación al teléfono, y el ciclo completo del
+  borrador —que ahora sí se puede probar, porque **el panel aparece**: se vio
+  funcionando en el recorrido—.
 
 ---
 
