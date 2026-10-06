@@ -22,7 +22,7 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
-npm test                    # 660/660
+npm test                    # 661/661
 npm run test:e2e            # 222/222, ~11 min
 ```
 
@@ -53,7 +53,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **660**, ~75 s |
+| Pruebas rápidas | **661**, ~75 s |
 | Pruebas de navegador | **222**, ~12 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -61,7 +61,7 @@ entradas de bitácora (040 a 052).
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
-| Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo —hasta `894a95e`—, pero producción se queda donde se jaló la última vez. En uso, con cuentas y quinielas de verdad |
+| Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo —hasta la entrada 117: **la lista de siete, completa**—, pero producción se queda donde se jaló la última vez. En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -591,11 +591,11 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `894a95e` — el arreglo de los tres avisos de seguridad. **El de la entrada 116 va justo detrás** |
+| Último commit | `(este)` — Entrada 117: los dos últimos puntos de la lista de siete |
 | Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
-| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta `894a95e`: las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
+| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 117. Los SIETE puntos del recorrido están hechos, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **660** rápidas + **222** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **661** rápidas + **222** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) , **las ligas con su país** (114) y **la revisión de usabilidad: seis cambios** (115) |
 
@@ -756,7 +756,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **660 + 222** pruebas en
+funcionando, **las quince migraciones corridas**, **661 + 222** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1163,7 +1163,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 660 pruebas rápidas, ~75 s
+npm test                   # las 661 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -1845,7 +1845,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 660 pruebas rápidas y 222 de navegador
+### 2.5 `test/` — 661 pruebas rápidas y 222 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -19760,6 +19760,132 @@ CI=true npx playwright test -> 222/222, sin flaky
 - Y lo de siempre: la notificación al teléfono, y el ciclo completo del
   borrador —que ahora sí se puede probar, porque **el panel aparece**: se vio
   funcionando en el recorrido—.
+
+---
+
+### 📌 Entrada 117 — 6 de octubre de 2026 — Los dos últimos puntos, y una sonda que se engañó a sí misma
+
+**Objetivo:** cerrar la lista de siete que salió del recorrido. Quedaban el 6
+—que un fallo se vea como un fallo— y el 7, los remates de un minuto.
+
+## Punto 6: 45 sitios que ahora dicen que son un fallo
+
+Había **más de cien escrituras** en el renglón de avisos, y casi todas iguales
+tanto para «guardado» como para «no se pudo». Ahora **45 salen en rojo y con un
+⚠️**; las otras **66 se quedan neutras a propósito** —«Sin guardar todavía»,
+«Configuración guardada»— porque marcarlas mal sería peor que no marcarlas.
+
+⚠️ Quedan fuera a conciencia `estado`, `resumen`, `rangoTexto` y `paginacion`:
+no son renglones de mensaje sino textos de ayuda.
+
+`aviso.js` se carga en las 15 pantallas que lo necesitan, y hay un centinela que
+exige que se cargue **antes** que quien lo usa: con `defer` el orden de
+ejecución es el de aparición, y si llega tarde la llamada revienta **justo
+cuando algo ha ido mal**. En vez del error que se quería contar, no saldría
+nada. Comprobado quitándolo de una pantalla: se pone rojo con el nombre exacto.
+
+### ⛔⛔ EL FALLO DEL DÍA: DOS HERRAMIENTAS ROTAS IGUAL, CONFIRMÁNDOSE ENTRE SÍ
+
+El patrón que buscaba los sitios pedía un carácter **antes** de «mensaje»:
+
+```js
+const DESTINO = '([A-Za-z_$][\\w$]*(?:[Mm]ensaje|[Mm]essage|[Aa]viso)[\\w$]*)';
+```
+
+Con eso, una variable llamada **exactamente `mensaje`** —que son casi todas—
+nunca encajaba. Sólo encajaban las compuestas, tipo `adminLoginMessage`.
+Convirtió **6 de 45** y parecía terminado.
+
+⛔ **Y la sonda con la que conté cuántas quedaban tenía el mismo error.**
+Contestó «queda 1» cuando quedaban 44. Dos herramientas rotas de la misma
+manera, dándose la razón la una a la otra.
+
+⭐ **Lo cazó contar de otra forma**: líneas que tuvieran `.textContent` y un
+error dentro, sin exigir forma al nombre. Dio 44. **Dos cuentas que no coinciden
+son un aviso, no una casualidad** — la misma lección que el «exactamente 256
+colores» de la entrada 112.
+
+Se deshicieron los 6 cambios y se rehízo entero con un patrón que captura
+cualquier identificador y **decide después, en código legible**, en vez de
+meter la decisión dentro de la expresión regular.
+
+## Punto 7: los cuatro remates
+
+- **Iconos repetidos, fuera.** «Respuestas de trivias» pasa a ❓ —el mismo que
+  «Crear trivias», así quedan emparejadas— y «Reglamento» a 📜. Comprobado que
+  no queda ninguno repetido en el menú.
+- **El texto de Administración** ya no habla de «envíos»: ese concepto murió al
+  fundir las cinco pantallas de compartir (entrada 115).
+- **«Buscar Partidos»** → «Buscar partidos».
+- **«Texto del torneo»** → **«Parte del nombre del torneo»**, con una ayuda que
+  dice para qué sirve. ⚠️ Hubo que ir a leer el código para saberlo: es un
+  buscador por parte del nombre, para torneos que no salen en la lista. El
+  rótulo viejo no daba ninguna pista, que era justo la queja.
+
+## ⚠️ UN «FLAKY», Y POR QUÉ NO SE DIO POR BUENO
+
+La corrida completa salió **221 passed + 1 flaky**. Y «flaky» NO es verde: una
+prueba que pasa al reintentar no afirma nada.
+
+La caída fue `quinielas-orden.spec.js` en móvil, esperando a que apareciera el
+panel de unirse. Dos datos que apuntaban a la máquina y no al código:
+
+1. En 10 segundos la prueba sólo pudo consultar **3 veces**. Normalmente
+   consulta muchas más: señal de un proceso ahogado.
+2. **La suite entera tardó 45 minutos**, cuando viene tardando 13.
+
+⭐ **Pero eso era una hipótesis, no una conclusión.** Se repitió el archivo con
+`--repeat-each=3`: **18 de 18 en 31 segundos**. Esa es la prueba de que la
+aplicación está bien y de que fue la máquina.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `private/js/aviso.js` | **Nuevo.** Escribe el mensaje y dice qué es |
+| `private/js/*.js` (16) | 45 escrituras de fallo, marcadas |
+| `public/*.html` (15) | Cargan `aviso.js`, antes que quien lo usa |
+| `public/index.html` | Dos iconos repetidos, resueltos |
+| `public/adminmode.html` | El texto ya no menciona «envíos» |
+| `public/jornadas.html` | «Buscar partidos» y «Parte del nombre del torneo» |
+| `private/js/jornadas.js` | El mensaje de ese campo, alineado |
+| `test/architecture.test.js` | Centinela: quien avisa de un fallo carga `aviso.js` antes |
+
+**Verificación:**
+
+```
+npm run check               -> 0
+npm audit --omit=dev        -> 0 vulnerabilidades
+npm test                    -> 661/661
+CI=true npx playwright test -> 221 passed + 1 flaky  ⚠️ NO es verde
+
+   el flaky, repetido aparte -> 18/18 en 31 s   (la suite tardó 45 min: máquina)
+
+mutación sobre el centinela nuevo:
+   quitar aviso.js de una pantalla -> ROJO, con el nombre de la pantalla
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Dos herramientas con el mismo error se dan la razón.** El guion que
+   convertía y la sonda que contaba fallaban igual, y entre las dos dijeron que
+   estaba hecho. Para comprobar, **contar de otra forma**, no repetir la misma.
+2. ⚠️ **Una expresión regular que decide demasiado es difícil de auditar.**
+   Capturar amplio y decidir después, en código, se lee de un vistazo.
+3. ⚠️ **Una máquina ahogada produce «flaky».** 45 minutos en vez de 13 es el
+   dato que lo explica, y `--repeat-each` lo demuestra.
+4. ⭐ **Un rótulo que no se entiende hay que ir a leerlo al código antes de
+   reescribirlo.** «Texto del torneo» no decía nada; había que saber qué hacía.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Jalar desde Render y probar.** Especialmente: que un error salga en rojo
+  con ⚠️ —por ejemplo metiendo un código de quiniela inválido— y que «Llenar
+  quiniela» siga guardando bien.
+- El punto ciego de `axios`: pulsar «sincronizar» una jornada.
+- La tarjeta del partido dentro del borrador se ve apretada (visto en el
+  recorrido, no tocado).
+- Y lo de siempre: la notificación al teléfono y el ciclo del borrador.
 
 ---
 

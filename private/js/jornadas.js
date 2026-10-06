@@ -375,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const texto = customLeagueNameInput.value.trim();
 
             if (!texto) {
-                mostrarEstado('Escribe el texto del torneo que quieres buscar.');
+                mostrarEstado('Escribe parte del nombre del torneo que buscas.');
                 return;
             }
 
