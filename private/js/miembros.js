@@ -1,3 +1,18 @@
+/*
+ * Los estados de una membresía, dichos en castellano.
+ *
+ * ⚠️ Son los cinco que admite la base —ver el `CHECK` de `membresias.estado`—
+ * y ni uno más. Si algún día se añade otro, el `|| m.estado` de abajo lo deja
+ * salir crudo en vez de en blanco: feo, pero no esconde a nadie de la lista.
+ */
+const ESTADOS = {
+  pendiente_ingreso: 'pide entrar',
+  activo: 'juega',
+  pendiente_retiro: 'pide salirse',
+  rechazado: 'rechazado',
+  expulsado: 'expulsado'
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
   const lista = document.getElementById('listaMiembros');
   const mensaje = document.getElementById('mensajeMiembros');
@@ -11,7 +26,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       miembros.forEach(m => {
         const card = document.createElement('article'); card.className = 'action-card';
         const nombreDelRol = (q.nombresDeRol || {})[m.rol] || m.rol;
-        card.innerHTML = html`<div><h3>${m.username || 'Cuenta no disponible'}</h3><p>${m.email || ''}</p><p><strong>${nombreDelRol}</strong> · ${m.estado}</p></div>`;
+
+        /*
+         * ⛔ EL ESTADO, EN CASTELLANO.
+         *
+         * El rol ya se traducía, pero el estado salía tal cual de la base:
+         * «Dueño · activo», «Fulano · pendiente_ingreso». Con guión bajo y
+         * todo, en la pantalla donde se aprueba gente.
+         *
+         * ⚠️ Aquí NO se esconde cuando es el corriente, al revés que en «Mis
+         * quinielas»: esta pantalla existe JUSTO para mirar en qué estado está
+         * cada uno y decidir. Quitar «activo» dejaría a medias la única
+         * columna que importa.
+         */
+        const estado = ESTADOS[m.estado] || m.estado;
+
+        card.innerHTML = html`<div><h3>${m.username || 'Cuenta no disponible'}</h3><p>${m.email || ''}</p><p><strong>${nombreDelRol}</strong> · ${estado}</p></div>`;
         const actions = document.createElement('div'); actions.className = 'button-row';
         const add = (texto, fn, clase='secondary-button') => { const b=document.createElement('button'); b.type='button'; b.className=clase; b.textContent=texto; b.onclick=fn; actions.appendChild(b); };
         if (m.estado === 'pendiente_ingreso') { add('Aprobar', () => accion(m.id, 'aprobar')); add('Rechazar', () => accion(m.id, 'rechazar')); }

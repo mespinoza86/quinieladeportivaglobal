@@ -12,6 +12,22 @@
  * cada ruta. Si alguien abre esta pantalla a mano, no verá nada, porque los
  * datos no llegan.
  */
+/*
+ * Los estados de membresía, en castellano.
+ *
+ * ⚠️ Es la ÚNICA tabla que se copia de `miembros.js`, y a sabiendas: son cinco
+ * palabras que vienen de un `CHECK` de la base y no de una regla de negocio.
+ * Lo que NO se copia es la de los roles: ésa la manda el servidor resuelta,
+ * porque crece y cambia.
+ */
+const ESTADOS_MEMBRESIA = {
+  pendiente_ingreso: 'pide entrar',
+  activo: 'juega',
+  pendiente_retiro: 'pide salirse',
+  rechazado: 'rechazado',
+  expulsado: 'expulsado'
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   const secciones = ['confirmarPanel', 'cuentasPanel', 'historialPanel', 'errorPanel'];
 
@@ -102,7 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     return html`${quinielas.map(q =>
-      html`<p class="helper-text">${q.nombre} — <strong>${q.rol}</strong> (${q.estado})</p>`)}`;
+      /* El rol llega ya traducido del servidor; el crudo, de último recurso. */
+      html`<p class="helper-text">${q.nombre} — <strong>${q.rolNombre || q.rol}</strong> (${ESTADOS_MEMBRESIA[q.estado] || q.estado})</p>`)}`;
   }
 
   function pintarCuenta(cuenta) {

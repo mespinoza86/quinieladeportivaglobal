@@ -14,10 +14,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (contexto.ok) {
       const q = await contexto.json();
       document.querySelector('h1').textContent = q.nombre;
-      document.getElementById('quinielaActualNombre').textContent = `${q.nombre} · ${q.rol}`;
+
+      /*
+       * ⛔ EL ROL EN CASTELLANO, NO EL DE LA BASE DE DATOS.
+       *
+       * Esto decía `Mi Quiniela · user`. Se arregló lo mismo en «Mis
+       * quinielas» y esta tarjeta se quedó atrás, porque la pinta otro
+       * archivo: el fallo se vio recorriendo la aplicación, no leyendo.
+       *
+       * ⚠️ La tabla viaja en la propia respuesta (`nombresDeRol`), así que no
+       * hay que copiarla aquí ni pedirla aparte. Se deja el valor crudo como
+       * último recurso: mejor «user» que un hueco en blanco.
+       */
+      const nombreDelRol = (q.nombresDeRol || {})[q.rol] || q.rol;
+      document.getElementById('quinielaActualNombre').textContent = `${q.nombre} · ${nombreDelRol}`;
+
       /* Una capacidad, no una lista de roles: con escalones la lista envejece. */
-      if ((q.capacidades || []).includes('admin.ver')) {
+      const puedeAdministrar = (q.capacidades || []).includes('admin.ver');
+
+      if (puedeAdministrar) {
         document.getElementById('adminModeCard').style.display = 'flex';
+      }
+
+      /*
+       * ⛔ EL SUBTÍTULO NO PUEDE HABLARLE DE ADMINISTRAR A QUIEN NO ADMINISTRA.
+       *
+       * Decía «Administra jornadas, revisa resultados, consulta puntos» a TODO
+       * el mundo, incluidos los jugadores que sólo entran a llenar su quiniela
+       * y no tienen ni una de esas pantallas. Se vio en el recorrido, mirando
+       * la portada con una cuenta recién aprobada.
+       */
+      const subtitulo = document.querySelector('.hero-text');
+
+      if (subtitulo) {
+        subtitulo.textContent = puedeAdministrar
+          ? 'Administra jornadas, revisa resultados y consulta puntos.'
+          : 'Llena tu quiniela, revisa tus puntos y mira cómo va la tabla.';
       }
     }
     /*

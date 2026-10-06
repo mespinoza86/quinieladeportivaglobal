@@ -35,6 +35,7 @@
 
 const db = require('./db');
 const usuarios = require('./usuarios');
+const permisos = require('./permisos');
 
 /** Las cosas que se pueden hacer, y que el registro sabe nombrar. */
 const ACCIONES = ['desactivar', 'reactivar', 'liberar_correo', 'borrar', 'verificar'];
@@ -212,6 +213,16 @@ async function listarCuentas({ buscar = '', filtro = 'todas', limite = 50, despl
       quinielaId: m.quiniela_id,
       nombre: m.nombre,
       rol: m.rol,
+      /*
+       * ⚠️ El rol también en castellano, resuelto AQUÍ. La pantalla lo pintaba
+       * crudo —«propietario», «user»— igual que hacían «Mis quinielas» y la
+       * portada antes de arreglarlo.
+       *
+       * Se manda resuelto en vez de copiar la tabla al navegador: cuando se
+       * añada un rol habrá UN solo sitio que tocar, que es la razón por la que
+       * `permisos.NOMBRES` existe.
+       */
+      rolNombre: permisos.NOMBRES[m.rol] || m.rol,
       estado: m.estado,
       quinielaEstado: m.quiniela_estado
     });
