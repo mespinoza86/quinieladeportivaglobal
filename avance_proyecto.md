@@ -22,9 +22,25 @@
 ```bash
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
+git log --oneline -8        # qué se hizo en la última sesión
+git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
 npm test                    # 661/661
 npm run test:e2e            # 224/224, ~11 min
+
+node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
 ```
+
+⭐ **Esa última línea comprueba ESTE archivo.** Marco ha preguntado tres veces
+«¿la bitácora está al día?» y las tres había algo desfasado, así que la
+pregunta se volvió ejecutable: 23 preguntas de alguien que llega sin recordar
+nada, más 3 cifras viejas que deben haber DESAPARECIDO de la parte viva, más
+las cifras —pantallas, scripts, migraciones— contadas contra el disco. Si se añade algo importante al proyecto, **se le añade su pregunta**; un
+guion que no crece acaba diciendo que todo está bien mirando nada.
+
+⚠️ **EL HASH DE «último commit» DE ESTE ARCHIVO SIEMPRE VA UNO POR DETRÁS**, y
+no es un descuido: el commit que escribe la bitácora no puede nombrarse a sí
+mismo. Para saber dónde estás de verdad, `git log`, no esta tabla. La tabla
+sirve para saber **qué** se hizo, no en qué commit exacto.
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
 la séptima. `server.js` ya no existe: la aplicación es `arrancar.js`,
@@ -591,18 +607,18 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `2204f15` — Entrada 118: lo que ve quien entra por primera vez |
-| Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
+| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 119** |
+| Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ `conversion.md` está en la carpeta **a propósito y fuera del repositorio** — ver §DECISIONES QUE ESPERAN A MARCO |
 | Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 118. Los siete puntos del recorrido Y las cuatro mejoras para el usuario nuevo están hechas, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
 | Pruebas | **661** rápidas + **224** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) , **las ligas con su país** (114) y **la revisión de usabilidad: seis cambios** (115) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118) y **la auditoría de esta bitácora, ejecutable** (119) |
 
 ##### Qué se puede tocar y esperar que funcione
 
 - **Tres temas**: oscuro (de fábrica), de día y cancha. Botón redondo arriba a la
-  derecha, en las 39 pantallas. La elección se guarda en el navegador.
+  derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
   escribible, y el marcador real en el centro.
 - **Las seis pantallas de partidos** comparten tarjeta: escudo grande, nombre
@@ -657,12 +673,18 @@ Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
 3. **El ciclo completo del borrador**: confirmar una jornada y que a la semana
    siguiente proponga la de después.
 
-   ⛔ **NO SE PUEDE PROBAR CON LA QUINIELA QUE HAY.** El borrador es «la próxima
-   jornada **de una liga**», y hay una prueba de navegador que se llama
-   literalmente *«una quiniela customizada NO ve el panel»*. Marco no tiene
-   ninguna quiniela de liga creada, así que esto **no está pendiente de
-   probarlo: está pendiente de poder probarlo**. Crear una quiniela de liga es
-   el paso que lo desbloquea.
+   ⚠️ **HACE FALTA UNA QUINIELA DE LIGA**, y Marco no tiene ninguna. El
+   borrador es «la próxima jornada **de una liga**», y hay una prueba de
+   navegador llamada literalmente *«una quiniela customizada NO ve el panel»*.
+   Así que esto **no está pendiente de probarlo: está pendiente de poder
+   probarlo**.
+
+   ⭐ **PERO EL PANEL YA SE VIO FUNCIONANDO** (116). En el recorrido con el
+   proveedor falso, al crear una quiniela de liga y elegir Premier League,
+   salió: *«Jornada 4 de Premier League — 1 partidos, del dom 4 ene, 13:00 en
+   adelante. Revísala y confírmala»*. O sea que lo que falta no es «¿aparece?»
+   —aparece— sino **el ciclo de una semana a la siguiente** con partidos de
+   verdad.
 4. ~~**Que los marcadores oficiales sigan llegando solos.**~~ ✅ **COMPROBADO
    DURANTE DIEZ DÍAS** (22 de septiembre – 2 de octubre). Marco: *«los
    marcadores oficiales sí entraron solos, no tuve que sincronizar nada»*.
@@ -670,6 +692,23 @@ Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
    ⭐ Esto es más grande de lo que parece: valida el planificador y el
    sincronizador corriendo solos en Render, **sin un reinicio en diez días**, y
    es lo que hacía dudar del punto 2.
+
+##### 🙋 DECISIONES QUE ESPERAN A MARCO, NO TRABAJO PENDIENTE
+
+No son tareas: son cosas que están paradas porque las decide él.
+
+- **`conversion.md`** — un volcado de 745 KB con el diálogo entero de estas
+  sesiones (230 mensajes suyos, 1.200 respuestas, del 3 de septiembre en
+  adelante). Se generó el 22 de septiembre desde el transcript real y **está
+  en la carpeta pero FUERA del repositorio**: no se commiteó porque publicarlo
+  depende de si el repositorio es público, y eso no se pudo comprobar —`gh` no
+  está instalado en esa máquina—. Se buscaron secretos dentro y no hay
+  ninguno. ⚠️ Si algún día se hace `git add -A` sin cuidado, entra sin querer.
+- **Las trivias vienen encendidas de fábrica** y nadie explica qué son. Era el
+  punto 5 de la lista del usuario nuevo y Marco eligió los otros cuatro.
+- **Juntar «Puntos» y «Pronósticos» de verdad.** De momento «Pronósticos» sólo
+  está **oculta** del menú (118); la pantalla sigue viva y accesible por su
+  dirección. Borrarla o fundirlas es decisión suya.
 
 ##### ⚠️ Deuda anotada a propósito, no olvidada
 
@@ -1521,9 +1560,16 @@ Cuestan tiempo cada vez que se olvidan:
   regulares por `bash <<'EOF'` las corrompe en silencio. Mordió en la Entrada 024
   y tres veces más en la 027. La salida: anclar por posición y traer el texto
   nuevo desde un archivo.
-- **Los archivos del repositorio mezclan finales de línea.** `server.js` y
-  `avance_proyecto.md` son CRLF; `private/css/styles.css` va mezclado. Una
-  búsqueda con `\n` no encuentra nada en ellos.
+- **Los archivos del repositorio mezclan finales de línea, y NO se puede saber
+  de memoria cuál es cuál.** Con `core.autocrlf=true`, git guarda **siempre
+  LF** y entrega CRLF al sacar el archivo, pero cualquier herramienta que
+  reescriba un archivo lo deja en LF. Resultado: el mismo archivo es CRLF
+  recién clonado y LF después de editarlo. `avance_proyecto.md` figuró años
+  como «CRLF» en esta lista y el 6 de octubre de 2026 estaba en LF puro.
+  **La regla no es recordar cuál es: es contarlo antes de buscar con `\n`**, y
+  no deducir nada de los tamaños (§«Cómo se comprobó el despliegue»).
+  ⭐ Da igual para lo que se commitea —git normaliza— pero no da igual para una
+  búsqueda ni para un `split`.
 - **Las capturas de página completa mienten sobre la barra inferior.** Sale
   flotando a media página porque es `position: fixed`. No es un fallo de
   maquetación; no hay que "arreglarlo" (Entrada 026).
@@ -1622,6 +1668,15 @@ Cuestan tiempo cada vez que se olvidan:
   como `verify-full`; en la próxima versión mayor pasará a la semántica de libpq,
   que es **más débil**. Las cadenas de conexión deben decir **`verify-full`**
   explícito para no cambiar de garantías con una actualización (Entrada 038).
+- ⛔ **`git checkout <archivo>` para deshacer una prueba de mutación BORRA lo que
+  no esté commiteado.** Y aquí la prueba de mutación es el método de siempre:
+  se estropea algo a propósito, se comprueba que sale rojo, y se deshace. El 6
+  de octubre eso se deshizo con `git checkout avance_proyecto.md` sobre un
+  archivo con **45 líneas sin guardar**, y se las llevó todas sin preguntar. Se
+  recuperó sólo porque antes de mutar había un `cp` byte a byte.
+  **La regla: mutar después de commitear, o deshacer con la copia —nunca con
+  git—.** Y la copia se hace con `cp`, no reescribiendo el archivo, que en este
+  repositorio además rompería los CRLF (Entrada 118).
 
 ---
 
@@ -1730,7 +1785,7 @@ otros dos son las Fases 6 y 5.
 borró el 22 al cerrar la tajada 7.7 (Entrada 052).
 
 **Directorios:** `src/` (la aplicación), `db/` (el esquema SQL **y las
-migraciones**), `public/` (39 pantallas y los iconos), `private/` (CSS y JS servidos),
+migraciones**), `public/` (34 pantallas y los iconos), `private/` (CSS y JS servidos),
 `test/`, `scripts/`, `legacy-data/`, `.github/workflows/`.
 
 ### 2.2 `src/` — la aplicación
@@ -1903,7 +1958,7 @@ Servidas con `express.static`.
 `icono-512.png` (el maestro, y el tamaño que pide Google Play), `icono-192.png`,
 `icono-180.png` (iOS), `icono-32.png` (la pestaña) y `icono-maskable-512.png`,
 que va encogido al 87% porque Android recorta el icono a un círculo. Los enlaza
-`manifest.webmanifest`, y además **las 39 pantallas llevan su propia etiqueta
+`manifest.webmanifest`, y además **las 34 pantallas llevan su propia etiqueta
 `apple-touch-icon`**, porque iOS ignora el manifiesto para esto (112).
 
 **Públicas / de cuenta:** `login.html`, `registro.html`, `quinielas.html`,
@@ -20053,6 +20108,155 @@ comprobado con la pantalla delante:
   son (punto 5 de la lista, no elegido).
 - El punto ciego de `axios`: pulsar «sincronizar» una jornada.
 - La tarjeta del partido dentro del borrador se ve apretada.
+- Y lo de siempre: la notificación al teléfono y el ciclo del borrador.
+
+---
+
+### 📌 Entrada 119 — 6 de octubre de 2026 — La pregunta «¿está al día la bitácora?», convertida en guion
+
+**Objetivo:** Marco: *«guarda toooodo absolutamente toooodo en el file
+avance_proyecto.md para que eso esté al día, y que si mañana abro ese md y lo
+lees, entiendes perfectamente lo que hemos hecho, dónde estamos, y qué hace
+falta»*.
+
+## ⭐ LO QUE SE HIZO NO FUE ESCRIBIR MÁS, FUE MEDIR SI FALTABA ALGO
+
+Marco ha preguntado **tres veces** si la bitácora estaba al día, y las tres
+había algo desfasado. Responder «sí» otra vez no valía: hacía falta una forma
+de **comprobarlo**. Así que el archivo se auditó con 23 preguntas de alguien
+que llega mañana sin recordar nada, cada una buscada dentro del archivo, y las
+cifras —pantallas, scripts de navegador, migraciones— contadas **contra el
+disco**, no copiadas.
+
+Eso vive ahora en `scripts/auditar-bitacora.js`:
+
+```bash
+node scripts/auditar-bitacora.js   # 26 de 26
+```
+
+⚠️ **Y hay que hacerlo crecer.** Cuando se añada algo importante, se le añade
+su pregunta; un guion que no crece acaba diciendo que todo está bien mirando
+nada. Es el mismo riesgo que §«Sondas que dicen no queriendo decir no sé», pero
+del revés: aquí el peligro es un **falso verde**.
+
+## LOS TRES HUECOS QUE ENCONTRÓ, QUE ERAN DE VERDAD
+
+1. **`conversion.md` no se explicaba en ninguna parte.** 745 KB con el diálogo
+   entero, en la carpeta pero **fuera del repositorio**, sin que nada dijera
+   por qué. Alguien que llegara mañana lo vería como basura o lo commitearía
+   sin querer. Ahora está en la sección nueva de decisiones.
+2. **El ciclo del borrador se contaba como imposible de probar, y no lo es.**
+   La bitácora decía «no está pendiente de probarlo: está pendiente de poder
+   probarlo», y se le había olvidado que **el panel ya se vio funcionando** en
+   el recorrido de la 116. Lo que falta es la semana siguiente, no la primera
+   aparición. Un «no se puede» donde en realidad hay un «ya se vio a medias».
+3. **El hash de «último commit» de este archivo siempre va uno por detrás**, y
+   nadie lo decía. No es un descuido —el commit que escribe la bitácora no
+   puede nombrarse a sí mismo— pero quien lo lea mañana creerá que está
+   desfasada. Ahora el arranque rápido manda a `git log`, no a la tabla.
+
+Y una sección nueva: **🙋 DECISIONES QUE ESPERAN A MARCO, NO TRABAJO
+PENDIENTE**. Mezclar las dos cosas hacía que la lista de pendientes pareciera
+más larga de lo que es: tres de sus líneas no eran trabajo, eran preguntas
+suyas sin responder.
+
+## ⛔ EL CUARTO HUECO: 23 DE 23 CON UNA CONTRADICCIÓN DENTRO
+
+El guion daba verde, y la parte viva decía **«34 pantallas HTML» en la línea
+1953 y «las 39 pantallas» en la 1961**. Ocho líneas de distancia. Más dos
+«39 pantallas» repartidas por la descripción de directorios y la del icono.
+
+⭐ **El fallo no era de la bitácora, era del guion.** Comprobaba que la cifra
+BUENA apareciera en alguna parte, y eso lo cumple un archivo que diga las dos.
+Cuando un número cambia —aquí, al borrar seis pantallas en la 117— **deja su
+versión vieja escrita en otros sitios**, y buscar la nueva no la encuentra.
+
+Así que la auditoría tiene ahora una segunda mitad: **lo que ya NO debe
+estar**. Tres cifras viejas que, si reaparecen en la parte viva, la ponen en
+rojo. Y para eso hubo que partir el archivo en dos:
+
+⚠️ **La historia conserva sus «39 pantallas», y debe conservarlas.** Las
+entradas de la bitácora cuentan lo que pasó entonces, no describen el presente;
+corregirlas sería falsificar el registro. El corte es `## 19. Bitácora de
+avance`, y si el guion no lo encuentra **aborta con salida 2** en vez de
+auditar media cosa.
+
+Quedan **26 comprobaciones**: 23 preguntas y 3 cifras que deben haber
+desaparecido.
+
+## ⛔ Y LA TRAMPA DEL DÍA, QUE CASI COSTÓ EL TRABAJO ENTERO
+
+Para comprobar que el guion **sabe decir no**, se estropeó la bitácora a
+propósito (dos frases cambiadas por `XXXX`) y salió rojo: 21 de 23, salida 1.
+Correcto.
+
+⛔ **Pero deshacer la mutación se hizo con `git checkout avance_proyecto.md`,
+sobre un archivo con 45 líneas sin commitear. Se las llevó todas.** Se
+recuperaron sólo porque antes de mutar había un `cp` byte a byte.
+
+La prueba de mutación es el método de siempre en este proyecto, así que esto
+va a volver. **La regla: mutar después de commitear, o deshacer con la copia,
+nunca con git.** Anotada en §C.
+
+⚠️ Y de rebote se descubrió que **§C mentía**: decía que `avance_proyecto.md`
+es CRLF, y está en LF puro. Con `core.autocrlf=true` git guarda LF y entrega
+CRLF, pero cualquier herramienta que reescriba el archivo lo deja en LF: el
+mismo archivo es CRLF recién clonado y LF después de editarlo. No cambia lo que
+se commitea —se comprobó: el diff son 54 líneas, las mías, no el archivo
+entero— pero sí rompe una búsqueda con `\n`. §C ahora dice **cuéntalo**, en vez
+de afirmar cuál es.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `scripts/auditar-bitacora.js` | Nuevo. 23 preguntas + 3 cifras que ya no deben estar |
+| `avance_proyecto.md` | Los cuatro huecos, la sección de decisiones, dos trampas en §C |
+
+**Verificación:**
+
+```
+npm test                               -> 661/661
+node scripts/auditar-bitacora.js       -> 26 de 26, salida 0
+
+mutación del PROPIO guion: borrar dos frases de la bitácora
+   -> 21 de 23, salida 1, y nombra las dos que faltan   (CONTROL en verde antes)
+mutación del comprobador nuevo: devolver «39 pantallas» a la parte viva
+   -> 25 de 26, salida 1, y dice cuál y por qué
+   restaurado con cp: md5 identico antes y despues (la regla nueva, aplicada)
+finales de línea: git guarda LF, el diff son 54 líneas y no 20.000
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **«¿Está la documentación al día?» se puede ejecutar.** No comprobando que
+   esté bonita, sino que las preguntas de quien llega tengan respuesta y que
+   las cifras coincidan con el disco.
+2. ⛔ **Separar «pendiente de hacer» de «pendiente de decidir» acorta la lista
+   sin trabajar.** Tres líneas de pendientes no eran tareas.
+3. ⛔ **`git checkout <archivo>` deshace una mutación y, de paso, el trabajo.**
+4. ⚠️ **Una nota del entorno puede caducar sin que nadie la toque.** Lo de CRLF
+   era cierto cuando se escribió. La forma robusta es decir «compruébalo», no
+   «es así».
+5. ⛔ **Buscar la cifra buena NO detecta la cifra vieja.** Un documento que dice
+   «34» y «39» de lo mismo pasa cualquier comprobación que sólo busque el 34.
+   Hay que comprobar también **lo que debe haber desaparecido** — y para eso
+   hay que separar lo que describe el presente de lo que narra el pasado, que
+   sí debe conservar las cifras viejas.
+6. ⚠️ **Los acentos graves dentro de comillas dobles del shell, por quinta
+   vez.** Un bloque de ``` dentro de un `node -e "…"` hizo que bash ejecutara
+   el texto. Esta vez falló en voz alta —«No such file or directory»— y el
+   retoque simplemente no se aplicó; en la Entrada 029 escribió el archivo sin
+   avisar. **Texto con acentos graves o barras invertidas: herramienta de
+   edición, no línea de comandos.**
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Jalar y usarlo una semana con gente de verdad**, que sigue siendo lo que
+  más vale ahora mismo.
+- Las tres decisiones que esperan a Marco: `conversion.md`, las trivias
+  encendidas de fábrica, y si «Pronósticos» se borra o se funde con «Puntos».
+- El punto ciego de `axios`: pulsar «sincronizar» una jornada.
 - Y lo de siempre: la notificación al teléfono y el ciclo del borrador.
 
 ---
