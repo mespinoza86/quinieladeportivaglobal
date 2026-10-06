@@ -23,7 +23,7 @@
 git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 npm test                    # 661/661
-npm run test:e2e            # 222/222, ~11 min
+npm run test:e2e            # 224/224, ~11 min
 ```
 
 ✅ **La migración a PostgreSQL está TERMINADA.** Las 7 tajadas y los 7 pasos de
@@ -54,7 +54,7 @@ entradas de bitácora (040 a 052).
 | Qué | Estado |
 |---|---|
 | Pruebas rápidas | **661**, ~75 s |
-| Pruebas de navegador | **222**, ~12 min, contra el servidor de verdad |
+| Pruebas de navegador | **224**, ~12 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -591,11 +591,11 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `77f20ae`. **El último que toca código es `9e2f6a8`** (entrada 117) |
+| Último commit | `(este)` — Entrada 118: lo que ve quien entra por primera vez |
 | Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
-| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 117. Los SIETE puntos del recorrido están hechos, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
+| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 118. Los siete puntos del recorrido Y las cuatro mejoras para el usuario nuevo están hechas, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **661** rápidas + **222** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **661** rápidas + **224** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113) , **las ligas con su país** (114) y **la revisión de usabilidad: seis cambios** (115) |
 
@@ -620,6 +620,11 @@ documento.
 - **Las ligas se identifican con su país** (114): «Liga Premier · Inglaterra»
   al armar la jornada, en las favoritas y en la liga de la quiniela. Hay
   homónimas en varios países y el nombre solo no decía cuál era.
+
+- **Lo que ve alguien que entra por primera vez** (118). El reglamento se
+  ofrece al llenar; la portada dice qué hacer cuando no hay jornadas —y dice
+  cosas distintas al dueño y al jugador—; invitar es un botón que arma el
+  mensaje; y «Pronósticos» sale del menú, que queda en once.
 
 ##### ⚠️ LO QUE SIGUE SIN COMPROBAR EN EL MUNDO REAL
 
@@ -756,7 +761,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **661 + 222** pruebas en
+funcionando, **las quince migraciones corridas**, **661 + 224** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1167,7 +1172,7 @@ npm test                   # las 661 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 222 de navegador (~11 min, escritorio y móvil)
+npm run test:e2e           # las 224 de navegador (~11 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1845,7 +1850,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 661 pruebas rápidas y 222 de navegador
+### 2.5 `test/` — 661 pruebas rápidas y 224 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -19902,6 +19907,152 @@ mutación sobre el centinela nuevo:
 - El punto ciego de `axios`: pulsar «sincronizar» una jornada.
 - La tarjeta del partido dentro del borrador se ve apretada (visto en el
   recorrido, no tocado).
+- Y lo de siempre: la notificación al teléfono y el ciclo del borrador.
+
+---
+
+### 📌 Entrada 118 — 6 de octubre de 2026 — Lo que faltaba no era arreglar, era explicar
+
+**Objetivo:** Marco, después de los siete puntos: *«¿qué más harías si sos un
+usuario nuevo, para que entiendas todo bien?»*.
+
+## ⭐ EL DIAGNÓSTICO, QUE ES LO QUE DA SENTIDO AL RESTO
+
+Los siete puntos quitaron todo lo que **confundía**. Pero no habíamos añadido
+nada que **enseñe**: un recién llegado ya no se perdía entre nombres repetidos,
+y seguía sin que nadie le dijera qué hacer primero ni cómo se gana.
+
+Marco eligió cuatro cosas. Las cuatro van de lo mismo: **decir**.
+
+## 1 · El reglamento, en el momento en que hace falta
+
+Era la **doceava tarjeta** de la portada, después de «Jugadores». Y es la única
+pantalla que explica cómo se puntúa — ⭐ **leyendo la configuración de verdad de
+esta quiniela**, no un ejemplo. Un jugador nuevo llenaba su primera quiniela sin
+saber qué vale un marcador exacto.
+
+Ahora hay un enlace **«¿Cómo se ganan los puntos?»** en la cabecera de «Llenar
+quiniela».
+
+⚠️ **NO se reordenó el menú para subirlo.** Ese orden lo decidió Marco por
+frecuencia de uso, y el reglamento **se usa poco pero se necesita pronto**: son
+dos cosas distintas, y moverlo habría estropeado un orden que está bien por otro
+motivo.
+
+## 2 · La portada, cuando todavía no hay nada
+
+Una quiniela recién creada enseñaba **doce tarjetas que llevaban todas a «no hay
+nada todavía»**. El momento en que más fácil es pensar que la aplicación está
+rota, y el único que nadie explicaba.
+
+Ahora sale un panel que dice cosas **distintas según quién mire**: a quien
+administra, que cree la primera jornada, con enlace; a quien juega, que espere —
+y **a él no se le ofrece crearla**, porque no puede.
+
+⚠️ Cuesta una petición más, asumida a sabiendas: `/api/jornada-actual` devuelve
+**sólo nombres**. Deducirlo de la tabla de puntos no valía: «sin puntos» también
+es una jornada recién creada que nadie ha llenado.
+
+⚠️ **Si la petición falla, no se dice nada.** Un «no hay jornadas» cuando lo que
+se cayó fue la red sería mentir en la primera pantalla.
+
+## 3 · Invitar deja de ser copiar un código
+
+El código salía como texto suelto. Había que seleccionarlo, copiarlo y encima
+explicarle a cada uno qué hacer con él.
+
+⭐ **El patrón ya estaba resuelto en el propio proyecto**: «Compartir al grupo»
+arma el mensaje entero. Esto es lo mismo para invitar — dos botones, y el
+mensaje con los tres pasos escritos.
+
+⚠️ El enlace sale de `window.location.origin`, no escrito a mano: vale en
+Render, en local, y el día que cambie el dominio.
+
+## 4 · «Pronósticos», fuera del menú pero no borrado
+
+Decisión de Marco: *«puntos y pronósticos es lo mismo… ocultar pronósticos. No
+lo borremos aún»*. Y lo es: mismo `<title>`, mismo marcado, y «Puntos» enseña
+todo lo de aquélla **más** los puntos.
+
+⚠️ Se queda la pantalla, su ruta, sus permisos y sus pruebas. **Comprobado: HTTP
+200 por su dirección.** Quitar el `hidden` la devuelve al menú.
+
+El menú queda en **once**.
+
+## ⛔ TRES COSAS QUE APARECIERON AL HACERLO
+
+1. **`.primary-button` NO EXISTÍA.** Los botones se estilan por **etiqueta**, así
+   que `<button class="primary-button">` sale bien por ser un `button` y la
+   clase no hace nada. Un **enlace** con esa clase no cogía ningún estilo:
+   texto verde suelto en medio de un panel. Y tenía que ser un enlace, porque
+   **la portada no carga `navegacion.js`** y un botón con `data-ir-a` ahí no
+   habría hecho nada.
+
+2. **Un fallo de invitar que sólo habría salido con el uso.** La lista se
+   repinta al aprobar a alguien, así que sin una marca cada repintado añadía
+   **otro oyente encima**: al tercer aprobado, un clic en «Copiar» habría
+   copiado cuatro veces y abierto cuatro pestañas de WhatsApp. Es el mismo fallo
+   que ya cazaron los botones de marcador, y se resolvió igual.
+
+3. ⭐ **Que `hidden` esconda de verdad no estaba garantizado.** `.action-card`
+   fija `display:flex`, y una regla propia le gana a la del navegador. El
+   proyecto ya tropezó con esto —lo destapó el menú por niveles— y tiene un
+   `[hidden] { display:none !important }`. Sin él, esconder «Pronósticos» no
+   habría hecho nada. **Se comprobó con la pantalla delante antes de darlo por
+   bueno.**
+
+## ⚠️ Y TRES TROPIEZOS MÍOS ESCRIBIENDO LA PRUEBA
+
+Los tres anotados en su sitio, porque vuelven:
+
+1. Leer el código de ingreso **en la pantalla equivocada** —vive en «Mis
+   quinielas», no en la portada—. El `catch` no salva: la espera ya se comió los
+   30 segundos de la prueba.
+2. Olvidar que **«Miembros» exige el modo administrador** además del rol.
+3. Forzar un `goto` **encima de la navegación que «Entrar» ya hacía**, que
+   Playwright aborta.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `public/llenar_jornada_user.html` | El enlace al reglamento, en la cabecera |
+| `public/index.html` | Panel de «no hay jornadas»; «Pronósticos» oculto |
+| `private/js/index-contexto.js` | Decide qué decir según quién mire |
+| `public/miembros.html`, `private/js/miembros.js` | Invitar con un botón |
+| `private/css/styles.css` | `a.primary-button`, y enlaces en `.hero-text` |
+| `test/e2e/portada.spec.js` | La quiniela vacía, vista por los dos |
+
+**Verificación:**
+
+```
+npm test                    -> 661/661
+CI=true npx playwright test -> 224/224, sin flaky   (eran 222)
+
+mutación: quitar la llamada al aviso de «no hay jornadas» -> ROJO
+comprobado con la pantalla delante:
+   la tarjeta de Pronósticos está en el marcado y NO se ve
+   `verResultados.html` responde HTTP 200
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Arreglar lo confuso no es lo mismo que explicar.** Los siete puntos
+   quitaron ruido; esto añade señal. Son dos trabajos distintos.
+2. ⛔ **Una clase de estilo puede no existir y nadie se entera**, porque el
+   elemento que la lleva ya se estilaba por su etiqueta.
+3. ⚠️ **Un oyente añadido dentro de algo que se repinta se acumula.** Tercera
+   vez en este proyecto.
+4. ⚠️ **Antes de esconder algo con `hidden`, comprobar que `hidden` esconde.**
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Jalar y usarlo una semana con gente de verdad.** Hoy se ha tocado mucho,
+  y lo que vean dos o tres personas usándolo vale más que otra lista.
+- Las trivias siguen viniendo encendidas de fábrica sin que nadie explique qué
+  son (punto 5 de la lista, no elegido).
+- El punto ciego de `axios`: pulsar «sincronizar» una jornada.
+- La tarjeta del partido dentro del borrador se ve apretada.
 - Y lo de siempre: la notificación al teléfono y el ciclo del borrador.
 
 ---
