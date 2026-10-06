@@ -199,7 +199,26 @@
         </div>
       </a>
 
-      <a class="action-card" href="verResultados.html">
+      <!--
+        ⛔ «PRONÓSTICOS» ESTÁ ESCONDIDO, NO BORRADO. Decisión de Marco, 6 de
+        octubre de 2026: «puntos y pronósticos es lo mismo, entonces lo que
+        podemos hacer de momento es ocultar pronósticos. No lo borremos aún».
+
+        Y es verdad que son lo mismo: las dos pantallas tenían el MISMO
+        `<title>` —«Resultados Pronosticados por Jugador»—, pintan el mismo
+        marcado, y «Puntos» enseña todo lo de aquí MÁS los puntos. Hasta hay un
+        comentario en `ver-resultados.js` reconociendo que duplica a la otra.
+        Eran dos puertas al mismo cuarto.
+
+        ⚠️ SE QUEDA TODO LO DEMÁS: la pantalla, su ruta, sus permisos y sus
+        pruebas. Quien tenga el enlace guardado sigue entrando. Para devolverla
+        al menú basta con quitar el `hidden` de aquí abajo.
+
+        ⚠️ El otro enlace que apunta a ella vive en `adminmode.html`, dentro de
+        `guest-content`, que NO SE ENSEÑA NUNCA —lo explica el comentario de
+        aquel archivo—, así que no hace falta tocarlo.
+      -->
+      <a class="action-card" href="verResultados.html" hidden>
         <span class="icon">🎯</span>
 
         <div>
