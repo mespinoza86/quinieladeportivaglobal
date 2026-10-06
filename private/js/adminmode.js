@@ -221,8 +221,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const datos = await respuesta.json().catch(() => ({}));
 
       if (!respuesta.ok) {
-        adminLoginMessage.textContent = datos.error
-          || 'No se pudo activar el modo administrador.';
+        avisoFallo(adminLoginMessage, datos.error
+          || 'No se pudo activar el modo administrador.');
         return;
       }
 
@@ -246,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
        * el botón y no pasaba NADA. Un formulario que no responde parece roto.
        */
       console.error('No se pudo activar el modo administrador:', error);
-      adminLoginMessage.textContent = 'No se pudo contactar con el servidor. Inténtalo otra vez.';
+      avisoFallo(adminLoginMessage, 'No se pudo contactar con el servidor. Inténtalo otra vez.');
     }
   });
 

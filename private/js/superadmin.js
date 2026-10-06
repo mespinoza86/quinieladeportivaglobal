@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('password').value = '';
       await cargar();
     } catch (error) {
-      aviso.textContent = error.message;
+      avisoFallo(aviso, error.message);
       aviso.hidden = false;
     }
   }

@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       pintar(await api('/api/cobros/reporte'));
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
     }
   })();
 });

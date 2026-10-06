@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
          * pantalla es, y «confirma tu contraseña» necesita su enlace.
          */
         if (error.requiereAdminMode) pedirAdminMode();
-        else mensaje.textContent = error.message;
+        else avisoFallo(mensaje, error.message);
         throw error;
       }
     },
@@ -225,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = `Listo: cada semana se te propondrá la jornada de ${window.ligaConPais(liga.nombre, pais)}.`;
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
-      else mensaje.textContent = error.message;
+      else avisoFallo(mensaje, error.message);
     }
   }
 
@@ -245,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = 'Precio guardado.';
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
-      else mensaje.textContent = error.message;
+      else avisoFallo(mensaje, error.message);
     }
   });
 
@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = 'A partir de ahora eliges tú los partidos.';
     } catch (error) {
       if (error.requiereAdminMode) pedirAdminMode();
-      else mensaje.textContent = error.message;
+      else avisoFallo(mensaje, error.message);
     }
   });
 

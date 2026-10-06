@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const lista = document.getElementById('listaMiembros');
   const mensaje = document.getElementById('mensajeMiembros');
   async function api(url, options) { const r = await fetch(url, options); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Error'); return d; }
-  async function accion(id, accion, body) { try { await api(`/api/quiniela-actual/miembros/${id}/${accion}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); await cargar(); } catch (e) { mensaje.textContent = e.message; } }
+  async function accion(id, accion, body) { try { await api(`/api/quiniela-actual/miembros/${id}/${accion}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); await cargar(); } catch (e) { avisoFallo(mensaje, e.message); } }
   async function cargar() {
     try {
       const [q, miembros] = await Promise.all([api('/api/quiniela-actual'), api('/api/quiniela-actual/miembros')]);
@@ -82,12 +82,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             selector.onchange = () => accion(m.id, 'rol', { rol: selector.value });
             actions.appendChild(selector);
           }
-          if ((q.capacidades || []).includes('quiniela.eliminar') && m.rol === 'admin') add('Transferir propiedad', async () => { if (!confirm(`¿Transferir la propiedad a ${m.username}?`)) return; try { await api('/api/quiniela-actual/transferir-propiedad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioId: m.usuarioId }) }); await cargar(); } catch (e) { mensaje.textContent = e.message; } });
+          if ((q.capacidades || []).includes('quiniela.eliminar') && m.rol === 'admin') add('Transferir propiedad', async () => { if (!confirm(`¿Transferir la propiedad a ${m.username}?`)) return; try { await api('/api/quiniela-actual/transferir-propiedad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioId: m.usuarioId }) }); await cargar(); } catch (e) { avisoFallo(mensaje, e.message); } });
           add('Expulsar', () => confirm(`¿Expulsar a ${m.username}?`) && accion(m.id, 'expulsar'));
         }
         card.appendChild(actions); lista.appendChild(card);
       });
-    } catch (e) { mensaje.textContent = e.message; }
+    } catch (e) { avisoFallo(mensaje, e.message); }
   }
   await cargar();
 });

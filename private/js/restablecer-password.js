@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const datos = await respuesta.json();
 
       if (!respuesta.ok) {
-        mensaje.textContent = datos.error || 'No se pudo cambiar la contraseña.';
+        avisoFallo(mensaje, datos.error || 'No se pudo cambiar la contraseña.');
         // Si el enlace ya no vale, lo único útil que puede hacer es pedir otro.
         pedirOtro.hidden = false;
         return;
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = `Entra como ${datos.username} con la contraseña que acabas de elegir.`;
       irLogin.hidden = false;
     } catch {
-      mensaje.textContent = 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.';
+      avisoFallo(mensaje, 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.');
     } finally {
       boton.disabled = false;
     }

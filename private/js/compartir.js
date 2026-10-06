@@ -243,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Error compartiendo:', err);
-      mensaje.textContent = err.message || 'No se pudo completar la acción.';
+      avisoFallo(mensaje, err.message || 'No se pudo completar la acción.');
     }
   }
 

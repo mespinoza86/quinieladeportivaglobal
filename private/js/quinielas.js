@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         await api(`/api/quinielas/${q.id}/seleccionar`, { method: 'POST' });
         window.location.href = '/index.html';
-      } catch (error) { mensaje.textContent = error.message; }
+      } catch (error) { avisoFallo(mensaje, error.message); }
     });
     card.appendChild(entrar);
 
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await api('/api/quiniela-actual/solicitar-retiro', { method: 'POST' });
           mensaje.textContent = 'Solicitud de retiro enviada.';
           await cargar();
-        } catch (error) { mensaje.textContent = error.message; }
+        } catch (error) { avisoFallo(mensaje, error.message); }
       });
       card.appendChild(retirar);
     }
@@ -213,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           : quinielas.length ? ['unirse', 'crear', 'lista']
             : ['unirse', 'crear']);
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
       heroTexto.textContent = 'No se pudo cargar tu lista de quinielas.';
       /*
        * Si la carga falla, los formularios se enseñan igual y en el orden
@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.location.href = tipo === 'liga'
         ? `/adminmode.html?volver=${encodeURIComponent(destino)}`
         : '/index.html';
-    } catch (error) { mensaje.textContent = error.message; }
+    } catch (error) { avisoFallo(mensaje, error.message); }
   });
 
   document.getElementById('unirseForm').addEventListener('submit', async event => {
@@ -271,10 +271,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ codigoIngreso: document.getElementById('codigoIngreso').value })
       });
-      mensaje.textContent = data.message;
+      avisoFallo(mensaje, data.message);
       event.target.reset();
       await cargar();
-    } catch (error) { mensaje.textContent = error.message; }
+    } catch (error) { avisoFallo(mensaje, error.message); }
   });
 
   document.getElementById('cerrarSesion').addEventListener('click', async () => {

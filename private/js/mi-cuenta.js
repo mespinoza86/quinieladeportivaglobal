@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ]);
       pintar(cuenta, quiniela);
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
     }
   })();
 });

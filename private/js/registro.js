@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = data.mensaje
         || 'Te enviamos un correo para confirmar tu dirección.';
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
     } finally {
       boton.disabled = false;
     }

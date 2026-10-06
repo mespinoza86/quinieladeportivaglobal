@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Mirar el ESTADO, no sólo el cuerpo: un 429 trae `error`, no `mensaje`.
       if (!respuesta.ok) {
-        mensaje.textContent = datos.error || 'No se pudo enviar el enlace. Inténtalo en unos minutos.';
+        avisoFallo(mensaje, datos.error || 'No se pudo enviar el enlace. Inténtalo en unos minutos.');
         return;
       }
 
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mensaje.textContent = datos.mensaje
         || 'Si esa dirección tiene una cuenta, le enviamos un enlace para cambiar la contraseña.';
     } catch {
-      mensaje.textContent = 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.';
+      avisoFallo(mensaje, 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.');
     } finally {
       boton.disabled = false;
     }

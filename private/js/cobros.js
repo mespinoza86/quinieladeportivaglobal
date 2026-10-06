@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             await cargar();
           } catch (error) {
-            mensaje.textContent = error.message;
+            avisoFallo(mensaje, error.message);
             casilla.checked = !casilla.checked;   // deshacer lo que no se guardó
           }
         });
@@ -262,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           await cargar();
         } catch (error) {
-          mensaje.textContent = error.message;
+          avisoFallo(mensaje, error.message);
         }
       });
     }
@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('premioNota').value = '';
       await cargar();
     } catch (error) {
-      botesMensaje.textContent = error.message;
+      avisoFallo(botesMensaje, error.message);
     }
   });
 
@@ -431,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('entregaNota').value = '';
       await cargar();
     } catch (error) {
-      botesMensaje.textContent = error.message;
+      avisoFallo(botesMensaje, error.message);
     }
   });
 
@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pintarCaja(await api('/api/cobros/caja'));
       }
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
     }
   }
 
@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('abonoNota').value = '';
       await cargar();
     } catch (error) {
-      abonoMensaje.textContent = error.message;
+      avisoFallo(abonoMensaje, error.message);
     }
   });
 

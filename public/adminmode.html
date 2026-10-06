@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/iconos/icono-180.png" />
   <link rel="stylesheet" href="/css/styles.css" />
   <script src="/js/tema.js"></script>
-  <script src="/js/adminmode.js" defer></script>
+  <script src="/js/aviso.js" defer></script><script src="/js/adminmode.js" defer></script>
 <script defer src="/js/password-visible.js"></script>
 </head>
 
@@ -62,7 +62,8 @@
         <label for="adminPassword">Tu contraseña</label>
         <input id="adminPassword" name="password" type="password" autocomplete="current-password" required />
         <button type="submit" class="primary-button">Confirmar y seguir</button>
-        <p id="adminLoginMessage" class="form-message form-message--error" role="alert"></p>
+        <!-- El color ya no se pone aquí: lo decide `avisoFallo` al escribir. -->
+        <p id="adminLoginMessage" class="form-message" role="alert"></p>
       </form>
     </section>
 

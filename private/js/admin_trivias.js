@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     } catch (error) {
       console.error('Error cargando jornadas:', error);
-      mensaje.textContent = 'Error cargando jornadas.';
+      avisoFallo(mensaje, 'Error cargando jornadas.');
     }
   }
 
@@ -112,7 +112,7 @@ function convertirADatetimeLocal(fecha) {
 
     } catch (error) {
       console.error('Error cargando trivias:', error);
-      mensaje.textContent = 'Error cargando trivias.';
+      avisoFallo(mensaje, 'Error cargando trivias.');
     }
   }
 
@@ -261,7 +261,7 @@ function convertirADatetimeLocal(fecha) {
       const data = await res.json();
 
       if (!res.ok) {
-        mensaje.textContent = data.error || 'Error guardando cambios.';
+        avisoFallo(mensaje, data.error || 'Error guardando cambios.');
         return;
       }
 
@@ -271,7 +271,7 @@ function convertirADatetimeLocal(fecha) {
 
     } catch (error) {
       console.error('Error guardando cambios:', error);
-      mensaje.textContent = 'Error guardando cambios.';
+      avisoFallo(mensaje, 'Error guardando cambios.');
     } finally {
       guardarCambiosBtn.disabled = false;
       guardarCambiosBtn.textContent = 'Guardar Cambios de Trivias';
@@ -299,7 +299,7 @@ function convertirADatetimeLocal(fecha) {
 
     } catch (error) {
       console.error('Error resolviendo trivias:', error);
-      mensaje.textContent = 'Error resolviendo trivias.';
+      avisoFallo(mensaje, 'Error resolviendo trivias.');
     } finally {
       resolverTriviasBtn.disabled = false;
     }

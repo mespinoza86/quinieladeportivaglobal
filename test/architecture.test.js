@@ -1454,6 +1454,47 @@ test('⛔ el país acompaña a la liga en todas partes, y NUNCA dentro de la caj
   }
 });
 
+test('⛔ toda pantalla que avise de un fallo carga `aviso.js` antes', () => {
+  /*
+   * `avisoFallo` escribe el mensaje Y le pone el color de error. Si la pantalla
+   * no carga `aviso.js`, la llamada revienta con «avisoFallo is not defined»
+   * — y revienta **justo cuando algo ha ido mal**, que es el peor momento
+   * posible: en vez del error que se quería contar, no sale nada.
+   *
+   * ⚠️ Es el mismo centinela que el de `liga-con-pais.js`, por la misma razón:
+   * un ayudante global sólo funciona si la página lo trae.
+   */
+  const dirJs = path.join(root, 'private', 'js');
+
+  const usan = fs.readdirSync(dirJs)
+    .filter(f => f.endsWith('.js') && f !== 'aviso.js')
+    .filter(f => /\bavisoFallo\(/.test(fs.readFileSync(path.join(dirJs, f), 'utf8')));
+
+  assert.ok(usan.length >= 10,
+    `esperaba al menos diez scripts avisando de fallos, hay ${usan.length}`);
+
+  for (const pagina of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html'))) {
+    const html = leer(path.join('public', pagina));
+    const cargados = [...html.matchAll(/src=["']\/?js\/([^"']+\.js)["']/g)].map(m => m[1]);
+
+    const suyos = usan.filter(script => cargados.includes(script));
+    if (!suyos.length) continue;
+
+    assert.ok(cargados.includes('aviso.js'),
+      `${pagina} carga ${suyos.join(', ')}, que avisan de fallos, pero no carga aviso.js`);
+
+    /*
+     * ⚠️ Y ANTES, no después. Con `defer` los scripts se ejecutan en el orden
+     * en que aparecen, así que ponerlo detrás lo dejaría llegar tarde.
+     */
+    const dondeAviso = cargados.indexOf('aviso.js');
+    for (const script of suyos) {
+      assert.ok(dondeAviso < cargados.indexOf(script),
+        `${pagina} carga aviso.js DESPUÉS de ${script}: llegaría tarde`);
+    }
+  }
+});
+
 test('el manifiesto y el service worker apuntan a iconos que existen', () => {
   /*
    * Los iconos son de las poquísimas cosas que fallan EN SILENCIO y sólo se ven

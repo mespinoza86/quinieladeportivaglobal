@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesión.');
       window.location.href = '/quinielas.html';
     } catch (error) {
-      mensaje.textContent = error.message;
+      avisoFallo(mensaje, error.message);
     } finally {
       boton.disabled = false;
     }

@@ -10,10 +10,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('avisarAlCompartir').checked=quiniela.configuracion.avisarAlCompartir===true;
     if((quiniela.capacidades||[]).includes('quiniela.configurar')){document.getElementById('cicloPanel').hidden=false;document.getElementById('archivarButton').textContent=quiniela.estado==='archivada'?'Restaurar quiniela':'Archivar quiniela';}
     if((quiniela.capacidades||[]).includes('quiniela.eliminar')) document.getElementById('eliminarPanel').hidden=false;
-  } catch(e){mensaje.textContent=e.message;}
-  document.getElementById('configForm').addEventListener('submit',async e=>{e.preventDefault();try{const campos=['marcadorExacto','resultadoCorrecto','comodinExacto','comodinResultado','puntosTriviaDefault'];const puntuacion=Object.fromEntries(campos.map(c=>[c,Number(document.getElementById(c).value)]));puntuacion.triviasHabilitadas=document.getElementById('triviasHabilitadas').checked;await api('/api/quiniela-actual/configuracion',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({puntuacion,incluirExpulsadosEnRanking:document.getElementById('incluirExpulsadosEnRanking').checked,avisarAlCompartir:document.getElementById('avisarAlCompartir').checked})});mensaje.textContent='Configuración guardada.';}catch(err){mensaje.textContent=err.message;}});
-  document.getElementById('archivarButton').addEventListener('click',async()=>{try{await api('/api/quiniela-actual/archivar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archivada:quiniela.estado!=='archivada'})});window.location.reload();}catch(e){mensaje.textContent=e.message;}});
-  document.getElementById('eliminarButton')?.addEventListener('click',async()=>{if(!confirm('Esta acción retirará la quiniela de todos los usuarios. ¿Continuar?'))return;try{await api('/api/quiniela-actual',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmacion:document.getElementById('confirmarEliminacion').value})});window.location.href='/quinielas.html';}catch(e){mensaje.textContent=e.message;}});
+  } catch(e){avisoFallo(mensaje, e.message);}
+  document.getElementById('configForm').addEventListener('submit',async e=>{e.preventDefault();try{const campos=['marcadorExacto','resultadoCorrecto','comodinExacto','comodinResultado','puntosTriviaDefault'];const puntuacion=Object.fromEntries(campos.map(c=>[c,Number(document.getElementById(c).value)]));puntuacion.triviasHabilitadas=document.getElementById('triviasHabilitadas').checked;await api('/api/quiniela-actual/configuracion',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({puntuacion,incluirExpulsadosEnRanking:document.getElementById('incluirExpulsadosEnRanking').checked,avisarAlCompartir:document.getElementById('avisarAlCompartir').checked})});mensaje.textContent='Configuración guardada.';}catch(err){avisoFallo(mensaje, err.message);}});
+  document.getElementById('archivarButton').addEventListener('click',async()=>{try{await api('/api/quiniela-actual/archivar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archivada:quiniela.estado!=='archivada'})});window.location.reload();}catch(e){avisoFallo(mensaje, e.message);}});
+  document.getElementById('eliminarButton')?.addEventListener('click',async()=>{if(!confirm('Esta acción retirará la quiniela de todos los usuarios. ¿Continuar?'))return;try{await api('/api/quiniela-actual',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmacion:document.getElementById('confirmarEliminacion').value})});window.location.href='/quinielas.html';}catch(e){avisoFallo(mensaje, e.message);}});
 
   /* ==================== Ligas favoritas ==================== */
 
@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
        * haya caducado. Se dice lo que pasó en vez de dejar «Cargando…» eterno.
        */
       listaElegidas.innerHTML = '';
-      mensajeFavoritas.textContent = error.message;
+      avisoFallo(mensajeFavoritas, error.message);
 
       /*
        * ⚠️ Se olvida la promesa fallida. Guardada, el desplegable heredaría el
@@ -187,7 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? elegidas.length + ' liga(s) favorita(s) guardada(s).'
         : 'Se quitaron todas las favoritas.';
     } catch (error) {
-      mensajeFavoritas.textContent = error.message;
+      avisoFallo(mensajeFavoritas, error.message);
     }
   });
 
@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       pintarCobros(r.configuracion);
       cobrosMensaje.textContent = 'Cobros guardados.';
     } catch (error) {
-      cobrosMensaje.textContent = error.message;
+      avisoFallo(cobrosMensaje, error.message);
     }
   });
 

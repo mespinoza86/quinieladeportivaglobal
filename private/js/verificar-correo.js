@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
        * un error.
        */
       if (!respuesta.ok) {
-        mensaje.textContent = datos.error || 'No se pudo reenviar el enlace. Inténtalo en unos minutos.';
+        avisoFallo(mensaje, datos.error || 'No se pudo reenviar el enlace. Inténtalo en unos minutos.');
         return;
       }
 
@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
        */
       mensaje.textContent = datos.mensaje || 'Si esa dirección tiene una cuenta sin confirmar, le enviamos el enlace.';
     } catch {
-      mensaje.textContent = 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.';
+      avisoFallo(mensaje, 'No se pudo contactar con el servidor. Inténtalo de nuevo en un momento.');
     } finally {
       reenviar.disabled = false;
     }
