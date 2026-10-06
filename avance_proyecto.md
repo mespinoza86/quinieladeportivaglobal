@@ -591,7 +591,7 @@ documento.
 
 | | |
 |---|---|
-| Último commit | `(este)` — Entrada 118: lo que ve quien entra por primera vez |
+| Último commit | `2204f15` — Entrada 118: lo que ve quien entra por primera vez |
 | Árbol | ✅ Limpio y **todo empujado**: local y GitHub en el mismo commit |
 | Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 118. Los siete puntos del recorrido Y las cuatro mejoras para el usuario nuevo están hechas, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
