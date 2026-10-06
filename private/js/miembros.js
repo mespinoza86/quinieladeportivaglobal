@@ -13,6 +13,76 @@ const ESTADOS = {
   expulsado: 'expulsado'
 };
 
+/*
+ * ⛔ INVITAR GENTE ERA COPIAR UN CÓDIGO A MANO Y EXPLICARLO.
+ *
+ * El código salía como texto suelto en la cabecera. Para meter a alguien había
+ * que seleccionarlo, copiarlo, y además contarle a cada uno qué hacer con él:
+ * que entre al enlace, que cree cuenta, que lo pegue, que espere aprobación.
+ *
+ * ⭐ Y el patrón YA ESTABA RESUELTO en «Compartir al grupo», que arma el
+ * mensaje entero y lo deja listo para pegar. Esto es lo mismo para invitar.
+ *
+ * ⚠️ El enlace se saca de `window.location.origin`, NO se escribe a mano: así
+ * vale igual en Render, en local y el día que cambie el dominio.
+ */
+function textoDeInvitacion(quiniela) {
+  const enlace = `${window.location.origin}/quinielas.html`;
+
+  return `Te invito a la quiniela «${quiniela.nombre}».\n\n`
+    + `1. Entra a ${enlace}\n`
+    + '2. Crea tu cuenta si no tienes.\n'
+    + `3. Mete este código: ${quiniela.codigoIngreso}\n\n`
+    + 'Cuando lo hagas te apruebo y ya puedes llenar tus pronósticos.';
+}
+
+function prepararInvitacion(quiniela) {
+  const acciones = document.getElementById('invitarAcciones');
+  const aviso = document.getElementById('invitacionAviso');
+
+  /* Sin código no hay nada que invitar: quien no puede repartirlo no lo recibe. */
+  if (!acciones || !quiniela.codigoIngreso) return;
+
+  acciones.hidden = false;
+
+  /*
+   * ⛔ UNA SOLA VEZ. `cargar()` se vuelve a llamar cada vez que se aprueba o se
+   * rechaza a alguien, y sin esta marca cada repintado añadiría otro oyente
+   * encima: al tercer aprobado, un clic en «Copiar» copiaría cuatro veces y
+   * abriría cuatro pestañas de WhatsApp. Es el mismo fallo que ya cazaron los
+   * botones de marcador en «Llenar quiniela».
+   */
+  if (acciones.dataset.conectado === 'si') return;
+  acciones.dataset.conectado = 'si';
+
+  /*
+   * ⚠️ A cambio, los oyentes se quedan con la quiniela de la PRIMERA carga.
+   * Da igual aquí: ni el código de ingreso ni el nombre cambian desde esta
+   * pantalla. Si algún día se pudiera renombrar sin salir, habría que releerlo
+   * al pulsar en vez de quedárselo.
+   */
+
+  document.getElementById('copiarInvitacion').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(textoDeInvitacion(quiniela));
+      window.avisoBien(aviso, 'Invitación copiada. Pégala donde quieras.');
+    } catch (error) {
+      /*
+       * ⚠️ Algunos navegadores niegan el portapapeles si la pestaña no está al
+       * frente. En vez de un «no se pudo» sin salida, se enseña el texto para
+       * copiarlo a mano.
+       */
+      window.avisoFallo(aviso, 'Tu navegador no dejó copiar solo. El texto es: '
+        + textoDeInvitacion(quiniela));
+    }
+  });
+
+  document.getElementById('invitarWhatsapp').addEventListener('click', () => {
+    const texto = encodeURIComponent(textoDeInvitacion(quiniela));
+    window.open(`https://wa.me/?text=${texto}`, '_blank');
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const lista = document.getElementById('listaMiembros');
   const mensaje = document.getElementById('mensajeMiembros');
@@ -22,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const [q, miembros] = await Promise.all([api('/api/quiniela-actual'), api('/api/quiniela-actual/miembros')]);
       document.getElementById('codigoQuiniela').textContent = `Código para solicitar ingreso: ${q.codigoIngreso}`;
+      prepararInvitacion(q);
       lista.innerHTML = '';
       miembros.forEach(m => {
         const card = document.createElement('article'); card.className = 'action-card';
