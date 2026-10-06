@@ -75,7 +75,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const jornadas = data.jornadas || [];
 
             if (!jornadas.length) {
-                console.error('No hay jornadas disponibles');
+                /*
+                 * ⚠️ Aquí NO se llama a `loadPartidos`, así que hay que avisar
+                 * a mano de que no va a haber pintado: si no, todo el que lo
+                 * espere se queda colgado para siempre.
+                 *
+                 * Y se dice en la pantalla, no sólo en la consola: un
+                 * `console.error` es un callejón sin salida invisible para
+                 * quien está mirando.
+                 */
+                avisarPrimerPintado();
+                avisar('Todavía no hay ninguna jornada que llenar. Las crea quien administra la quiniela.');
                 return;
             }
 
@@ -171,6 +181,24 @@ document.addEventListener('DOMContentLoaded', () => {
          * secreto que proteger.
          */
         jugadorValidado = jugador;
+
+        /*
+         * ⛔ ESPERAR ANTES DE LEER `jornadaSeleccionada`, NO SÓLO ANTES DE
+         * PINTAR. Esto es lo que faltaba en el primer intento de arreglo.
+         *
+         * Este `change` lo dispara la respuesta de `/api/auth/me`, que compite
+         * con `/api/jornada-actual`. Si gana la primera —y suele, porque es más
+         * ligera—, `jornadaSeleccionada` todavía vale `null`, y entonces
+         * «cargar los pronósticos guardados» se iba en su PRIMERA línea:
+         *
+         *     if (!jugador || !jornada) return;
+         *
+         * Ni siquiera llegaba a pedirlos. Por eso Marco veía «los cuadros
+         * grises sin nada»: no era que se pintaran tarde, es que nunca se
+         * pidieron.
+         */
+        await primerPintado;
+
         await cargarResultadosGuardados(jugador, jornadaSeleccionada);
     });
 
@@ -195,7 +223,28 @@ document.addEventListener('DOMContentLoaded', () => {
  * comentario de su prueba de navegador. Quitar el muro sin mirarlo habría
  * convertido una deuda conocida en un fallo a la vista de todos.
  */
-let pintadoDePartidos = Promise.resolve();
+/*
+ * ⛔ ARRANCA SIN RESOLVER, Y ESO ES EL ARREGLO DE VERDAD.
+ *
+ * La primera versión de esto puso `Promise.resolve()` — y no servía, porque la
+ * pantalla lanza DOS peticiones a la vez:
+ *
+ *   · `/api/jornada-actual`, que al llegar llama a `loadPartidos`.
+ *   · `/api/auth/me`, que al llegar dispara el `change` del desplegable y con
+ *     él «cargar los pronósticos guardados».
+ *
+ * Si ganaba la segunda —y suele, porque es la más ligera—, `loadPartidos` aún
+ * no se había llamado, así que esperar a `pintadoDePartidos` era esperar a una
+ * promesa YA RESUELTA: se escribía en casillas que no existían. Marco lo vio en
+ * uso real: «a veces no me carga los marcadores que yo puse».
+ *
+ * `primerPintado` no se resuelve hasta que ha habido un pintado DE VERDAD, así
+ * que quien lo espera espera de verdad, llegue en el orden que llegue.
+ */
+let avisarPrimerPintado;
+const primerPintado = new Promise(resolver => { avisarPrimerPintado = resolver; });
+
+let pintadoDePartidos = primerPintado;
 
 function loadPartidos(nombreJornada) {
     /*
@@ -209,7 +258,13 @@ function loadPartidos(nombreJornada) {
             return response.json();
         })
         .then(jornada => mostrarPartidos(jornada.partidos, jornada.nombre))
-        .catch(error => console.error('Error al cargar los partidos:', error));
+        .catch(error => console.error('Error al cargar los partidos:', error))
+        /*
+         * ⚠️ `finally` y no `then`: si la jornada falla al cargar, quien espera
+         * no puede quedarse colgado para siempre. Mejor seguir y no pintar nada
+         * que dejar la pantalla muerta sin decir por qué.
+         */
+        .finally(() => avisarPrimerPintado());
 
     return pintadoDePartidos;
 }
@@ -905,10 +960,17 @@ async function cargarResultadosGuardados(jugador, jornada) {
     if (!jugador || !jornada) return;
 
     /*
-     * ⛔ PRIMERO QUE ESTÉN LOS CAMPOS. Ver el comentario de `loadPartidos`:
-     * escribir en campos que aún no existen no falla, no avisa y no reintenta —
-     * simplemente deja la pantalla en blanco con los pronósticos guardados.
+     * ⛔ PRIMERO QUE ESTÉN LOS CAMPOS. Escribir en campos que aún no existen no
+     * falla, no avisa y no reintenta: deja la pantalla en blanco teniendo
+     * pronósticos guardados.
+     *
+     * Son DOS esperas y hacen falta las dos:
+     *   1. `primerPintado` — que haya habido algún pintado. Sin esto, llegar
+     *      antes que `loadPartidos` se saltaba la espera entera.
+     *   2. `pintadoDePartidos` — que el ÚLTIMO haya terminado, por si se cambió
+     *      de jornada mientras tanto.
      */
+    await primerPintado;
     await pintadoDePartidos;
 
     try {

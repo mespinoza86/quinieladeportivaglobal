@@ -184,6 +184,53 @@ test('⛔ dejar un partido a medias NO borra el pronóstico ya guardado', async 
     'el 2-1 no lo pidió borrar nadie');
 });
 
+test('⛔ los pronósticos guardados salen aunque la jornada tarde en llegar', async ({ page }) => {
+  /*
+   * ============================================================================
+   * EL FALLO QUE ESTO FIJA, CONTADO POR QUIEN LO SUFRIÓ
+   * ============================================================================
+   *
+   * Marco, usándolo de verdad: «cuando entro a llenar jornadas, a veces no me
+   * carga los marcadores que yo puse. Quedan los cuadros grises sin nada».
+   *
+   * La pantalla lanza DOS peticiones a la vez: `/api/auth/me`, que al llegar
+   * dispara «cargar los pronósticos guardados», y `/api/jornada-actual`, que al
+   * llegar pinta los partidos. Si ganaba la primera, se escribía en casillas
+   * que todavía no existían — y eso **no falla, no avisa y no reintenta**: deja
+   * la pantalla vacía teniendo pronósticos guardados.
+   *
+   * ⭐ «A VECES» ES LO QUE HACE ESTA PRUEBA NECESARIA. Las demás de este
+   * archivo pasaban por casualidad, según quién ganara la carrera ese día. Aquí
+   * se RETRASA la jornada a propósito para que pierda SIEMPRE: así el fallo, si
+   * vuelve, es seguro y no intermitente.
+   */
+  const datos = await registrarse(page, 'carrera');
+  await crearQuiniela(page, 'Carrera');
+  await activarAdminMode(page, datos.password);
+  await jornadaAbierta(page);
+
+  await abrirPantalla(page);
+  await llenar(page, 0, '3', '1');
+  await llenar(page, 1, '2', '2');
+  await guardar(page);
+
+  /* Medio segundo de retraso: suficiente para que `auth/me` gane de calle. */
+  await page.route('**/api/jornada-actual*', async ruta => {
+    await new Promise(seguir => setTimeout(seguir, 500));
+    await ruta.continue();
+  });
+
+  /*
+   * ⚠️ SIN `reload()` antes: `abrirPantalla` ya navega. Haciendo las dos cosas,
+   * la respuesta que espera se dispara en la primera carga, antes de que la
+   * ayuda se suscriba, y la prueba se queda esperando una que ya pasó.
+   */
+  await abrirPantalla(page);
+
+  await esperarMarcadores(page, [['3', '1'], ['2', '2']],
+    'con la jornada lenta, los pronósticos guardados TIENEN que salir igual');
+});
+
 test('borrar los DOS marcadores sí quita el pronóstico', async ({ page }) => {
   const datos = await registrarse(page, 'llenarq');
   await crearQuiniela(page, 'LlenarQ');
