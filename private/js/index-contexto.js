@@ -7,6 +7,56 @@
  */
 'use strict';
 
+/**
+ * Si la quiniela no tiene ninguna jornada, dice qué hacer.
+ *
+ * ⛔ POR QUÉ HACE FALTA. Una quiniela recién creada enseña doce tarjetas que
+ * llevan TODAS a «no hay nada todavía». Es el momento en que más fácil es
+ * pensar que la aplicación está rota, y nadie lo explicaba.
+ *
+ * ⚠️ CUESTA UNA PETICIÓN MÁS, y se asume a sabiendas: `/api/jornada-actual`
+ * devuelve **sólo los nombres** de las jornadas —es la misma que usa «Llenar
+ * quiniela» justamente por ligera—, así que son unos cientos de bytes. La
+ * alternativa era deducirlo de la tabla de puntos, que no dice lo mismo: «sin
+ * puntos» puede ser una jornada recién creada que nadie ha llenado.
+ *
+ * ⚠️ Y SI LA PETICIÓN FALLA, NO SE DICE NADA. Un aviso de «no hay jornadas»
+ * cuando en realidad se cayó la red sería mentir en la primera pantalla.
+ */
+async function avisarSiNoHayJornadas(puedeAdministrar) {
+  const panel = document.getElementById('panelSinJornadas');
+  if (!panel) return;
+
+  let jornadas;
+
+  try {
+    const respuesta = await fetch('/api/jornada-actual');
+    if (!respuesta.ok) return;
+    jornadas = (await respuesta.json()).jornadas || [];
+  } catch (error) {
+    return;
+  }
+
+  if (jornadas.length) return;
+
+  const titulo = document.getElementById('sinJornadasTitulo');
+  const texto = document.getElementById('sinJornadasTexto');
+  const accion = document.getElementById('sinJornadasAccion');
+
+  if (puedeAdministrar) {
+    titulo.textContent = 'Esta quiniela todavía no tiene jornadas';
+    texto.textContent = 'Crea la primera y tus jugadores podrán empezar a llenarla. '
+      + 'Si la quiniela es de una liga, se te propondrá la jornada que toca.';
+    accion.hidden = false;
+  } else {
+    titulo.textContent = 'Todavía no hay ninguna jornada';
+    texto.textContent = 'Cuando quien administra la quiniela cree la primera, '
+      + 'podrás llenar tus pronósticos. Mientras tanto no hay nada que hacer aquí.';
+  }
+
+  panel.hidden = false;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     const contexto = await fetch('/api/quiniela-actual');
     if (contexto.status === 401) return window.location.href = '/login.html';
@@ -51,6 +101,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           ? 'Administra jornadas, revisa resultados y consulta puntos.'
           : 'Llena tu quiniela, revisa tus puntos y mira cómo va la tabla.';
       }
+
+      await avisarSiNoHayJornadas(puedeAdministrar);
     }
     /*
      * La tarjeta del superadministrador.

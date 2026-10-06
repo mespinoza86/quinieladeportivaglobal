@@ -715,8 +715,23 @@ textarea {
   color: var(--tinta-sobre-clara);
 }
 
+/*
+ * ⚠️ `a.primary-button` ESTÁ AQUÍ PORQUE LA CLASE NO EXISTÍA.
+ *
+ * Los botones se estilan por ETIQUETA —`button`—, así que
+ * `<button class="primary-button">` sale bien por ser un `button`, y la clase
+ * no hace nada. Un ENLACE con esa misma clase, en cambio, no cogía ningún
+ * estilo: salía como texto verde suelto en medio de un panel.
+ *
+ * Y a veces hace falta que sea un enlace: la portada no carga `navegacion.js`,
+ * que es quien hace funcionar los botones con `data-ir-a`.
+ *
+ * ⚠️ `display:inline-block` y el relleno los necesita el enlace, no el botón:
+ * un `<a>` no es un control de formulario y no los trae de serie.
+ */
 button,
-.back-button {
+.back-button,
+a.primary-button {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: var(--tinta-sobre-verde);
   font-weight: 800;
@@ -725,8 +740,16 @@ button,
   text-align: center;
 }
 
+a.primary-button {
+  display: inline-block;
+  padding: 13px 18px;
+  border-radius: 14px;
+  text-decoration: none;
+}
+
 button:hover,
-.back-button:hover {
+.back-button:hover,
+a.primary-button:hover {
   filter: brightness(1.05);
 }
 

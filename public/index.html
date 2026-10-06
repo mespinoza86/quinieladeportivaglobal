@@ -38,6 +38,31 @@
         Administra jornadas, revisa resultados, consulta puntos.
       </p>
     </section>    
+    <!--
+      ⛔ QUÉ HACER CUANDO TODAVÍA NO HAY NADA.
+
+      Una quiniela recién creada enseñaba doce tarjetas que llevaban TODAS a
+      «no hay nada todavía». Es el momento en que más fácil es pensar que la
+      aplicación está rota, y justo el que nadie explicaba.
+
+      Lo rellena `index-contexto.js`, que además dice cosas distintas según
+      quién mire: a quien administra le toca crear la primera jornada; a quien
+      juega, esperar a que la creen.
+    -->
+    <section class="app-panel" id="panelSinJornadas" hidden>
+      <h2 id="sinJornadasTitulo"></h2>
+      <p class="helper-text" id="sinJornadasTexto"></p>
+      <!--
+        ⚠️ UN ENLACE, NO UN BOTÓN CON `data-ir-a`. Esta portada NO carga
+        `navegacion.js`, que es quien hace funcionar ese atributo: un botón
+        aquí no haría absolutamente nada. Ya pasó antes con la tarjeta de «Mis
+        pagos», y el comentario de allí lo avisa.
+      -->
+      <div class="button-row" id="sinJornadasAccion" hidden>
+        <a href="jornadas.html" class="primary-button">Crear la primera jornada</a>
+      </div>
+    </section>
+
     <section class="quick-actions">
       <a class="action-card" href="quinielas.html"><span class="icon">🔄</span><div><h3>Mis quinielas</h3><p id="quinielaActualNombre">Quiniela actual</p></div></a>
       <a id="adminModeCard" class="action-card primary" href="adminmode.html" style="display:none">

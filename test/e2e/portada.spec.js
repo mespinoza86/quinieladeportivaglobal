@@ -9,7 +9,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { registrarse, crearQuiniela } = require('./ayudas');
+const { registrarse, crearQuiniela, activarAdminMode } = require('./ayudas');
 
 /** Deja una cuenta con quiniela y la portada cargada. */
 async function abrirPortada(page, prefijo) {
@@ -80,4 +80,76 @@ test('ninguna tarjeta de la portada se estira de forma desproporcionada', async 
   if (esEscritorio) {
     expect(llenar.ancho).toBeLessThan(anchoRejilla * 0.75);
   }
+});
+
+test('⛔ una quiniela sin jornadas dice QUÉ HACER, y distinto según quién mire', async ({ page, browser }) => {
+  /*
+   * ============================================================================
+   * EL CALLEJÓN SIN SALIDA QUE ESTO FIJA
+   * ============================================================================
+   *
+   * Una quiniela recién creada enseñaba doce tarjetas que llevaban TODAS a «no
+   * hay nada todavía». Es el momento en que más fácil es pensar que la
+   * aplicación está rota, y era justo el que nadie explicaba.
+   *
+   * Y lo que hay que hacer NO es lo mismo para los dos: quien administra tiene
+   * que crear la primera jornada; quien juega, esperar. Decirle a un jugador
+   * «créala» sería mandarle a una pantalla a la que no puede entrar.
+   */
+  const datos = await registrarse(page, 'vacia');
+  await crearQuiniela(page, 'Vacia');
+
+  await page.goto('/index.html');
+
+  const panel = page.locator('#panelSinJornadas');
+  await expect(panel).toBeVisible({ timeout: 10_000 });
+  await expect(panel).toContainText('todavía no tiene jornadas');
+
+  /* La dueña SÍ tiene por dónde empezar. */
+  await expect(page.locator('#sinJornadasAccion a')).toBeVisible();
+
+  /* ---- Y ahora el mismo sitio, visto por alguien que sólo juega ---- */
+
+  /*
+   * ⚠️ El código vive en «Mis quinielas», NO en la portada. Leerlo desde aquí
+   * dejaba a Playwright esperando un elemento que no existe hasta agotar el
+   * tiempo de la prueba entera — y el `catch` no ayuda, porque la espera ya se
+   * comió los treinta segundos.
+   */
+  await page.goto('/quinielas.html');
+  const codigo = ((await page.locator('#listaQuinielas strong').first().textContent()) || '').trim();
+
+  expect(codigo, 'sin código no se puede montar el caso del jugador').toBeTruthy();
+
+  const otro = await browser.newContext();
+  const jugador = await otro.newPage();
+
+  await registrarse(jugador, 'vaciaj');
+  await jugador.locator("#codigoIngreso").fill(codigo);
+  await jugador.getByRole('button', { name: /Solicitar ingreso/i }).click();
+
+  /* ⚠️ «Miembros» exige el modo administrador además del rol: sin esto la
+     pantalla redirige y no hay ningún botón de aprobar que pulsar. */
+  await activarAdminMode(page, datos.password);
+  await page.goto('/miembros.html');
+  const aprobar = page.getByRole('button', { name: /^Aprobar$/i }).first();
+  await aprobar.waitFor({ state: 'visible', timeout: 10_000 });
+  await aprobar.click();
+
+  await jugador.goto('/quinielas.html');
+  const entrar = jugador.getByRole('button', { name: /Entrar/i }).first();
+  await entrar.waitFor({ state: 'visible', timeout: 10_000 });
+  /* ⚠️ «Entrar» YA navega a la portada. Un `goto` encima choca con esa
+     navegación y Playwright la aborta: se espera, no se fuerza otra. */
+  await entrar.click();
+  await jugador.waitForURL('**/index.html', { timeout: 15000 });
+
+  const suyo = jugador.locator('#panelSinJornadas');
+  await expect(suyo).toBeVisible({ timeout: 10_000 });
+  await expect(suyo).toContainText('Todavía no hay ninguna jornada');
+
+  /* ⛔ Y a él NO se le ofrece crearla: no puede. */
+  await expect(jugador.locator('#sinJornadasAccion')).toBeHidden();
+
+  await otro.close();
 });
