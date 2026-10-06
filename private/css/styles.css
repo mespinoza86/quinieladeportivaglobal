@@ -1170,13 +1170,15 @@ th,
  * resto, así que sin subrayado no hay forma de saber que se puede pulsar. En
  * un botón o en una tarjeta la forma ya lo dice; dentro de una frase, no.
  */
-.helper-text a {
+.helper-text a,
+.hero-text a {
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.helper-text a:hover {
+.helper-text a:hover,
+.hero-text a:hover {
   color: var(--primary-claro);
 }
 
