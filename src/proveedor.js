@@ -76,7 +76,22 @@ function hayClave() {
 function mapearEvento(item) {
   return {
     apiFixtureId: Number(item.match_id),
-    fecha: `${item.match_date} ${item.match_time}`,
+    /*
+     * ⚠️ LAS DOS PARTES O NINGUNA.
+     *
+     * Era `${item.match_date} ${item.match_time}` a secas, y con una sola de
+     * las dos salían cadenas como «2026-10-11 » o «undefined 15:00», que se
+     * guardaban tal cual en `partidos.api_date` y allí no cerraban el partido
+     * ni avisaban de él —sin dar un solo error—. Desde que la hora se valida al
+     * guardar, además bloquearían el guardado de la jornada entera.
+     *
+     * `''` significa «el proveedor no dijo la hora», que es un estado que la
+     * aplicación ya entiende: todas las consultas de aviso llevan
+     * `api_date <> ''`, y ahora el administrador puede ponerla a mano.
+     */
+    fecha: (String(item.match_date ?? '').trim() && String(item.match_time ?? '').trim())
+      ? `${String(item.match_date).trim()} ${String(item.match_time).trim()}`
+      : '',
     estado: item.match_status || 'NS',
     minuto: null,
     liga: item.league_name || '',

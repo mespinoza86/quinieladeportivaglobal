@@ -556,6 +556,72 @@ test('una jornada sin partidos o sin nombre se rechaza con su motivo', async () 
   assert.match(sinPartidos.body.error, /al menos un partido/);
 });
 
+/*
+ * ⛔ ESTA PRUEBA EXISTE POR EL CAMINO, NO POR LA FUNCIÓN.
+ *
+ * `normalizarFechaDePartido` ya se prueba suelta en `dominio.test.js`. Pero una
+ * función perfecta que nadie llama no valida nada, y en este proyecto ya pasó
+ * exactamente eso: `apiRound` se leía del proveedor, se mandaba desde el
+ * navegador y `normalizarPartido` lo TIRABA antes de llegar a la base, porque
+ * las pruebas llamaban al módulo y no al camino HTTP (§22, tajada 1).
+ *
+ * Así que esto comprueba lo otro: que el 400 sale por la ruta de verdad, con un
+ * mensaje que dice QUÉ partido y qué forma se espera. Sin eso, el administrador
+ * ve «No se pudo guardar la jornada» y se queda sin saber qué arreglar.
+ */
+test('una hora de partido mal escrita se rechaza por la ruta, diciendo qué partido', async () => {
+  const jefe = await admin('jefe');
+
+  const res = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1',
+    partidos: [
+      partido('A', 'B'),
+      partido('C', 'D', { apiDate: 'sábado a las 3' })
+    ]
+  });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /partido 2/i, 'tiene que decir cuál de los dos');
+  assert.match(res.body.error, /2026-10-11 15:00/, 'y enseñar la forma que se espera');
+  assert.match(res.body.error, /Costa Rica/, 'y de qué huso habla');
+
+  /*
+   * ⚠️ `GET /api/jornadas` devuelve el ARRAY directo, no `{ jornadas: [...] }`
+   * —eso es la respuesta del POST—. La primera versión de esta línea leía
+   * `body.jornadas?.length ?? 0` y pasaba sin mirar nada: `undefined ?? 0` es
+   * 0, o sea que la prueba habría dado verde con la jornada guardada entera.
+   * Se comprueba que sea un array ANTES de creerle su longitud.
+   */
+  const lista = await jefe.agente.get('/api/jornadas');
+  assert.ok(Array.isArray(lista.body), 'si esto no es un array, la cuenta de abajo no vale');
+  assert.equal(lista.body.length, 0, 'y no debe quedar media jornada guardada');
+});
+
+/*
+ * El otro lado de la misma moneda: la hora SÍ se puede corregir, y la respuesta
+ * avisa de que al hacerlo los avisos de ese partido vuelven a armarse.
+ */
+test('corregir la hora de un partido se guarda y la respuesta lo informa', async () => {
+  const jefe = await admin('jefe');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('A', 'B', { apiFixtureId: '77', apiDate: '2099-01-01 15:00' })]
+  });
+
+  const res = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'J1', partidos: [partido('A', 'B', { apiFixtureId: '77', apiDate: '2099-01-03 20:00' })]
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.avisosRearmados, 1);
+
+  const lista = await jefe.agente.get('/api/jornadas');
+  assert.ok(Array.isArray(lista.body), 'el GET devuelve el array directo');
+  const j = lista.body.find(x => x.nombre === 'J1');
+  assert.ok(j, 'la jornada tiene que estar');
+  assert.equal(j.partidos[0].apiDate, '2099-01-03 20:00');
+});
+
 test('agregar un partido lo pone al final, y el tope se respeta', async () => {
   const jefe = await admin('jefe');
   await jefe.agente.post('/api/jornadas').send({ nombre: 'J1', partidos: [partido('A', 'B')] });

@@ -261,9 +261,20 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
        RETURNING id`,
       [quinielaId, nombre, precio, Math.min(Number(alAcumulado) || 0, Number(precio) || 0)]);
 
+    /*
+     * ⚠️ `api_date` se pide desde que la hora se puede corregir a mano: hace
+     * falta la ANTERIOR para saber si cambió, y de eso depende rearmar los
+     * avisos. Ver `rearmarAvisos` al final de esta función.
+     */
     const { rows: existentes } = await c.query(
-      'SELECT id, orden, api_fixture_id FROM partidos WHERE jornada_id = $1 ORDER BY orden',
+      'SELECT id, orden, api_fixture_id, api_date FROM partidos WHERE jornada_id = $1 ORDER BY orden',
       [j.id]);
+
+    /*
+     * Partidos a los que les cambió la hora en este guardado. Se juntan aquí y
+     * se rearman de una vez al final, cuando ya está todo escrito.
+     */
+    const cambiaronDeHora = [];
 
     /*
      * ============================================================
@@ -312,6 +323,20 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
 
         if (fila && !reusados.has(fila.id)) {
           reusados.add(fila.id);
+
+          /*
+           * ⛔ SE COMPARA ANTES DE ESCRIBIR, obviamente: después de el UPDATE
+           * la hora vieja ya no existe en ninguna parte.
+           *
+           * `?? ''` en los dos lados porque la columna admite NULL y el
+           * validador entrega `''`: sin eso, un partido sin hora que sigue sin
+           * hora parecería haber cambiado en cada guardado, y rearmaría los
+           * avisos cada vez que alguien toca la jornada.
+           */
+          if ((fila.api_date ?? '') !== (partidos[i].apiDate ?? '')) {
+            cambiaronDeHora.push(fila.id);
+          }
+
           await c.query(
             `UPDATE partidos SET orden=$2, equipo1=$3, equipo2=$4,
                     logo_equipo1=$5, logo_equipo2=$6, comodin=$7,
@@ -360,6 +385,11 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
             cambiaronDePartido.push(existentes[i].id);
           }
 
+          /* Misma regla que en el camino por identidad, y por lo mismo. */
+          if ((existentes[i].api_date ?? '') !== (partidos[i].apiDate ?? '')) {
+            cambiaronDeHora.push(existentes[i].id);
+          }
+
           await c.query(
             `UPDATE partidos SET equipo1=$2, equipo2=$3, logo_equipo1=$4, logo_equipo2=$5,
                     comodin=$6, api_fixture_id=$7, api_league_id=$8, api_date=$9, api_status=$10,
@@ -401,14 +431,69 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
        * por `api_fixture_id`— así que su marca sigue siendo cierta. Las que dejan
        * de estar se borran enteras y se llevan la marca con ellas.
        */
+      /*
+       * ⛔ Y `notificado_en` CON ELLAS, que faltaba.
+       *
+       * Es la tercera marca de la misma familia (migración 013) y se quedó
+       * fuera cuando se escribió esto. El efecto era el mismo que describe el
+       * párrafo de arriba para `compartido_en`: la fila nacía con «ya se
+       * notificó» puesto y **el aviso de los quince minutos no saltaba nunca**
+       * para el partido nuevo. Se arregla aquí porque es el mismo sitio y el
+       * mismo motivo; lo cazó mirar esta función para el rearme por hora.
+       */
       if (cambiaronDePartido.length) {
         await c.query(
-          'UPDATE partidos SET compartido_en = NULL, avisado_en = NULL WHERE id = ANY($1::uuid[])',
+          `UPDATE partidos SET compartido_en = NULL, avisado_en = NULL, notificado_en = NULL
+            WHERE id = ANY($1::uuid[])`,
           [cambiaronDePartido]);
       }
     }
 
-    return { nombre, partidosReemplazados, pronosticosBorrados };
+    /*
+     * ============================================================
+     * ⛔ SI LE CAMBIÓ LA HORA, SUS AVISOS VUELVEN A ARMARSE
+     * ============================================================
+     *
+     * Decisión de Marco, 8 de octubre de 2026, al pedir poder corregir a mano
+     * la hora que el proveedor da mal: *«si se cambia la hora se tiene que
+     * rearmar la notificación y el aviso de compartir porque lo necesito para
+     * ese partido para la nueva hora»*.
+     *
+     * Las tres marcas son memorias de «esto ya se hizo», y existen porque un
+     * aviso no es idempotente: el reloj corre cada minuto y sin memoria el
+     * mismo partido avisaría quince veces. Pero cuando la hora cambia esa
+     * memoria pasa a ser FALSA —se avisó de un partido que iba a ser a otra
+     * hora— y deja al partido nuevo sin ninguno de sus tres avisos.
+     *
+     * ⭐ NO HAY RIESGO DE TORMENTA, y se comprobó antes de escribirlo: las tres
+     * ventanas filtran por tiempo, así que rearmar no manda nada por sí mismo.
+     *   · los 15 minutos: `api_date > ahora`, abierta por abajo a propósito, así
+     *     que un partido que ya pasó queda fuera de la propia consulta;
+     *   · compartir: sólo entra lo que YA arrancó, dentro de las últimas 12 h;
+     *   · el aviso de 2 h: sólo si el arranque de la jornada cae en esa ventana.
+     *
+     * ⚠️ `jornadas.avisado_2h_en` se limpia también, y es de la JORNADA, no del
+     * partido: ese aviso se calcula sobre `min(api_date)` de sus partidos, así
+     * que corregir la hora del más temprano cambia cuándo toca avisar. Se
+     * limpia aunque el partido corregido no sea el primero: la consulta decide
+     * después, y equivocarse por exceso aquí sólo puede hacer que el aviso
+     * salga a su hora buena.
+     */
+    let avisosRearmados = 0;
+
+    if (cambiaronDeHora.length) {
+      const { rowCount } = await c.query(
+        `UPDATE partidos
+            SET compartido_en = NULL, avisado_en = NULL, notificado_en = NULL
+          WHERE id = ANY($1::uuid[])`,
+        [cambiaronDeHora]);
+
+      avisosRearmados = rowCount;
+
+      await c.query('UPDATE jornadas SET avisado_2h_en = NULL WHERE id = $1', [j.id]);
+    }
+
+    return { nombre, partidosReemplazados, pronosticosBorrados, avisosRearmados };
   });
 }
 

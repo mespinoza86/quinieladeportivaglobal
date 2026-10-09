@@ -222,7 +222,14 @@ module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
     res.json({
       jornadas: await jornadasMod.listar(req.quiniela.id),
       partidosRetirados: cambio.partidosReemplazados,
-      pronosticosBorrados: cambio.pronosticosBorrados
+      pronosticosBorrados: cambio.pronosticosBorrados,
+      /*
+       * Cuántos partidos cambiaron de hora y por tanto volvieron a armar sus
+       * avisos. Se informa por el mismo motivo que `pronosticosBorrados`: es un
+       * efecto que la pantalla no pidió explícitamente y que cambia lo que va a
+       * pasar después —una notificación que ya había salido, volverá a salir—.
+       */
+      avisosRearmados: cambio.avisosRearmados
     });
   });
 

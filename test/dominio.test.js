@@ -22,7 +22,8 @@ const membresias = require('../src/membresias');
 const jornadas = require('../src/jornadas');
 const jugadores = require('../src/jugadores');
 const ligas = require('../src/ligas');
-const { normalizarMarcador } = require('../src/validacion');
+const { normalizarMarcador, normalizarFechaDePartido } = require('../src/validacion');
+const { partidoYaInicio } = require('../src/fechas');
 const enMemoria = require('./postgres-en-memoria');
 
 test.before(async () => { await enMemoria.levantar(); });
@@ -241,6 +242,165 @@ test('el comodín se cambia sin tocar el resto, y sólo si la lista coincide', a
 
   const desajustada = await jornadas.fijarComodines(quiniela.id, 'J', [{ comodin: true }]);
   assert.equal(desajustada.motivo, 'no_coincide');
+});
+
+/* ==================== Corregir la hora de un partido ==================== */
+
+/*
+ * Marco, 8 de octubre de 2026: el proveedor daba un partido «hoy a las 8pm»
+ * cuando era el sábado a las 3pm. Eso lo cerró con días de antelación y además
+ * dejó a la vista los pronósticos de todos, porque `partidoYaInicio` decide las
+ * dos cosas. Puede corregirse a mano, y al corregirla sus avisos vuelven a
+ * armarse —decisión suya: «lo necesito para ese partido para la nueva hora»—.
+ */
+
+/** Pone las tres marcas de «ya se avisó» como si los avisos hubieran salido. */
+async function marcarAvisadoTodo(quinielaId, jornadaNombre) {
+  return db.enQuiniela(quinielaId, async c => {
+    const ahora = new Date();
+    await c.query(
+      `UPDATE partidos SET compartido_en = $1, avisado_en = $1, notificado_en = $1`,
+      [ahora]);
+    await c.query('UPDATE jornadas SET avisado_2h_en = $1 WHERE nombre = $2',
+      [ahora, jornadaNombre]);
+  });
+}
+
+async function marcasDe(quinielaId) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows } = await c.query(
+      `SELECT p.api_date, p.compartido_en, p.avisado_en, p.notificado_en,
+              jor.avisado_2h_en
+         FROM partidos p JOIN jornadas jor ON jor.id = p.jornada_id
+        ORDER BY p.orden`);
+    return rows;
+  });
+}
+
+const conFixture = (equipo1, equipo2, fixture, apiDate) =>
+  partido(equipo1, equipo2, { apiFixtureId: fixture, apiDate });
+
+test('cambiar la hora de un partido rearma sus tres avisos y el de la jornada', async () => {
+  const { quiniela } = await quinielaNueva();
+
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-01-05 20:00')]);
+  await marcarAvisadoTodo(quiniela.id, 'J');
+
+  const antes = await marcasDe(quiniela.id);
+  assert.ok(antes[0].notificado_en, 'la prueba no vale si las marcas no estaban puestas');
+
+  const r = await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-01-09 15:00')]);
+
+  assert.equal(r.avisosRearmados, 1, 'tiene que informar de que rearmó uno');
+
+  const despues = await marcasDe(quiniela.id);
+  assert.equal(despues[0].api_date, '2099-01-09 15:00', 'la hora nueva se guardó');
+  assert.equal(despues[0].compartido_en, null, 'vuelve a proponerse para compartir');
+  assert.equal(despues[0].avisado_en, null, 'vuelve a avisar por correo');
+  assert.equal(despues[0].notificado_en, null, 'vuelve a notificar al teléfono');
+  assert.equal(despues[0].avisado_2h_en, null, 'y el aviso de 2h de la jornada');
+});
+
+/*
+ * ⛔ EL CONTROL, Y ES LA PRUEBA QUE DE VERDAD IMPORTA.
+ *
+ * Sin ella, un rearme que se dispara SIEMPRE pasaría la prueba de arriba y
+ * nadie se enteraría: cada vez que alguien tocara la jornada por cualquier
+ * motivo —añadir un partido, marcar un comodín— se volverían a mandar todos los
+ * avisos de todos los partidos. Un guardado que no cambia la hora no rearma.
+ */
+test('guardar SIN cambiar la hora no rearma ningún aviso', async () => {
+  const { quiniela } = await quinielaNueva();
+
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-01-05 20:00')]);
+  await marcarAvisadoTodo(quiniela.id, 'J');
+
+  /* Se cambia el comodín, que es un motivo real para volver a guardar. */
+  const r = await jornadas.guardar(quiniela.id, 'J',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2099-01-05 20:00', comodin: true })]);
+
+  assert.equal(r.avisosRearmados, 0);
+
+  const marcas = await marcasDe(quiniela.id);
+  assert.ok(marcas[0].compartido_en, 'compartido_en debía seguir puesto');
+  assert.ok(marcas[0].avisado_en, 'avisado_en debía seguir puesto');
+  assert.ok(marcas[0].notificado_en, 'notificado_en debía seguir puesto');
+  assert.ok(marcas[0].avisado_2h_en, 'el de la jornada también');
+});
+
+test('un partido SIN hora que sigue sin hora no cuenta como cambio', async () => {
+  const { quiniela } = await quinielaNueva();
+
+  /*
+   * ⚠️ La columna admite NULL y el validador entrega ''. Sin normalizar los dos
+   * lados, esto rearmaría los avisos en CADA guardado de una jornada cuyos
+   * partidos no traen hora, y es el caso de los partidos puestos a mano.
+   */
+  await jornadas.guardar(quiniela.id, 'J', [conFixture('A', 'B', '111', null)]);
+  const r = await jornadas.guardar(quiniela.id, 'J', [conFixture('A', 'B', '111', '')]);
+
+  assert.equal(r.avisosRearmados, 0, 'null y «» son lo mismo: «no se sabe»');
+});
+
+test('corregir la hora hacia adelante REABRE el partido que se había cerrado', async () => {
+  const { quiniela } = await quinielaNueva();
+
+  /*
+   * Esto es el fallo de Marco reproducido: el proveedor pone el partido en el
+   * pasado, así que está cerrado; la hora real es más tarde.
+   */
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-01 20:00')]);
+
+  const cerrado = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
+  assert.equal(partidoYaInicio(cerrado), true, 'con la hora mala está cerrado');
+
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-01-09 15:00')]);
+
+  const abierto = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
+  assert.equal(partidoYaInicio(abierto), false, 'con la hora corregida vuelve a admitir pronóstico');
+});
+
+/* ==================== La hora, validada ==================== */
+
+test('la hora de un partido se acepta en las formas del proveedor y se normaliza', () => {
+  const f = v => normalizarFechaDePartido(v, 'La hora');
+
+  assert.equal(f('2026-10-11 15:00'), '2026-10-11 15:00');
+  assert.equal(f('2026-10-11T15:00'), '2026-10-11 15:00', 'el proveedor usa T en algunos endpoints');
+  assert.equal(f('2026-10-11 15:00:00'), '2026-10-11 15:00', 'los segundos se descartan');
+  assert.equal(f(''), '', 'sin hora es un dato válido');
+  assert.equal(f(null), '');
+});
+
+/*
+ * ⛔ Y AQUÍ ESTÁ EL MOTIVO DE TODO EL VALIDADOR.
+ *
+ * Una hora que no se puede interpretar NO CIERRA EL PARTIDO: `partidoYaInicio`
+ * devuelve false para siempre y se podrían cambiar los pronósticos con el
+ * partido ya jugado. Y una hora sin ceros a la izquierda rompe las ventanas de
+ * aviso, que comparan TEXTOS. Ninguna de las dos cosas da un error por su
+ * cuenta: por eso se rechazan al entrar.
+ */
+test('una hora mal escrita se rechaza, en vez de dejar el partido abierto para siempre', () => {
+  const f = v => normalizarFechaDePartido(v, 'La hora');
+
+  for (const malo of ['11/10/2026 3:00pm', 'sábado a las 3', '2026-10-11', '15:00',
+                      '2026-10-11 3:00', '2026-10-11 15']) {
+    assert.throws(() => f(malo), /tiene que ir como/, `debía rechazar ${JSON.stringify(malo)}`);
+  }
+
+  /* La forma correcta no basta: estas dos la cumplen y no existen. */
+  assert.throws(() => f('2026-02-31 10:00'), /no es una fecha que exista/);
+  assert.throws(() => f('2026-10-11 25:00'), /no es una fecha que exista/);
+
+  /* Y el que de verdad engaña: `new Date` lo aceptaría como 10 de noviembre. */
+  assert.throws(() => f('11/10/2026'), /tiene que ir como/,
+    'validar con new Date() habría guardado un mes equivocado');
 });
 
 test('listar devuelve todas las jornadas con sus partidos en una sola consulta', async () => {

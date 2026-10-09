@@ -56,8 +56,8 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '661'],
-  ['¿Cuántas de navegador?',               '224'],
+  ['¿Cuántas pruebas rápidas?',            '669'],
+  ['¿Cuántas de navegador?',               '228'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
   ['¿Qué hace `liga-con-pais.js`?',        'liga-con-pais.js'],
@@ -111,7 +111,20 @@ const PREGUNTAS = [
 const NO_DEBE_QUEDAR = [
   ['39 pantallas', 'eran 39 antes de borrar seis (117)'],
   ['39 piezas',    'lo mismo, dicho de otra manera'],
-  ['38 pantallas', 'cifra intermedia que nunca fue la buena']
+  ['38 pantallas', 'cifra intermedia que nunca fue la buena'],
+  /*
+   * ⚠️ CON LA PALABRA AL LADO, NO EL NÚMERO SUELTO.
+   *
+   * El 8 de octubre de 2026 las pruebas pasaron de 661+224 a 669+228, y en la
+   * parte viva quedaron SEIS menciones viejas repartidas por cuatro apartados
+   * distintos. Pero «224» a secas NO se puede prohibir: también es el número de
+   * líneas de `quinielas.js`, y ahí es correcto. Prohibir la cifra sola habría
+   * puesto el guion en rojo por un dato bueno — el error contrario, y el que
+   * acaba con alguien borrando la comprobación.
+   */
+  ['661 pruebas',  'las rápidas pasaron a 669 (121)'],
+  ['224 de navegador', 'las de navegador pasaron a 228 (121)'],
+  ['661 + 224',    'la suma de antes de la entrada 121']
 ];
 
 let fallos = 0;

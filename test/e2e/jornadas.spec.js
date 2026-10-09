@@ -158,6 +158,153 @@ test('una jornada sin nombre o sin partidos se rechaza con su motivo', async ({ 
   await expect(page.locator('#jornadaSelect option')).toHaveCount(0);
 });
 
+/*
+ * ============================================================================
+ * ⛔ CORREGIR A MANO LA HORA QUE EL PROVEEDOR DA MAL
+ * ============================================================================
+ *
+ * Marco, 8 de octubre de 2026: *«el API tiene fecha de un partido, pero eso
+ * está mal... dice que el partido es hoy a las 8pm y eso no es así, el partido
+ * es el sábado a las 3pm... y entonces ya se bloqueó el partido»*. Lo cruzó con
+ * FotMob: el error era del proveedor, no de la aplicación.
+ *
+ * ⚠️ Y el daño era doble, porque `partidoYaInicio` decide las DOS cosas: el
+ * partido se cerró con días de antelación **y dejó a la vista los pronósticos
+ * de todos**.
+ *
+ * Esta prueba recorre el camino entero por la pantalla, que es el que faltaba:
+ * las de `dominio.test.js` prueban el módulo y las de `rutas.test.js` el HTTP,
+ * pero ninguna toca el campo.
+ */
+test('la hora de un partido se corrige desde la pantalla, y eso lo reabre', async ({ page }) => {
+  const datos = await registrarse(page, 'horamal');
+  await crearQuiniela(page, 'Quiniela Hora');
+  await activarAdminMode(page, datos.password);
+
+  const nombre = `Jornada Hora ${Date.now().toString(36)}`;
+  await page.goto('/jornadas.html');
+
+  /*
+   * El partido nace con la hora MALA del proveedor, en el pasado: así nace
+   * cerrado, que es el estado del que hay que salir.
+   */
+  await crearJornada(page, nombre, [
+    { equipo1: 'Sabado', equipo2: 'Rival', apiFixtureId: '9001', apiDate: '2020-01-01 20:00' }
+  ]);
+
+  /*
+   * ⛔ LA MEDIDA ES INTENTAR GUARDAR EL PRONÓSTICO, que es literalmente lo que
+   * Marco no podía hacer. `POST /api/resultados` responde con `guardados` y
+   * `bloqueados`, así que el síntoma se lee en un número.
+   *
+   * ⚠️ La primera versión de esto inventó un `/api/pronosticos/jornada/:n` que
+   * NO EXISTE: devolvía 404, la comprobación quedaba dentro de un `if` que no
+   * entraba, y la prueba pasaba sin probar nada. Un falso verde de los de
+   * siempre. Esta ruta se comprobó que existe antes de usarla.
+   */
+  const intentarPronostico = (jornada, jugador) => page.evaluate(async ([j, quien]) => {
+    const respuesta = await fetch('/api/resultados', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jugador: quien, jornada: j, pronosticos: [{ marcador1: 2, marcador2: 1 }]
+      })
+    });
+    return { estado: respuesta.status, cuerpo: await respuesta.json() };
+  }, [jornada, jugador]);
+
+  const antes = await intentarPronostico(nombre, datos.username);
+  expect(antes.cuerpo.bloqueados,
+    'con la hora mala el pronóstico tenía que rebotar').toBe(1);
+  expect(antes.cuerpo.guardados).toBe(0);
+
+  await page.reload();
+  await page.locator('#jornadaSelect').selectOption(nombre);
+  await expect(page.locator('#partidosJornadaContainer .match-card')).toHaveCount(1, { timeout: 10_000 });
+
+  /*
+   * ⚠️ El centinela de más arriba prohíbe `#horaCierreInput`: aquello era una
+   * hora de cierre de LA JORNADA y se retiró a propósito. Esto es otra cosa —la
+   * hora de inicio de UN partido— y por eso tiene su propio nombre.
+   */
+  const campo = page.locator('#horaPartido0');
+  await expect(campo).toHaveValue('2020-01-01T20:00');
+
+  await campo.fill('2099-03-07T15:00');
+
+  /*
+   * ⭐ La línea de ayuda sigue al campo, y lo que aporta es EL DÍA DE LA SEMANA.
+   *
+   * Es lo único que el selector no enseña, y era justo el dato que delataba el
+   * fallo: «dice que el partido es hoy y es el sábado». El 7 de marzo de 2099
+   * cae en sábado, así que eso es lo que tiene que poner.
+   *
+   * ⚠️ No se busca el año a propósito: la línea va compacta porque el año ya se
+   * ve en el campo de al lado. Y no se busca la hora porque el formato local
+   * mete espacios finos en «03:00 p. m.» que no son los espacios de un teclado.
+   */
+  await expect(page.locator('[data-queda="0"]')).toContainText('sáb');
+  await expect(page.locator('[data-queda="0"]')).toContainText('7 mar');
+
+  await page.locator('#guardarJornadaButton').click();
+
+  /*
+   * El mensaje dice que los avisos vuelven a armarse. Es un efecto que la
+   * pantalla no pidió y que cambia lo que va a pasar después, así que se avisa.
+   */
+  await expect(page.locator('#mensajeJornada')).toContainText('cambiaron de hora', { timeout: 10_000 });
+
+  // Se guardó de verdad, y en el formato canónico, no con la T del selector.
+  const tras = await page.evaluate(async jornada => {
+    const r = await fetch(`/api/jornadas/${encodeURIComponent(jornada)}`);
+    return r.json();
+  }, nombre);
+  expect(tras.partidos[0].apiDate).toBe('2099-03-07 15:00');
+
+  /*
+   * ⭐ Y LO QUE DE VERDAD IMPORTA: el partido volvió a admitir pronóstico.
+   *
+   * Sin la medida de ANTES esto no probaría nada —un partido que naciera
+   * abierto daría el mismo 1—. Las dos juntas son las que dicen que cambió.
+   */
+  const despues = await intentarPronostico(nombre, datos.username);
+  expect(despues.cuerpo.guardados,
+    'con la hora corregida el pronóstico tiene que entrar').toBe(1);
+  expect(despues.cuerpo.bloqueados).toBe(0);
+});
+
+/*
+ * Y el otro lado: un dedazo se rechaza. Sin esto, una hora que no se puede
+ * interpretar deja el partido abierto PARA SIEMPRE, también con el partido ya
+ * jugado, y sin un solo error en pantalla.
+ */
+test('una hora mal escrita se rechaza y lo dice en la pantalla', async ({ page }) => {
+  const datos = await registrarse(page, 'horadedazo');
+  await crearQuiniela(page, 'Quiniela Dedazo');
+  await activarAdminMode(page, datos.password);
+  await page.goto('/jornadas.html');
+
+  const intento = await page.evaluate(async () => {
+    const respuesta = await fetch('/api/jornadas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: 'Con dedazo',
+        partidos: [{ equipo1: 'A', equipo2: 'B', apiDate: '7/3/2099 3:00pm' }]
+      })
+    });
+    return { estado: respuesta.status, cuerpo: await respuesta.json() };
+  });
+
+  expect(intento.estado).toBe(400);
+  expect(intento.cuerpo.error).toMatch(/2026-10-11 15:00/);
+  expect(intento.cuerpo.error).toMatch(/Costa Rica/i);
+
+  // Y no queda media jornada guardada.
+  await page.goto('/ver_jornadas.html');
+  await expect(page.locator('#jornadaSelect option')).toHaveCount(0);
+});
+
 test('los pronósticos ajenos se destapan partido a partido', async ({ browser }) => {
   const contextoDueno = await browser.newContext();
   const dueno = await contextoDueno.newPage();

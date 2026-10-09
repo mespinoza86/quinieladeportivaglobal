@@ -72,15 +72,80 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Date(ahora.getTime() - desfase).toISOString().slice(0, 10);
     }
 
+    /*
+     * La hora de un partido, escrita para leerla, con el DÍA DE LA SEMANA.
+     *
+     * ⭐ El día de la semana no es adorno: el fallo que hizo falta arreglar era
+     * justo ése —el proveedor decía «hoy» cuando el partido era el sábado— y un
+     * «11/10/26, 15:00» no te lo canta a la cara.
+     *
+     * ⛔ Y SE CONSTRUYE EN UTC A PROPÓSITO, no con `new Date(texto)`.
+     *
+     * Antes hacía `new Date(texto.replace(' ','T'))` y luego daba formato en
+     * `America/Costa_Rica`. Eso parsea el texto en el huso del NAVEGADOR y lo
+     * formatea en otro: desde Costa Rica salía bien, y desde cualquier otro
+     * sitio salía corrido las horas de diferencia. Era el bicho de la Entrada
+     * 086 otra vez, agazapado en una función de pintar.
+     *
+     * Metiendo las partes en `Date.UTC` y formateando en `UTC`, el texto va y
+     * vuelve igual desde cualquier huso: no hay conversión, sólo presentación.
+     */
     function fechaLegible(valor) {
-        if (!valor) return 'Sin fecha';
-        const fecha = new Date(String(valor).replace(' ', 'T'));
-        if (Number.isNaN(fecha.getTime())) return String(valor);
+        const texto = String(valor || '').trim();
+        if (!texto) return 'Sin fecha';
+
+        const match = texto.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (!match) return texto;
+
+        const [, anio, mes, dia, hora, minuto] = match.map(Number);
+        const fecha = new Date(Date.UTC(anio, mes - 1, dia, hora, minuto));
+
         return fecha.toLocaleString('es-CR', {
-            timeZone: 'America/Costa_Rica',
-            dateStyle: 'short',
-            timeStyle: 'short'
+            timeZone: 'UTC',
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
         });
+    }
+
+    /*
+     * ============================================================
+     * LA HORA DEL PARTIDO, PARA EL SELECTOR Y DE VUELTA
+     * ============================================================
+     *
+     * ⛔ AQUÍ NO SE CONVIERTEN HUSOS, Y ESO ES LO IMPORTANTE.
+     *
+     * `api_date` es texto de reloj de pared en hora de Costa Rica, y un
+     * `input[type=datetime-local]` también: no lleva zona, es exactamente lo
+     * que se ve escrito. Así que la traducción entre los dos es cambiar el
+     * espacio por una `T` y al revés — nada más.
+     *
+     * ⚠️ Pasar por `new Date()` habría sido el camino «natural» y el error:
+     * interpretaría el texto en el huso del NAVEGADOR y lo devolvería corrido.
+     * Es el mismo fallo de seis horas de la Entrada 086, donde la ventana de
+     * avisos se desplazaba sin dar el menor error porque Render va en UTC. Aquí
+     * ni se roza: no hay ningún `Date` por medio.
+     */
+    function horaParaSelector(apiDate) {
+        const texto = String(apiDate || '').trim();
+        const match = texto.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+        return match ? `${match[1]}T${match[2]}` : '';
+    }
+
+    function horaDesdeSelector(valor) {
+        const texto = String(valor || '').trim();
+        /* Vacío es un dato: «el proveedor no dijo la hora y yo tampoco». */
+        if (!texto) return '';
+        const match = texto.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+        /*
+         * Si no encaja se devuelve tal cual en vez de inventar nada: el servidor
+         * valida esto mismo y su mensaje dice qué partido y qué forma se espera.
+         * Arreglarlo aquí en silencio escondería un navegador que se comporta
+         * distinto de lo que esta función supone.
+         */
+        return match ? `${match[1]} ${match[2]}` : texto;
     }
 
     function avisar(texto, esError = false) {
@@ -583,9 +648,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="team-side"><strong>${partido.equipo2}</strong></div>
                 </div>
 
-                <div class="match-meta">
-                    <span>${fechaLegible(partido.apiDate)}</span>
-                </div>
+                <!--
+                  ⛔ LA HORA SE PUEDE CORREGIR, y no es un capricho: el
+                  proveedor se equivoca. El 8 de octubre de 2026 daba un
+                  partido «hoy a las 8pm» cuando era el sábado a las 3pm, y
+                  eso lo cerró con cuatro días de antelación Y DEJÓ A LA VISTA
+                  los pronósticos de todos, porque la misma regla decide las
+                  dos cosas.
+
+                  ⚠️ Dice «hora de Costa Rica» a propósito: el valor que se
+                  guarda es reloj de pared en ese huso, no el del navegador.
+                -->
+                <label class="field-label" for="horaPartido${indice}">
+                    Hora del partido <small>(hora de Costa Rica)</small>
+                </label>
+                <input
+                    type="datetime-local"
+                    id="horaPartido${indice}"
+                    class="horaPartidoInput"
+                    data-indice="${indice}"
+                    value="${horaParaSelector(partido.apiDate)}"
+                />
+                <!--
+                  ⚠️ Dice «queda», no «el proveedor dice»: en cuanto se corrige
+                  la hora, el valor guardado ya es el de Marco y lo del
+                  proveedor no se conserva en ninguna parte. Poner aquí «el
+                  proveedor dice» sería mentir a partir de la primera edición.
+                -->
+                <p class="helper-text" data-queda="${indice}">
+                    Queda: ${fechaLegible(partido.apiDate)}
+                </p>
 
                 <label class="checkbox-card">
                     <input
@@ -608,6 +700,28 @@ document.addEventListener('DOMContentLoaded', () => {
         partidosJornadaContainer.querySelectorAll('.comodinJornadaCheckbox').forEach(casilla => {
             casilla.addEventListener('change', () => {
                 partidosDeLaJornada[Number(casilla.dataset.indice)].comodin = casilla.checked;
+            });
+        });
+
+        /*
+         * ⚠️ Se engancha aquí dentro, igual que el comodín, porque esta función
+         * REPINTA la lista entera: los oyentes nacen con las tarjetas y se van
+         * con ellas. Añadirlos fuera, una sola vez, apuntaría a nodos que ya no
+         * existen — y añadirlos fuera SIN marca los acumularía, que es el fallo
+         * que ya cazaron los botones de marcador y los de invitar.
+         *
+         * `input` y no `change`: así la línea de «Queda:» sigue al selector
+         * mientras se toca, en vez de esperar a que pierda el foco.
+         */
+        partidosJornadaContainer.querySelectorAll('.horaPartidoInput').forEach(campo => {
+            campo.addEventListener('input', () => {
+                const indice = Number(campo.dataset.indice);
+                const hora = horaDesdeSelector(campo.value);
+
+                partidosDeLaJornada[indice].apiDate = hora;
+
+                const queda = partidosJornadaContainer.querySelector(`[data-queda="${indice}"]`);
+                if (queda) queda.textContent = `Queda: ${fechaLegible(hora)}`;
             });
         });
 
@@ -662,6 +776,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 avisar('Jornada «' + nombre + '» guardada. Se retiraron '
                     + datos.partidosRetirados + ' partido(s) y con ellos se borraron '
                     + datos.pronosticosBorrados + ' pronóstico(s).', true);
+            } else if (datos.avisosRearmados > 0) {
+                /*
+                 * ⚠️ Se dice, y no es un detalle: cambiar la hora vuelve a armar
+                 * los avisos de ese partido, así que una notificación que YA
+                 * había salido volverá a salir a la hora nueva. Es lo que se
+                 * pidió, pero quien guarda tiene que saber que eso va a pasar.
+                 */
+                avisar('Jornada «' + nombre + '» guardada. '
+                    + datos.avisosRearmados + ' partido(s) cambiaron de hora: '
+                    + 'se volverán a avisar y a compartir a la hora nueva.');
             } else {
                 avisar('Jornada «' + nombre + '» guardada.');
             }

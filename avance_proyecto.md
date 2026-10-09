@@ -24,8 +24,8 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 661/661
-npm run test:e2e            # 224/224, ~11 min
+npm test                    # 669/669
+npm run test:e2e            # 228/228, ~12 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
 ```
@@ -69,8 +69,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **661**, ~75 s |
-| Pruebas de navegador | **224**, ~12 min, contra el servidor de verdad |
+| Pruebas rápidas | **669**, ~75 s |
+| Pruebas de navegador | **228**, ~12 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -609,11 +609,11 @@ documento.
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 119** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ `conversion.md` está en la carpeta **a propósito y fuera del repositorio** — ver §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ✅ **AL DÍA. Comprobado el 8 de octubre de 2026**, no afirmado: las tres marcas de los últimos commits de código están servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. Así que **ya está jalado** todo: los siete puntos del recorrido, las cuatro mejoras para quien entra por primera vez, las ligas con su país, la revisión de usabilidad entera y el arreglo de los tres avisos de seguridad |
+| Producción | ⚠️ **Pendiente de jalar la corrección de la hora** (entrada 121). Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **661** rápidas + **224** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **669** rápidas + **228** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118) y **la auditoría de esta bitácora, ejecutable** (119) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120) y ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -621,6 +621,14 @@ documento.
   derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
   escribible, y el marcador real en el centro.
+- ⭐ **Corregir la hora de un partido** (121). En «Armar jornadas», cada tarjeta
+  tiene un campo **«Hora del partido (hora de Costa Rica)»**. Sirve para cuando
+  el proveedor se equivoca —pasó el 8 de octubre de 2026— y con ello el partido
+  se cerró y **se hizo público** días antes de tiempo.
+  ⚠️ **Al cambiarla, los tres avisos de ese partido vuelven a armarse** y el
+  mensaje de guardado lo dice. La hora se valida: un formato raro se rechaza,
+  porque uno que no se puede interpretar dejaría el partido abierto para
+  siempre sin dar error.
 - **Las seis pantallas de partidos** comparten tarjeta: escudo grande, nombre
   debajo, marcador en caja.
 - **Resultados y Puntos**: al entrar sale lo tuyo de la última jornada, sin
@@ -814,7 +822,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **661 + 224** pruebas en
+funcionando, **las quince migraciones corridas**, **669 + 228** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1221,11 +1229,11 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 661 pruebas rápidas, ~75 s
+npm test                   # las 669 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 224 de navegador (~11 min, escritorio y móvil)
+npm run test:e2e           # las 228 de navegador (~12 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1919,7 +1927,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 661 pruebas rápidas y 224 de navegador
+### 2.5 `test/` — 669 pruebas rápidas y 228 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -20388,6 +20396,241 @@ mutación de la sonda nueva: en los dos sentidos, correcta
 - **Sin comprobar en el mundo real:** la notificación al teléfono, el icono en
   iPhone, y el ciclo del borrador de una semana a la siguiente.
 - El punto ciego de `axios`: pulsar «sincronizar» una jornada.
+
+---
+
+### 📌 Entrada 121 — 8 de octubre de 2026 — El proveedor da mal la hora, y ahora se puede corregir
+
+**Objetivo:** Marco, usando la aplicación de verdad: *«el API tiene fecha de un
+partido, pero eso está mal… dice que el partido es hoy a las 8pm y eso no es
+así, el partido es el sábado a las 3pm… y entonces ya se bloqueó el partido»*.
+Lo cruzó con FotMob y con otros sitios: **el error era del proveedor**, no de la
+aplicación. Pidió poder corregirlo a mano desde administración.
+
+## ⭐ EL DAÑO ERA DOBLE, Y ESO ES LO QUE DA URGENCIA AL ARREGLO
+
+`partidoYaInicio` (`src/fechas.js`) es **una sola regla** de la que cuelgan
+**tres** cosas, no una:
+
+1. el pronóstico se cierra;
+2. ⛔ **el pronóstico SE VUELVE PÚBLICO** —sale en «Todos los jugadores» y en
+   «Puntos»—;
+3. el partido entra en «Compartir al grupo» y manda el correo de aviso.
+
+O sea que la hora mala no sólo cerró el partido del sábado con días de
+antelación: **enseñó los pronósticos de todos** para ese partido. Marco describió
+el síntoma 1; el 2 es el que de verdad duele.
+
+⭐ Lo que NO pasó: nada se publicó solo en WhatsApp. `marcar()` sólo corre cuando
+alguien pulsa en la pantalla de compartir.
+
+## LA DECISIÓN: CORREGIR LA HORA, NO AÑADIR UNA HORA DE CIERRE
+
+Se le plantearon las dos:
+
+- **(a)** corregir la hora del partido, sobreescribiendo `api_date`;
+- **(b)** una columna nueva de «cierre manual» que gane sobre la del partido.
+
+Marco eligió la **(a)**, que era la recomendación. El motivo: su problema no es
+«quiero cerrar a una hora distinta del inicio», es «el proveedor tiene mal el
+inicio». Corregir el dato malo en su origen mantiene **una sola noción de
+tiempo** en todo el sistema y no necesita migración.
+
+⭐ **Y había una señal en el propio código de que la (a) era el camino**: hay un
+centinela en `jornadas.spec.js` que exige que `#horaCierreInput` y
+`#actualizarFechaCierreButton` **no existan**, porque la hora de cierre de
+jornada se retiró a propósito cuando el cierre pasó a ser por partido. La (b)
+habría peleado con él; esto no, porque es la hora **del partido** y tiene su
+propio nombre (`#horaPartido0`).
+
+## ⭐ CASI TODO ESTABA YA HECHO, Y ESO SE COMPROBÓ ANTES DE EMPEZAR
+
+Lo que podía matar la idea era una sola pregunta: **¿el sincronizador
+sobreescribe la hora puesta a mano?** Se buscaron TODAS las escrituras de
+`api_date` y la respuesta es **no**: sólo escribe el guardado de la jornada. El
+trabajo de fondo toca `resultados_oficiales_partidos` y la caché `fixtures`,
+nunca `partidos.api_date`.
+
+Y además:
+
+- el servidor ya aceptaba cualquier `apiDate` al guardar;
+- la tarjeta del administrador ya enseñaba la hora, sólo de lectura;
+- al reabrir una jornada los partidos se cargan **de la base, no del API**, así
+  que la corrección no se revierte;
+- al guardar, las filas se reemparejan por `api_fixture_id`, así que
+  **los pronósticos ya rellenados no se pierden** al corregir una hora.
+
+## ⛔ LO GRAVE QUE SE ENCONTRÓ: `apiDate` NO SE VALIDABA
+
+Era texto libre que iba directo a la base. Daba igual mientras sólo escribiera
+el proveedor; desde que lo escribe una persona, es un fallo **silencioso** y de
+los peores. Dos razones, las dos comprobadas:
+
+1. **Una hora que no se puede interpretar NO CIERRA EL PARTIDO.**
+   `parseFechaPartidoCostaRica` devuelve `null`, `partidoYaInicio` devuelve
+   `false`, y ese partido admite pronósticos **para siempre** — también con el
+   partido jugado y el marcador en pantalla. Nada da error.
+2. **Las ventanas de aviso COMPARAN TEXTOS.** La consulta de los quince minutos
+   hace `api_date > $1` contra una cadena, y funciona **sólo** porque el formato
+   lleva ceros a la izquierda: ahí el orden alfabético y el cronológico son el
+   mismo. Un «2026-10-11 3:00» ordena DESPUÉS de «2026-10-11 15:00» y la
+   notificación sale a destiempo. Tampoco da error.
+
+⚠️ **Y NO valía validar con `parseFechaPartidoCostaRica`**, que es lo primero que
+se piensa: tiene un `new Date(raw)` de reserva que acepta «11/10/2026» y lo lee
+a la americana —10 de noviembre—. Pasaría la validación y guardaría un mes
+equivocado. **La validación mira la FORMA**, y además comprueba que la fecha
+exista: «2026-02-31 10:00» cumple la forma y `Date` la desborda a marzo en
+silencio.
+
+El vacío se acepta a propósito: la cadena vacía significa «no se sabe la hora»,
+que es un estado que la aplicación ya entiende (`api_date <> ''` en todas las
+consultas de aviso).
+
+## EL REARME, QUE LO PIDIÓ ÉL
+
+Marco: *«si se cambia la hora se tiene que rearmar la notificación y el aviso de
+compartir porque lo necesito para ese partido para la nueva hora»*.
+
+Al cambiar la hora se limpian las **tres** marcas del partido —`notificado_en`,
+`avisado_en`, `compartido_en`— y el `avisado_2h_en` de su jornada.
+
+⭐ **Se comprobó que no provoca una tormenta de avisos ANTES de escribirlo**,
+porque era el riesgo real. Las tres ventanas filtran por tiempo:
+
+- los 15 minutos: `api_date > ahora`, **abierta por abajo a propósito**, así que
+  un partido ya pasado queda fuera de la propia consulta;
+- compartir: sólo entra lo que YA arrancó, dentro de las últimas 12 h;
+- el aviso de 2 h: sólo si el arranque de la jornada cae en esa ventana.
+
+Rearmar no manda nada por sí mismo: sólo deja que salga a la hora nueva.
+
+⚠️ `jornadas.avisado_2h_en` se limpia aunque el partido corregido no sea el más
+temprano: ese aviso se calcula sobre `min(api_date)`, la consulta decide después,
+y equivocarse por exceso aquí sólo puede hacer que el aviso salga a su hora
+buena.
+
+## ⚠️ LO QUE SE ACEPTA A CAMBIO: EL PARTIDO NO CAMBIA DE SITIO EN LA LISTA
+
+`ordenarParaGuardar` deja a los partidos **ya guardados en el orden que tenían
+en la base** y sólo ordena por hora a los nuevos. Así que corregir una hora
+**no mueve el partido de posición**, aunque su hora nueva lo convierta en el
+último de la jornada.
+
+⭐ **Y está bien que sea así**, por dos motivos comprobados:
+
+- mover de sitio partidos que la gente ya rellenó es exactamente lo que el
+  comentario de esa función avisa de no hacer;
+- y no afecta a nada que dependa del tiempo: el aviso de 2 h usa
+  `min(api_date)`, **no `orden`** —hay un comentario dedicado a eso—, y el
+  cierre lo decide la hora de cada partido por separado.
+
+## ⛔ TRES COSAS MÁS QUE APARECIERON AL MIRAR
+
+1. **`notificado_en` faltaba** en la limpieza de cuando una fila se reutiliza
+   para OTRO partido. Se limpiaban `compartido_en` y `avisado_en` —con un
+   comentario largo explicando por qué— y la tercera se quedó fuera cuando se
+   escribió eso. Efecto: el partido nuevo nacía con «ya se notificó» puesto y
+   **el aviso de los quince minutos no saltaba nunca**. Arreglado en el mismo
+   sitio; lo cazó mirar esa función para otra cosa.
+
+2. **El proveedor podía guardar «2026-10-11 » con la hora en blanco.** Era
+   `match_date` y `match_time` pegados a secas: con una sola de las dos partes
+   salían cadenas que no cerraban el partido ni avisaban de él. Ahora son **las
+   dos o ninguna**, y «ninguna» es la cadena vacía, que sí se entiende.
+
+3. ⚠️ **`fechaLegible` se corría de huso.** Hacía `new Date(texto)` —que parsea
+   en la zona del NAVEGADOR— y luego daba formato en `America/Costa_Rica`. Desde
+   Costa Rica salía bien y desde cualquier otro sitio salía corrido. **Era el
+   bicho de las seis horas de la Entrada 086 agazapado en una función de
+   pintar.** Se construye en UTC y se formatea en UTC: el texto va y vuelve
+   igual desde cualquier huso.
+
+⭐ **Y en la pantalla no hay ninguna conversión de huso**, que es lo importante:
+`api_date` es reloj de pared en hora de Costa Rica y un `input` de tipo
+`datetime-local` también —no lleva zona—. La traducción entre los dos es cambiar
+el espacio por una `T` y al revés. Pasar por `new Date()` habría sido el camino
+«natural» y el error otra vez.
+
+## ⚠️ Y DOS TROPIEZOS MÍOS EN LAS PRUEBAS, LOS DOS FALSOS VERDES
+
+Anotados porque son la misma familia y vuelven:
+
+1. **Inventé un endpoint que no existe.** `/api/pronosticos/jornada/:n` devolvía
+   404, el resultado quedaba `null`, la comprobación estaba dentro de un
+   `if (antes && despues)` que **no entraba**, y la prueba pasaba sin probar
+   nada. Se cambió por intentar guardar el pronóstico de verdad, que es
+   literalmente lo que Marco no podía hacer: `POST /api/resultados` responde con
+   `guardados` y `bloqueados`, así que el síntoma se lee en un número.
+2. **Leer `body.jornadas` de un array.** `GET /api/jornadas` devuelve el array
+   directo, así que aquello era `undefined` con un `?? 0` detrás: la prueba
+   habría dado verde **con la jornada guardada entera**. Ahora comprueba que sea
+   un array ANTES de creerle la longitud.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/validacion.js` | `normalizarFechaDePartido`, y `normalizarPartido` la usa |
+| `src/jornadas.js` | Compara la hora anterior y rearma los avisos; `notificado_en` |
+| `src/proveedor.js` | Las dos partes de la fecha o ninguna |
+| `src/rutas/dominio.js` | Informa de `avisosRearmados` |
+| `private/js/jornadas.js` | El campo de hora, sin conversión de huso; `fechaLegible` arreglada |
+| `test/dominio.test.js` | 6 pruebas: rearme, su control, y la hora validada |
+| `test/rutas.test.js` | 2 pruebas **del camino HTTP** |
+| `test/e2e/jornadas.spec.js` | 2 pruebas por la pantalla, con el síntoma medido |
+
+**Verificación:**
+
+```
+npm test                    -> 669/669   (eran 661)
+CI=true npx playwright test -> 228/228, sin flaky, 12,2 min   (eran 224)
+
+mutaciones (con copia byte a byte, NO con git checkout):
+  quitar el rearme entero   -> ROJO
+  rearmar SIEMPRE           -> ROJO en los DOS controles
+  quitar notificado_en      -> ROJO
+  DESCONECTAR el validador  -> dominio.test.js SIGUE ENTERO EN VERDE
+                               y solo cae la prueba de ruta
+
+contraste calculado a mano, los tres temas, sobre la tarjeta de partido:
+  etiqueta 7.90 / 10.93 / 11.66   ayuda 7.58 / 9.43 / 11.42   (minimo 4.5)
+```
+
+⭐ **La mutación 4 es la que más dice.** Con el validador desconectado —la
+función intacta y probada, simplemente nadie la llama— las pruebas unitarias se
+quedan **todas** en verde. Es exactamente la trampa que ya se tragó `apiRound`
+en §22: una función perfecta que nadie llama no valida nada. Por eso hay pruebas
+del camino HTTP y no sólo del módulo.
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un dato que sólo escribía una máquina no necesitaba validación; en cuanto
+   lo escribe una persona, sí.** Y el momento de añadirla es cuando se abre el
+   campo, no cuando aparece el primer dedazo.
+2. ⛔ **Una hora mal escrita no da error en ninguna parte y rompe dos cosas.**
+   El cierre y las ventanas de aviso. Los fallos que no dan error son los que
+   hay que rechazar al entrar.
+3. ⚠️ **Validar con el mismo parseador que usa la aplicación es demasiado
+   laxo** si ese parseador tiene un camino de reserva permisivo. Validar la
+   forma y parsear son dos trabajos distintos.
+4. ⭐ **Texto de reloj de pared a texto de reloj de pared: no se toca el huso.**
+   La conversión «natural» por `Date` es el error, y ya costó seis horas una vez.
+5. ⚠️ **Un `??` o un `if` de guarda puede convertir una aserción en nada.**
+   Las dos pruebas que fallaron hoy lo hicieron por eso, no por el código.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Jalar y usarlo**: la próxima vez que el proveedor dé una hora mal, Marco
+  ya puede arreglarlo él.
+- **No se hizo**: la marca de «esta hora se tocó a mano», comparando con la
+  caché de `fixtures`. Se propuso, Marco no la nombró al decidir, y se dejó
+  fuera a propósito para no ensanchar esto. Sigue disponible.
+- ⚠️ Con la (a), **no queda constancia de lo que decía el proveedor**. Es lo que
+  se acepta a cambio de tener una sola noción de tiempo; la marca de arriba es
+  lo que lo taparía.
+- Lo de siempre: la notificación al teléfono, el ciclo del borrador, y el punto
+  ciego de `axios`.
 
 ---
 

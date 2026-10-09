@@ -69,6 +69,82 @@ function normalizarNombreDeJornada(valor) {
   return nombre;
 }
 
+/**
+ * La hora de un partido: «YYYY-MM-DD HH:MM», en hora de Costa Rica.
+ *
+ * ============================================================================
+ * ⛔ POR QUÉ ESTO TIENE QUE SER ESTRICTO, Y NO «LO QUE SE PUEDA INTERPRETAR»
+ * ============================================================================
+ *
+ * Hasta ahora `apiDate` era TEXTO LIBRE: lo que llegara se guardaba. Daba igual
+ * mientras sólo escribiera el proveedor, que manda siempre
+ * `${match_date} ${match_time}`. Desde que el administrador puede corregir la
+ * hora a mano, un dedazo es un fallo de verdad, y de los peores: **silencioso**.
+ *
+ * Dos razones, las dos comprobables:
+ *
+ *   1. **Un formato que no se puede interpretar NO CIERRA EL PARTIDO.**
+ *      `parseFechaPartidoCostaRica` devuelve `null`, `partidoYaInicio` devuelve
+ *      `false`, y ese partido admite pronósticos **para siempre** — también con
+ *      el partido ya jugado y el marcador en la pantalla. Nada da error.
+ *
+ *   2. **Las ventanas de aviso COMPARAN TEXTOS, no fechas.** La consulta de los
+ *      quince minutos hace `api_date > $1` contra una cadena, y funciona sólo
+ *      porque el formato lleva ceros a la izquierda: ahí el orden alfabético y
+ *      el cronológico son el mismo. Un «2026-10-11 3:00» sin el cero ordena
+ *      DESPUÉS de «2026-10-11 15:00», y la notificación se manda a destiempo o
+ *      no se manda. Tampoco da error.
+ *
+ * ⚠️ Y NO vale validar con `parseFechaPartidoCostaRica`, que es lo primero que
+ * se piensa: esa función tiene un `new Date(raw)` de reserva que acepta
+ * «11/10/2026» y lo interpreta a la americana —10 de noviembre—. Pasaría la
+ * validación y guardaría un mes equivocado. La validación mira la FORMA.
+ *
+ * ⚠️ El vacío se acepta a propósito: un partido puesto a mano puede no tener
+ * hora, y `''` significa «no se sabe», que es cierto y ya está contemplado en
+ * todas las consultas (`api_date <> ''`). Lo que no se acepta es basura.
+ *
+ * Normaliza a un solo formato —espacio, sin segundos— porque el proveedor usa
+ * `T` en algunos endpoints y el selector del navegador también. Dos formas del
+ * mismo instante romperían la comparación por texto de arriba.
+ */
+function normalizarFechaDePartido(valor, etiqueta) {
+  if (valor === null || valor === undefined) return '';
+
+  const bruto = String(valor).trim();
+  if (bruto === '') return '';
+
+  const match = bruto.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/);
+
+  if (!match) {
+    throw errorDeValidacion(
+      `${etiqueta} tiene que ir como «2026-10-11 15:00» (hora de Costa Rica).`);
+  }
+
+  const [, anio, mes, dia, hora, minuto] = match.map(Number);
+
+  /*
+   * ⛔ Y la forma correcta no basta: «2026-02-31 25:99» la cumple. Se comprueba
+   * que sea una fecha que existe, reconstruyéndola y mirando si los números
+   * sobrevivieron. `Date` no se queja de un 31 de febrero: lo desborda a marzo
+   * en silencio, que es exactamente la clase de fallo que esto evita.
+   */
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia, hora, minuto));
+
+  const existe = fecha.getUTCFullYear() === anio
+    && fecha.getUTCMonth() === mes - 1
+    && fecha.getUTCDate() === dia
+    && fecha.getUTCHours() === hora
+    && fecha.getUTCMinutes() === minuto;
+
+  if (!existe) {
+    throw errorDeValidacion(`${etiqueta} no es una fecha que exista.`);
+  }
+
+  const dos = n => String(n).padStart(2, '0');
+  return `${anio}-${dos(mes)}-${dos(dia)} ${dos(hora)}:${dos(minuto)}`;
+}
+
 /** Un partido necesita dos equipos; el resto de campos se normalizan a texto. */
 function normalizarPartido(valor, indice = 0) {
   const posicion = `El partido ${indice + 1}`;
@@ -109,7 +185,12 @@ function normalizarPartido(valor, indice = 0) {
     comodin: Boolean(valor.comodin),
     apiFixtureId: texto('apiFixtureId'),
     apiLeagueId: texto('apiLeagueId'),
-    apiDate: primero('apiDate', 'fecha'),
+    /*
+     * ⚠️ Pasa por el validador desde que la hora se puede corregir a mano. La
+     * cabecera de `normalizarFechaDePartido` explica por qué un formato raro no
+     * da error en ninguna parte y sin embargo rompe el cierre y los avisos.
+     */
+    apiDate: normalizarFechaDePartido(primero('apiDate', 'fecha'), posicion + ': la hora'),
     apiStatus: primero('apiStatus', 'estado'),
     /*
      * A qué jornada de la liga pertenece (§22). El alias `ronda` es como lo
@@ -163,6 +244,7 @@ module.exports = {
   errorDeValidacion,
   normalizarMarcador,
   normalizarNombreDeJornada,
+  normalizarFechaDePartido,
   normalizarPartido,
   normalizarPartidos,
   normalizarIndicesDePartido,
