@@ -65,7 +65,24 @@ const PREGUNTAS = [
   ['¿Por qué hay menos pantallas?',        'se borraron seis pantallas'],
   ['¿Dónde viven los iconos?',             'public/iconos/'],
   ['¿Está la auditoría de dependencias?',  'vulnerabilidades'],
-  ['¿Se sabe que hay que jalar?',          'Pendiente de jalar'],
+  /*
+   * ⛔ ESTA PREGUNTA ESTABA MAL, y el 8 de octubre de 2026 lo demostró.
+   *
+   * Buscaba «Pendiente de jalar». El día que producción se puso al día hubo
+   * que borrar esa frase —ya no era verdad— y el guion se puso rojo por un
+   * cambio CORRECTO. Una comprobación que exige que un estado concreto siga
+   * siendo el mismo se rompe en cuanto el proyecto avanza.
+   *
+   * Lo que de verdad tiene que estar no es «falta jalar»: es **cómo se supo**.
+   * Eso vale igual diga «al día» o «pendiente», porque lo que afirma es que
+   * alguien lo comprobó en vez de suponerlo.
+   *
+   * ⚠️ Y SIN FECHA FIJA, por el mismo motivo: una fecha escrita aquí caduca
+   * sola. La expresión busca la fila de Producción de la tabla de estado y
+   * exige que diga «comprobado» con una fecha, cualquiera que sea.
+   */
+  ['¿Se dice cómo se comprobó producción?',
+   /\| producción \|[^|]*comprobad[oa] el \d{1,2} de \w+ de \d{4}/],
   ['¿Está la lista de siete?',             'lista de siete'],
   ['¿Está el recorrido como usuario?',     'recorrido'],
   ['¿Está lo del muro de «Validar jugador»?', 'Validar jugador'],
@@ -100,7 +117,16 @@ const NO_DEBE_QUEDAR = [
 let fallos = 0;
 
 for (const [pregunta, buscado] of PREGUNTAS) {
-  const hay = cabecera.includes(String(buscado).toLowerCase());
+  /*
+   * Un texto se busca tal cual; una expresión se prueba. Las expresiones
+   * existen para lo que NO puede escribirse fijo —una fecha, una cifra que
+   * cambia—, porque un dato fijo aquí caduca solo y pone el guion rojo por un
+   * cambio correcto. Pasó el 8 de octubre de 2026 con «Pendiente de jalar».
+   */
+  const hay = buscado instanceof RegExp
+    ? buscado.test(cabecera)
+    : cabecera.includes(String(buscado).toLowerCase());
+
   if (!hay) fallos++;
   console.log(`  ${hay ? '✔' : '⛔'} ${pregunta.padEnd(46)} ${hay ? '' : '(falta: ' + buscado + ')'}`);
 }

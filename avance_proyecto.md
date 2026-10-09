@@ -20275,6 +20275,122 @@ finales de línea: git guarda LF, el diff son 54 líneas y no 20.000
 
 ---
 
+### 📌 Entrada 120 — 8 de octubre de 2026 — Dónde estamos, comprobado; y una sonda que se rompió por un cambio correcto
+
+**Objetivo:** Marco, dos días después: *«dime dónde estamos y qué está
+pendiente»*. O sea: no escribir nada nuevo, **mirar**.
+
+## 1 · Producción está al día, y esta vez se comprobó
+
+La bitácora decía «⚠️ Pendiente de jalar desde Render» y era mentira: Marco ya
+lo había jalado. Se vio buscando las tres marcas de los últimos commits de
+código en lo que sirve Render:
+
+```
+panelSinJornadas                        -> 1   (y 1 en local)
+href="verResultados.html" hidden        -> 1   (y 1 en local)
+textoDeInvitacion                       -> 4   (y 4 en local)
+
+CONTROL marca inventada                 -> 0
+CONTROL la versión VIEJA de esa tarjeta -> 0
+CONTROL las rutas viven                 -> HTTP 200, 11.015 y 8.613 bytes
+```
+
+⭐ **Los controles son la mitad del trabajo, no un adorno.** Tres «1» seguidos
+se leen igual si la sonda está rota; lo que dice que mide algo es que la marca
+inventada dé cero y que la versión vieja haya desaparecido. Y compararlo con
+el conteo **local** es lo que convierte «sale un número» en «sale el número
+correcto» — §C avisa de que comparar tamaños no vale en este repositorio.
+
+## 2 · ⛔ EL REPOSITORIO ES PÚBLICO, y eso se podía saber desde el principio
+
+La decisión de `conversion.md` —los 745 KB con el diálogo entero— llevaba
+**semanas parada** por esta frase, escrita en la propia bitácora: *«no se pudo
+comprobar si el repositorio es público porque `gh` no está instalado»*.
+
+Y `gh` no hacía falta:
+
+```bash
+curl -s https://api.github.com/repos/mespinoza86/quinieladeportivaglobal
+# private: false   visibility: public
+```
+
+Sin credenciales, sin instalar nada. **Una pregunta bloqueada durante semanas
+por la primera forma de responderla que se intentó**, anotada como si fuera un
+límite del mundo en vez de un límite de la herramienta elegida.
+
+Así que la decisión ya no es técnica: commitear ese archivo **publica la
+conversación entera en internet**. No hay secretos dentro —se buscaron— pero
+eso no es lo mismo que querer que se lea. Y lo único que de verdad lo protege
+del `git add -A` distraído es un `.gitignore`, que sigue sin hacerse porque la
+decisión es de Marco.
+
+## 3 · ⛔ LA AUDITORÍA SE PUSO ROJA POR UN CAMBIO BUENO
+
+Al corregir la fila de Producción desapareció la frase «Pendiente de jalar»…
+que era justo lo que buscaba una de las 23 preguntas. **25 de 26, por hacer lo
+correcto.**
+
+⭐ **La pregunta estaba mal planteada.** Preguntaba «¿se sabe que hay que
+jalar?», o sea exigía que un **estado concreto siguiera siendo el mismo**. Eso
+se rompe en cuanto el proyecto avanza. Lo que tiene que estar no es *«falta
+jalar»* sino **cómo se supo**: una frase que vale igual diga «al día» o
+«pendiente», porque lo que afirma es que alguien lo comprobó.
+
+Y sin fecha fija, por el mismo motivo —una fecha escrita en la sonda caduca
+sola—. Así que las preguntas admiten ahora una **expresión** además de un
+texto, y ésta busca la fila de Producción exigiendo «comprobado el \<fecha\>»,
+cualquiera que sea:
+
+```
+sin la prueba de que se comprobó  -> 25 de 26, salida 1
+con la fecha cambiada a 2027      -> 26 de 26          (no caduca)
+restaurado con cp: md5 idéntico las dos veces
+```
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | La fila de Producción; `conversion.md` con el dato que faltaba |
+| `scripts/auditar-bitacora.js` | Las preguntas aceptan expresiones; la de producción, replanteada |
+
+**Verificación:**
+
+```
+node scripts/auditar-bitacora.js  -> 26 de 26, salida 0
+producción: 3 marcas presentes, 3 CONTROL en cero, conteos iguales al local
+visibilidad del repositorio: private=false, visibility=public
+mutación de la sonda nueva: en los dos sentidos, correcta
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una comprobación que exige un ESTADO se rompe cuando el estado cambia
+   bien.** Lo que se comprueba no es «sigue faltando X», es «se sabe cómo se
+   supo». Lo primero caduca; lo segundo no.
+2. ⛔ **«No se puede comprobar» casi siempre significa «no se pudo con la
+   herramienta que probé».** Semanas paradas por un `gh` ausente para una
+   pregunta que contesta un `curl`. Antes de anotar un bloqueo, buscar la
+   segunda forma.
+3. ⚠️ **Un dato fijo dentro de una sonda caduca solo.** Fechas y cifras que
+   cambian van como expresión, no escritas.
+4. ⭐ **La regla del `cp` en vez de `git checkout` ya se usó tres veces hoy**, y
+   las tres el md5 volvió idéntico. Funciona.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Usarlo una semana con gente de verdad**, que sigue siendo lo que más
+  vale y no depende de escribir más código.
+- **Decisión suya:** `conversion.md` —ahora con el dato de que el repositorio
+  es público—, las trivias encendidas de fábrica, y si «Pronósticos» se borra
+  o se funde con «Puntos».
+- **Sin comprobar en el mundo real:** la notificación al teléfono, el icono en
+  iPhone, y el ciclo del borrador de una semana a la siguiente.
+- El punto ciego de `axios`: pulsar «sincronizar» una jornada.
+
+---
+
 <!--
 PLANTILLA PARA LAS SIGUIENTES ENTRADAS
 
