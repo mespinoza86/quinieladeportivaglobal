@@ -609,7 +609,7 @@ documento.
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 119** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ `conversion.md` está en la carpeta **a propósito y fuera del repositorio** — ver §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ⚠️ **Pendiente de jalar desde Render.** En GitHub está todo hasta la entrada 118. Los siete puntos del recorrido Y las cuatro mejoras para el usuario nuevo están hechas, más las ligas con su país, la revisión de usabilidad entera, los cinco primeros puntos del recorrido y el arreglo de los tres avisos de seguridad 
+| Producción | ✅ **AL DÍA. Comprobado el 8 de octubre de 2026**, no afirmado: las tres marcas de los últimos commits de código están servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. Así que **ya está jalado** todo: los siete puntos del recorrido, las cuatro mejoras para quien entra por primera vez, las ligas con su país, la revisión de usabilidad entera y el arreglo de los tres avisos de seguridad |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
 | Pruebas | **661** rápidas + **224** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
@@ -700,10 +700,24 @@ No son tareas: son cosas que están paradas porque las decide él.
 - **`conversion.md`** — un volcado de 745 KB con el diálogo entero de estas
   sesiones (230 mensajes suyos, 1.200 respuestas, del 3 de septiembre en
   adelante). Se generó el 22 de septiembre desde el transcript real y **está
-  en la carpeta pero FUERA del repositorio**: no se commiteó porque publicarlo
-  depende de si el repositorio es público, y eso no se pudo comprobar —`gh` no
-  está instalado en esa máquina—. Se buscaron secretos dentro y no hay
-  ninguno. ⚠️ Si algún día se hace `git add -A` sin cuidado, entra sin querer.
+  en la carpeta pero FUERA del repositorio**. Se buscaron secretos dentro y no
+  hay ninguno. ⚠️ Si algún día se hace `git add -A` sin cuidado, entra sin
+  querer.
+
+  ⛔ **Y YA SE SABE EL DATO QUE FALTABA: EL REPOSITORIO ES PÚBLICO.**
+  Comprobado el 8 de octubre de 2026. Esto estuvo bloqueado semanas por un
+  «no se puede comprobar porque `gh` no está instalado», y ***gh no hacía
+  falta***: `curl -s https://api.github.com/repos/mespinoza86/quinieladeportivaglobal`
+  responde `private: false, visibility: public` sin credenciales ni herramienta
+  ninguna. Una pregunta parada por la primera forma de responderla que se
+  intentó.
+
+  **Así que la decisión ya no es técnica, es suya:** commitear ese archivo
+  publica su conversación entera —cómo piensa, qué pregunta, qué decide— en
+  internet, legible por cualquiera. No hay secretos dentro, pero eso es otra
+  cosa que «quiero que se lea». Lo razonable sería dejarlo fuera y
+  **añadirlo a `.gitignore`**, que es lo único que de verdad lo protege del
+  `git add -A` distraído; está sin hacer porque la decisión es de Marco.
 - **Las trivias vienen encendidas de fábrica** y nadie explica qué son. Era el
   punto 5 de la lista del usuario nuevo y Marco eligió los otros cuatro.
 - **Juntar «Puntos» y «Pronósticos» de verdad.** De momento «Pronósticos» sólo
