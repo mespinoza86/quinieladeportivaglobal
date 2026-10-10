@@ -608,12 +608,12 @@ documento.
 | | |
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 119** |
-| Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ `conversion.md` está en la carpeta **a propósito y fuera del repositorio** — ver §DECISIONES QUE ESPERAN A MARCO |
+| Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
 | Producción | ⚠️ **Pendiente de jalar la corrección de la hora** (entrada 121). Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
 | Pruebas | **669** rápidas + **228** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120) y ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) y **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -705,12 +705,23 @@ Ninguna prueba puede hacerlo: hace falta un partido de verdad, o un teléfono.
 
 No son tareas: son cosas que están paradas porque las decide él.
 
-- **`conversion.md`** — un volcado de 745 KB con el diálogo entero de estas
-  sesiones (230 mensajes suyos, 1.200 respuestas, del 3 de septiembre en
-  adelante). Se generó el 22 de septiembre desde el transcript real y **está
-  en la carpeta pero FUERA del repositorio**. Se buscaron secretos dentro y no
-  hay ninguno. ⚠️ Si algún día se hace `git add -A` sin cuidado, entra sin
-  querer.
+- 📌 **`conversacion.md` — EL VOLCADO DEL DIÁLOGO, Y CUÁL DE LOS DOS ES EL
+  BUENO.** En la carpeta hay **dos** archivos grandes con la conversación, los
+  dos **FUERA del repositorio** a propósito:
+
+  | Archivo | Qué es |
+  |---|---|
+  | **`conversacion.md`** | ⭐ **El bueno.** 948 KB, del 1 de septiembre al 8 de octubre de 2026. 225 mensajes de Marco y 1.638 respuestas. Regenerado entero el 8 de octubre (122) |
+  | `conversion.md` | El viejo, de septiembre. 745 KB, llegaba al día 22. **Queda superado**; borrarlo es decisión de Marco. Su cuenta de «230 mensajes de Marco» está inflada: cinco no eran suyos |
+
+  Se rehace con `node scripts/volcar-conversacion.js <salida.md> <transcripts…>`
+  y se comprueba con `node scripts/comprobar-volcado.js <salida.md>`, que se
+  niega a opinar si no pasa sus propios controles.
+
+  ⚠️ **Ninguno de los dos se commitea**, y **no hay `.gitignore` que lo
+  impida**: un `git add -A` distraído se llevaría los dos dentro. Se excluyen a
+  mano con `git add -A -- . ':!conversacion.md' ':!conversion.md'`. Se buscaron
+  secretos dentro y no hay ninguno.
 
   ⛔ **Y YA SE SABE EL DATO QUE FALTABA: EL REPOSITORIO ES PÚBLICO.**
   Comprobado el 8 de octubre de 2026. Esto estuvo bloqueado semanas por un
@@ -734,6 +745,30 @@ No son tareas: son cosas que están paradas porque las decide él.
 
 ##### ⚠️ Deuda anotada a propósito, no olvidada
 
+- 📌 **BACKLOG, decisión de Marco del 8 de octubre de 2026: marcar que una hora
+  se tocó a mano.** *«Eso de marcar que una hora se tocó, ponlo en el backlog
+  para después, de momento quedemos así»*.
+
+  **Qué es.** Al corregir la hora de un partido (121) se **sobreescribe** lo
+  que dijo el proveedor, así que no queda constancia de que discrepaban. La
+  tarjeta debería marcar qué partidos llevan la hora corregida a mano.
+
+  ⭐ **Y el dato para hacerlo ya está guardado**: la tabla `fixtures` tiene su
+  propia columna `api_date` con lo que dijo el proveedor, y nada la borra nunca
+  —no hay un solo `DELETE FROM fixtures` en `src/`—. **No hace falta migración
+  ni columna nueva.**
+
+  ⚠️ Se busca por **`clave`**, que es la columna única de esa tabla, **no por
+  `api_fixture_id`** —que existe pero lleva `DEFAULT ''` y puede venir vacío—.
+  La clave la construye `fixturesMod.claveDeFixture(partido)`, que es lo que ya
+  usa el sincronizador para emparejar un partido con su fixture; copiar ese
+  camino en vez de inventar otro.
+
+  ⚠️ Lo que cuesta: una lectura más al armar la pantalla, y decidir qué hacer
+  cuando el proveedor **corrige su propio dato** después —entonces los dos
+  valores vuelven a discrepar sin que nadie haya tocado nada, y la marca diría
+  «tocado a mano» mintiendo—. Eso es lo que hay que pensar antes de escribirlo,
+  no el aviso en sí.
 - **La colisión `.match-score` sigue a medias.** Se iba a borrar la regla que
   apila el marcador en vertical, y **no estaba huérfana**: «Resultados de
   trivias» todavía la usa. Se comprobó antes de borrar (111).
@@ -20630,6 +20665,145 @@ del camino HTTP y no sólo del módulo.
   se acepta a cambio de tener una sola noción de tiempo; la marca de arriba es
   lo que lo taparía.
 - Lo de siempre: la notificación al teléfono, el ciclo del borrador, y el punto
+  ciego de `axios`.
+
+---
+
+### 📌 Entrada 122 — 8 de octubre de 2026 — El volcado de la conversación, rehecho; y cinco mensajes que no eran de Marco
+
+**Objetivo:** Marco: *«eso de marcar que una hora se tocó, ponlo en el backlog
+para después… guarda en la bitácora todo absolutamente todo lo que hemos hecho
+y en conversacion.md guarda todo absolutamente todo lo que hemos conversado
+para seguir con esto mañana»*.
+
+## 1 · El backlog
+
+La marca de «esta hora se tocó a mano» queda anotada en **§Deuda anotada a
+propósito**, no suelta dentro de la entrada 121 donde nadie la encontraría. Con
+el dato que hace falta para hacerla —la columna `api_date` de la tabla
+`fixtures`— y con la trampa que hay que pensar antes: si el proveedor **corrige
+su propio dato** después, los dos valores vuelven a discrepar sin que nadie haya
+tocado nada, y la marca mentiría.
+
+⚠️ **Se comprobó antes de escribirlo** que `fixtures` guarda esa columna y que
+nada la borra, y que se busca por **`clave`** y no por `api_fixture_id`, que
+lleva `DEFAULT ''`. Una nota de backlog que manda al campo equivocado cuesta
+más que no tener nota.
+
+## 2 · El volcado: rehecho entero, no pegado por detrás
+
+El `conversion.md` de septiembre llegaba hasta el día 22. Lo que faltaba eran
+dos semanas y media. Se regeneró **entero desde los transcripts reales**, no se
+le añadió un trozo al final: una sola pasada, un solo criterio, un documento
+coherente. Cubre del **1 de septiembre al 8 de octubre**.
+
+⚠️ **Nombre nuevo**: Marco lo pidió como `conversacion.md`, que además es la
+palabra correcta en castellano. El viejo `conversion.md` sigue en la carpeta y
+**queda superado**; borrarlo es decisión suya.
+
+## ⛔ Y LO QUE APARECIÓ AL HACERLO: CINCO MENSAJES ATRIBUIDOS A MARCO QUE NO ERAN SUYOS
+
+La versión de septiembre ya había tenido este fallo —publicó los resúmenes
+automáticos de compactación bajo el nombre de Marco hasta que él lo notó—, así
+que esta vez la clasificación se hizo por los **campos** del transcript y no por
+lo que pareciera el texto: `promptSource` e `isCompactSummary`.
+
+⛔ **Y volvió a pasar, con otra cosa.** Hay **37** notificaciones de tareas de
+fondo en el transcript. **32 llegan con `promptSource: "system"`** y se apartaban
+bien. Las otras **5 llegan con `promptSource: "sdk"`, exactamente igual que los
+mensajes que escribe Marco**. El primer volcado las publicó bajo su nombre.
+
+⭐ **La lección, que es la que hay que recordar:** `promptSource` dice **de dónde
+dice venir** un mensaje; la envoltura del texto dice **lo que es**. Hacen falta
+las dos cosas. Un solo campo de procedencia, por fiable que parezca, no
+distingue el origen cuando el propio sistema lo rellena igual.
+
+⚠️ **Y se enumeraron TODAS las envolturas presentes entre sus mensajes antes de
+filtrar**, en vez de parchear la que se vio primero. Son tres y ninguna más:
+`<ide_opened_file>` (15), `<ide_selection>` (8) y `<task-notification>` (5).
+Parchear la primera habría dejado las otras dentro sin que nada avisara.
+
+Así que la cuenta real de mensajes de Marco es **225**, no 230 — y el número 230
+que lleva escrito el volcado de septiembre está inflado por lo mismo.
+
+## ⛔ EL TRANSCRIPT CRECE MIENTRAS SE LEE
+
+Contando las respuestas con una sonda aparte salían números distintos cada vez:
+**1620, 1625, 1626, 1627** para lo mismo. Parecía un fallo de la sonda y no lo
+era: **la sesión que analiza el transcript se va escribiendo dentro de él**.
+Creció de 63,4 a 63,6 MB y de 18.335 a 18.412 líneas en los minutos que llevó
+esto.
+
+⭐ De ahí que el generador **cuente y escriba en la misma pasada**. Una cifra
+medida en una pasada y un documento escrito en otra no concuerdan nunca, y la
+diferencia no se ve: parece un error de conteo.
+
+## LO QUE QUEDA EN EL REPOSITORIO PARA PODER REHACERLO
+
+| Archivo | Para qué |
+|---|---|
+| `scripts/volcar-conversacion.js` | Genera el volcado desde los transcripts. Lleva escrito POR QUÉ separa cada clase de mensaje |
+| `scripts/comprobar-volcado.js` | Comprueba que no hay nada ajeno bajo el nombre de Marco |
+
+⭐ **El comprobador lleva CONTROL en los dos sentidos**: se le da un texto limpio
+—no debe detectar nada— y uno contaminado a propósito —debe detectarlo—, y
+**se niega a opinar del archivo si falla cualquiera de los dos**. Hizo falta: su
+primera versión daba 6 contaminados y **uno era falso**, porque troceaba por
+`###` y se tragaba el bloque `<details>` que venía detrás del mensaje.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `conversacion.md` | Nuevo, 948 KB. El diálogo del 1-sep al 8-oct, regenerado entero |
+| `scripts/volcar-conversacion.js` | Nuevo. El generador |
+| `scripts/comprobar-volcado.js` | Nuevo. El comprobador, con sus controles |
+| `avance_proyecto.md` | El backlog de la marca de hora; esta entrada |
+
+⚠️ **`conversacion.md` NO entra al repositorio**, igual que el viejo: es la
+conversación de Marco y el repositorio es público (120). Sigue sin `.gitignore`
+porque esa decisión es suya, así que **ahora hay DOS archivos grandes que un
+`git add -A` distraído se llevaría dentro**.
+
+**Verificación:**
+
+```
+node scripts/comprobar-volcado.js conversacion.md
+   CONTROL limpio (debe dar 0): 0  ✔
+   CONTROL sucio  (debe dar 1): 1  ✔
+   bloques de Marco: 225   bloques de Claude: 1638   contaminados: 0
+
+node scripts/auditar-bitacora.js  -> 29 de 29
+npm test                          -> 669/669
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un campo de procedencia no determina el origen** si el sistema lo
+   rellena igual que el usuario. 5 de 37 notificaciones venían marcadas como
+   escritas por Marco. Hay que mirar el campo **y** el contenido.
+2. ⭐ **Enumerar antes de filtrar.** Se buscaron todas las envolturas presentes
+   entre sus mensajes —doce patrones probados, tres encontrados— en vez de tapar
+   la primera. Parchear de una en una habría dejado las demás dentro.
+3. ⛔ **Un archivo que se lee mientras se escribe no da dos veces la misma
+   cuenta.** Contar y escribir en la misma pasada no es una optimización: es lo
+   único que produce un documento coherente consigo mismo.
+4. ⚠️ **Un comprobador sin control en los dos sentidos no vale.** El de aquí dio
+   un falso positivo de seis; el control lo destapó en un minuto.
+5. ⭐ **El mismo fallo volvió por otra puerta.** Septiembre: resúmenes bajo el
+   nombre de Marco. Octubre: notificaciones bajo el nombre de Marco. Arreglar
+   el caso no arregló la **clase**; lo que la arregla es clasificar por lo que
+   la cosa es, no por lo que dice ser.
+
+**Pendiente / siguiente paso:**
+
+- 📌 **`.gitignore` para `conversacion.md` y `conversion.md`.** Es lo único que
+  los protege de verdad, y hacen falta dos líneas. Espera a Marco.
+- 📌 **Borrar `conversion.md`**, que queda superado por el nuevo. Decisión suya.
+- 📌 La marca de «hora tocada a mano», ya en §Deuda.
+- ⚠️ **Jalar `85287bf`** y usar el campo de hora la próxima vez que el proveedor
+  se equivoque.
+- Lo de siempre: la notificación al teléfono, el ciclo del borrador, el punto
   ciego de `axios`.
 
 ---

@@ -93,7 +93,19 @@ const PREGUNTAS = [
   ['¿Está lo de `npm audit fix --omit=dev`?', 'omit=dev'],
   ['¿Está el punto ciego de axios?',       'axios'],
   ['¿Está lo que falta probar en el mundo real?', 'SIN COMPROBAR EN EL MUNDO REAL'],
-  ['¿Está la deuda anotada?',              'Deuda anotada']
+  ['¿Está la deuda anotada?',              'Deuda anotada'],
+  /*
+   * Lo de la entrada 121: el campo para corregir la hora que el proveedor da
+   * mal. Es lo último que se puede tocar, así que quien llegue mañana tiene que
+   * encontrarlo descrito sin leerse la bitácora entera.
+   */
+  ['¿Se explica el campo de la hora del partido?', 'Hora del partido', 'viva'],
+  /*
+   * Y el volcado de la conversación: hay DOS archivos grandes fuera del
+   * repositorio, y sin esta línea el de mañana no sabe por qué están ahí ni
+   * cuál es el bueno.
+   */
+  ['¿Se dice qué es `conversacion.md`?',   'conversacion.md', 'viva']
 ];
 
 /*
@@ -129,7 +141,20 @@ const NO_DEBE_QUEDAR = [
 
 let fallos = 0;
 
-for (const [pregunta, buscado] of PREGUNTAS) {
+for (const [pregunta, buscado, ambito] of PREGUNTAS) {
+  /*
+   * ⚠️ TERCER ELEMENTO `'viva'`: buscar SÓLO en la parte que describe el
+   * presente.
+   *
+   * Por defecto se busca en todo el archivo, y para la mayoría está bien: una
+   * trampa o un hallazgo valen igual contados en su entrada. Pero una pregunta
+   * del tipo «¿se explica X?» pasa en cuanto X se nombre en CUALQUIER entrada
+   * de la bitácora, aunque la descripción haya desaparecido de la cabecera,
+   * que es lo que se lee al retomar. Eso es un falso verde, y las dos
+   * preguntas añadidas el 8 de octubre de 2026 lo tenían al nacer.
+   */
+  const donde = ambito === 'viva' ? viva : cabecera;
+
   /*
    * Un texto se busca tal cual; una expresión se prueba. Las expresiones
    * existen para lo que NO puede escribirse fijo —una fecha, una cifra que
@@ -137,11 +162,12 @@ for (const [pregunta, buscado] of PREGUNTAS) {
    * cambio correcto. Pasó el 8 de octubre de 2026 con «Pendiente de jalar».
    */
   const hay = buscado instanceof RegExp
-    ? buscado.test(cabecera)
-    : cabecera.includes(String(buscado).toLowerCase());
+    ? buscado.test(donde)
+    : donde.includes(String(buscado).toLowerCase());
 
   if (!hay) fallos++;
-  console.log(`  ${hay ? '✔' : '⛔'} ${pregunta.padEnd(46)} ${hay ? '' : '(falta: ' + buscado + ')'}`);
+  const marca = ambito === 'viva' ? ' (parte viva)' : '';
+  console.log(`  ${hay ? '✔' : '⛔'} ${(pregunta + marca).padEnd(46)} ${hay ? '' : '(falta: ' + buscado + ')'}`);
 }
 
 console.log('');
