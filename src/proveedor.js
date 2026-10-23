@@ -73,25 +73,39 @@ function hayClave() {
  * traducciones del mismo JSON acabarían discrepando en algún campo sin que
  * nadie lo note.
  */
+/**
+ * La hora de un evento del proveedor, como «2026-10-11 15:00».
+ *
+ * ⚠️ LAS DOS PARTES O NINGUNA.
+ *
+ * Era `${item.match_date} ${item.match_time}` a secas, y con una sola de las
+ * dos salían cadenas como «2026-10-11 » o «undefined 15:00», que se guardaban
+ * tal cual en `partidos.api_date` y allí no cerraban el partido ni avisaban de
+ * él —sin dar un solo error—. Desde que la hora se valida al guardar, además
+ * bloquearían el guardado de la jornada entera.
+ *
+ * `''` significa «el proveedor no dijo la hora», que es un estado que la
+ * aplicación ya entiende: todas las consultas de aviso llevan `api_date <> ''`.
+ *
+ * ⚠️ Vive aquí y se exporta porque la usan DOS: el traductor de eventos y el
+ * sincronizador, que compara esta hora con la nuestra para avisar de una
+ * discrepancia. Dos copias de esta regla serían dos horas distintas para el
+ * mismo evento, y la comparación avisaría de discrepancias inventadas.
+ *
+ * ⛔ Y el huso lo pone la PETICIÓN, no esta función: las tres llamadas al
+ * proveedor piden `timezone=America/Costa_Rica`. La que no lo pedía
+ * —`porFecha`— producía desfases fantasma de 8 horas.
+ */
+function horaDelEvento(item) {
+  const dia = String(item?.match_date ?? '').trim();
+  const hora = String(item?.match_time ?? '').trim();
+  return (dia && hora) ? `${dia} ${hora}` : '';
+}
+
 function mapearEvento(item) {
   return {
     apiFixtureId: Number(item.match_id),
-    /*
-     * ⚠️ LAS DOS PARTES O NINGUNA.
-     *
-     * Era `${item.match_date} ${item.match_time}` a secas, y con una sola de
-     * las dos salían cadenas como «2026-10-11 » o «undefined 15:00», que se
-     * guardaban tal cual en `partidos.api_date` y allí no cerraban el partido
-     * ni avisaban de él —sin dar un solo error—. Desde que la hora se valida al
-     * guardar, además bloquearían el guardado de la jornada entera.
-     *
-     * `''` significa «el proveedor no dijo la hora», que es un estado que la
-     * aplicación ya entiende: todas las consultas de aviso llevan
-     * `api_date <> ''`, y ahora el administrador puede ponerla a mano.
-     */
-    fecha: (String(item.match_date ?? '').trim() && String(item.match_time ?? '').trim())
-      ? `${String(item.match_date).trim()} ${String(item.match_time).trim()}`
-      : '',
+    fecha: horaDelEvento(item),
     estado: item.match_status || 'NS',
     minuto: null,
     liga: item.league_name || '',
@@ -161,7 +175,26 @@ async function porFecha(partido) {
   const fecha = extraerFechaApi(partido.apiDate);
   if (!fecha) return null;
 
-  const params = { action: 'get_events', from: fecha, to: fecha };
+  /*
+   * ⛔ `timezone` FALTABA AQUÍ, y era la única llamada de las tres que no lo
+   * pedía.
+   *
+   * Sin él el proveedor responde en SU huso, así que el `match_date` y el
+   * `match_time` del evento que se guarda en la caché no son hora de Costa
+   * Rica. Se vio el 9 de octubre de 2026 comparando nuestras horas con las
+   * suyas: salían **desfases de exactamente 8 horas** en los partidos europeos
+   * —Atl. Madrid 08:15 contra 16:15— que no existían. Preguntando con el huso
+   * explícito, el proveedor devuelve exactamente lo que teníamos guardado.
+   *
+   * ⚠️ Y de paso arregla la BÚSQUEDA, no sólo lo que se guarda: `from`/`to`
+   * salen de `extraerFechaApi(partido.apiDate)`, que es un día en hora de
+   * Costa Rica. Pedirlo en otro huso puede dejar un partido de noche fuera de
+   * la ventana por cruzar la medianoche, y entonces el plan B no encuentra
+   * nada sin dar ningún error.
+   */
+  const params = {
+    action: 'get_events', from: fecha, to: fecha, timezone: 'America/Costa_Rica'
+  };
   if (partido.apiLeagueId) params.league_id = partido.apiLeagueId;
 
   const datos = await fuente(params);
@@ -247,7 +280,7 @@ function vaciarCacheProveedor() {
 
 module.exports = {
   TIMEOUT_MS, CACHE_LIGAS_MS,
-  usarFuente, hayClave, mapearEvento,
+  usarFuente, hayClave, mapearEvento, horaDelEvento,
   porRango, porId, porFecha, ligas, buscarEvento,
   leerCacheProveedor, guardarCacheProveedor, vaciarCacheProveedor
 };

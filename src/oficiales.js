@@ -33,6 +33,12 @@
 
 const db = require('./db');
 const { partidosDe, jornadaIdDe } = require('./pronosticos');
+/*
+ * ⚠️ Se importa la regla, NO se copia: `partidoYaInicio` vive en un solo sitio
+ * y hay un centinela en `architecture.test.js` que lo exige. Aquí se usa para
+ * saber si un partido ya debería haber empezado según nuestra hora.
+ */
+const { partidoYaInicio } = require('./fechas');
 
 /**
  * Los campos de un resultado oficial de los que dependen los PUNTOS.
@@ -107,7 +113,7 @@ async function mapaDe(cliente, jornadaId) {
  *
  * ⚠️ El `comodin` que sale de aquí viene del PARTIDO, que es donde vive.
  */
-async function deJornada(quinielaId, jornadaNombre) {
+async function deJornada(quinielaId, jornadaNombre, ahora = new Date()) {
   return db.enQuiniela(quinielaId, async c => {
     const jornadaId = await jornadaIdDe(c, jornadaNombre);
     if (!jornadaId) return null;
@@ -119,7 +125,65 @@ async function deJornada(quinielaId, jornadaNombre) {
       nombre: jornadaNombre,
       partidos: partidos.map(p => {
         const o = oficiales.get(p.id);
+
+        /*
+         * ============================================================
+         * ⛔ «EL PROVEEDOR TODAVÍA NO REPORTA ESTE PARTIDO»
+         * ============================================================
+         *
+         * Marco, 9 de octubre de 2026: estaba viendo Sporting vs Cartaginés
+         * por televisión y la pantalla de resultados oficiales le enseñaba un
+         * hueco gris, sin marcador y sin explicación. Tuvo que preguntar si el
+         * fallo era del API o nuestro.
+         *
+         * Lo era del proveedor: durante unos 70 minutos su respuesta para ese
+         * partido decía que era **al día siguiente** y que no había empezado.
+         * Nuestro sincronizador guardó eso, que es lo correcto —no se inventa
+         * un marcador—, y cuando el proveedor se puso al día lo recogió en el
+         * siguiente ciclo, dentro del minuto.
+         *
+         * ⭐ Así que esto no cambia NINGÚN comportamiento: sólo dice en voz
+         * alta lo que el hueco gris ya significaba. La pregunta «¿es el API o
+         * somos nosotros?» se contesta sola en la pantalla.
+         *
+         * ⚠️ La regla del «ya debería haber empezado» NO se reimplementa aquí:
+         * se llama a `partidoYaInicio` con `null` como resultado oficial, que
+         * es justo lo que la hace decidir **sólo por la hora**. Hay un
+         * centinela que exige que esa función exista una sola vez, y una
+         * segunda copia de la resta de fechas sería una segunda verdad.
+         */
+        const yaDebioEmpezar = partidoYaInicio(p, null, ahora);
+
+        /*
+         * ⛔ «LO VE» NO ES SÓLO EL ESTADO: TAMBIÉN ES TENER MARCADOR.
+         *
+         * Lo destapó un caso real de Marco el 10 de octubre de 2026. Puntarenas
+         * vs Alajuelense **empezó y lo suspendieron por lluvia**. El proveedor
+         * respondía `match_status: "Interrupted"` con el marcador 0-1, pero
+         * «Interrupted» es un estado que `obtenerEstadoPartido` no conoce, así
+         * que se guardaba como PROGRAMADO… y la tarjeta enseñaba **«0 - 1» y
+         * debajo «el proveedor todavía no lo reporta como iniciado»**. Las dos
+         * cosas a la vez, contradiciéndose.
+         *
+         * Si hay marcador, el proveedor está diciendo algo de ese partido. Lo
+         * que no sepamos traducir de su estado no nos autoriza a afirmar que no
+         * lo reporta.
+         *
+         * ⚠️ Esto NO arregla el hueco de fondo —que no sabemos decir
+         * «interrumpido»—, sólo deja de mentir. El hueco queda anotado.
+         */
+        const hayMarcador = o?.marcador1 !== null && o?.marcador1 !== undefined
+          && o?.marcador2 !== null && o?.marcador2 !== undefined;
+
+        const proveedorLoVe = ['LIVE', 'MT', 'TC'].includes(o?.estado) || hayMarcador;
+
         return {
+          /*
+           * `true` = nuestra hora dice que empezó y el proveedor no lo da por
+           * iniciado. Puede ser que el proveedor vaya retrasado (lo de esta
+           * noche), que tenga mal la hora, o que el partido se aplazara.
+           */
+          esperandoProveedor: yaDebioEmpezar && !proveedorLoVe,
           equipo1: p.equipo1,
           equipo2: p.equipo2,
           logoEquipo1: p.logo_equipo1,

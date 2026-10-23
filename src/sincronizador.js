@@ -37,6 +37,12 @@ const eventos = require('./eventos');
 const oficialesMod = require('./oficiales');
 const pronosticosMod = require('./pronosticos');
 const rankingMod = require('./ranking');
+/*
+ * ⚠️ Sólo por `horaDelEvento`: la regla de cómo se arma la hora desde un evento
+ * del proveedor vive en un sitio. Copiarla aquí daría dos horas distintas para
+ * el mismo evento, y la comparación avisaría de discrepancias inventadas.
+ */
+const { horaDelEvento } = require('./proveedor');
 
 const CERROJO_SYNC = 'sincronizacion-global';
 const TTL_CERROJO_SYNC_MS = 5 * 60 * 1000;
@@ -404,9 +410,54 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
 
     const filas = [];
 
+    /*
+     * ============================================================
+     * ⛔ LA HORA DEL PROVEEDOR SE ANOTA, NO SE APLICA
+     * ============================================================
+     *
+     * Decisión de Marco, 9 de octubre de 2026, y la razón es suya: *«imagínate
+     * que si dejáramos que él lo actualice con la fecha del API, en un caso
+     * como estos él abriría la posibilidad de cambiar resultados en un partido
+     * que ya se está jugando»*.
+     *
+     * Esa noche el proveedor afirmó durante unos 70 minutos que Sporting vs
+     * Cartaginés era AL DÍA SIGUIENTE, mientras Marco lo veía por televisión.
+     * Aplicar esa fecha habría **reabierto los pronósticos en el minuto 71**,
+     * con el 1-1 en pantalla.
+     *
+     * ⭐ Así que esto no toca `api_date` jamás. Guarda lo que dice el proveedor
+     * y desde cuándo lo dice, para que el administrador lo vea y decida.
+     *
+     * ⚠️ Y se marca sólo cuando hay EVENTO del proveedor. Sin noticias no hay
+     * discrepancia: hay silencio, que es otra cosa.
+     */
+    const discrepancias = [];
+    const sinDiscrepancia = [];
+
     for (const partido of partidos) {
       const evento = cache.get(claves.get(partido.id))?.evento || null;
       const previo = anteriores.get(partido.id);
+
+      if (evento) {
+        const suya = horaDelEvento(evento);
+        const nuestra = partido.api_date || '';
+
+        if (suya && nuestra && suya !== nuestra) {
+          discrepancias.push({ id: partido.id, suya });
+        } else {
+          /*
+           * Vuelven a coincidir —o el proveedor dejó de decir una hora—: el
+           * aviso se retira solo. Nadie tiene que cerrarlo a mano.
+           *
+           * ⚠️ Antes esto se decidía leyendo `partido.fecha_proveedor`, y para
+           * eso hubo que pedir esa columna en `partidosDe`… que es el camino de
+           * lectura de media aplicación. Sin la migración corrida, todo lo que
+           * lee partidos respondió 500. Ahora la pregunta «¿había aviso?» va en
+           * el `WHERE` del UPDATE, que sí está protegido.
+           */
+          sinDiscrepancia.push(partido.id);
+        }
+      }
 
       if (!evento) {
         // Sin noticias del proveedor: lo que hubiera se queda. Si no había
@@ -476,6 +527,88 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
         origen: 'api',
         bloqueadoFinal: estadoPartido.estado === 'TC'
       });
+    }
+
+    /*
+     * Las discrepancias de hora, de una vez y antes de los marcadores.
+     *
+     * ⛔ `fecha_proveedor_desde` SÓLO se pone si estaba vacío —el `COALESCE`—,
+     * así que conserva el momento en que la discrepancia EMPEZÓ. Si se
+     * refrescara en cada ciclo nunca llegaría a «llevar dos horas» y el aviso
+     * no saldría jamás: el guion correría cada minuto y el reloj volvería a
+     * cero cada minuto.
+     *
+     * ⚠️ Y NO se toca `api_date`. Es lo único que esta función tiene prohibido
+     * hacer con esta información; el comentario de arriba explica por qué.
+     */
+    /*
+     * ⛔ Y ESTO NO PUEDE TUMBAR LA SINCRONIZACIÓN DE MARCADORES.
+     *
+     * Las migraciones de este proyecto se corren A MANO en el editor de Neon:
+     * no hay ejecutor automático. Así que existe una ventana real en la que el
+     * código nuevo está desplegado y la migración 016 todavía no se ha corrido,
+     * y entonces estas dos consultas fallan con «column does not exist».
+     *
+     * Sin este `try`, ese fallo tumbaría la transacción entera y **dejarían de
+     * entrar los marcadores oficiales de todas las jornadas** por un aviso
+     * decorativo. El orden de importancia es claro: los marcadores son el
+     * producto; el aviso de la hora es una ayuda.
+     *
+     * ⚠️ Pero se GRITA en el registro, no se traga en silencio: un aviso que
+     * nunca aparece no se nota, y la causa —una migración sin correr— no se
+     * adivina. Es el mismo criterio que los fallos por partido de abajo, que se
+     * registran con nombre y motivo y no tumban la jornada.
+     */
+    /*
+     * ⛔ SAVEPOINT, Y UN `try` A SECAS NO HABRÍA SERVIDO.
+     *
+     * En PostgreSQL un error ABORTA LA TRANSACCIÓN ENTERA: capturarlo en
+     * JavaScript no la resucita, y todas las consultas siguientes responden
+     * «current transaction is aborted», que es el eco del fallo de verdad y no
+     * un fallo nuevo. Está escrito en §C de la bitácora desde la Entrada 035,
+     * donde costó dos vueltas enteras.
+     *
+     * Con un punto de guardado, el fallo deshace SÓLO estas dos consultas y la
+     * transacción sigue viva para escribir los marcadores, que es lo que no se
+     * puede perder.
+     */
+    try {
+      await c.query('SAVEPOINT marca_hora_proveedor');
+
+      for (const d of discrepancias) {
+        await c.query(
+          `UPDATE partidos
+              SET fecha_proveedor = $2,
+                  fecha_proveedor_desde = COALESCE(fecha_proveedor_desde, $3)
+            WHERE id = $1`,
+          [d.id, d.suya, ahora]);
+      }
+
+      /*
+       * Los que coinciden, en UNA consulta y sólo si había algo que retirar.
+       *
+       * ⚠️ El `AND fecha_proveedor IS NOT NULL` es lo que sustituye a leer la
+       * columna antes: sin él habría que saber de fuera si había aviso, y para
+       * eso hacía falta pedirla en la consulta de lectura que comparte media
+       * aplicación. Aquí no escribe nada cuando no hay nada que borrar.
+       */
+      if (sinDiscrepancia.length) {
+        await c.query(
+          `UPDATE partidos
+              SET fecha_proveedor = NULL, fecha_proveedor_desde = NULL
+            WHERE id = ANY($1::uuid[]) AND fecha_proveedor IS NOT NULL`,
+          [sinDiscrepancia]);
+      }
+
+      await c.query('RELEASE SAVEPOINT marca_hora_proveedor');
+    } catch (error) {
+      await c.query('ROLLBACK TO SAVEPOINT marca_hora_proveedor').catch(() => {});
+      console.error(
+        '  · no se pudo anotar la hora del proveedor en "' + jornadaNombre + '": '
+        + error.message
+        + '\n    ⚠️ Si dice «column ... does not exist», falta correr'
+        + ' db/migraciones/016-fecha-del-proveedor.sql en Neon.'
+        + '\n    Los marcadores siguen entrando; lo que no sale es el aviso de la hora.');
     }
 
     /*

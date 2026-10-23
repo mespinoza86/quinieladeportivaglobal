@@ -24,8 +24,8 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 669/669
-npm run test:e2e            # 228/228, ~12 min
+npm test                    # 681/681
+npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
 ```
@@ -69,8 +69,8 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **669**, ~75 s |
-| Pruebas de navegador | **228**, ~12 min, contra el servidor de verdad |
+| Pruebas rápidas | **681**, ~75 s |
+| Pruebas de navegador | **232**, ~16 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
@@ -603,17 +603,18 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 6 de octubre de 2026
+#### 📍 Dónde quedó todo el 10 de octubre de 2026
 
 | | |
 |---|---|
-| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 119** |
+| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 125** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ⚠️ **Pendiente de jalar la corrección de la hora** (entrada 121). Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
-| Base de datos | ✅ Las 15 migraciones corridas. **Nada nuevo desde el 14**: estos días no tocaron el esquema |
-| Pruebas | **669** rápidas + **228** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Producción | ⚠️ **Render tiene hasta `85287bf` (entrada 121): le faltan las entradas 123-125.** Comprobado el 10 de octubre de 2026: `/js/jornadas.js` servía `horaPartido` ×4 (la 121 sí está) y `usarFechaProveedor` ×0 (la 124 no). **Lo de las 123-125 está commiteado pero sin jalar, y sin probar a mano.** Pendiente de la 121 también |
+| Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
+| Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
+| Pruebas | **681** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) y **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) y ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -621,6 +622,20 @@ documento.
   derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
   escribible, y el marcador real en el centro.
+- ⭐ **«El proveedor todavía no reporta este partido»** (124). En «Resultados
+  oficiales», cuando según la hora del partido ya debería haber empezado y el
+  proveedor no lo da por iniciado, la tarjeta lo DICE en vez de quedarse en un
+  hueco gris. No cambia ningún comportamiento: pone palabras.
+- ⭐ **«El proveedor dice otra hora»** (124). En «Armar jornadas», si el proveedor
+  da una hora distinta **y lleva más de dos horas dándola**, sale su hora y un
+  botón que **sólo rellena el campo** — hay que darle a Guardar aparte.
+  ⛔ La hora del proveedor **no se aplica NUNCA sola**, y el porqué está en la
+  123: habría reabierto los pronósticos de un partido en el minuto 71.
+- ⭐ **El pestillo** (125). Si un guardado reabriría el pronóstico de un partido
+  ya cerrado, el **servidor** lo rechaza y la pantalla pregunta nombrando el
+  partido y las dos horas. Decir «no» no guarda nada.
+  ⚠️ **SIN PROBAR A MANO.** Está en verde en 681 pruebas rápidas y en las de
+  navegador, pero Marco no lo ha tocado. **Es lo primero al retomar.**
 - ⭐ **Corregir la hora de un partido** (121). En «Armar jornadas», cada tarjeta
   tiene un campo **«Hora del partido (hora de Costa Rica)»**. Sirve para cuando
   el proveedor se equivoca —pasó el 8 de octubre de 2026— y con ello el partido
@@ -711,7 +726,7 @@ No son tareas: son cosas que están paradas porque las decide él.
 
   | Archivo | Qué es |
   |---|---|
-  | **`conversacion.md`** | ⭐ **El bueno.** 948 KB, del 1 de septiembre al 8 de octubre de 2026. 225 mensajes de Marco y 1.638 respuestas. Regenerado entero el 8 de octubre (122) |
+  | **`conversacion.md`** | ⭐ **El bueno.** 1.010 KB, del 1 de septiembre al 22 de octubre de 2026. **242 mensajes de Marco** y 1.758 respuestas. Regenerado entero el 22 de octubre |
   | `conversion.md` | El viejo, de septiembre. 745 KB, llegaba al día 22. **Queda superado**; borrarlo es decisión de Marco. Su cuenta de «230 mensajes de Marco» está inflada: cinco no eran suyos |
 
   Se rehace con `node scripts/volcar-conversacion.js <salida.md> <transcripts…>`
@@ -745,6 +760,25 @@ No son tareas: son cosas que están paradas porque las decide él.
 
 ##### ⚠️ Deuda anotada a propósito, no olvidada
 
+- 📌 **NO SABEMOS DECIR «INTERRUMPIDO»** (124). El proveedor manda
+  `match_status: "Interrupted"` cuando un partido se suspende a medias —pasó de
+  verdad con Puntarenas vs Alajuelense el 10 de octubre, parado por lluvia con
+  el 0-1— y `obtenerEstadoPartido` no conoce ese estado, así que lo guarda como
+  `PROGRAMADO`.
+
+  **Qué se arregló:** la contradicción. La tarjeta enseñaba «0 - 1» **y** «el
+  proveedor todavía no lo reporta como iniciado» a la vez; ahora un marcador
+  cuenta como «el proveedor lo ve» y la frase no sale.
+
+  **Qué sigue mal:** la pastilla de estado muestra la hora de inicio, como si el
+  partido no hubiera empezado. Nadie se entera de que está parado.
+
+  ⚠️ **Por qué no se hizo:** añadir un estado nuevo toca `obtenerEstadoPartido`
+  y la lista `['LIVE','MT','TC']` de la regla del cierre, que decide si un
+  pronóstico se puede editar y si es público. Son las dos piezas más delicadas
+  del dominio. Hay que pensar antes qué debe pasar con un partido interrumpido:
+  ¿cuenta como empezado —sí, lo está— y puede la jornada congelar sus puntos
+  —no, todavía no—? Son dos respuestas distintas para el mismo estado.
 - 📌 **BACKLOG, decisión de Marco del 8 de octubre de 2026: marcar que una hora
   se tocó a mano.** *«Eso de marcar que una hora se tocó, ponlo en el backlog
   para después, de momento quedemos así»*.
@@ -857,7 +891,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las quince migraciones corridas**, **669 + 228** pruebas en
+funcionando, **las dieciseis migraciones corridas**, **681 + 232** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1264,11 +1298,11 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 669 pruebas rápidas, ~75 s
+npm test                   # las 681 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
-npm run test:e2e           # las 228 de navegador (~12 min, escritorio y móvil)
+npm run test:e2e           # las 232 de navegador (~16 min, escritorio y móvil)
 npm run test:e2e:ui        # las mismas, con el inspector de Playwright
 npm run check              # comprobación de sintaxis
 npm audit --omit=dev       # 0 vulnerabilidades, verificado el 18-ago
@@ -1962,7 +1996,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 669 pruebas rápidas y 228 de navegador
+### 2.5 `test/` — 681 pruebas rápidas y 232 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -20805,6 +20839,587 @@ npm test                          -> 669/669
   se equivoque.
 - Lo de siempre: la notificación al teléfono, el ciclo del borrador, el punto
   ciego de `axios`.
+
+---
+
+### 📌 Entrada 123 — 9 de octubre de 2026 — El proveedor miente con cara de normalidad
+
+**Objetivo:** Marco, usando la aplicación de noche: *«en este momento se está
+jugando un partido de la jornada 8, pero en resultados oficiales no veo el
+marcador en vivo, puedes chequear si esto es porque el API no está actualizando
+el marcador, o si es un problema que se nos está generando y no nos habíamos
+dado cuenta?»*.
+
+## LA RESPUESTA CORTA
+
+**Ni una cosa ni la otra.** El sincronizador funcionaba. El proveedor también.
+Lo que pasaba es que el proveedor **servía un dato rancio para ese partido
+concreto** y lo servía con total normalidad: sin error, sin hueco, sin nada que
+delatara que estaba mal.
+
+## CÓMO SE AVERIGUÓ, EN ORDEN
+
+Lo primero fue descartar lo más barato, que es lo que suele ser:
+
+1. **¿La pantalla muestra marcador en vivo, o no está hecha para eso?** Sí lo
+   muestra: `estadoPartidoHTML` pinta `LIVE` con minuto, `MT` y `TC`. Y el
+   marcador se pinta **siempre**, independiente del estado. Así que si no había
+   cifras, el dato no estaba en la base.
+
+2. **¿El sondeo está corriendo?** Consulta a la base de producción, sólo
+   lectura: `consultado_en` = 21:15:58, `proxima_consulta` = 21:16:58. Preguntaba
+   **cada 60 segundos**, cero fallos, cero errores.
+
+3. **¿Qué dice el proveedor de ese partido?** Aquí apareció:
+
+   ```
+   nosotros guardamos:  2026-10-09 20:00   (hoy, hacía 74 min)
+   el proveedor decía:  2026-10-10 15:00   (mañana)
+   estado: ""   marcador: ""   live: 0
+   ```
+
+4. **¿Está roto el feed del proveedor?** No: **23 partidos en vivo** en ese
+   momento y 491 con estado ese día. Su feed estaba sano.
+
+5. ⛔ **Y entonces el dato cambió solo.** A las 21:31, el MISMO endpoint con el
+   MISMO id respondía `2026-10-09 20:00`, `estado "71"`, `1-1`, `live=1`. El
+   sincronizador lo recogió en el siguiente ciclo, y a las 21:31:26 la pantalla
+   ya tenía el 1-1 en el minuto 71.
+
+Había estado unos **70 minutos** afirmando que un partido que se estaba jugando
+era al día siguiente.
+
+## ⛔ DOS COSAS QUE ME EQUIVOQUÉ EN EL CAMINO, Y HAY QUE SABERLAS
+
+**1. Dije que un partido estaba «cerrado y público antes de tiempo», y era
+falso.** Marqué Sporting vs Cartaginés como un fallo nuestro porque **me fié del
+proveedor**: él decía que era al día siguiente, así que nuestra hora parecía la
+mala. Marco lo corrigió con el único dato que lo zanjaba: *«justamente ahorita yo
+estoy viendo el partido»*. **Nuestra hora era la correcta todo el tiempo.**
+
+⚠️ La lección: cuando el proveedor y el usuario discrepan sobre la realidad, el
+usuario está mirando la realidad y el proveedor está mirando su base de datos.
+
+**2. Casi reporté 17 desfases de hora y los reales eran 10.** Comparé nuestras
+horas contra el `evento` guardado en la caché y salieron desfases de **exactamente
+8 horas** en los partidos europeos. Olía a huso horario y lo era: el evento
+cacheado no siempre está en hora de Costa Rica. Preguntando al proveedor con
+`timezone=America/Costa_Rica` explícito, devuelve **exactamente** lo que tenemos.
+
+⭐ La causa de fondo apareció al mirarlo: **`porFecha` era la única de las tres
+llamadas al proveedor que no pedía el huso.** Arreglado en la entrada 124.
+
+## ⭐ LO QUE DE VERDAD SE DESCUBRIÓ: NO NOS ENTERAMOS SI MUEVEN UN PARTIDO
+
+`partidos.api_date` **sólo se escribe al guardar la jornada**. El sincronizador
+actualiza marcadores y estados, **nunca la fecha**. Así que si el proveedor
+reprograma un partido, nuestra fecha se queda vieja en silencio.
+
+De los 10 desfases confirmados, dos hacían daño:
+
+| Partido | Nosotros | El proveedor |
+|---|---|---|
+| Sporting FC vs Cartaginés | hoy 20:00 | mañana 15:00 *(el proveedor estaba mal)* |
+| Club América vs Tijuana | 5 sep 19:00 | **28 oct** 21:00 *(reprogramación real)* |
+
+## ⛔ Y LA DECISIÓN DEL DÍA, QUE LA TOMÓ MARCO Y SALVÓ LA FUNCIÓN
+
+La propuesta obvia era: que el sincronizador actualice la fecha cuando el
+proveedor la mueva. Marco la mató en una frase:
+
+> *«imagínate que si dejáramos que él lo actualice con la fecha del API, en un
+> caso como estos él abriría la posibilidad de cambiar resultados en un partido
+> que ya se está jugando»*
+
+Y con el caso de esa noche delante es **demoledor**: durante más de una hora el
+proveedor afirmó una fecha 19 horas en el futuro para un partido en el minuto
+71. Aplicarla habría **reabierto los pronósticos con el 1-1 en pantalla**.
+Cualquiera podía cambiar su marcador viendo el resultado.
+
+⭐ **La asimetría que hay que conservar en todo lo demás:** el estado del
+proveedor **cierra pero nunca abre**. Si dice que un partido está en juego, el
+pronóstico se cierra aunque el calendario diga otra cosa. Eso ya funcionaba y es
+lo que hay que imitar.
+
+**Archivos modificados:** ninguno. Esta entrada es el diagnóstico; el trabajo
+está en la 124.
+
+**Verificación:**
+
+```
+sondeo en producción:   consultado 21:15:58, próxima 21:16:58, 0 fallos
+feed del proveedor:     23 partidos en vivo, 491 con estado ese día
+el mismo endpoint:      21:15 -> «mañana, sin empezar»
+                        21:31 -> «1-1, minuto 71, en vivo»
+sincronizador:          lo recogió a las 21:31:26
+
+desfases contra la caché:                    17  (⚠️ inflado por el huso)
+desfases confirmados contra el proveedor:    10
+TODAS las consultas a la base fueron SELECT, con ROLLBACK por quiniela
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Un proveedor puede servir datos rancios sin dar ningún error.** No es una
+   caída: es una respuesta 200 con contenido viejo. Las sondas de salud no lo
+   ven, y el sincronizador tampoco: hace bien en guardar lo que le dan.
+2. ⛔ **Dos lecturas del mismo endpoint pueden contradecirse en quince minutos.**
+   La regla de «dos lecturas seguidas» que usamos para comprobar un despliegue
+   vale igual para el proveedor.
+3. ⚠️ **Cuando el proveedor y quien está mirando el partido discrepan, gana quien
+   mira el partido.** Me fié del proveedor y reporté un fallo que no existía.
+4. ⚠️ **Comparar contra la caché no es comparar contra el proveedor.** El evento
+   guardado no siempre está en el huso que crees. Si una comparación da desfases
+   redondos —8 horas exactas— sospecha del huso antes que del dato.
+5. ⭐ **Una buena objeción vale más que una buena implementación.** La propuesta
+   de actualizar fechas solas estaba lista para escribirse y era un agujero.
+
+**Pendiente / siguiente paso:**
+
+- Decir en pantalla por qué un partido no tiene marcador (punto 1 → entrada 124).
+- Avisar de las discrepancias de fecha sin aplicarlas (punto 2 → entrada 124).
+- Revisar **Club América vs Tijuana**: ¿se jugó el 5 de septiembre o lo
+  reprogramaron de verdad al 28 de octubre? Eso no lo puede decidir el código.
+
+---
+
+### 📌 Entrada 124 — 10 de octubre de 2026 — Dos avisos, y un 500 que tumbó media aplicación
+
+**Objetivo:** los dos puntos que Marco eligió de las sugerencias de la entrada
+123: *«si está bien, hagamos 1 y 2»*.
+
+- **1** · que la pantalla diga por qué un partido no tiene marcador;
+- **2** · que una fecha distinta del proveedor **se avise, no se aplique**.
+
+## 1 · «EL PROVEEDOR TODAVÍA NO REPORTA ESTE PARTIDO»
+
+La noche anterior Marco se quedó mirando un hueco gris, sin marcador y sin una
+palabra, y tuvo que preguntar si el fallo era del API o nuestro. La aplicación
+hacía lo correcto —no inventarse un marcador— pero no lo decía.
+
+Ahora, en «Resultados oficiales», cuando según la hora del partido ya debería
+haber empezado y el proveedor no lo da por iniciado, la tarjeta añade:
+
+> *Según la hora de este partido ya debería haber empezado, pero el proveedor
+> todavía no lo reporta como iniciado. En cuanto lo haga, el marcador aparece
+> solo.*
+
+⭐ **No cambia ningún comportamiento.** Pone palabras a lo que el hueco ya
+significaba, y contesta sola la pregunta «¿es el API o somos nosotros?».
+
+⚠️ Lo decide el SERVIDOR (`esperandoProveedor` en `oficiales.deJornada`),
+llamando a `partidoYaInicio` con `null` como resultado oficial —que es lo que la
+hace decidir sólo por la hora—. La regla del cierre **no se copia**: hay un
+centinela que exige que exista una sola vez.
+
+## 2 · LA HORA DEL PROVEEDOR SE AVISA, NUNCA SE APLICA
+
+En «Armar jornadas», cuando el proveedor dice otra hora **y lleva más de dos
+horas diciéndolo**, la tarjeta enseña su hora y un botón **«Poner la hora del
+proveedor»** que sólo **rellena el campo**: hay que darle a Guardar aparte.
+
+⛔ Ese «sólo rellena» es la decisión de la entrada 123, hecha código.
+
+**Las dos horas de espera no son un número al azar:** esa noche el proveedor dio
+dos respuestas contrarias en quince minutos. Avisar con la primera lectura habría
+sido avisar de algo falso. Y el aviso **se retira solo** si el proveedor se
+corrige, sin que nadie lo cierre a mano.
+
+**Migración 016**, dos columnas en `partidos`:
+
+- `fecha_proveedor` — qué dice
+- `fecha_proveedor_desde` — desde cuándo lo dice
+
+⛔ **Van en `partidos` y no en `fixtures`**, aunque la caché pareciera el sitio
+natural: `fixtures` es compartida entre quinielas, y la discrepancia no es una
+propiedad del partido sino de la diferencia con lo que tiene guardado ESTA
+quiniela. Dos quinielas pueden tener horas distintas para el mismo partido —una
+corregida a mano y la otra no— y en la caché la de una pisaría la de la otra.
+Además `partidos` lleva RLS, así que el aviso de una no se ve desde otra.
+
+## ⛔⛔ Y AHORA EL FALLO DEL DÍA, QUE ES EL HALLAZGO MÁS VALIOSO
+
+Añadí `fecha_proveedor` a la lista de columnas de **`partidosDe`**. Esa consulta
+la usan la portada, los marcadores oficiales, la tabla general y la tabla por
+jornada. Las migraciones de este proyecto **se corren a mano en Neon**, así que
+en cuanto el código llegó a una base sin migrar:
+
+```
+GET /api/resultados-oficiales                500
+GET /api/clasificacion-jornada               500
+GET /api/resultados-totales?pagina=1         500
+TypeError: jornadas.forEach is not a function
+```
+
+**Cuatro pantallas caídas a la vez por un aviso de ayuda.**
+
+⛔ **Y EL AVISO QUE LE DI A MARCO ANTES DE DESPLEGARLO ERA EQUIVOCADO.** Le dije
+textualmente: *«si se te olvida la migración, lo peor que pasa es que el aviso no
+funcione: los marcadores siguen entrando»*. Falso. Había protegido la
+**ESCRITURA** con un `SAVEPOINT` y no se me ocurrió mirar la **LECTURA**.
+
+**El arreglo:** la columna sale de ese `SELECT`. La pregunta que necesitaba
+—«¿había aviso puesto, para retirarlo?»— se hace ahora en el `WHERE` del propio
+`UPDATE` que lo retira, que sí está protegido. Y `porNombre` usa `SELECT *`, que
+no falla si la columna no está: el aviso simplemente sale `null`.
+
+⭐ **Y hay un centinela nuevo que impide la reincidencia**: ninguna columna de la
+migración 016 puede aparecer en un `SELECT` explícito de `src/`. Se comprobó
+reintroduciéndola a propósito.
+
+## ⚠️ POR QUÉ LA ESCRITURA NECESITABA UN `SAVEPOINT` Y NO UN `try`
+
+En PostgreSQL un error **aborta la transacción entera**: capturarlo en JavaScript
+no la resucita, y todo lo siguiente responde «current transaction is aborted»,
+que es el eco y no el fallo. Está en §C desde la Entrada 035, donde costó dos
+vueltas.
+
+Con punto de guardado, un fallo al anotar la hora deshace **sólo esas dos
+consultas** y la transacción sigue viva para escribir los marcadores, que es lo
+que no se puede perder.
+
+⚠️ **No se pudo probar el caso exacto** —quitar la columna— porque el rol de las
+pruebas NO es dueño de las tablas, a propósito (§C, Entrada 034: un banco con más
+privilegios que producción da falsos verdes). Lo que sí se probó es la pieza que
+era una suposición: que un `ROLLBACK TO SAVEPOINT` deja la transacción viva tras
+un error en este montaje.
+
+## ⛔ TRES COSAS MÁS QUE APARECIERON
+
+1. **`porFecha` no pedía la hora de Costa Rica** — la única de las tres llamadas
+   al proveedor que no lo hacía. De ahí los desfases fantasma de 8 horas de la
+   entrada 123. Y además arreglaba un fallo de búsqueda: `from`/`to` se arman con
+   un día en hora de Costa Rica, así que pedirlo en otro huso puede dejar un
+   partido de noche fuera de la ventana **sin dar ningún error**.
+
+2. ⛔ **`rows.map(partidoPublico)` le pasaba el ÍNDICE como «ahora».**
+   `Array.prototype.map` llama con `(elemento, índice, arreglo)`, así que el
+   primer partido comparaba contra `ahora = 0` y la pregunta «¿lleva más de dos
+   horas?» salía **siempre falsa**. El aviso del punto 2 **no se habría enseñado
+   nunca**, y sin dar un error: un aviso que falta no se ve. Lo cazó la prueba del
+   umbral, no leer el código.
+
+3. ⚠️ **Un partido INTERRUMPIDO no «está sin reportar».** Lo destapó un caso real
+   de Marco el mismo día: Puntarenas vs Alajuelense empezó y lo suspendieron por
+   lluvia. El proveedor respondía `match_status: "Interrupted"` con el marcador
+   0-1, pero «Interrupted» es un estado que no sabemos traducir y se guardaba
+   como PROGRAMADO… así que la tarjeta enseñaba **«0 - 1» y debajo «el proveedor
+   todavía no lo reporta como iniciado»**. Contradiciéndose.
+
+   Arreglado: si hay marcador, el proveedor está diciendo algo, y no se puede
+   afirmar que no lo reporta. **El hueco de fondo sigue: no sabemos decir
+   «interrumpido».** Queda en §Deuda.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `db/migraciones/016-fecha-del-proveedor.sql` | Nueva. Las dos columnas, con el porqué |
+| `db/esquema.sql` | Las mismas columnas |
+| `src/oficiales.js` | `esperandoProveedor`, y que un marcador cuente como «lo ve» |
+| `src/sincronizador.js` | Anota la hora del proveedor, con `SAVEPOINT` |
+| `src/proveedor.js` | `porFecha` pide el huso; `horaDelEvento` se extrae y se exporta |
+| `src/jornadas.js` | `fechaProveedor` con su umbral; el `map` arreglado |
+| `src/pronosticos.js` | La columna FUERA del `SELECT` compartido |
+| `src/rutas/dominio.js` | Informa de `avisosRearmados` |
+| `private/js/ver-resultados-oficiales.js` | El aviso del punto 1 |
+| `private/js/jornadas.js` | El aviso del punto 2 y su botón |
+| `private/css/styles.css` | `.official-esperando`, `.aviso-fecha-proveedor` |
+| `test/architecture.test.js` | El centinela de las columnas en SELECT |
+
+**Verificación:**
+
+```
+npm test                       -> 677/677 al cerrar el punto 2
+navegador (pantallas tocadas)  -> 30/30
+
+mutaciones (copia byte a byte, nunca git checkout):
+  la bandera del aviso siempre true         -> ROJO
+  ignorar el estado del proveedor           -> ROJO
+  que el sincronizador SÍ aplique la fecha  -> ROJO   ← la que protege la decisión
+  reintroducir la columna en el SELECT      -> ROJO   ← el centinela nuevo
+
+contra la base de producción SIN migrar, las cinco lecturas que fallaban:
+  jornadas.listar, oficiales.deJornada, jornadas.porNombre,
+  pronosticos.tabla, ranking.clasificacionDeJornada   -> las cinco ✔
+
+contraste calculado a mano, tres temas: 7,90 / 10,93 / 11,66 (mínimo 4,5)
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Proteger la escritura no protege la lectura.** El `SAVEPOINT` cubría el
+   `UPDATE` y el 500 vino de un `SELECT`. Al añadir una columna de una migración
+   reciente hay que preguntarse **quién la lee**, no sólo quién la escribe.
+2. ⛔ **Una columna nueva en un camino de lectura compartido es un fallo global.**
+   `partidosDe` la usan seis pantallas: un aviso de ayuda tumbó cuatro.
+3. ⚠️ **Dar un aviso de riesgo equivocado es peor que no darlo.** Marco despliega
+   con confianza en lo que se le dice. «Lo peor que pasa es X» hay que
+   comprobarlo, no estimarlo.
+4. ⛔ **`map(funcion)` le pasa el índice como segundo argumento.** En cuanto una
+   función de mapeo coge un segundo parámetro con valor por defecto, la forma
+   corta deja de ser equivalente — y falla en silencio.
+5. ⚠️ **Un estado que no sabemos traducir se convierte en una afirmación falsa.**
+   «Interrupted» → PROGRAMADO → «no lo reporta», con el marcador al lado.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Marco no ha probado nada de esto a mano todavía.** Vio que las pantallas
+  volvieron a cargar y el aviso del punto 1 en Jornada 2.
+- Decir «interrumpido» (§Deuda).
+- Revisar Club América vs Tijuana, que sigue con la fecha en duda.
+
+---
+
+### 📌 Entrada 125 — 10 de octubre de 2026 — El pestillo: un partido cerrado no se reabre por descuido
+
+**Objetivo:** Marco, después de contar que su partido se había suspendido por
+lluvia: *«si dale»*, al proponerle el pestillo.
+
+## DE DÓNDE SALE: UN PARTIDO SUSPENDIDO POR LLUVIA
+
+Marco, sobre Puntarenas vs Alajuelense:
+
+> *«lo que pasó es que el partido ya había iniciado, pero lo suspendieron por
+> lluvias, entonces ahí está a medias, no se sabe si va a seguir hoy o si lo
+> pasan a mañana o para noviembre. En eso están, pero entonces sirvió para probar
+> esto.»*
+
+⭐ **Y sirvió para más que probar: destapó un agujero que acabábamos de abrir.**
+Cuando reprogramen ese partido:
+
+1. el proveedor cambia la fecha
+2. a las dos horas sale el aviso de la entrada 124 ✔
+3. basta pulsar «poner la hora del proveedor» y Guardar
+4. y **los pronósticos se reabren** — con medio partido jugado y el 0-1 visto
+
+Es el peligro que Marco vio el día antes, **por la otra puerta**: entonces lo
+habría reabierto el proveedor solo; ahora lo reabriría él sin darse cuenta, con
+buena intención y dos clics.
+
+## QUÉ ES EL PESTILLO
+
+Un pasador de puerta: **deja cerrar, no deja que se abra sola.**
+
+Si un guardado pasaría un partido de **cerrado a abierto**, el servidor lo
+rechaza con un 400 y la pantalla pregunta con todas las letras:
+
+> *Este cambio REABRIRÍA el pronóstico de 1 partido(s) que ya estaban cerrados:
+> «Puntarenas FC vs Alajuelense» (de 2026-10-10 17:00 a 2026-11-15 15:00). Si el
+> partido ya se jugó o se está jugando, quien no haya llenado podría hacerlo
+> viendo el marcador. Confirma si de verdad quieres reabrirlo.*
+
+- Si dice **no**: no se guarda nada, ni los cambios buenos que llevara al lado.
+- Si dice **sí**: se guarda, y el mensaje lo recuerda: *«⚠️ Se REABRIÓ el
+  pronóstico de 1 partido(s) que estaban cerrados»*.
+
+**No prohíbe nada.** Reabrir es a veces correcto —es lo que hizo la entrada 121
+con una hora mala—; sólo obliga a decir que sí a propósito.
+
+## ⭐ TRES DECISIONES DE DISEÑO QUE MERECE LA PENA RECORDAR
+
+**1. Sin columna y sin migración.** La idea inicial era un `cerrado_en` guardado,
+que habría sido estado nuevo que mantener al día. No hacía falta: «¿estaba
+cerrado antes de este guardado?» se contesta comparando **la hora vieja con la
+nueva** usando la misma regla de siempre. `guardar` ya tenía las dos a la vista
+porque las compara para rearmar los avisos.
+
+**2. Lo hace cumplir el SERVIDOR, no el `confirm()`.** Un aviso del navegador
+protege a quien usa la pantalla; el 400 protege la regla venga la petición de
+donde venga. Y `reabrirConfirmado` se compara con `=== true`: un `"false"` de
+texto, un `1` o un objeto **no** cuentan como un sí, y hay una prueba de eso.
+
+**3. Se lanza DENTRO de la transacción**, así que un guardado rechazado no aplica
+nada. A medias dejaría la jornada con unos partidos nuevos y otros no, que es
+peor que no guardar.
+
+## ⭐ Y LO MEJOR: EL ESTADO DEL PROVEEDOR YA PROTEGÍA SOLO
+
+`partidoYaInicio` devuelve `true` con cualquier fecha cuando el estado oficial es
+`LIVE`, `MT` o `TC`. Así que **un partido realmente vivo o jugado no se puede
+reabrir ni confirmando**: el pestillo sólo pregunta cuando el cierre lo decidía
+el calendario.
+
+Esa asimetría ya existía antes de todo esto. Es la que hay que imitar.
+
+## LA PRUEBA CONTRA LOS DATOS DE VERDAD
+
+Se simuló mover **los 29 partidos** de las jornadas 2 y 8 a noviembre, leyendo la
+base de producción:
+
+```
+pedirían confirmación: 1 de 29
+   ⛔ Club América vs Tijuana   (el que el proveedor movió al 28 de octubre)
+```
+
+Uno solo, y es justo el que debe preguntar: no se ha jugado, reabrirlo quizá sea
+legítimo, y lo decide Marco. Los 28 restantes no molestan.
+
+⭐ **Y de paso se vio que Puntarenas vs Alajuelense había reanudado**: el
+proveedor ya lo daba `LIVE`. Con lo cual ese partido quedó protegido sin
+confirmación ninguna, por la asimetría de arriba.
+
+## ⚠️ DOS PRUEBAS VIEJAS SE PUSIERON ROJAS, Y ERA LA SEÑAL DE QUE FUNCIONA
+
+La prueba de la entrada 121 —«corregir la hora hacia adelante REABRE el partido
+que se había cerrado»— y su equivalente de navegador **fallaron al poner el
+pestillo**. Correcto: antes aplicaban ese cambio sin preguntar nada. Ahora
+confirman explícitamente, y el comentario de cada una dice por qué.
+
+Y el mensaje de guardado cambió de orden: «se REABRIÓ» gana a «cambiaron de
+hora», porque reabrir un pronóstico es lo más grave que puede hacer esa pantalla.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/jornadas.js` | El pestillo: `anotarSiReabre` y el rechazo |
+| `src/rutas/dominio.js` | `reabrirConfirmado === true`, e informa de `reabiertos` |
+| `private/js/jornadas.js` | Pregunta y reenvía con la confirmación |
+| `test/dominio.test.js` | 3 pruebas nuevas + la de la 121 actualizada |
+| `test/rutas.test.js` | El 400 por la ruta, y que «false» no vale por un sí |
+| `test/e2e/jornadas.spec.js` | El diálogo por pantalla: se dice no, y luego sí |
+
+**Verificación:**
+
+```
+npm test                            -> 681/681   (eran 677)
+navegador: jornadas + resultados    -> 26/26
+
+mutaciones (copia byte a byte, nunca git checkout):
+  el pestillo nunca salta         -> 2 pruebas en ROJO
+  el pestillo salta SIEMPRE       -> 2 pruebas en ROJO   ← el exceso también
+
+simulación contra producción: 1 de 29 partidos pediría confirmación
+```
+
+⭐ Las dos direcciones de la mutación importan igual: un pestillo que no protege
+es inútil, y uno que pregunta en cada cambio de hora acaba con alguien
+quitándolo.
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Una función que ya compara dos estados puede responder una pregunta nueva
+   sin estado nuevo.** `guardar` comparaba las horas para rearmar avisos; la
+   misma comparación contesta «¿esto reabre algo?».
+2. ⛔ **Una confirmación se compara con `=== true`.** Cualquier otra cosa que
+   «parezca» un sí —`"false"`, `1`, `{}`— abriría el agujero entero.
+3. ⭐ **Que una prueba vieja se ponga roja al añadir una guarda es la señal de que
+   la guarda funciona.** Lo que no se puede hacer es ajustarla sin entender qué
+   cambió: las dos se confirmaron a propósito y lo dejaron escrito.
+4. ⚠️ **Un caso real vale más que un caso inventado.** El partido suspendido por
+   lluvia destapó la contradicción del aviso (124) y la necesidad del pestillo
+   (125). Ninguna de las dos se había pensado.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **MARCO NO HA PROBADO EL PESTILLO A MANO.** Es lo primero al retomar: en
+  «Armar jornadas», mover la hora de un partido ya pasado al futuro, Guardar,
+  decir **no**, y comprobar que la hora no cambió.
+- Decir «interrumpido» (§Deuda).
+- La marca de «esta hora se tocó a mano» (§Deuda, de la entrada 121).
+
+---
+
+### 📌 Entrada 126 — 22 de octubre de 2026 — Cerrar sin probar: qué queda exactamente a medias
+
+**Objetivo:** Marco: *«quiero que actualices la bitácora, lo que está pendiente
+lo hacemos después, no tengo tiempo ahorita de hacer pruebas, pero necesito
+cerrar la conversación y por eso necesito que cuando la abras de nuevo sepas
+exactamente dónde estamos»*.
+
+## ⛔ LO PRIMERO: EL TRABAJO DEL 9 Y EL 10 ESTUVO ONCE DÍAS SIN COMMITEAR
+
+Al retomar el 22 de octubre, el árbol tenía **16 archivos modificados y la
+migración 016 sin añadir** desde el 10. La bitácora llegaba a la entrada 122 y
+faltaban tres días de trabajo por escribir.
+
+⚠️ **Y la auditoría de la bitácora daba 31 de 31 estando incompleta.** No era un
+fallo del guion: sus preguntas no cubrían lo que se había hecho después. Es el
+riesgo que su propia cabecera avisa —«un guion que no crece con el proyecto acaba
+diciendo que todo está bien mirando nada»— y esta vez pasó de verdad.
+
+⭐ Arreglado al escribir esto: seis preguntas nuevas, tres de ellas atadas a la
+parte viva. **37 comprobaciones.**
+
+## ESTADO EXACTO AL CERRAR
+
+| | |
+|---|---|
+| Código | Entradas **123, 124 y 125** commiteadas. 681 pruebas rápidas y 234 de navegador en verde |
+| Migración 016 | ✅ **Ya está en Neon.** Marco la corrió el 10 de octubre y se comprobó |
+| Render | ⚠️ Tiene hasta `85287bf` (entrada 121). **Le faltan las 123-125** |
+| Probado a mano | ⚠️ Marco vio que las pantallas volvieron a cargar y el aviso del punto 1 en Jornada 2. **El pestillo NO lo ha tocado nadie** |
+| `conversacion.md` | ✅ Regenerado: 1.010 KB, 242 mensajes suyos, del 1-sep al 22-oct. Fuera del repositorio |
+
+## ⭐ LO PRIMERO AL RETOMAR, EN ORDEN
+
+1. **Probar el pestillo a mano.** En «Armar jornadas»: coger un partido cuya hora
+   ya pasó, moverla al futuro, Guardar. Tiene que preguntar. Decir **no** y
+   comprobar que la hora NO cambió. Es lo único de los tres días que nadie ha
+   visto funcionar con las manos.
+2. **Jalar en Render** y comprobarlo con una marca que sólo exista en lo nuevo:
+   `curl -s .../js/jornadas.js | grep -c usarFechaProveedor` → 1, dos lecturas
+   seguidas, y un CONTROL que dé cero.
+3. **Decidir lo de Club América vs Tijuana**: nosotros lo tenemos el 5 de
+   septiembre y el proveedor dice el 28 de octubre. ¿Se jugó o lo movieron? Eso
+   no lo puede decidir el código, y es el único partido de 29 que haría saltar el
+   pestillo.
+
+## ⚠️ Y UN TROPIEZO QUE YA VA POR LA CUARTA VEZ EN TRES DÍAS
+
+Escribir texto con **acentos graves dentro de un `node -e "…"`**: bash los
+ejecuta como comandos y mete su salida —vacía— en el archivo. Esta vez dejó una
+fila de la tabla de estado así:
+
+```
+| Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** () **ya está
+en Neon**: … —dos columnas en , con sus tipos— …
+```
+
+Los dos huecos eran `016-fecha-del-proveedor.sql` y `partidos`. Se arregló con la
+herramienta de edición, que es **lo que §C dice desde la Entrada 029** y lo que
+no se acaba de aprender.
+
+⭐ Lo único que salvó la situación es que el guion **imprimió el error de bash**
+(«command not found») junto al «4 de 4 filas actualizadas». Un éxito y un fallo
+en la misma salida: justo lo que §C avisa de que nadie lee.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `avance_proyecto.md` | Entradas 123, 124, 125 y ésta; cabecera de estado al día; la deuda de «Interrupted» |
+| `scripts/auditar-bitacora.js` | Seis preguntas nuevas: 37 comprobaciones |
+| `conversacion.md` | Regenerado hasta hoy (fuera del repositorio) |
+
+**Verificación:**
+
+```
+node scripts/auditar-bitacora.js       -> 37 de 37
+node scripts/comprobar-volcado.js      -> controles ✔, contaminados 0
+npm test                               -> 681/681
+CI=true npx playwright test            -> ver el cierre de esta entrada
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una auditoría puede dar verde estando ciega.** 31 de 31 con tres días de
+   trabajo sin documentar, porque las preguntas no habían crecido. El guion
+   avisa de esto en su propia cabecera; el aviso no se cumple solo.
+2. ⚠️ **Dejar trabajo sin commitear once días es una forma de perderlo.** Estaba
+   en verde y escrito; nada más impedía guardarlo.
+3. ⚠️ **Lo que nadie ha probado a mano hay que decirlo donde se lea primero**, no
+   en la entrada de su día. Por eso el aviso del pestillo está en «qué se puede
+   tocar y esperar que funcione», con un ⚠️ delante.
+
+**Pendiente / siguiente paso:**
+
+- Los tres puntos de «LO PRIMERO AL RETOMAR», arriba.
+- §Deuda: decir «interrumpido»; la marca de «hora tocada a mano».
+- Y lo de siempre, sin tocar desde septiembre: **la notificación al teléfono**,
+  el **ciclo del borrador** de una semana a la siguiente, y el **punto ciego de
+  `axios`** —pulsar «sincronizar» en una jornada—.
 
 ---
 

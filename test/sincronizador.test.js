@@ -887,3 +887,213 @@ test('⛔ una fixture con la clave vacia no arrastra a los partidos sin id', asy
   assert.equal(partidosSeguidos, 1,
     'el partido sin id NO debe emparejarse con la fixture de clave vacía');
 });
+
+/* ==================== La hora que dice el proveedor ==================== */
+
+/*
+ * ============================================================================
+ * ⛔ SE AVISA, NO SE APLICA
+ * ============================================================================
+ *
+ * Marco, 9 de octubre de 2026, al proponerle que el sincronizador actualizara
+ * la fecha cuando el proveedor la mueve: *«imagínate que si dejáramos que él lo
+ * actualice con la fecha del API, en un caso como estos él abriría la
+ * posibilidad de cambiar resultados en un partido que ya se está jugando»*.
+ *
+ * Esa noche el proveedor dijo durante unos 70 minutos que Sporting vs
+ * Cartaginés era AL DÍA SIGUIENTE, mientras Marco lo veía por televisión.
+ * Aplicar esa fecha habría reabierto sus pronósticos en el minuto 71, con el
+ * 1-1 en pantalla.
+ *
+ * La primera de estas pruebas es la que importa: **`api_date` no se toca**.
+ */
+
+/** Un evento con hora, que es lo que hace falta para detectar discrepancias. */
+const eventoConHora = (dia, hora, extra = {}) => ({
+  ...eventoDe({ estado: '' }),
+  match_date: dia,
+  match_time: hora,
+  ...extra
+});
+
+async function horaGuardada(quinielaId, jornada) {
+  return db.enQuiniela(quinielaId, async c => {
+    const { rows } = await c.query(
+      `SELECT p.api_date, p.fecha_proveedor, p.fecha_proveedor_desde
+         FROM partidos p JOIN jornadas j ON j.id = p.jornada_id
+        WHERE j.nombre = $1 ORDER BY p.orden`, [jornada]);
+    return rows[0];
+  });
+}
+
+test('⛔ cuando el proveedor da otra hora se ANOTA, y api_date NO se toca', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoConHora('2026-09-02', '20:00'),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const fila = await horaGuardada(q.id, 'J1');
+
+  assert.equal(fila.api_date, '2026-09-01 15:00',
+    '⛔ LO MÁS IMPORTANTE: nuestra hora sigue intacta');
+  assert.equal(fila.fecha_proveedor, '2026-09-02 20:00',
+    'y queda anotado qué dice el proveedor');
+  assert.ok(fila.fecha_proveedor_desde, 'y desde cuándo lo dice');
+});
+
+/*
+ * ⛔ EL CONTROL QUE DE VERDAD IMPORTA DEL UMBRAL.
+ *
+ * Si `fecha_proveedor_desde` se refrescara en cada ciclo, nunca llegaría a
+ * «llevar dos horas»: el reloj correría cada minuto y volvería a cero cada
+ * minuto, así que el aviso NO SALDRÍA JAMÁS. Y no habría forma de notarlo
+ * mirando la pantalla, porque un aviso que falta no se ve.
+ */
+test('la marca de «desde cuándo» no se reinicia en cada ciclo', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  const ciclo = () => sinc.ejecutarCiclo({
+    consultar: async () => eventoConHora('2026-09-02', '20:00'),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  await ciclo();
+  const primera = (await horaGuardada(q.id, 'J1')).fecha_proveedor_desde;
+
+  /* Se fuerza el segundo ciclo: el fixture no estaría «vencido» tan pronto. */
+  await db.consulta('UPDATE fixtures SET proxima_consulta = NULL');
+  await ciclo();
+  const segunda = (await horaGuardada(q.id, 'J1')).fecha_proveedor_desde;
+
+  assert.deepEqual(segunda, primera,
+    'tiene que conservar el momento en que EMPEZÓ la discrepancia');
+});
+
+test('cuando las horas vuelven a coincidir, el aviso se retira solo', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoConHora('2026-09-02', '20:00'),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+  assert.ok((await horaGuardada(q.id, 'J1')).fecha_proveedor,
+    'el control: primero tiene que haber aviso');
+
+  /* El proveedor se corrige, como pasó de verdad esa noche. */
+  await db.consulta('UPDATE fixtures SET proxima_consulta = NULL');
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoConHora('2026-09-01', '15:00'),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const fila = await horaGuardada(q.id, 'J1');
+  assert.equal(fila.fecha_proveedor, null, 'nadie tiene que cerrar el aviso a mano');
+  assert.equal(fila.fecha_proveedor_desde, null);
+});
+
+/*
+ * El umbral, visto desde donde se decide. Dos horas, porque esa noche el
+ * proveedor dio dos respuestas contrarias en quince minutos.
+ */
+test('el aviso no sale hasta que la discrepancia lleva dos horas', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  await sinc.ejecutarCiclo({
+    consultar: async () => eventoConHora('2026-09-02', '20:00'),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  /* Recién detectada: no se avisa, porque una lectura suelta miente. */
+  const recien = await jornadas.porNombre(q.id, 'J1');
+  assert.equal(recien.partidos[0].fechaProveedor, null,
+    'una discrepancia de hace un segundo no se enseña');
+
+  /*
+   * Se envejece la marca tres horas: ya aguantó bastante.
+   *
+   * ⚠️ DENTRO DE `enQuiniela`, no con `db.consulta` a secas. `partidos` lleva
+   * RLS por `app.quiniela_id`, así que sin contexto este UPDATE toca **cero
+   * filas en silencio** y la prueba falla como si el umbral no funcionara. Pasó
+   * al escribirla. La de arriba sobre `fixtures` sí puede ir suelta: esa tabla
+   * es la caché compartida y no lleva RLS.
+   */
+  await db.enQuiniela(q.id, async c => c.query(
+    "UPDATE partidos SET fecha_proveedor_desde = now() - interval '3 hours'"));
+
+  const vieja = await jornadas.porNombre(q.id, 'J1');
+  assert.equal(vieja.partidos[0].fechaProveedor, '2026-09-02 20:00',
+    'después de dos horas sí se enseña');
+  assert.ok(vieja.partidos[0].fechaProveedorDesde);
+});
+
+
+/*
+ * ============================================================================
+ * ⛔ EL PUNTO DE GUARDADO: QUE UN AVISO NO TUMBE LOS MARCADORES
+ * ============================================================================
+ *
+ * Las migraciones de este proyecto se corren A MANO en el editor de Neon, así
+ * que existe una ventana real en la que el código nuevo está desplegado y la
+ * migración 016 todavía no. Entonces las dos consultas del aviso fallan con
+ * «column does not exist».
+ *
+ * ⚠️ Y EN POSTGRESQL UN ERROR ABORTA LA TRANSACCIÓN ENTERA. Capturarlo en
+ * JavaScript no la resucita: todo lo siguiente responde «current transaction is
+ * aborted», que es el eco y no el fallo. Sin punto de guardado, ese error se
+ * llevaría por delante la escritura de los marcadores oficiales de todas las
+ * jornadas —el producto— por un aviso de ayuda.
+ *
+ * ⛔ LO QUE ESTA PRUEBA NO PUEDE HACER, y conviene decirlo: no puede quitar la
+ * columna para reproducir el caso exacto. El rol con el que corren las pruebas
+ * NO es dueño de las tablas, a propósito —un banco con más privilegios que
+ * producción da falsos verdes, §C, Entrada 034—, así que un `DROP COLUMN`
+ * responde «must be owner of table partidos».
+ *
+ * Lo que sí comprueba es la pieza de la que dependía todo y que era una
+ * suposición mía: que en este montaje un `ROLLBACK TO SAVEPOINT` deja la
+ * transacción VIVA después de un error, y que lo escrito antes sobrevive.
+ */
+test('⛔ tras un error, el punto de guardado deja la transacción viva', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  const resultado = await db.enQuiniela(q.id, async c => {
+    /* Algo bueno ANTES del fallo: tiene que sobrevivir. */
+    await c.query("UPDATE partidos SET api_status = 'antes'");
+
+    await c.query('SAVEPOINT prueba');
+    let fallo = null;
+    try {
+      /* La misma clase de error que una migración sin correr. */
+      await c.query('UPDATE partidos SET columna_que_no_existe = 1');
+    } catch (error) {
+      fallo = error.message;
+      await c.query('ROLLBACK TO SAVEPOINT prueba');
+    }
+
+    /*
+     * ⭐ LA LÍNEA QUE IMPORTA. Sin el punto de guardado, esto respondería
+     * «current transaction is aborted» y la prueba se caería aquí.
+     */
+    await c.query("UPDATE partidos SET api_status = 'despues'");
+
+    const { rows } = await c.query('SELECT api_status FROM partidos');
+    return { fallo, estado: rows[0].api_status };
+  });
+
+  assert.match(resultado.fallo, /columna_que_no_existe/,
+    'el control: el error tiene que haber ocurrido de verdad');
+  assert.equal(resultado.estado, 'despues',
+    'la transacción siguió viva y pudo escribir después del fallo');
+});

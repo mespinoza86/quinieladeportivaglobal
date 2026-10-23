@@ -116,7 +116,19 @@ test('los partidos vuelven con la forma que espera el frontend', async () => {
      * La comparación es EXACTA a propósito: es la forma que consume el
      * frontend, y un campo de más o de menos aquí se nota allí.
      */
-    apiRound: ''
+    apiRound: '',
+    /*
+     * Migración 016: la hora que dice el PROVEEDOR cuando no es la nuestra, y
+     * desde cuándo la dice. `null` las dos aquí porque coinciden —este partido
+     * no ha pasado por el sincronizador— y porque el aviso sólo sale cuando la
+     * discrepancia lleva más de dos horas.
+     *
+     * ⛔ Están en esta comparación exacta a propósito, igual que `apiRound`: si
+     * un día dejaran de viajar, el aviso de «el proveedor dice otra hora»
+     * desaparecería de la pantalla sin que nada fallara.
+     */
+    fechaProveedor: null,
+    fechaProveedorDesde: null
   });
 });
 
@@ -358,11 +370,112 @@ test('corregir la hora hacia adelante REABRE el partido que se había cerrado', 
   const cerrado = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
   assert.equal(partidoYaInicio(cerrado), true, 'con la hora mala está cerrado');
 
+  /*
+   * ⚠️ `reabrirConfirmado: true` desde que existe el pestillo (10 de octubre de
+   * 2026). Corregir una hora hacia adelante REABRE el pronóstico, y eso ya no
+   * se puede hacer de pasada: el guardado se niega si no se confirma. Aquí se
+   * confirma porque es justo lo que esta prueba quiere comprobar.
+   *
+   * Que esta prueba se pusiera roja al poner el pestillo fue la señal de que el
+   * pestillo funciona: antes esto se aplicaba sin preguntar nada.
+   */
   await jornadas.guardar(quiniela.id, 'J',
-    [conFixture('A', 'B', '111', '2099-01-09 15:00')]);
+    [conFixture('A', 'B', '111', '2099-01-09 15:00')], 0, 0, { reabrirConfirmado: true });
 
   const abierto = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
   assert.equal(partidoYaInicio(abierto), false, 'con la hora corregida vuelve a admitir pronóstico');
+});
+
+/* ==================== El pestillo ==================== */
+
+/*
+ * ============================================================================
+ * ⛔ UN PARTIDO CERRADO NO SE REABRE POR DESCUIDO
+ * ============================================================================
+ *
+ * El 10 de octubre de 2026 Puntarenas vs Alajuelense empezó y lo suspendieron
+ * por lluvia, con el 0-1 y sin saber si seguiría ese día, al siguiente o en
+ * noviembre. Cuando lo reprogramen, el proveedor cambiará la fecha, saldrá el
+ * aviso, y bastaría pulsar «poner la hora del proveedor» y Guardar para que los
+ * pronósticos se reabrieran **con medio partido jugado y el marcador visto**.
+ *
+ * Es el peligro que Marco vio el día antes, por la otra puerta: entonces lo
+ * habría reabierto el proveedor solo; ahora el administrador sin darse cuenta.
+ */
+test('⛔ un guardado que reabriría un partido cerrado se RECHAZA', async () => {
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-01 20:00')]);
+
+  await assert.rejects(
+    () => jornadas.guardar(quiniela.id, 'J',
+      [conFixture('A', 'B', '111', '2099-01-09 15:00')]),
+    error => {
+      assert.equal(error.status, 400, 'tiene que ser un 400, no un fallo del servidor');
+      assert.match(error.message, /REABRIR/i);
+      assert.match(error.message, /A vs B/, 'y nombrar el partido que se reabriría');
+      return true;
+    });
+
+  /*
+   * ⭐ Y NO APLICA NADA. Se lanza dentro de la transacción a propósito: un
+   * guardado a medias dejaría la jornada con unos partidos nuevos y otros no,
+   * que es peor que no guardar.
+   */
+  const tras = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
+  assert.equal(tras.apiDate, '2020-01-01 20:00', 'la hora vieja sigue intacta');
+});
+
+test('mover la hora de un partido cerrado SIN reabrirlo no pide confirmación', async () => {
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-01 20:00')]);
+
+  /*
+   * De un pasado a otro pasado: sigue cerrado antes y después, así que no hay
+   * nada que advertir. Sin este caso, el pestillo podría estar preguntando en
+   * CADA cambio de hora y la prueba de arriba pasaría igual.
+   */
+  const r = await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-02 18:00')]);
+
+  assert.equal(r.reabiertos, 0);
+  assert.equal(r.avisosRearmados, 1, 'el control: la hora sí cambió');
+});
+
+test('⭐ si el proveedor da el partido por jugado, no se puede reabrir ni confirmando', async () => {
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-01 20:00')]);
+
+  /* El proveedor lo da por terminado: eso manda sobre cualquier calendario. */
+  await db.enQuiniela(quiniela.id, async c => {
+    const { rows: [j] } = await c.query("SELECT id FROM jornadas WHERE nombre = 'J'");
+    const { rows: [p] } = await c.query('SELECT id FROM partidos WHERE jornada_id = $1', [j.id]);
+    const { rows: [ro] } = await c.query(
+      `INSERT INTO resultados_oficiales (quiniela_id, jornada_id) VALUES ($1, $2)
+       ON CONFLICT (quiniela_id, jornada_id) DO UPDATE SET jornada_id = EXCLUDED.jornada_id
+       RETURNING id`, [quiniela.id, j.id]);
+    await c.query(
+      `INSERT INTO resultados_oficiales_partidos
+         (quiniela_id, resultado_oficial_id, partido_id, marcador1, marcador2, estado, fecha, origen)
+       VALUES ($1, $2, $3, 2, 1, 'TC', '2020-01-01 20:00', 'api')`,
+      [quiniela.id, ro.id, p.id]);
+  });
+
+  /*
+   * ⭐ Ni siquiera confirmando: `partidoYaInicio` devuelve `true` con cualquier
+   * fecha cuando el estado oficial es TC, así que mover la hora no lo reabre.
+   * El pestillo no tiene que hacer nada aquí — y eso es lo que se comprueba.
+   */
+  const r = await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-01-09 15:00')]);
+
+  assert.equal(r.reabiertos, 0, 'no hay nada que reabrir: el partido se jugó');
+
+  const tras = (await jornadas.porNombre(quiniela.id, 'J')).partidos[0];
+  assert.equal(partidoYaInicio(tras, { estado: 'TC' }), true,
+    'y sigue cerrado aunque su hora esté en 2099');
 });
 
 /* ==================== La hora, validada ==================== */

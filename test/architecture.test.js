@@ -2793,3 +2793,41 @@ test('⛔ toda consulta de partidos lista tantas columnas como valores', () => {
       `un UPDATE de partidos asigna ${asignaciones.length} columnas pero llega hasta $${mayor}:\n  ${cuerpo.replace(/\s+/g, ' ').trim()}`);
   }
 });
+
+/*
+ * ============================================================================
+ * ⛔ UNA COLUMNA DE UNA MIGRACIÓN RECIENTE NO VA EN UN SELECT COMPARTIDO
+ * ============================================================================
+ *
+ * El 10 de octubre de 2026 se añadió `fecha_proveedor` (migración 016) a la
+ * lista de columnas de `partidosDe`, que es el camino de lectura que usan la
+ * portada, los marcadores oficiales, las dos tablas y el sincronizador.
+ *
+ * Las migraciones de este proyecto se corren A MANO en el editor de Neon. En
+ * cuanto el código llegó a una base sin migrar, **todo lo que lee partidos
+ * respondió 500 a la vez**: la portada, «Marcadores oficiales» y las dos
+ * clasificaciones. Un aviso de ayuda tumbó media aplicación.
+ *
+ * ⚠️ Y el aviso que se dio antes de desplegarlo fue EQUIVOCADO —«lo peor que
+ * pasa es que el aviso no funcione»—, porque el punto de guardado protegía la
+ * ESCRITURA y nadie se acordó de la LECTURA.
+ *
+ * La regla: esas columnas se leen con `SELECT *` —que no falla si no están— o
+ * no se leen. Lo que necesite saber si hay aviso puesto lo pregunta en el
+ * `WHERE` de su propio `UPDATE`, que sí está protegido.
+ */
+test('⛔ las columnas de la migración 016 no se nombran en ningún SELECT', () => {
+  /*
+   * Se buscan en las listas de columnas, no en todo el archivo: los `UPDATE`
+   * sí pueden nombrarlas, y los comentarios también.
+   */
+  const selects = fuenteSinComentarios.match(/SELECT[\s\S]*?FROM/gi) || [];
+
+  assert.ok(selects.length > 20, 'el control: tiene que haber encontrado los SELECT');
+
+  const culpables = selects.filter(s => /fecha_proveedor/.test(s));
+
+  assert.deepEqual(culpables, [],
+    'una columna de la migración 016 en un SELECT explícito rompe toda lectura '
+    + 'en una base sin migrar. Léela con SELECT * o no la leas.');
+});

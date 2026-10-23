@@ -679,6 +679,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     Queda: ${fechaLegible(partido.apiDate)}
                 </p>
 
+                <!--
+                  ⛔ EL PROVEEDOR DICE OTRA HORA. SE AVISA, NO SE APLICA.
+
+                  Decisión de Marco, 9 de octubre de 2026: aplicar la hora del
+                  proveedor sola «abriría la posibilidad de cambiar resultados
+                  en un partido que ya se está jugando». Esa noche el proveedor
+                  afirmó durante 70 minutos que un partido en el minuto 71 era
+                  al día siguiente.
+
+                  El botón sólo RELLENA el campo de arriba; sigue haciendo falta
+                  Guardar. Así la hora nunca cambia sin que alguien lo decida.
+                -->
+                ${partido.fechaProveedor ? html`
+                <div class="aviso-fecha-proveedor">
+                    <p>
+                        ⚠️ El proveedor dice que este partido es el
+                        <strong>${fechaLegible(partido.fechaProveedor)}</strong>,
+                        y lleva más de dos horas diciéndolo.
+                    </p>
+                    <button type="button" class="secondary-button usarFechaProveedor"
+                            data-indice="${indice}"
+                            data-fecha="${partido.fechaProveedor}">
+                        Poner la hora del proveedor
+                    </button>
+                </div>` : ''}
+
                 <label class="checkbox-card">
                     <input
                         type="checkbox"
@@ -713,6 +739,28 @@ document.addEventListener('DOMContentLoaded', () => {
          * `input` y no `change`: así la línea de «Queda:» sigue al selector
          * mientras se toca, en vez de esperar a que pierda el foco.
          */
+        /*
+         * ⚠️ Dentro de `renderizarJornada`, como los demás: esta función
+         * repinta la lista entera y los oyentes nacen y mueren con las
+         * tarjetas. Fuera, se acumularían.
+         *
+         * ⛔ Y esto NO guarda: rellena el campo y dispara su `input` para que
+         * la línea de «Queda:» se actualice. Guardar sigue siendo un acto
+         * aparte, que es justo lo que evita que la hora del proveedor entre
+         * sola.
+         */
+        partidosJornadaContainer.querySelectorAll('.usarFechaProveedor').forEach(boton => {
+            boton.addEventListener('click', () => {
+                const indice = Number(boton.dataset.indice);
+                const campo = partidosJornadaContainer.querySelector(`#horaPartido${indice}`);
+                if (!campo) return;
+
+                campo.value = horaParaSelector(boton.dataset.fecha);
+                campo.dispatchEvent(new Event('input', { bubbles: true }));
+                avisar('Hora puesta en el campo. Dale a Guardar para aplicarla.');
+            });
+        });
+
         partidosJornadaContainer.querySelectorAll('.horaPartidoInput').forEach(campo => {
             campo.addEventListener('input', () => {
                 const indice = Number(campo.dataset.indice);
@@ -752,11 +800,45 @@ document.addEventListener('DOMContentLoaded', () => {
         guardarJornadaButton.disabled = true;
 
         try {
-            const respuesta = await fetch('/api/jornadas', {
+            /*
+             * ⛔ EL PESTILLO, DEL LADO DE LA PANTALLA.
+             *
+             * El servidor se niega a aplicar un guardado que REABRIRÍA el
+             * pronóstico de un partido ya cerrado, y responde 400 con el motivo
+             * y los partidos nombrados. Aquí se le enseña ese motivo y, sólo si
+             * la persona dice que sí, se reenvía con la confirmación.
+             *
+             * ⚠️ La decisión la hace cumplir el SERVIDOR. Esto es la cortesía
+             * de preguntarlo con las palabras completas; quitar este `confirm`
+             * no abriría el agujero, sólo haría imposible reabrir desde aquí.
+             */
+            const enviar = reabrirConfirmado => fetch('/api/jornadas', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nombre, partidos: partidosDeLaJornada })
+                body: JSON.stringify({
+                    nombre,
+                    partidos: partidosDeLaJornada,
+                    ...(reabrirConfirmado ? { reabrirConfirmado: true } : {})
+                })
             });
+
+            let respuesta = await enviar(false);
+
+            if (!respuesta.ok) {
+                const datos = await respuesta.json().catch(() => ({}));
+                const motivo = datos.error || '';
+
+                if (/REABRIR/i.test(motivo)) {
+                    if (!confirm(motivo)) {
+                        avisar('No se guardó nada. El partido sigue cerrado.');
+                        return;
+                    }
+                    respuesta = await enviar(true);
+                } else {
+                    avisar(motivo || 'No se pudo guardar la jornada.', true);
+                    return;
+                }
+            }
 
             if (!respuesta.ok) {
                 const datos = await respuesta.json().catch(() => ({}));
@@ -776,6 +858,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 avisar('Jornada «' + nombre + '» guardada. Se retiraron '
                     + datos.partidosRetirados + ' partido(s) y con ellos se borraron '
                     + datos.pronosticosBorrados + ' pronóstico(s).', true);
+            } else if (datos.reabiertos > 0) {
+                /*
+                 * Reabrir un pronóstico cerrado se dice con todas las letras,
+                 * aunque se haya confirmado: es lo más grave que puede hacer
+                 * esta pantalla.
+                 */
+                avisar('Jornada «' + nombre + '» guardada. ⚠️ Se REABRIÓ el pronóstico de '
+                    + datos.reabiertos + ' partido(s) que estaban cerrados.', true);
             } else if (datos.avisosRearmados > 0) {
                 /*
                  * ⚠️ Se dice, y no es un detalle: cambiar la hora vuelve a armar

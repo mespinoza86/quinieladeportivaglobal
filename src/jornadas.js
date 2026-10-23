@@ -41,10 +41,35 @@
 
 const db = require('./db');
 const pronosticos = require('./pronosticos');
-const { parseFechaPartidoCostaRica } = require('./fechas');
+const { parseFechaPartidoCostaRica, partidoYaInicio } = require('./fechas');
+/* `validacion` es puro y no importa nada: no hay ciclo posible. */
+const { errorDeValidacion } = require('./validacion');
 
 /** De columnas de la base a la forma que espera el frontend. Sin tocar nada. */
-function partidoPublico(fila) {
+/*
+ * Cuánto tiene que aguantar una discrepancia de hora antes de avisar.
+ *
+ * ⛔ NO ES UN NÚMERO AL AZAR. El 9 de octubre de 2026 el proveedor dio dos
+ * respuestas CONTRARIAS para el mismo partido en quince minutos: primero que
+ * era al día siguiente y no había empezado, luego que iba 1-1 en el minuto 71.
+ * Avisar con la primera lectura habría sido avisar de algo falso.
+ *
+ * Dos horas deja fuera ese tipo de ruido y llega de sobra para lo que el aviso
+ * sirve: una reprogramación de verdad se decide con días de antelación, y quien
+ * la ve es el administrador cuando abre a armar la jornada, no en tiempo real.
+ */
+const HORAS_PARA_AVISAR_FECHA = 2;
+
+function partidoPublico(fila, ahora = new Date()) {
+  /*
+   * ⚠️ El aviso se calcula AQUÍ, en el servidor, y viaja ya decidido. Hacerlo
+   * en el navegador obligaría a mandar el umbral y a repetir la comparación de
+   * fechas en otro sitio — dos verdades sobre lo mismo.
+   */
+  const desde = fila.fecha_proveedor_desde ? new Date(fila.fecha_proveedor_desde) : null;
+  const aguanta = desde
+    && (ahora - desde) >= HORAS_PARA_AVISAR_FECHA * 60 * 60 * 1000;
+
   return {
     equipo1: fila.equipo1,
     equipo2: fila.equipo2,
@@ -55,7 +80,16 @@ function partidoPublico(fila) {
     apiLeagueId: fila.api_league_id,
     apiDate: fila.api_date,
     apiStatus: fila.api_status,
-    apiRound: fila.api_round
+    apiRound: fila.api_round,
+    /*
+     * La hora que dice el proveedor cuando no es la nuestra (migración 016).
+     * `null` = coinciden, o la discrepancia es demasiado reciente para fiarse.
+     *
+     * ⛔ Esto NO se aplica solo en ninguna parte. Es información para que el
+     * administrador decida con el campo de corrección manual.
+     */
+    fechaProveedor: aguanta ? (fila.fecha_proveedor || null) : null,
+    fechaProveedorDesde: aguanta ? fila.fecha_proveedor_desde : null
   };
 }
 
@@ -142,7 +176,7 @@ async function listar(quinielaId) {
 }
 
 /** Una jornada con sus partidos, o `null`. */
-async function porNombre(quinielaId, nombre) {
+async function porNombre(quinielaId, nombre, ahora = new Date()) {
   return db.enQuiniela(quinielaId, async c => {
     const { rows: [j] } = await c.query(
       'SELECT id, nombre FROM jornadas WHERE nombre = $1', [nombre]);
@@ -150,7 +184,20 @@ async function porNombre(quinielaId, nombre) {
 
     const { rows } = await c.query(
       'SELECT * FROM partidos WHERE jornada_id = $1 ORDER BY orden', [j.id]);
-    return { nombre: j.nombre, partidos: rows.map(partidoPublico) };
+    /*
+     * ⛔ `rows.map(f => partidoPublico(f, ahora))`, NO `rows.map(partidoPublico)`.
+     *
+     * `Array.prototype.map` llama con `(elemento, índice, arreglo)`, así que la
+     * forma corta le pasaba **el índice** como segundo argumento. Desde que
+     * `partidoPublico` recibe `ahora`, eso significaba `ahora = 0` para el
+     * primer partido, `1` para el segundo… y la comparación «¿lleva más de dos
+     * horas?» salía siempre falsa.
+     *
+     * ⚠️ El aviso de la hora del proveedor NO SE HABRÍA ENSEÑADO NUNCA, y sin
+     * dar ningún error: un aviso que falta no se ve. Lo cazó la prueba del
+     * umbral, no la lectura del código.
+     */
+    return { nombre: j.nombre, partidos: rows.map(f => partidoPublico(f, ahora)) };
   });
 }
 
@@ -243,7 +290,8 @@ function ordenarParaGuardar(partidos = [], guardados = []) {
  * ⚠️ **Reconcilia por posición**, no borra y reinserta. Ver la cabecera del
  * módulo: reinsertar se llevaría los pronósticos por delante en cascada.
  */
-async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0) {
+async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0,
+  { reabrirConfirmado = false, ahora = new Date() } = {}) {
   return db.enQuiniela(quinielaId, async c => {
     /*
      * ⚠️ `precio` sólo entra en el INSERT: el `DO UPDATE` no lo toca a
@@ -267,7 +315,8 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
      * avisos. Ver `rearmarAvisos` al final de esta función.
      */
     const { rows: existentes } = await c.query(
-      'SELECT id, orden, api_fixture_id, api_date FROM partidos WHERE jornada_id = $1 ORDER BY orden',
+      `SELECT id, orden, api_fixture_id, api_date, equipo1, equipo2
+         FROM partidos WHERE jornada_id = $1 ORDER BY orden`,
       [j.id]);
 
     /*
@@ -275,6 +324,74 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
      * se rearman de una vez al final, cuando ya está todo escrito.
      */
     const cambiaronDeHora = [];
+
+    /*
+     * ============================================================
+     * ⛔ EL PESTILLO: UN PARTIDO CERRADO NO SE REABRE POR DESCUIDO
+     * ============================================================
+     *
+     * El 10 de octubre de 2026 Puntarenas vs Alajuelense **empezó y lo
+     * suspendieron por lluvia** con el 0-1. Nadie sabía si seguiría ese día, al
+     * siguiente o en noviembre. Cuando lo reprogramen, el proveedor cambiará la
+     * fecha, saldrá el aviso, y bastaría pulsar «poner la hora del proveedor» y
+     * Guardar para que **los pronósticos de ese partido se reabrieran** — con
+     * medio partido jugado y el marcador a la vista de todos.
+     *
+     * Es el mismo peligro que Marco vio el día anterior, por la otra puerta:
+     * entonces lo habría reabierto el proveedor solo; ahora lo reabriría el
+     * administrador sin darse cuenta, con buena intención.
+     *
+     * ⭐ SE COMPRUEBA CON LA HORA VIEJA, NO HACE FALTA COLUMNA NI MIGRACIÓN.
+     * «¿Estaba cerrado antes de este guardado y queda abierto después?» se
+     * responde comparando las dos horas con la misma regla de siempre. Un
+     * `cerrado_en` guardado habría sido estado nuevo que mantener al día.
+     *
+     * ⭐ Y EL ESTADO DEL PROVEEDOR MANDA: si dice que el partido está en juego o
+     * terminado, `partidoYaInicio` devuelve `true` con cualquier fecha, así que
+     * un partido realmente vivo **no se puede reabrir ni confirmando**. El
+     * pestillo sólo pregunta cuando el cierre lo decidía el calendario.
+     */
+    const reabren = [];
+
+    /*
+     * El estado oficial de cada partido, que es lo que puede mandar sobre la
+     * fecha. Una consulta para toda la jornada.
+     *
+     * ⚠️ Se lee aquí con SQL en vez de importar `oficiales`, que importa
+     * `pronosticos`, que importa esto: el ciclo de requires no compensa por dos
+     * columnas.
+     */
+    const { rows: estados } = await c.query(
+      `SELECT rop.partido_id, rop.estado
+         FROM resultados_oficiales_partidos rop
+         JOIN resultados_oficiales ro ON ro.id = rop.resultado_oficial_id
+        WHERE ro.jornada_id = $1`,
+      [j.id]);
+    const oficialDe = new Map(estados.map(f => [f.partido_id, { estado: f.estado }]));
+
+    /**
+     * ¿Este guardado pasa un partido de CERRADO a ABIERTO?
+     *
+     * ⚠️ Las dos preguntas con la MISMA función, `partidoYaInicio`, que es la
+     * única regla del cierre que hay en el proyecto. Escribir aquí una
+     * comparación de fechas propia habría sido una segunda respuesta a «¿está
+     * cerrado?», y hay un centinela que lo impide a propósito.
+     */
+    function anotarSiReabre(fila, entrante) {
+      const oficial = oficialDe.get(fila.id) || null;
+
+      const cerradoAntes = partidoYaInicio({ api_date: fila.api_date }, oficial, ahora);
+      const cerradoDespues = partidoYaInicio({ api_date: entrante.apiDate }, oficial, ahora);
+
+      if (cerradoAntes && !cerradoDespues) {
+        reabren.push({
+          equipo1: fila.equipo1 ?? entrante.equipo1,
+          equipo2: fila.equipo2 ?? entrante.equipo2,
+          antes: fila.api_date,
+          despues: entrante.apiDate
+        });
+      }
+    }
 
     /*
      * ============================================================
@@ -335,6 +452,7 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
            */
           if ((fila.api_date ?? '') !== (partidos[i].apiDate ?? '')) {
             cambiaronDeHora.push(fila.id);
+            anotarSiReabre(fila, partidos[i]);
           }
 
           await c.query(
@@ -388,6 +506,7 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
           /* Misma regla que en el camino por identidad, y por lo mismo. */
           if ((existentes[i].api_date ?? '') !== (partidos[i].apiDate ?? '')) {
             cambiaronDeHora.push(existentes[i].id);
+            anotarSiReabre(existentes[i], partidos[i]);
           }
 
           await c.query(
@@ -479,6 +598,34 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
      * después, y equivocarse por exceso aquí sólo puede hacer que el aviso
      * salga a su hora buena.
      */
+    /*
+     * ============================================================
+     * ⛔ AQUÍ SE PLANTA EL PESTILLO
+     * ============================================================
+     *
+     * Se lanza DENTRO de la transacción a propósito: eso la deshace entera, así
+     * que un guardado que reabriría un partido cerrado **no aplica nada**, ni
+     * los cambios buenos que llevara al lado. A medias sería peor que no hacer
+     * nada: quedaría una jornada con unos partidos nuevos y otros no.
+     *
+     * ⚠️ Y se comprueba en el SERVIDOR, no sólo con un `confirm()` en la
+     * pantalla. Un aviso del navegador protege al que usa la pantalla; esto
+     * protege la regla, venga la petición de donde venga.
+     *
+     * El mensaje nombra los partidos y las dos horas: quien decide tiene que
+     * poder ver qué va a reabrir, no sólo que algo se reabre.
+     */
+    if (reabren.length && !reabrirConfirmado) {
+      const lista = reabren
+        .map(r => `«${r.equipo1} vs ${r.equipo2}» (de ${r.antes || 'sin hora'} a ${r.despues || 'sin hora'})`)
+        .join('; ');
+
+      throw errorDeValidacion(
+        `Este cambio REABRIRÍA el pronóstico de ${reabren.length} partido(s) que ya estaban `
+        + `cerrados: ${lista}. Si el partido ya se jugó o se está jugando, quien no haya `
+        + 'llenado podría hacerlo viendo el marcador. Confirma si de verdad quieres reabrirlo.');
+    }
+
     let avisosRearmados = 0;
 
     if (cambiaronDeHora.length) {
@@ -493,7 +640,11 @@ async function guardar(quinielaId, nombre, partidos, precio = 0, alAcumulado = 0
       await c.query('UPDATE jornadas SET avisado_2h_en = NULL WHERE id = $1', [j.id]);
     }
 
-    return { nombre, partidosReemplazados, pronosticosBorrados, avisosRearmados };
+    return {
+      nombre, partidosReemplazados, pronosticosBorrados, avisosRearmados,
+      /* Cuántos se reabrieron a sabiendas, para poder decirlo al guardar. */
+      reabiertos: reabren.length
+    };
   });
 }
 

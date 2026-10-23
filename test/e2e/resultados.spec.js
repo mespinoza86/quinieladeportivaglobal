@@ -244,3 +244,68 @@ test('los resultados de trivias muestran quién respondió qué', async ({ page 
   await expect(tarjetas).toContainText('¿Ambos equipos anotan?');
   await expect(tarjetas).not.toContainText('<div');
 });
+
+/*
+ * ============================================================================
+ * ⛔ «EL PROVEEDOR TODAVÍA NO REPORTA ESTE PARTIDO»
+ * ============================================================================
+ *
+ * Marco, 9 de octubre de 2026: estaba viendo Sporting vs Cartaginés por
+ * televisión y esta pantalla le enseñaba un hueco gris, sin marcador y sin una
+ * palabra. Tuvo que preguntar si el fallo era del API o nuestro.
+ *
+ * Era del proveedor —durante unos 70 minutos dijo que el partido era al día
+ * siguiente— y la aplicación hizo lo correcto: no inventarse un marcador. Lo
+ * que faltaba era DECIRLO, y esto comprueba que se dice en la pantalla.
+ */
+test('un partido que ya empezó y que el proveedor no reporta lo explica en pantalla', async ({ page }) => {
+  const datos = await registrarse(page, 'res_esp');
+  await crearQuiniela(page, 'Quiniela Esperando');
+  await activarAdminMode(page, datos.password);
+
+  const nombre = `Jornada Esp ${Date.now().toString(36)}`;
+
+  /*
+   * Un partido cuya hora YA PASÓ y del que nadie ha cargado resultado: es
+   * exactamente el estado en el que Marco se quedó mirando el hueco.
+   *
+   * ⚠️ Y uno en el futuro al lado, que es el control: si el aviso saliera en
+   * las dos tarjetas, esta prueba pasaría igual mirando sólo la primera.
+   */
+  const creada = await page.evaluate(async ([jornada]) => {
+    const r = await fetch('/api/jornadas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: jornada,
+        partidos: [
+          { equipo1: 'YaEmpezo', equipo2: 'Rival1', apiFixtureId: '9301', apiDate: '2020-01-01 15:00' },
+          { equipo1: 'EsManana', equipo2: 'Rival2', apiFixtureId: '9302', apiDate: '2099-01-01 15:00' }
+        ]
+      })
+    });
+    return { ok: r.ok, cuerpo: await r.json() };
+  }, [nombre]);
+  expect(creada.ok, JSON.stringify(creada.cuerpo)).toBe(true);
+
+  await page.goto('/ver-resultados-oficiales.html');
+  await page.locator('#jornadaSelect').selectOption({ label: nombre });
+  await page.locator('#searchResultadosOficialesButton').click();
+
+  const contenedor = page.locator('#resultadosOficialesContainer');
+  await expect(contenedor).toContainText('YaEmpezo', { timeout: 10_000 });
+
+  /* El aviso sale UNA vez: en el partido que ya empezó, no en el de mañana. */
+  await expect(contenedor.locator('.official-esperando')).toHaveCount(1);
+  await expect(contenedor.locator('.official-esperando'))
+    .toContainText('todavía no lo reporta como iniciado');
+
+  /*
+   * ⭐ Y en la tarjeta correcta. Sin esto, el aviso podría estar colgado del
+   * partido equivocado y la cuenta de arriba seguiría dando 1.
+   */
+  const tarjetas = contenedor.locator('.match-card');
+  await expect(tarjetas).toHaveCount(2);
+  await expect(tarjetas.filter({ hasText: 'YaEmpezo' }).locator('.official-esperando')).toHaveCount(1);
+  await expect(tarjetas.filter({ hasText: 'EsManana' }).locator('.official-esperando')).toHaveCount(0);
+});

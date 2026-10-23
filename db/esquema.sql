@@ -365,6 +365,21 @@ CREATE TABLE partidos (
    */
   api_round      text NOT NULL DEFAULT '',
   /*
+   * La hora que dice el PROVEEDOR cuando no es la nuestra, y desde cuándo la
+   * dice (migracion 016). NULL las dos = coinciden.
+   *
+   * ⛔ NO SE APLICA NUNCA SOLA. El 9 de octubre de 2026 el proveedor afirmo
+   * durante 70 minutos que un partido que se estaba jugando era al dia
+   * siguiente: aplicar eso habria REABIERTO sus pronosticos en el minuto 71,
+   * con el marcador en pantalla. Se guarda, se avisa, y decide el
+   * administrador con el campo de correccion manual.
+   *
+   * `_desde` existe para no avisar por una lectura pasajera: esa noche el
+   * proveedor dio dos respuestas contrarias en quince minutos.
+   */
+  fecha_proveedor       text,
+  fecha_proveedor_desde timestamptz,
+  /*
    * Cuando salieron al grupo los pronosticos de este partido (migracion 008).
    * NULL = todavia no. Es lo unico que impide que la pantalla de compartir
    * vuelva a proponer lo ya enviado despues de un reinicio de Render.

@@ -90,6 +90,32 @@ function estadoPartidoHTML(partido) {
                     </div>
                 </div>
 
+                <!--
+                  ⛔ POR QUÉ ESTÁ VACÍO, DICHO EN VOZ ALTA.
+
+                  El 9 de octubre de 2026 Marco estaba viendo un partido por
+                  televisión y aquí veía un hueco gris sin marcador y sin
+                  explicación. Tuvo que preguntar si el fallo era del API o
+                  nuestro. Era del proveedor: durante unos 70 minutos su
+                  respuesta decía que ese partido era al día siguiente y que no
+                  había empezado.
+
+                  ⭐ Esto no cambia nada de lo que hace la pantalla: pone
+                  palabras a lo que el hueco ya significaba. Lo decide el
+                  servidor con «esperandoProveedor», que usa la MISMA regla del
+                  cierre y no una copia.
+
+                  ⚠️ Y sin acentos graves en este comentario: vive DENTRO de una
+                  plantilla de plantilla, así que un acento grave la cierra y
+                  rompe el archivo entero. Pasó al escribirlo.
+                -->
+                ${partido.esperandoProveedor ? html`
+                <p class="helper-text official-esperando">
+                    Según la hora de este partido ya debería haber empezado, pero
+                    el proveedor todavía no lo reporta como iniciado. En cuanto lo
+                    haga, el marcador aparece solo.
+                </p>` : ''}
+
             </div>
             `).join('');
         } else {

@@ -56,8 +56,8 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '669'],
-  ['¿Cuántas de navegador?',               '228'],
+  ['¿Cuántas pruebas rápidas?',            '681'],
+  ['¿Cuántas de navegador?',               '232'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
   ['¿Qué hace `liga-con-pais.js`?',        'liga-con-pais.js'],
@@ -105,7 +105,22 @@ const PREGUNTAS = [
    * repositorio, y sin esta línea el de mañana no sabe por qué están ahí ni
    * cuál es el bueno.
    */
-  ['¿Se dice qué es `conversacion.md`?',   'conversacion.md', 'viva']
+  ['¿Se dice qué es `conversacion.md`?',   'conversacion.md', 'viva'],
+  /*
+   * Lo de las entradas 123-125. Las tres primeras van atadas a la parte viva
+   * porque describen lo que la aplicación HACE hoy, y eso es lo que se lee al
+   * retomar. Las otras dos son hallazgos: valen contados en su entrada.
+   */
+  ['¿Se explica el aviso del proveedor?',  'todavía no reporta', 'viva'],
+  ['¿Se explica el pestillo?',             'pestillo', 'viva'],
+  ['¿Se avisa de que falta probarlo?',     'SIN PROBAR A MANO', 'viva'],
+  ['¿Está el 500 que tumbó las pantallas?', 'partidosDe'],
+  ['¿Está lo de «Interrupted»?',           'Interrupted'],
+  /*
+   * ⚠️ Y el aviso de las migraciones a mano: olvidarlo ya costó cuatro
+   * pantallas caídas. Quien retome tiene que encontrarlo sin leerse la 124.
+   */
+  ['¿Se avisa de que las migraciones van a mano?', 'A MANO', 'viva']
 ];
 
 /*
@@ -134,9 +149,19 @@ const NO_DEBE_QUEDAR = [
    * puesto el guion en rojo por un dato bueno — el error contrario, y el que
    * acaba con alguien borrando la comprobación.
    */
-  ['661 pruebas',  'las rápidas pasaron a 669 (121)'],
-  ['224 de navegador', 'las de navegador pasaron a 228 (121)'],
-  ['661 + 224',    'la suma de antes de la entrada 121']
+  ['661 pruebas',  'las rápidas pasaron a 669 y luego a 681'],
+  ['224 de navegador', 'las de navegador pasaron a 228 y luego a 232'],
+  ['661 + 224',    'la suma de antes de la entrada 121'],
+  /*
+   * Las de la tanda del 9-10 de octubre. El 22 quedaron SEIS menciones viejas
+   * repartidas por cuatro apartados, otra vez, y una de ellas era un número que
+   * escribí a ojo —«234»— en vez de leerlo de la corrida. De ahí que el valor
+   * viejo Y el inventado estén los dos aquí.
+   */
+  ['669 pruebas',  'las rápidas pasaron a 681 (125)'],
+  ['228 de navegador', 'las de navegador pasaron a 232 (125)'],
+  ['669 + 228',    'la suma de antes de la entrada 125'],
+  ['234 de navegador', 'nunca fueron 234: se escribió a ojo antes de leer la corrida']
 ];
 
 let fallos = 0;

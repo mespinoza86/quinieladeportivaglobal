@@ -960,6 +960,71 @@ test('⛔ `?jornada=` devuelve UNA jornada, no todas', async () => {
   assert.equal(ninguna.body.length, 0);
 });
 
+/*
+ * ============================================================================
+ * ⛔ «EL PROVEEDOR TODAVÍA NO REPORTA ESTE PARTIDO»
+ * ============================================================================
+ *
+ * Marco, 9 de octubre de 2026: estaba viendo Sporting vs Cartaginés por
+ * televisión y «Resultados oficiales» le enseñaba un hueco gris, sin marcador y
+ * sin una palabra. Tuvo que preguntar si el fallo era del API o nuestro.
+ *
+ * Era del proveedor —durante unos 70 minutos dijo que el partido era al día
+ * siguiente—, y la aplicación hizo lo correcto: no inventarse un marcador. Lo
+ * que faltaba era DECIRLO.
+ *
+ * ⚠️ Se prueba en los dos sentidos. Una bandera que valiera siempre `true`
+ * pondría ese aviso en todas las tarjetas, también en las que ya tienen
+ * marcador, y pasaría una prueba que sólo mirara el caso positivo.
+ */
+test('un partido que ya empezó y que el proveedor no reporta lo dice; los demás no', async () => {
+  const jefe = await admin('jefe');
+
+  /*
+   * Tres partidos con la misma jornada y tres situaciones distintas:
+   *   · uno cuya hora ya pasó y del que no hay noticias  → tiene que avisar
+   *   · uno cuya hora ya pasó y que SÍ tiene marcador    → no avisa
+   *   · uno en el futuro                                  → no avisa
+   */
+  /*
+   * ⚠️ TRES HORAS DISTINTAS, Y NO ES CAPRICHO.
+   *
+   * Al crear una jornada los partidos se REORDENAN por hora de inicio, y a
+   * igualdad de hora el desempate es **alfabético por el equipo local**. La
+   * primera versión de esta prueba les puso la misma hora a dos, «ConMarcador»
+   * ganó el desempate, y el marcador del índice 1 se lo acabó llevando
+   * «SinNoticias»: la prueba fallaba por una suposición mía sobre el orden, no
+   * por el código. Con horas distintas el orden es el que se ve.
+   */
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'JAviso',
+    partidos: [
+      partido('SinNoticias', 'Rival1', { apiFixtureId: '9101', apiDate: '2020-01-01 10:00' }),
+      partido('ConMarcador', 'Rival2', { apiFixtureId: '9102', apiDate: '2020-01-01 12:00' }),
+      partido('Futuro', 'Rival3', { apiFixtureId: '9103', apiDate: '2099-01-01 15:00' })
+    ]
+  });
+
+  /* Sólo al segundo se le carga marcador: eso lo deja en estado TC. */
+  await jefe.agente.post('/api/resultados-oficiales').send({
+    jornada: 'JAviso',
+    resultados: [{}, { marcador1: 2, marcador2: 1 }, {}]
+  });
+
+  const res = await jefe.agente.get('/api/resultados-oficiales?jornada=JAviso');
+  assert.equal(res.status, 200);
+
+  const porEquipo = {};
+  for (const p of res.body[0].partidos) porEquipo[p.equipo1] = p;
+
+  assert.equal(porEquipo.SinNoticias.esperandoProveedor, true,
+    'su hora pasó y nadie lo reporta: hay que decirlo');
+  assert.equal(porEquipo.ConMarcador.esperandoProveedor, false,
+    'con marcador no hay nada que esperar');
+  assert.equal(porEquipo.Futuro.esperandoProveedor, false,
+    'un partido que aún no empieza no está esperando a nadie');
+});
+
 test('⚠️ el comodín que sale del API es el del PARTIDO, no el del formulario', async () => {
   const jefe = await admin('jefe');
   await jefe.agente.post('/api/jornadas').send({
@@ -5248,4 +5313,104 @@ test('el precio por defecto se valida: al acumulado no puede pasarse', async () 
   const bueno = await jefe.agente.patch('/api/quiniela-actual/configuracion')
     .send({ precioPorDefecto: { precio: 2000, alAcumulado: 1000 } });
   assert.equal(bueno.status, 200);
+});
+
+/*
+ * ⛔ UN PARTIDO INTERRUMPIDO NO «ESTÁ SIN REPORTAR».
+ *
+ * Caso real de Marco, 10 de octubre de 2026: Puntarenas vs Alajuelense empezó y
+ * lo suspendieron por lluvia. El proveedor respondía `match_status:
+ * "Interrupted"` con el marcador 0-1, pero «Interrupted» es un estado que
+ * `obtenerEstadoPartido` no conoce y se guardaba como PROGRAMADO.
+ *
+ * Resultado: la tarjeta enseñaba **«0 - 1» y debajo «el proveedor todavía no lo
+ * reporta como iniciado»**. Las dos cosas a la vez. El aviso que se acababa de
+ * añadir para explicar un hueco acabó contradiciendo al marcador que tenía al
+ * lado.
+ */
+test('un partido con marcador NO dice que el proveedor no lo reporta', async () => {
+  const jefe = await admin('jefe');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'JLluvia',
+    partidos: [
+      partido('Interrumpido', 'Rival1', { apiFixtureId: '9401', apiDate: '2020-01-01 10:00' }),
+      partido('SinNada', 'Rival2', { apiFixtureId: '9402', apiDate: '2020-01-01 12:00' })
+    ]
+  });
+
+  /*
+   * Al primero se le pone marcador pero NO se marca como terminado: es el
+   * estado de un partido interrumpido, con resultado parcial y sin cerrar.
+   */
+  await jefe.agente.post('/api/resultados-oficiales').send({
+    jornada: 'JLluvia',
+    resultados: [{ marcador1: 0, marcador2: 1 }, {}]
+  });
+
+  const res = await jefe.agente.get('/api/resultados-oficiales?jornada=JLluvia');
+  const porEquipo = {};
+  for (const p of res.body[0].partidos) porEquipo[p.equipo1] = p;
+
+  assert.equal(porEquipo.Interrumpido.marcador1, 0, 'el control: tiene marcador');
+  assert.equal(porEquipo.Interrumpido.esperandoProveedor, false,
+    'con marcador en pantalla no se puede decir que el proveedor no lo reporta');
+
+  assert.equal(porEquipo.SinNada.esperandoProveedor, true,
+    'y el que de verdad no tiene nada sigue avisando');
+});
+
+/*
+ * ⛔ EL PESTILLO, POR LA RUTA.
+ *
+ * Las pruebas de `dominio.test.js` cubren el módulo. Esto cubre lo otro: que el
+ * 400 sale por HTTP con su motivo, y que `reabrirConfirmado` sólo cuenta cuando
+ * llega como `true` de verdad.
+ *
+ * ⚠️ Es la misma lección que ya se pagó con `apiRound`: una regla perfecta en
+ * un módulo que la ruta no conecta no protege nada.
+ */
+test('reabrir un partido cerrado exige confirmación explícita por la ruta', async () => {
+  const jefe = await admin('jefe');
+
+  const crear = apiDate => jefe.agente.post('/api/jornadas').send({
+    nombre: 'JPestillo',
+    partidos: [partido('A', 'B', { apiFixtureId: '9501', apiDate })]
+  });
+
+  await crear('2020-01-01 20:00');
+
+  /* Sin confirmar: 400, y nada cambia. */
+  const sin = await crear('2099-01-09 15:00');
+  assert.equal(sin.status, 400);
+  assert.match(sin.body.error, /REABRIR/i);
+  assert.match(sin.body.error, /A vs B/);
+
+  const intacta = await jefe.agente.get('/api/jornadas');
+  const j1 = intacta.body.find(x => x.nombre === 'JPestillo');
+  assert.equal(j1.partidos[0].apiDate, '2020-01-01 20:00', 'no debe haber aplicado nada');
+
+  /*
+   * ⚠️ Un «false» de texto NO es una confirmación. Es el tipo de valor que
+   * llega de un formulario mal armado, y aceptarlo abriría el agujero entero.
+   */
+  const falsete = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'JPestillo',
+    partidos: [partido('A', 'B', { apiFixtureId: '9501', apiDate: '2099-01-09 15:00' })],
+    reabrirConfirmado: 'false'
+  });
+  assert.equal(falsete.status, 400, '«false» como texto no puede valer por un sí');
+
+  /* Confirmando de verdad: se aplica, y la respuesta lo dice. */
+  const con = await jefe.agente.post('/api/jornadas').send({
+    nombre: 'JPestillo',
+    partidos: [partido('A', 'B', { apiFixtureId: '9501', apiDate: '2099-01-09 15:00' })],
+    reabrirConfirmado: true
+  });
+  assert.equal(con.status, 200);
+  assert.equal(con.body.reabiertos, 1, 'la respuesta tiene que decir que se reabrió uno');
+
+  const tras = await jefe.agente.get('/api/jornadas');
+  const j2 = tras.body.find(x => x.nombre === 'JPestillo');
+  assert.equal(j2.partidos[0].apiDate, '2099-01-09 15:00');
 });

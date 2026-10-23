@@ -246,13 +246,29 @@ test('la hora de un partido se corrige desde la pantalla, y eso lo reabre', asyn
   await expect(page.locator('[data-queda="0"]')).toContainText('sáb');
   await expect(page.locator('[data-queda="0"]')).toContainText('7 mar');
 
+  /*
+   * ⚠️ HAY QUE ACEPTAR EL DIÁLOGO desde que existe el pestillo (10 de octubre
+   * de 2026): mover la hora de este partido hacia el futuro REABRE su
+   * pronóstico, y eso se pregunta antes de hacerlo.
+   *
+   * Que esta prueba se pusiera roja al poner el pestillo fue la señal de que
+   * funciona: antes se aplicaba sin preguntar. Lo que aquí se comprueba es la
+   * corrección en sí, así que se confirma; el diálogo tiene su propia prueba.
+   */
+  page.once('dialog', dialogo => dialogo.accept());
   await page.locator('#guardarJornadaButton').click();
 
   /*
    * El mensaje dice que los avisos vuelven a armarse. Es un efecto que la
    * pantalla no pidió y que cambia lo que va a pasar después, así que se avisa.
    */
-  await expect(page.locator('#mensajeJornada')).toContainText('cambiaron de hora', { timeout: 10_000 });
+  /*
+   * ⚠️ Dice «se REABRIÓ», no «cambiaron de hora», y ese orden es deliberado:
+   * desde el pestillo, reabrir un pronóstico cerrado es lo más grave que puede
+   * hacer esta pantalla, así que gana al aviso del rearme. El rearme ocurre
+   * igual —se comprueba en `sincronizador.test.js`— pero no es el titular.
+   */
+  await expect(page.locator('#mensajeJornada')).toContainText('REABRIÓ', { timeout: 10_000 });
 
   // Se guardó de verdad, y en el formato canónico, no con la T del selector.
   const tras = await page.evaluate(async jornada => {
@@ -383,4 +399,66 @@ test('los pronósticos ajenos se destapan partido a partido', async ({ browser }
 
   await contextoDueno.close();
   await contextoMiron.close();
+});
+
+/*
+ * ============================================================================
+ * ⛔ REABRIR UN PARTIDO CERRADO: HAY QUE CONFIRMARLO
+ * ============================================================================
+ *
+ * El 10 de octubre de 2026 Puntarenas vs Alajuelense empezó y lo suspendieron
+ * por lluvia, con el 0-1 y sin saber si seguiría ese día o en noviembre. Cuando
+ * lo reprogramen, el proveedor cambiará la fecha, saldrá el aviso de la hora, y
+ * bastaría pulsar el botón y Guardar para que los pronósticos se reabrieran
+ * **con medio partido jugado y el marcador visto por todos**.
+ *
+ * Esta prueba recorre el camino entero: se corrige la hora, se intenta guardar,
+ * y la pantalla pregunta antes de hacerlo.
+ */
+test('corregir la hora de un partido cerrado pregunta antes de reabrirlo', async ({ page }) => {
+  const datos = await registrarse(page, 'pestillo');
+  await crearQuiniela(page, 'Quiniela Pestillo');
+  await activarAdminMode(page, datos.password);
+
+  const nombre = `Jornada Pest ${Date.now().toString(36)}`;
+  await page.goto('/jornadas.html');
+  await crearJornada(page, nombre, [
+    { equipo1: 'Suspendido', equipo2: 'Rival', apiFixtureId: '9601', apiDate: '2020-01-01 20:00' }
+  ]);
+
+  await page.reload();
+  await page.locator('#jornadaSelect').selectOption(nombre);
+  await expect(page.locator('#partidosJornadaContainer .match-card')).toHaveCount(1, { timeout: 10_000 });
+
+  /* Se mueve a noviembre de 2099: eso reabriría el pronóstico. */
+  await page.locator('#horaPartido0').fill('2099-11-05T15:00');
+
+  /* ---- Primer intento: se dice NO en el diálogo. ---- */
+  const avisos = [];
+  page.once('dialog', dialogo => { avisos.push(dialogo.message()); dialogo.dismiss(); });
+  await page.locator('#guardarJornadaButton').click();
+
+  await expect(page.locator('#mensajeJornada')).toContainText('sigue cerrado', { timeout: 10_000 });
+  expect(avisos.length, 'tenía que haber preguntado').toBe(1);
+  expect(avisos[0]).toMatch(/REABRIR/i);
+  expect(avisos[0]).toMatch(/Suspendido vs Rival/);
+
+  /* Y no se guardó nada: la hora sigue siendo la vieja. */
+  const sinGuardar = await page.evaluate(async j => {
+    const r = await fetch(`/api/jornadas/${encodeURIComponent(j)}`);
+    return (await r.json()).partidos[0].apiDate;
+  }, nombre);
+  expect(sinGuardar).toBe('2020-01-01 20:00');
+
+  /* ---- Segundo intento: se dice SÍ. ---- */
+  page.once('dialog', dialogo => dialogo.accept());
+  await page.locator('#guardarJornadaButton').click();
+
+  await expect(page.locator('#mensajeJornada')).toContainText('REABRIÓ', { timeout: 10_000 });
+
+  const guardado = await page.evaluate(async j => {
+    const r = await fetch(`/api/jornadas/${encodeURIComponent(j)}`);
+    return (await r.json()).partidos[0].apiDate;
+  }, nombre);
+  expect(guardado).toBe('2099-11-05 15:00');
 });

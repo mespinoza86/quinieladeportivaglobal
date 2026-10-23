@@ -1744,6 +1744,49 @@ button + button {
   justify-content: center;
 }
 
+/*
+ * ⛔ `grid-column: 1 / -1` NO ES DECORACIÓN.
+ *
+ * `.official-result-card` es una rejilla de `120px 1fr`. Un párrafo añadido al
+ * final se convierte en un tercer elemento de rejilla y cae en la PRIMERA
+ * columna de la fila siguiente, o sea apretado en 120 píxeles. Ocupando las dos
+ * columnas se lee como lo que es: una nota a pie de tarjeta.
+ *
+ * El color sale de `.helper-text` (`--muted`). Se comprobó el contraste a mano
+ * sobre el fondo de la tarjeta en los tres temas —7,58 / 9,43 / 11,42 contra un
+ * mínimo de 4,5— porque la auditoría automática no llega aquí: esta pantalla
+ * necesita una jornada elegida y un partido sin reportar para pintarlo.
+ */
+.official-esperando {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  text-align: center;
+  font-style: italic;
+}
+
+/*
+ * El aviso de que el proveedor dice otra hora, dentro de la tarjeta de partido
+ * de «Armar jornadas».
+ *
+ * ⚠️ El texto va con la tinta normal (`--text`), NO con `--danger` ni
+ * `--accent`: los dos se quedaron cortos de contraste en auditorías anteriores
+ * —3,73 y 3,88 contra el mínimo de 4,5— y esta tarjeta no la alcanza la
+ * auditoría automática, porque hace falta elegir una jornada para pintarla. El
+ * aviso lo lleva el borde y el emoji, no el color del texto.
+ */
+.aviso-fecha-proveedor {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+}
+
+.aviso-fecha-proveedor p {
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
 @media (max-width: 600px) {
   .official-result-card {
     grid-template-columns: 1fr;

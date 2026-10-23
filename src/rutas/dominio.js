@@ -204,9 +204,19 @@ module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
        * mañana se cambia el reparto entre premio de jornada y bote acumulado,
        * las jornadas ya jugadas conservan el suyo. Mismo motivo que el precio.
        */
+      /*
+       * ⚠️ `reabrirConfirmado` es una decisión EXPLÍCITA del administrador, no
+       * un valor por defecto: `=== true` y no `Boolean(...)`, para que un
+       * `"false"`, un `1` o un objeto no cuenten como un sí.
+       *
+       * Sin él, `guardar` se niega a aplicar un cambio que reabriría el
+       * pronóstico de un partido ya cerrado. El porqué está en el comentario
+       * del pestillo, en `jornadas.js`.
+       */
       const r = await jornadasMod.guardar(req.quiniela.id, nombre, enOrden,
         precio.activo ? precio.precio : 0,
-        precio.activo ? precio.alAcumulado : 0);
+        precio.activo ? precio.alAcumulado : 0,
+        { reabrirConfirmado: req.body?.reabrirConfirmado === true });
       await rankingMod.actualizar(req.quiniela.id, nombre, req.puntuacion);
       return r;
     });
@@ -229,7 +239,9 @@ module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
        * efecto que la pantalla no pidió explícitamente y que cambia lo que va a
        * pasar después —una notificación que ya había salido, volverá a salir—.
        */
-      avisosRearmados: cambio.avisosRearmados
+      avisosRearmados: cambio.avisosRearmados,
+      /* Cuántos pronósticos cerrados se reabrieron a sabiendas. */
+      reabiertos: cambio.reabiertos
     });
   });
 

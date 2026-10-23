@@ -38,6 +38,24 @@ const { normalizarMarcador } = require('./validacion');
 /** Los partidos de una jornada, con su id. Orden de la jornada. */
 async function partidosDe(cliente, jornadaId) {
   const { rows } = await cliente.query(
+    /*
+     * ⛔ AQUÍ NO SE AÑADEN COLUMNAS NUEVAS A LA LIGERA.
+     *
+     * Esta consulta la usan media docena de pantallas —resultados oficiales, la
+     * portada, la clasificación, el sincronizador—. El 10 de octubre de 2026 se
+     * le añadió `fecha_proveedor`, de la migración 016, y como esa migración se
+     * corre A MANO en Neon, en cuanto el código llegó a una base sin migrar
+     * **todo lo que lee partidos respondió 500**: la portada, los marcadores
+     * oficiales y las dos tablas, a la vez.
+     *
+     * ⚠️ El aviso de la hora del proveedor necesitaba saber si ya estaba
+     * puesto, para poder retirarlo. Eso NO se pregunta aquí: se pregunta en el
+     * `WHERE` del propio `UPDATE` que lo retira, que vive dentro de un punto de
+     * guardado y puede fallar sin arrastrar nada.
+     *
+     * La regla: una columna de una migración reciente no entra en un camino de
+     * LECTURA que comparte media aplicación. Si hace falta, se lee aparte.
+     */
     `SELECT id, orden, equipo1, equipo2, logo_equipo1, logo_equipo2,
             comodin, api_fixture_id, api_date, api_status
        FROM partidos WHERE jornada_id = $1 ORDER BY orden`,
