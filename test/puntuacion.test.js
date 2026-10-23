@@ -811,3 +811,87 @@ test('un cero SÍ se guarda: no es lo mismo que dejarlo en blanco', async () => 
   assert.equal(mios[0].marcador1, 0);
   assert.equal(mios[0].marcador2, 0);
 });
+
+/* ============ Un partido que se abandona y no se reanuda ============ */
+
+/*
+ * ============================================================================
+ * ⛔ CÓMO SE ANULA UN PARTIDO QUE NO SE VA A JUGAR
+ * ============================================================================
+ *
+ * Decisión de Marco, 22 de octubre de 2026, sobre el partido que la lluvia
+ * suspendió a medias: *«si un partido se abandona y no se reanuda nunca,
+ * entonces eliminamos el resultado, para que no cuenten los puntos»*.
+ *
+ * ⭐ Y NO HIZO FALTA CÓDIGO NUEVO: ya se podía. El procedimiento es cargar los
+ * resultados oficiales de esa jornada **con las casillas del marcador de ese
+ * partido VACÍAS** y su casilla de «ya terminó» MARCADA. Eso:
+ *
+ *   · deja el marcador oficial en nulo, y `puntosDePartido` devuelve 0 en
+ *     cuanto los valores no son números: **cero para todos, por igual**;
+ *   · marcar «ya terminó» pone **las dos marcas**: `estado: 'TC'` y
+ *     `bloqueadoFinal`. Y `jornadaEstaFinalizada` acepta **cualquiera de las
+ *     dos**, así que la jornada puede congelar sus puntos;
+ *   · el `bloqueadoFinal` es además lo que impide al proveedor reescribirlo si
+ *     algún día manda un marcador tardío.
+ *
+ * ⚠️ Que haya DOS vías para lo mismo se descubrió mutando: quitar una sola
+ * —ignorar `bloqueadoFinal`, o que la casilla no pusiera `TC`— deja esta prueba
+ * en VERDE, porque la otra vía sigue en pie. Sólo se pone roja anulando las
+ * dos, y se comprobó. No es un defecto: es que «terminado» y «definitivo» son
+ * conceptos distintos —lo avisa §C— y esta casilla afirma los dos a la vez.
+ *
+ * ⚠️ Esta prueba existe para que ese procedimiento no se pierda. Es la clase de
+ * cosa que se hace una vez al año, y sin dejarla escrita hay que volver a
+ * deducirla del código leyendo tres módulos.
+ */
+test('⛔ un partido anulado da cero a todos, y deja cerrar la jornada', async () => {
+  const q = await quinielaNueva();
+
+  await jornadas.guardar(q.id, 'J1', [
+    partido('Jugado', 'Rival1', { apiDate: PASADO }),
+    partido('Abandonado', 'Rival2', { apiDate: PASADO })
+  ]);
+
+  /* Dos jugadores con pronósticos distintos en el partido abandonado. */
+  for (const [jugador, p2] of [['ana', { marcador1: 3, marcador2: 0 }],
+    ['beto', { marcador1: 0, marcador2: 3 }]]) {
+    await pronosticos.guardar(q.id, {
+      jugador, jornada: 'J1',
+      pronosticos: [{ marcador1: 2, marcador2: 1 }, p2],
+      ahora: new Date('2019-01-01')
+    });
+  }
+
+  /*
+   * El primero con su marcador. El segundo VACÍO y con `final: true`: eso es
+   * «este partido ya no va a dar más, y su resultado es ninguno».
+   */
+  await cargarOficiales(q.id, 'J1', [
+    { marcador1: 2, marcador2: 1 },
+    { final: true }
+  ]);
+
+  const r = await ranking.clasificacionDeJornada(q.id, 'J1', { puntuacionActual: PUNTUACION });
+
+  assert.equal(r.estado, 'confirmada',
+    '⛔ la jornada tiene que poder cerrarse: si no, se queda provisional para siempre');
+
+  const ana = r.clasificacion.find(f => f.jugador === 'ana');
+  const beto = r.clasificacion.find(f => f.jugador === 'beto');
+
+  /*
+   * Los dos acertaron el primero (2-1 exacto = 5) y NADA del segundo, aunque
+   * pronosticaron cosas distintas. El partido anulado no reparte ni castiga.
+   */
+  assert.equal(ana.puntos, 5, 'sólo los puntos del partido que sí se jugó');
+  assert.equal(beto.puntos, 5, 'y el otro jugador exactamente los mismos');
+
+  /* ⚠️ Y el control: que el partido anulado está ahí, sin marcador y fijado. */
+  const doc = await oficiales.deJornada(q.id, 'J1');
+  const anulado = doc.partidos[1];
+  assert.equal(anulado.marcador1, null, 'sin marcador oficial');
+  assert.equal(anulado.marcador2, null);
+  assert.equal(anulado.bloqueadoFinal, true,
+    'fijado: el proveedor ya no lo puede reescribir');
+});

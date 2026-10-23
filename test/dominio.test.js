@@ -1014,3 +1014,47 @@ test('⛔ las rondas ya metidas se leen de la quiniela, y sólo de la suya', asy
 
   assert.deepEqual(await jornadas.rondasUsadas(b.quiniela.id), ['99']);
 });
+
+/*
+ * ⛔ UN PARTIDO INTERRUMPIDO TIENE EL PRONÓSTICO CERRADO, Y NO SE REABRE.
+ *
+ * Es la propiedad que de verdad importa del estado nuevo, y la razón de haberlo
+ * metido en la lista de `partidoYaInicio` junto a LIVE, MT y TC: el partido de
+ * la lluvia llevaba 0-1 cuando lo pararon. Si al reprogramarlo se pudiera
+ * reabrir su pronóstico, quien no hubiera llenado podría hacerlo sabiendo el
+ * marcador parcial.
+ */
+test('⛔ un partido INTERRUMPIDO está cerrado, y mover su fecha no lo reabre', async () => {
+  const { quiniela } = await quinielaNueva();
+  await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2020-01-01 20:00')]);
+
+  /* El proveedor lo da por interrumpido, con marcador parcial. */
+  await db.enQuiniela(quiniela.id, async c => {
+    const { rows: [j] } = await c.query("SELECT id FROM jornadas WHERE nombre = 'J'");
+    const { rows: [p] } = await c.query('SELECT id FROM partidos WHERE jornada_id = $1', [j.id]);
+    const { rows: [ro] } = await c.query(
+      `INSERT INTO resultados_oficiales (quiniela_id, jornada_id) VALUES ($1, $2)
+       ON CONFLICT (quiniela_id, jornada_id) DO UPDATE SET jornada_id = EXCLUDED.jornada_id
+       RETURNING id`, [quiniela.id, j.id]);
+    await c.query(
+      `INSERT INTO resultados_oficiales_partidos
+         (quiniela_id, resultado_oficial_id, partido_id, marcador1, marcador2, estado, fecha, origen)
+       VALUES ($1, $2, $3, 0, 1, 'INTERRUMPIDO', '2020-01-01 20:00', 'api')`,
+      [quiniela.id, ro.id, p.id]);
+  });
+
+  /* Cerrado por el ESTADO, no por la fecha: vale con una fecha de 2099. */
+  assert.equal(
+    partidoYaInicio({ api_date: '2099-12-31 23:00' }, { estado: 'INTERRUMPIDO' }, new Date()),
+    true, 'el estado cierra aunque el calendario diga que falta');
+
+  /*
+   * ⭐ Y por tanto el pestillo no tiene nada que reabrir: mover la fecha a
+   * noviembre pasa sin preguntar, y el partido sigue cerrado.
+   */
+  const r = await jornadas.guardar(quiniela.id, 'J',
+    [conFixture('A', 'B', '111', '2099-11-05 15:00')]);
+
+  assert.equal(r.reabiertos, 0, 'no hay nada que reabrir: el partido empezó');
+});

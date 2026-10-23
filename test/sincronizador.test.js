@@ -1097,3 +1097,68 @@ test('⛔ tras un error, el punto de guardado deja la transacción viva', async 
   assert.equal(resultado.estado, 'despues',
     'la transacción siguió viva y pudo escribir después del fallo');
 });
+
+/* ==================== Un partido interrumpido ==================== */
+
+/*
+ * ============================================================================
+ * ⛔ EMPEZÓ Y ESTÁ DETENIDO
+ * ============================================================================
+ *
+ * Caso real de Marco, 10 de octubre de 2026: Puntarenas vs Alajuelense empezó y
+ * lo suspendieron por lluvia con el 0-1. *«ahí está a medias, no se sabe si va a
+ * seguir hoy o si lo pasan a mañana o para noviembre»*.
+ *
+ * El proveedor mandaba `match_status: "Interrupted"` y nosotros lo guardábamos
+ * como PROGRAMADO —«todavía no inicia»—, que es falso y de ahí colgaban tres
+ * problemas. Ahora tiene su propio estado.
+ */
+test('⛔ un partido interrumpido no se guarda como «todavía no inicia»', async () => {
+  const q = await quinielaNueva();
+  await jornadas.guardar(q.id, 'J1',
+    [partido('A', 'B', { apiFixtureId: '111', apiDate: '2026-09-01 15:00' })]);
+
+  await sinc.ejecutarCiclo({
+    /* Tal cual lo manda el proveedor: estado «Interrupted» y marcador parcial. */
+    consultar: async () => eventoDe({ m1: 0, m2: 1, estado: 'Interrupted' }),
+    reescribirJornada: sinc.reescribirJornadaDesdeCache
+  });
+
+  const doc = await oficiales.deJornada(q.id, 'J1');
+  const p = doc.partidos[0];
+
+  assert.equal(p.estado, 'INTERRUMPIDO', 'tiene su propio estado, no PROGRAMADO');
+  assert.equal(p.marcador1, 0, 'y el marcador parcial se guarda');
+  assert.equal(p.marcador2, 1);
+  assert.equal(p.bloqueadoFinal, false,
+    '⚠️ NO es definitivo: si se reanuda, el proveedor puede seguir');
+  assert.equal(p.esperandoProveedor, false,
+    'y ya no dice que el proveedor no lo reporta');
+});
+
+test('las tres palabras del proveedor para «detenido» dan el mismo estado', () => {
+  for (const palabra of ['Interrupted', 'Suspended', 'Abandoned']) {
+    assert.equal(eventos.obtenerEstadoPartido({ match_status: palabra }, null).estado,
+      'INTERRUMPIDO', palabra + ' debería ser INTERRUMPIDO');
+  }
+
+  /*
+   * ⛔ EL CONTROL, y es el que importa: lo que NO empezó sigue siendo
+   * PROGRAMADO. `Postponed` y `Cancelled` se dejaron fuera a propósito —ésos no
+   * arrancaron, y qué hacer con ellos depende de si se reprograman—. Sin esta
+   * comprobación, meterlos en la lista pasaría inadvertido y cerraría el
+   * pronóstico de un partido que nunca se jugó.
+   */
+  for (const palabra of ['Postponed', 'Cancelled', '', 'TBA']) {
+    assert.equal(eventos.obtenerEstadoPartido({ match_status: palabra }, null).estado,
+      'PROGRAMADO', JSON.stringify(palabra) + ' NO debe cerrar nada');
+  }
+});
+
+test('un partido interrumpido se consulta cada 15 minutos, no cada uno', () => {
+  const ahora = new Date('2026-09-01T22:00:00Z');
+  const proxima = fixtures.calcularProximaConsulta('INTERRUMPIDO', '2026-09-01 15:00', ahora);
+
+  assert.equal(proxima.getTime() - ahora.getTime(), fixtures.VENTANAS_MS.inminente,
+    'puede tardar horas en reanudarse: cada minuto es cuota tirada');
+});

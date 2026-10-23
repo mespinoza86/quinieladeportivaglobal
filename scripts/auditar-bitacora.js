@@ -56,7 +56,7 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '681'],
+  ['¿Cuántas pruebas rápidas?',            '686'],
   ['¿Cuántas de navegador?',               '232'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
@@ -158,7 +158,9 @@ const NO_DEBE_QUEDAR = [
    * escribí a ojo —«234»— en vez de leerlo de la corrida. De ahí que el valor
    * viejo Y el inventado estén los dos aquí.
    */
-  ['669 pruebas',  'las rápidas pasaron a 681 (125)'],
+  ['669 pruebas',  'las rápidas pasaron a 681 y luego a 686'],
+  ['681 pruebas',  'las rápidas pasaron a 686 (127)'],
+  ['681 + 232',    'la suma de antes de la entrada 127'],
   ['228 de navegador', 'las de navegador pasaron a 232 (125)'],
   ['669 + 228',    'la suma de antes de la entrada 125'],
   ['234 de navegador', 'nunca fueron 234: se escribió a ojo antes de leer la corrida']

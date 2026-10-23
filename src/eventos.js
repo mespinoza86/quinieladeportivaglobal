@@ -189,6 +189,48 @@ function obtenerEstadoPartido(fixture, partido) {
     };
   }
 
+  /*
+   * ============================================================
+   * ⛔ EMPEZÓ Y ESTÁ DETENIDO: `INTERRUMPIDO`
+   * ============================================================
+   *
+   * Caso real de Marco, 10 de octubre de 2026: Puntarenas vs Alajuelense
+   * empezó y lo suspendieron por lluvia con el 0-1. *«ahí está a medias, no se
+   * sabe si va a seguir hoy o si lo pasan a mañana o para noviembre»*.
+   *
+   * El proveedor mandaba `match_status: "Interrupted"`, y antes de esto caía en
+   * el `PROGRAMADO` de más abajo —«todavía no inicia»—, que **es falso**: había
+   * empezado. Y de esa mentira colgaban tres cosas:
+   *
+   *   · la pastilla de estado enseñaba la hora de inicio, como si no hubiera
+   *     arrancado, mientras el 0-1 estaba al lado;
+   *   · no se distinguía de un partido APLAZADO, que es lo contrario —ése no
+   *     ha empezado y quizá deba admitir pronósticos—;
+   *   · y `partidoYaInicio` sólo lo daba por cerrado por la fecha, así que
+   *     mover esa fecha habría reabierto los pronósticos de un partido con
+   *     medio jugar.
+   *
+   * ⭐ ES UN ESTADO QUE CIERRA, NO QUE ABRE. Está en la lista de
+   * `partidoYaInicio` junto a LIVE, MT y TC, que es la dirección segura: un
+   * partido interrumpido empezó, así que su pronóstico no se toca.
+   *
+   * ⚠️ Y NO ES `TC`. No se da por terminado, así que la jornada **no congela**
+   * sus puntos y el proveedor puede seguir actualizándolo si se reanuda. Si no
+   * se reanuda nunca, lo cierra el administrador a mano — ver §«Un partido que
+   * no se reanuda» en la bitácora.
+   *
+   * ⚠️ `Postponed` y `Cancelled` se dejan FUERA a propósito: ésos no empezaron,
+   * y qué hacer con ellos depende de si se reprograman. Se decidirá cuando pase
+   * de verdad, como pasó con la lluvia.
+   */
+  const DETENIDOS = ['interrupted', 'suspended', 'abandoned'];
+  if (DETENIDOS.includes(estadoLower)) {
+    return {
+      estado: 'INTERRUMPIDO',
+      minuto: null
+    };
+  }
+
   // Todavía no inicia
   return {
     estado: 'PROGRAMADO',

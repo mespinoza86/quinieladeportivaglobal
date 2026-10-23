@@ -1719,6 +1719,20 @@ button + button {
   color: var(--primary);
 }
 
+/*
+ * ⏸ Interrumpido: empezó y está detenido.
+ *
+ * ⚠️ Reusa los colores de `.status-finished` —el velo neutro y su tinta— y no
+ * los del oro de «programado» ni el verde de «en vivo», a propósito: no se está
+ * jugando, pero tampoco está por empezar. Y usar un par de color que ya pasa la
+ * auditoría de contraste en los tres temas evita inventar una combinación que
+ * esta tarjeta no alcanza a comprobar sola.
+ */
+.status-interrumpido {
+  background: rgba(var(--velo-rgb), 0.12);
+  color: var(--tinta-sobre-velo);
+}
+
 .live-dot {
   width: 9px;
   height: 9px;

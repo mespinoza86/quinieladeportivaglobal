@@ -44,6 +44,23 @@ function estadoPartidoHTML(partido) {
         </span>`;
     }
 
+    /*
+      ⛔ EMPEZÓ Y ESTÁ DETENIDO.
+
+      El 10 de octubre de 2026 un partido de Marco se suspendió por lluvia con
+      el 0-1. El proveedor decía «Interrupted» y nosotros lo guardábamos como
+      «programado», así que esta pastilla enseñaba LA HORA DE INICIO: parecía
+      que no había empezado, con el marcador parcial al lado.
+
+      Sin punto verde a propósito: no se está jugando. Pero tampoco es la hora
+      de inicio, que es lo que mentía.
+    */
+    if (partido.estado === 'INTERRUMPIDO') {
+        return html`<span class="status-pill status-interrumpido">
+            ⏸ Interrumpido
+        </span>`;
+    }
+
     if (partido.estado === 'LIVE' && partido.minuto) {
         return html`<span class="status-pill status-live">
             <span class="live-dot"></span>

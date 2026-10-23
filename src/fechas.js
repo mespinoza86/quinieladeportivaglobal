@@ -76,7 +76,17 @@ function parseFechaPartidoCostaRica(apiDate) {
  * `api_date` de PostgreSQL— para que sirva a los dos sin traductor por medio.
  */
 function partidoYaInicio(partido, oficial = null, ahora = new Date()) {
-  if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) return true;
+  /*
+   * ⚠️ `INTERRUMPIDO` entra aquí desde el 22 de octubre de 2026, y es la
+   * dirección segura: un partido interrumpido EMPEZÓ —el de la lluvia llevaba
+   * 0-1— así que su pronóstico está cerrado y es público, igual que uno en
+   * juego. Dejarlo fuera habría permitido reabrirlo moviendo su fecha.
+   *
+   * ⛔ Lo que NO entra es `PROGRAMADO`, aunque el proveedor lo use para un
+   * partido aplazado: ahí el cierre lo decide la hora, que es lo correcto
+   * cuando el partido no ha empezado.
+   */
+  if (oficial && ['LIVE', 'MT', 'TC', 'INTERRUMPIDO'].includes(oficial.estado)) return true;
 
   const fecha = parseFechaPartidoCostaRica(partido?.apiDate ?? partido?.api_date);
   if (!fecha) return false;

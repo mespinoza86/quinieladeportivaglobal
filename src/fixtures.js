@@ -112,6 +112,17 @@ function calcularProximaConsulta(estado, apiDate, ahora = new Date(), hayError =
     ventana = VENTANAS_MS.error;
   } else if (estado === 'LIVE' || estado === 'MT') {
     ventana = VENTANAS_MS.enVivo;
+  } else if (estado === 'INTERRUMPIDO') {
+    /*
+     * ⚠️ Con calma, no cada minuto. Un partido parado por lluvia puede tardar
+     * horas en reanudarse —el de Marco el 10 de octubre estuvo más de una— y
+     * preguntar cada 60 segundos durante ese rato es cuota tirada.
+     *
+     * Pero tampoco las 6 horas de `lejano`: si se reanuda, el marcador en vivo
+     * tiene que volver en minutos, no cuando acabe. La ventana de «inminente»
+     * —15 minutos— es el término medio, y ya existe.
+     */
+    ventana = VENTANAS_MS.inminente;
   } else if (faltan === null) {
     ventana = VENTANAS_MS.desconocido;
   } else if (faltan <= -UMBRAL_ABANDONO_MS) {

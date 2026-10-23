@@ -24,7 +24,7 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 681/681
+npm test                    # 686/686
 npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
@@ -69,7 +69,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **681**, ~75 s |
+| Pruebas rápidas | **686**, ~75 s |
 | Pruebas de navegador | **232**, ~16 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -607,14 +607,14 @@ documento.
 
 | | |
 |---|---|
-| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 125** |
+| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 127** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
 | Producción | ⚠️ **Render tiene hasta `85287bf` (entrada 121): le faltan las entradas 123-125.** Comprobado el 10 de octubre de 2026: `/js/jornadas.js` servía `horaPartido` ×4 (la 121 sí está) y `usarFechaProveedor` ×0 (la 124 no). **Lo de las 123-125 está commiteado pero sin jalar, y sin probar a mano.** Pendiente de la 121 también |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
-| Pruebas | **681** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **686** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) y ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) y ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -622,6 +622,22 @@ documento.
   derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
   escribible, y el marcador real en el centro.
+- ⭐ **Un partido INTERRUMPIDO se dice como tal** (127). Si el proveedor manda
+  `Interrupted`, `Suspended` o `Abandoned`, la pastilla pone **⏸ Interrumpido**
+  en vez de la hora de inicio, el pronóstico **sigue cerrado** —el partido
+  empezó— y no se puede reabrir moviéndole la fecha. Se consulta cada 15 minutos
+  por si se reanuda. ⚠️ `Postponed` y `Cancelled` quedan FUERA a propósito: ésos
+  no empezaron.
+- 📌 **CÓMO ANULAR UN PARTIDO QUE NO SE VA A JUGAR** (127). Decisión de Marco:
+  que no cuente puntos. **Ya se podía, sin código nuevo:**
+
+  > En **Cargar resultados oficiales**, dejar las casillas del marcador de ese
+  > partido **VACÍAS** y marcar su casilla de **«ya terminó»**.
+
+  Eso da **cero a todos por igual** —el motor no puntúa un marcador que no son
+  números—, **permite que la jornada congele** sus puntos, y deja el resultado
+  **fijado** para que el proveedor no lo reescriba después. Hay una prueba que
+  deja el procedimiento escrito, porque es cosa de una vez al año.
 - ⭐ **«El proveedor todavía no reporta este partido»** (124). En «Resultados
   oficiales», cuando según la hora del partido ya debería haber empezado y el
   proveedor no lo da por iniciado, la tarjeta lo DICE en vez de quedarse en un
@@ -634,8 +650,11 @@ documento.
 - ⭐ **El pestillo** (125). Si un guardado reabriría el pronóstico de un partido
   ya cerrado, el **servidor** lo rechaza y la pantalla pregunta nombrando el
   partido y las dos horas. Decir «no» no guarda nada.
-  ⚠️ **SIN PROBAR A MANO.** Está en verde en 681 pruebas rápidas y en las de
-  navegador, pero Marco no lo ha tocado. **Es lo primero al retomar.**
+  ⚠️ **AÚN SIN VERSE DECIR «NO».** El 22 de octubre Marco lo probó moviendo la
+  hora de un partido de la Jornada3 a noviembre, y **no preguntó nada** — y
+  estuvo bien: ese partido tenía marcador oficial (`TC`), así que no se podía
+  reabrir. El que sirve para verlo es **Club América vs Tijuana** (Jornada 2),
+  que no tiene marcador. **Es lo primero al retomar.**
 - ⭐ **Corregir la hora de un partido** (121). En «Armar jornadas», cada tarjeta
   tiene un campo **«Hora del partido (hora de Costa Rica)»**. Sirve para cuando
   el proveedor se equivoca —pasó el 8 de octubre de 2026— y con ello el partido
@@ -726,7 +745,7 @@ No son tareas: son cosas que están paradas porque las decide él.
 
   | Archivo | Qué es |
   |---|---|
-  | **`conversacion.md`** | ⭐ **El bueno.** 1.010 KB, del 1 de septiembre al 22 de octubre de 2026. **242 mensajes de Marco** y 1.758 respuestas. Regenerado entero el 22 de octubre |
+  | **`conversacion.md`** | ⭐ **El bueno.** 1.016 KB, del 1 de septiembre al 22 de octubre de 2026. **248 mensajes de Marco** y 1.792 respuestas. Regenerado entero el 22 de octubre |
   | `conversion.md` | El viejo, de septiembre. 745 KB, llegaba al día 22. **Queda superado**; borrarlo es decisión de Marco. Su cuenta de «230 mensajes de Marco» está inflada: cinco no eran suyos |
 
   Se rehace con `node scripts/volcar-conversacion.js <salida.md> <transcripts…>`
@@ -760,25 +779,10 @@ No son tareas: son cosas que están paradas porque las decide él.
 
 ##### ⚠️ Deuda anotada a propósito, no olvidada
 
-- 📌 **NO SABEMOS DECIR «INTERRUMPIDO»** (124). El proveedor manda
-  `match_status: "Interrupted"` cuando un partido se suspende a medias —pasó de
-  verdad con Puntarenas vs Alajuelense el 10 de octubre, parado por lluvia con
-  el 0-1— y `obtenerEstadoPartido` no conoce ese estado, así que lo guarda como
-  `PROGRAMADO`.
-
-  **Qué se arregló:** la contradicción. La tarjeta enseñaba «0 - 1» **y** «el
-  proveedor todavía no lo reporta como iniciado» a la vez; ahora un marcador
-  cuenta como «el proveedor lo ve» y la frase no sale.
-
-  **Qué sigue mal:** la pastilla de estado muestra la hora de inicio, como si el
-  partido no hubiera empezado. Nadie se entera de que está parado.
-
-  ⚠️ **Por qué no se hizo:** añadir un estado nuevo toca `obtenerEstadoPartido`
-  y la lista `['LIVE','MT','TC']` de la regla del cierre, que decide si un
-  pronóstico se puede editar y si es público. Son las dos piezas más delicadas
-  del dominio. Hay que pensar antes qué debe pasar con un partido interrumpido:
-  ¿cuenta como empezado —sí, lo está— y puede la jornada congelar sus puntos
-  —no, todavía no—? Son dos respuestas distintas para el mismo estado.
+- ~~**No sabemos decir «interrumpido»**~~ ✅ **RESUELTO el 22 de octubre de 2026**
+  (entrada 127). Tiene su propio estado, cierra el pronóstico y no se puede
+  reabrir. Y de paso quedó escrito cómo se **anula** un partido que no se
+  reanuda — ver el apartado de abajo.
 - 📌 **BACKLOG, decisión de Marco del 8 de octubre de 2026: marcar que una hora
   se tocó a mano.** *«Eso de marcar que una hora se tocó, ponlo en el backlog
   para después, de momento quedemos así»*.
@@ -891,7 +895,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las dieciseis migraciones corridas**, **681 + 232** pruebas en
+funcionando, **las dieciseis migraciones corridas**, **686 + 232** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1298,7 +1302,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 681 pruebas rápidas, ~75 s
+npm test                   # las 686 pruebas rápidas, ~75 s
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -1996,7 +2000,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 681 pruebas rápidas y 232 de navegador
+### 2.5 `test/` — 686 pruebas rápidas y 232 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -21420,6 +21424,138 @@ CI=true npx playwright test            -> ver el cierre de esta entrada
 - Y lo de siempre, sin tocar desde septiembre: **la notificación al teléfono**,
   el **ciclo del borrador** de una semana a la siguiente, y el **punto ciego de
   `axios`** —pulsar «sincronizar» en una jornada—.
+
+---
+
+### 📌 Entrada 127 — 22 de octubre de 2026 — `INTERRUMPIDO`, y cómo se anula un partido que no se reanuda
+
+**Objetivo:** Marco, cerrando la deuda que dejó el partido de la lluvia: *«dale,
+pero en vez de PARADO pon INTERRUMPIDO, y si un partido se abandona y no se
+reanuda nunca, entonces eliminamos el resultado, para que no cuenten los
+puntos»*.
+
+## 1 · EL ESTADO `INTERRUMPIDO`
+
+Hasta aquí, todo lo que el proveedor mandara y no supiéramos traducir caía en la
+última rama de `obtenerEstadoPartido`, la que dice literalmente *«Todavía no
+inicia»*. Incluido `"Interrupted"`, que es **falso**: el partido de Marco llevaba
+0-1 cuando lo paró la lluvia.
+
+Ahora `Interrupted`, `Suspended` y `Abandoned` dan `estado: 'INTERRUMPIDO'`.
+
+⭐ **Es un estado que CIERRA, no que abre.** Está en la lista de
+`partidoYaInicio` junto a LIVE, MT y TC, que es la dirección segura: empezó, así
+que su pronóstico no se toca. Y por tanto el pestillo (125) no tiene nada que
+reabrir en él aunque se mueva su fecha — se comprobó.
+
+⚠️ **NO es `TC`.** No se da por terminado, así que la jornada no congela sus
+puntos y el proveedor puede seguir actualizándolo si se reanuda.
+
+⚠️ **`Postponed` y `Cancelled` se dejaron FUERA a propósito**, y hay una prueba
+que lo vigila. Ésos **no empezaron**: meterlos en la lista cerraría el pronóstico
+de un partido que nunca se jugó, y qué hacer con ellos depende de si se
+reprograman. Se decidirá cuando pase de verdad, como pasó con la lluvia.
+
+**En pantalla:** una pastilla **⏸ Interrumpido**, sin el punto verde de «en
+vivo» —no se está jugando— y sin la hora de inicio, que era lo que mentía.
+
+**En el sondeo:** cada **15 minutos**, no cada uno. Un partido parado por lluvia
+puede tardar horas en reanudarse; preguntar cada 60 segundos es cuota tirada. Y
+tampoco las 6 horas de «lejano», porque si se reanuda el marcador tiene que
+volver en minutos.
+
+## 2 · ⭐ CÓMO SE ANULA UN PARTIDO: YA SE PODÍA, SIN CÓDIGO NUEVO
+
+Marco pidió que un partido abandonado **no cuente puntos**. Antes de escribir
+nada se comprobó qué pasaba ya, y resultó que el procedimiento existe:
+
+> **Cargar resultados oficiales** de esa jornada, con las casillas del marcador
+> de ese partido **VACÍAS** y su casilla de **«ya terminó» MARCADA**.
+
+Con eso:
+
+- `puntosDePartido` devuelve **0 en cuanto los marcadores no son números**, así
+  que ese partido da **cero a todos por igual** — da lo mismo lo que pronosticara
+  cada uno;
+- la jornada **puede congelar sus puntos**, que si no se quedaría provisional
+  para siempre;
+- y el resultado queda **fijado**, así que el proveedor ya no lo puede reescribir
+  con un marcador tardío.
+
+⚠️ Queda una prueba que deja ese procedimiento escrito, porque es la clase de
+cosa que se hace una vez al año y sin ella hay que volver a deducirla leyendo
+tres módulos.
+
+## ⛔ Y LO QUE SE APRENDIÓ MUTANDO, QUE CORRIGE DOS VECES ESTA ENTRADA
+
+Al mutar para comprobar que la prueba de la anulación tiene dientes, **dos
+mutaciones distintas la dejaron en VERDE**:
+
+1. que `jornadaEstaFinalizada` ignorara `bloqueadoFinal` → verde
+2. que la casilla «ya terminó» no pusiera `estado: 'TC'` → verde
+
+La explicación, que escribí mal dos veces antes de medirla: **esa casilla pone
+las dos marcas a la vez**, y `jornadaEstaFinalizada` acepta **cualquiera de las
+dos**. Hay dos caminos para el mismo efecto, así que quitar uno no se nota. Sólo
+se pone roja anulando los dos —exigir marcador para cerrar la jornada—, y se
+comprobó.
+
+⭐ No es un defecto del código: «terminado» y «definitivo» son conceptos
+distintos —lo avisa §C desde hace tiempo— y esa casilla afirma los dos. Lo que
+estaba mal era mi explicación, dos veces, hasta que la mutación la corrigió.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/eventos.js` | Las tres palabras de «detenido» → `INTERRUMPIDO` |
+| `src/fechas.js` | `INTERRUMPIDO` entra en la lista que cierra el pronóstico |
+| `src/fixtures.js` | Ventana de 15 minutos para un partido parado |
+| `private/js/ver-resultados-oficiales.js` | La pastilla ⏸ Interrumpido |
+| `private/css/styles.css` | `.status-interrumpido`, reusando un par de color ya auditado |
+| `test/sincronizador.test.js` | 3 pruebas: el estado, las tres palabras con su control, y la ventana |
+| `test/dominio.test.js` | Que un interrumpido está cerrado y no se reabre |
+| `test/puntuacion.test.js` | El procedimiento de anular, documentado |
+
+**Verificación:**
+
+```
+npm test                                  -> 686/686   (eran 681)
+navegador: resultados, jornadas, contraste -> 36/36
+
+mutaciones (copia byte a byte, nunca git checkout):
+  quitar INTERRUMPIDO de la lista que cierra  -> 2 pruebas en ROJO
+  meter «postponed» entre los detenidos       -> ROJO   ← el control
+  que un marcador nulo SÍ reparta puntos      -> 7 pruebas en ROJO
+  exigir marcador para cerrar la jornada      -> ROJO
+```
+
+**Hallazgos nuevos:**
+
+1. ⭐ **Antes de escribir una función, comprobar si ya se puede.** Lo de anular un
+   partido no necesitó una línea: el motor ya daba cero con un marcador nulo y la
+   jornada ya se cerraba con el resultado fijado. Lo que faltaba era **saberlo**,
+   y eso se arregla con una prueba que lo deje escrito.
+2. ⛔ **Dos caminos para el mismo efecto hacen que una mutación no se note.** Si
+   una mutación deja la prueba en verde, puede que la prueba sea mala — o que
+   haya una segunda vía. Hay que distinguirlo antes de tocar la prueba.
+3. ⚠️ **Un estado nuevo en la regla del cierre se añade en la dirección que
+   CIERRA.** `INTERRUMPIDO` cierra porque el partido empezó; equivocarse al otro
+   lado habría permitido pronosticar con el marcador parcial a la vista.
+4. ⭐ **Dejar fuera `Postponed` y `Cancelled` también se prueba.** Un control que
+   afirma lo que NO debe pasar vale igual que el que afirma lo que sí.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Jalar en Render**, que sigue con `85287bf` y ya le faltan cinco entradas.
+- El pestillo **sigue sin verse decir «no»**: Marco lo probó con un partido que
+  tenía marcador, así que no llegó a preguntar. El que sirve es **Club América
+  vs Tijuana** (Jornada 2), que no tiene marcador oficial.
+- Y de ese mismo partido, la pregunta de fondo: nosotros lo tenemos el 5 de
+  septiembre y el proveedor el 28 de octubre. ¿Se jugó o lo movieron?
+- §Deuda: la marca de «hora tocada a mano».
+- Y lo de siempre, sin tocar desde septiembre: la notificación al teléfono, el
+  icono en iPhone, el ciclo del borrador y el punto ciego de `axios`.
 
 ---
 
