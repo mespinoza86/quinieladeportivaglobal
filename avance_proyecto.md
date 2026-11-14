@@ -28,7 +28,16 @@ npm test                    # 709/709
 npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
+node scripts/estado-ci.js          # ⛔ ¿está el CI en verde? Llevó un MES en rojo sin que nadie mirara
 ```
+
+⛔ **LA LÍNEA DEL CI ES NUEVA, Y ESTÁ AQUÍ POR UN FALLO DE OMISIÓN.** El 14 de
+noviembre de 2026 Marco preguntó por unos correos de GitHub y resultó que el CI
+llevaba **cinco corridas en rojo desde el 10 de octubre**, un mes entero, por
+una auditoría de dependencias que se puso roja sola. ⚠️ **`git log` y `npm test`
+no dicen nada del CI**, así que no salía en ninguna comprobación de «¿cómo
+estamos?» — ni al cerrar la entrada 126, que era una entrada dedicada a decir
+qué quedaba a medias. Ahora sale. Detalle en la 130.
 
 ⭐ **Esa última línea comprueba ESTE archivo.** Marco ha preguntado tres veces
 «¿la bitácora está al día?» y las tres había algo desfasado, así que la
@@ -614,10 +623,11 @@ documento.
 | ⛔ Cómo NO comprobarlo (14 de noviembre de 2026) | **Marco:** *«¿por qué dices que los 4 partidos de vuelta siguen cerrados y con el marcador equivocado, si estoy revisando el marcador y está sin definir y la hora de cierre está bien?»*. Tenía razón: yo repetía **esta misma fila escrita el 10 de octubre** como si fuera de hoy. ⭐ Una fila que dice «comprobado el 10 de octubre» es **verdad como historia y mentira como presente**, y el mes de diferencia no se ve al leerla. Si la frase es «producción está en X», **se vuelve a mirar**, aunque la fila lo diga con fecha y con pruebas |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
-| Pruebas | **709** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **709** rápidas + **232** de navegador, en verde y **cero flaky** |
+| ⛔ Estado del CI | **Compruébalo con `node scripts/estado-ci.js`**, no con la memoria. ⚠️ Estuvo **cinco corridas en rojo, del 10 de octubre al 14 de noviembre**, y no lo rompió ningún cambio: la **auditoría de dependencias** se puso roja sola cuando se publicaron cuatro avisos contra un `package-lock.json` congelado. Arreglado con cinco saltos de parche (130), `npm audit --omit=dev` en **0 vulnerabilidades**. ⭐ Y el correo de GitHub nombra el *workflow* —que se llama «Pruebas»—, **no el paso**: las pruebas estaban verdes en las cinco |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`). ⚠️ **Y no era esto lo que encarecía la factura** |
 | ⛔ Cómputo en Neon | **De aquí salían los ~$21/mes.** Medido el 14 de noviembre: 58 transacciones y 34 escrituras **por minuto**, día y noche, y `pg_postmaster_start_time()` dando **19,7 días sin suspenderse** con el autoapagado puesto. La **tregua** (129) lo arregla: ~13 despertares/día en vez de 1440, estimación honesta de **35–50 CU-hrs/mes (~$4–5)**. ⭐ El tope se ajusta sin tocar código con `TREGUA_TOPE_MS` (de fábrica 6 h; 1 h sería `3600000`). ⚠️ **Nada de esto cuenta hasta que Render jale** |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) y ⛔ **el CI, un mes en rojo por una auditoría que se puso roja sola, y el punto ciego de axios cubierto por fin** (130) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -22138,6 +22148,182 @@ siguiente** si se pasan las 100, y eso es la aplicación caída.
 - §Deuda: la marca de «hora tocada a mano».
 - Y lo de siempre: la notificación al teléfono, el icono en iPhone, el ciclo del
   borrador y el punto ciego de `axios`.
+
+---
+
+### 📌 Entrada 130 — 14 de noviembre de 2026 — El CI llevaba un mes en rojo, y no lo había roto ningún cambio
+
+**Objetivo:** Marco: *«puedes revisar porque me están llegando unos correos de que
+las pruebas de git algunas fallaron»*.
+
+## ⭐ LO PRIMERO: NO ERAN LAS PRUEBAS, Y NO ERA DE HOY
+
+El correo dice «fallaron las pruebas», y lo que falla es **otro paso**. Y no
+empezó con los empujones de hoy: **llevaba cinco corridas en rojo, desde el 10 de
+octubre.**
+
+```
+corrida  commit    resultado   qué es
+   103   fd1a5c8   ✅ success   el volcado de la conversación (8-oct)
+   104   1389950   ⛔ failure   los dos avisos y el pestillo (10-oct)  <- AQUI EMPIEZA
+   105   850ea8b   ⛔ failure   INTERRUMPIDO
+   106   baec83e   ⛔ failure   ida y vuelta
+   107   01338a2   ⛔ failure   la tregua
+   108   25610e2   ⛔ failure   la corrección de la bitácora
+```
+
+Y el paso que falla, en las dos corridas que se inspeccionaron (108 y 104), es
+**el mismo y único**:
+
+```
+  Suite rápida y auditoría  -> failure
+       ⛔ paso que falló: Auditoría de dependencias
+  Pruebas de navegador      -> success
+```
+
+⭐ **Las pruebas pasaban en las cinco.** Las de navegador, verdes enteras. Lo que
+estaba rojo era `npm audit --omit=dev`.
+
+## ⛔ Y LO IMPORTANTE: NO LO ROMPIÓ NINGÚN CAMBIO NUESTRO
+
+```
+body-parser       <=1.20.8    alta       DoS por bytes de sobra tras un cuerpo comprimido
+follow-redirects  1.16.0-1.16.1 alta     cabeceras de credenciales que sobreviven una redirección
+qs                6.7.0-6.16.0 moderada  TypeError no capturado en stringify con arrayFormat 'comma'
+ip-address        <=10.7.3    moderada   Address6 cuadrático con un identificador de zona largo
+```
+
+Las cuatro son **de dependencias indirectas**, ninguna declarada por nosotros:
+
+| Paquete | Cuelga de |
+|---|---|
+| `body-parser`, `qs` | `express` |
+| `follow-redirects` | `axios` |
+| `ip-address` | `express-rate-limit` |
+
+⭐ **Un aviso de seguridad se publica cuando se publica, y el `package-lock.json`
+está congelado.** Así que un CI verde se pone rojo **sin que nadie toque una
+línea**: el código de la corrida 104 era el mismo que había pasado en la 103.
+⚠️ Esto va a volver a pasar, y conviene saberlo para no buscar la causa en el
+último commit.
+
+⚠️ **La de `ip-address` es la que más cerca pasa de nosotros**: cuelga de
+`express-rate-limit`, y este servidor tiene **cinco limitadores que cuentan por
+IP** (login, registro, reenvío, superadministrador y modo administrador). Un
+identificador de zona IPv6 largo podía hacerle perder el tiempo en cuadrático.
+
+## EL ARREGLO, SIGUIENDO EL PROCEDIMIENTO QUE YA ESTABA ESCRITO
+
+⛔ **La trampa documentada: `npm audit fix --omit=dev` NO audita ignorando las
+dependencias de desarrollo — LAS DESINSTALA.** Ya se llevó PGlite, Playwright y
+supertest una vez, y dio **218 fallos** que no eran del arreglo. Así que
+`npm audit fix` a secas, y comprobando después que las tres siguen ahí.
+
+Y antes de tocar nada, **la simulación sobre una copia** con
+`--package-lock-only`, para saber qué se movía antes de moverlo:
+
+```
+  body-parser        1.20.6  -> 1.20.9
+  express            4.22.2  -> 4.22.3
+  follow-redirects   1.16.0  -> 1.16.3
+  ip-address         10.7.3  -> 10.7.6
+  qs                 6.16.0  -> 6.17.1
+  total: 5 paquetes, y 0 vulnerabilidades después
+```
+
+⭐ Cinco saltos **de parche**, todos dentro de los rangos ya declarados: por eso
+`package.json` **no cambia** y el único archivo tocado es `package-lock.json`.
+La simulación coincidió exactamente con lo que pasó al aplicarlo.
+
+## ⭐ Y EL PUNTO CIEGO DE `axios`, CUBIERTO POR FIN
+
+`follow-redirects` es la pieza que `axios` usa para seguir redirecciones, y
+`axios` se usa en **un solo sitio** —llamar al proveedor de partidos— que
+**todas las pruebas sustituyen por una fuente falsa**. Ninguna prueba lo ejerce.
+Es el punto ciego que lleva meses anotado en «lo que falta probar».
+
+Se ejerció aparte, **sin gastar cuota del proveedor**:
+
+```
+axios 1.20.0 · follow-redirects 1.16.3
+
+  ✔ GET https simple                        -> 200
+  ✔ GET con params                          -> 200
+  ✔ http://api.github.com/zen               -> 200, url final https://...  REDIRIGIÓ de verdad
+  ✔ http://github.com/mespinoza86           -> 200, url final https://...  REDIRIGIÓ de verdad
+  ✔ CONTROL maxRedirects=0                  -> frena con 301
+```
+
+⚠️ **Y la primera versión de esa sonda no probaba nada.** Pedía
+`https://github.com/mespinoza86` esperando una redirección, la url final era la
+misma que la pedida —no hubo ninguna— y aun así la sonda ponía ✔. Se repitió con
+`http://` para forzar el salto a `https`, que es una redirección de verdad, y con
+un CONTROL que tenía que frenar.
+
+⭐ Es el fallo de siempre con otra cara: **una sonda que dice «sí» sin
+comprobar que el caso que iba a probar ocurrió.**
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `package-lock.json` | Los cinco saltos de parche. **18 líneas** |
+| `package.json` | **Nada**, y es la comprobación de que los saltos son de parche |
+
+**Verificación:**
+
+```
+npm audit --omit=dev        -> 0 vulnerabilidades   (era el único paso rojo del CI)
+npm run check               -> válido
+npm test                    -> 709/709
+CI=true npx playwright test -> ver el cierre de esta entrada
+
+dependencias de desarrollo, después del arreglo:
+   @electric-sql/pglite  presente
+   @playwright/test      presente
+   supertest             presente
+   (es la comprobación de que NO se usó --omit=dev)
+
+el punto ciego de axios, ejercido contra la red de verdad:
+   redirección http -> https   ✔ en dos URLs, con la url final comprobada
+   CONTROL maxRedirects=0      ✔ frena con 301
+```
+
+**Hallazgos nuevos:**
+
+1. ⛔ **«Fallaron las pruebas» puede no ser las pruebas.** El correo de GitHub
+   nombra el *workflow*, que aquí se llama «Pruebas», no el paso. Las pruebas
+   estaban verdes en las cinco corridas; lo rojo era la auditoría de
+   dependencias. **Mirar qué paso falló antes de mirar qué código cambió.**
+2. ⛔ **Un CI verde se pone rojo sin que nadie toque nada.** Los avisos de
+   seguridad se publican contra un `package-lock.json` congelado, así que el
+   mismo código que pasó ayer falla hoy. Buscar la causa en el último commit es
+   buscarla donde no está.
+3. ⚠️ **Cinco corridas en rojo tardaron un mes en llegar a la conversación.** El
+   correo llega a Marco, no a mí, y yo no miré el CI ni una vez en ese mes
+   —ni al cerrar la 126, que era una entrada dedicada a decir qué quedaba a
+   medias—. ⭐ Mirar el estado del CI es parte de «¿cómo estamos?», y hasta hoy
+   no lo era: `git log` y `npm test` no lo dicen.
+4. ⭐ **Una sonda tiene que comprobar que el caso ocurrió, no sólo que no hubo
+   error.** La primera prueba del punto ciego pedía una URL que no redirigía y
+   daba ✔ por la redirección que nunca pasó.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **Volverá a pasar.** La forma de enterarse sin esperar el correo es mirar
+  las corridas, que en un repositorio público se consultan sin `gh` instalado:
+
+  > `curl -s "https://api.github.com/repos/mespinoza86/quinieladeportivaglobal/actions/runs?per_page=5"`
+
+  y de ahí `conclusion` de cada una; con el `id` de la corrida,
+  `.../actions/runs/<id>/jobs` dice **qué paso** falló.
+- 📌 **DECISIÓN DE MARCO: ¿seguir recibiendo los correos del CI?** Llegan a su
+  cuenta y durante un mes no sirvieron de nada porque nadie los leyó como lo que
+  eran. O se miran, o se apagan y el estado del CI se comprueba al cerrar cada
+  sesión. Lo segundo es lo que esta entrada deja escrito.
+- Lo que no cambia: **jalar en Render** la 129 (la tregua), ya con el tope
+  validado, y **esta noche después de las 21:00** para no cambiar la rueda en
+  marcha con dos partidos en vivo.
 
 ---
 

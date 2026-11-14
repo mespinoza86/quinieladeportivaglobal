@@ -141,7 +141,16 @@ const PREGUNTAS = [
    * que se cobraba era el TIEMPO ENCENDIDO, y la bitácora tiene que dejar claro
    * cuál de las dos líneas duele, o alguien lo repite.
    */
-  ['¿Se dice qué línea de Neon cobra?',     'CU-hrs', 'viva']
+  ['¿Se dice qué línea de Neon cobra?',     'CU-hrs', 'viva'],
+  /*
+   * ⛔ Lo de la entrada 130. El CI estuvo CINCO CORRIDAS en rojo durante un mes
+   * sin que saliera en la conversación, porque ni `git log` ni `npm test` dicen
+   * nada de él. La comprobación existe ahora (`scripts/estado-ci.js`), y esta
+   * pregunta es lo que impide que desaparezca de la cabecera: si no está
+   * escrita ahí, el de mañana no la corre.
+   */
+  ['¿Se dice cómo mirar el estado del CI?', 'estado-ci.js', 'viva'],
+  ['¿Se avisa de que el CI se pone rojo solo?', 'auditoría de dependencias', 'viva']
 ];
 
 /*
