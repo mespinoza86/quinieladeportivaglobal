@@ -56,7 +56,7 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '706'],
+  ['¿Cuántas pruebas rápidas?',            '709'],
   ['¿Cuántas de navegador?',               '232'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
@@ -193,7 +193,14 @@ const NO_DEBE_QUEDAR = [
    */
   ['686 pruebas',  'las rápidas pasaron a 706 (129)'],
   ['686 + 232',    'la suma de antes de la entrada 129'],
-  ['686/686',      'la corrida de antes de la tregua']
+  ['686/686',      'la corrida de antes de la tregua'],
+  /*
+   * La guarda de TREGUA_TOPE_MS, el mismo dia: tres pruebas mas, y la cifra de
+   * la manana ya era vieja por la tarde.
+   */
+  ['706 pruebas',  'las rapidas pasaron a 709 al validar TREGUA_TOPE_MS (129)'],
+  ['706 + 232',    'la suma de antes de validar la palanca del entorno'],
+  ['706/706',      'la corrida de antes de la guarda del entorno']
 ];
 
 let fallos = 0;

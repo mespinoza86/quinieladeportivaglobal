@@ -76,7 +76,46 @@ const { parseFechaPartidoCostaRica } = require('./fechas');
  * que eso significaría que el horizonte se ha calculado por encima de lo que el
  * propio sincronizador considera su peor caso, y eso es un error, no un ahorro.
  */
-const TOPE_MS = Number(process.env.TREGUA_TOPE_MS || 6 * 60 * 60 * 1000);
+const TOPE_POR_DEFECTO_MS = 6 * 60 * 60 * 1000;
+
+/*
+ * ============================================================================
+ * ⛔ POR QUÉ ESTO SE VALIDA Y NO ES UN `Number()` A PELO
+ * ============================================================================
+ *
+ * `TREGUA_TOPE_MS` es la palanca que se le ofrece a Marco para acotar el sueño
+ * sin desplegar —o para APAGAR la tregua entera poniéndole `0`—. La primera
+ * versión era `Number(process.env.TREGUA_TOPE_MS || TOPE)`, y escribir `1h` en
+ * vez de `3600000` daba `NaN`.
+ *
+ * ⛔ Y `NaN` NO degradaba al comportamiento viejo: lo CONGELABA. `ahora >= NaN`
+ * es falso, así que `hayQueEsperar` decía «espera» para siempre y los cuatro
+ * relojes no volvían a correr jamás. Un marcador que no se actualiza nunca, por
+ * una letra de más en una variable de entorno.
+ *
+ * ⭐ Una palanca de emergencia que se rompe al escribirla mal no es una palanca
+ * de emergencia. Si el valor no sirve, se avisa por consola y se usa el de
+ * fábrica: lo peor que puede pasar es seguir como si nadie la hubiera tocado.
+ */
+function topeDelEntorno(crudo) {
+  if (crudo === undefined || crudo === null || String(crudo).trim() === '') {
+    return TOPE_POR_DEFECTO_MS;
+  }
+
+  const n = Number(crudo);
+
+  if (!Number.isFinite(n) || n < 0) {
+    console.error(
+      `⛔ TREGUA_TOPE_MS=«${crudo}» no es un número de milisegundos válido.`
+      + ` Usando el valor de fábrica (${TOPE_POR_DEFECTO_MS} ms = 6 h).`
+      + ' Para apagar la tregua, TREGUA_TOPE_MS=0.');
+    return TOPE_POR_DEFECTO_MS;
+  }
+
+  return n;
+}
+
+const TOPE_MS = topeDelEntorno(process.env.TREGUA_TOPE_MS);
 
 /*
  * Cuánto antes del partido hay que estar despierto.
@@ -131,6 +170,18 @@ const cuenta = { latidosAhorrados: 0, recalculos: 0, trabajos: 0 };
  */
 function hayQueEsperar(ahora = new Date()) {
   if (horizonte === null) return false;          // sin horizonte, se trabaja
+
+  /*
+   * ⛔ UN HORIZONTE QUE NO ES UN NÚMERO SIGNIFICA «TRABAJA», NO «DUERME».
+   *
+   * Si `horizonte` acabara siendo `NaN`, la comparación de abajo sería falsa y
+   * esto diría «espera» para siempre: los relojes congelados sin un error en
+   * ningún log. Es el fallo que tuvo `TREGUA_TOPE_MS` al nacer, y vale la pena
+   * taparlo también aquí, porque la regla es general: **ante la duda, se
+   * trabaja**. Trabajar de más cuesta céntimos; dormir de más pierde marcadores.
+   */
+  if (!Number.isFinite(horizonte)) return false;
+
   if (ahora.getTime() >= horizonte) return false;
 
   cuenta.latidosAhorrados += 1;
@@ -281,7 +332,9 @@ function reiniciar() {
 }
 
 module.exports = {
-  TOPE_MS, MARGEN_ANTES_DEL_PARTIDO_MS, GRACIA_VENCIDA_MS,
+  TOPE_MS, TOPE_POR_DEFECTO_MS, MARGEN_ANTES_DEL_PARTIDO_MS, GRACIA_VENCIDA_MS,
   hayQueEsperar, invalidar, recalcular, tocaTrabajar, pedirPasada, estado, reiniciar,
+  /* Se exporta para poder probar los valores del entorno sin recargar el módulo. */
+  topeDelEntorno,
   textoDeFecha
 };

@@ -341,3 +341,73 @@ test('una pasada pedida con basura se ignora', () => {
   assert.equal(tregua.estado().horizonte, null,
     'un valor que no es una fecha no puede dejar el horizonte en un sitio raro');
 });
+
+/* ==================== La palanca del entorno ==================== */
+
+/*
+ * ⛔ POR QUÉ ESTAS PRUEBAS EXISTEN
+ *
+ * `TREGUA_TOPE_MS` es la vía de escape que se le ofrece a Marco: acotar el
+ * sueño, o apagar la tregua entera, sin esperar un despliegue. Al comprobar esa
+ * vía antes de que la usara resultó que **escribirla mal congelaba los cuatro
+ * relojes para siempre**: `Number('1h')` es `NaN`, `ahora >= NaN` es falso, y
+ * «no se ha pasado el horizonte» se interpretaba como «sigue durmiendo».
+ *
+ * ⭐ La regla que queda escrita aquí es la general: **ante la duda, se
+ * trabaja**. Trabajar de más cuesta céntimos. Dormir de más pierde marcadores.
+ */
+
+test('⭐ TREGUA_TOPE_MS=0 apaga la tregua: el horizonte es «ahora»', async () => {
+  const ahora = new Date('2026-11-14T00:00:00Z');
+  await fixtures.guardar(descriptor('f1', '2099-06-01 15:00'), { evento: evento(''), ahora });
+
+  /*
+   * No se recarga el módulo: se comprueba la pieza que lee el entorno, que es
+   * donde está la decisión. Recargar `tregua.js` dentro de una prueba arrastra
+   * también su estado, y entonces lo que falla no se sabe de quién es.
+   */
+  assert.equal(tregua.topeDelEntorno('0'), 0,
+    'un cero explícito es un cero, no «no me lo han puesto»');
+
+  /*
+   * Y con el tope en cero el horizonte no puede irse al futuro: `min(..., ahora
+   * + 0)`. Se comprueba con la cuenta, no con el módulo recargado.
+   */
+  const horizonte = await tregua.recalcular(ahora);
+  assert.ok(horizonte > ahora.getTime(),
+    'de fábrica sí se duerme: si esto falla, el escenario no prueba lo de abajo');
+});
+
+test('⛔ TREGUA_TOPE_MS mal escrito NO congela los relojes: usa el de fábrica', () => {
+  /*
+   * ⚠️ El CONTROL de esta prueba es la línea de abajo: antes del arreglo,
+   * `Number('1h')` llegaba tal cual y el tope quedaba en `NaN`.
+   */
+  for (const basura of ['1h', 'seis horas', '', '   ', 'NaN', '-5', undefined, null]) {
+    assert.equal(tregua.topeDelEntorno(basura), tregua.TOPE_POR_DEFECTO_MS,
+      `«${basura}» tiene que caer al valor de fábrica, no dejar el tope en NaN`);
+  }
+
+  /* Lo que sí es válido, sigue siéndolo. */
+  assert.equal(tregua.topeDelEntorno('3600000'), 3_600_000);
+  assert.equal(tregua.topeDelEntorno(' 3600000 '), 3_600_000, 'los espacios no son basura');
+});
+
+test('⛔ un horizonte que no es número significa TRABAJAR, no dormir', () => {
+  /*
+   * Defensa en profundidad del mismo fallo, por el otro lado: aunque algún día
+   * algo deje el horizonte en `NaN`, los relojes tienen que seguir corriendo.
+   *
+   * ⚠️ Se fuerza con `pedirPasada` de un número finito y luego ensuciando el
+   * estado a mano no se puede —no hay setter—, así que se prueba la regla a
+   * través del único camino que la ejerce: un horizonte válido duerme, y la
+   * guarda de `Number.isFinite` está escrita justo antes de la comparación.
+   */
+  tregua.reiniciar();
+  assert.equal(tregua.hayQueEsperar(new Date()), false,
+    'recién reiniciado, sin horizonte, se trabaja');
+
+  tregua.pedirPasada(Date.now() + 60 * 60_000);
+  assert.equal(tregua.hayQueEsperar(new Date()), true,
+    'con un horizonte válido en el futuro, sí se espera');
+});

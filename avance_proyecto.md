@@ -24,7 +24,7 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 706/706
+npm test                    # 709/709
 npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
@@ -69,7 +69,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **706**, ~2 min |
+| Pruebas rápidas | **709**, ~2 min |
 | Pruebas de navegador | **232**, ~16 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -614,7 +614,7 @@ documento.
 | ⛔ Cómo NO comprobarlo (14 de noviembre de 2026) | **Marco:** *«¿por qué dices que los 4 partidos de vuelta siguen cerrados y con el marcador equivocado, si estoy revisando el marcador y está sin definir y la hora de cierre está bien?»*. Tenía razón: yo repetía **esta misma fila escrita el 10 de octubre** como si fuera de hoy. ⭐ Una fila que dice «comprobado el 10 de octubre» es **verdad como historia y mentira como presente**, y el mes de diferencia no se ve al leerla. Si la frase es «producción está en X», **se vuelve a mirar**, aunque la fila lo diga con fecha y con pruebas |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
-| Pruebas | **706** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Pruebas | **709** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`). ⚠️ **Y no era esto lo que encarecía la factura** |
 | ⛔ Cómputo en Neon | **De aquí salían los ~$21/mes.** Medido el 14 de noviembre: 58 transacciones y 34 escrituras **por minuto**, día y noche, y `pg_postmaster_start_time()` dando **19,7 días sin suspenderse** con el autoapagado puesto. La **tregua** (129) lo arregla: ~13 despertares/día en vez de 1440, estimación honesta de **35–50 CU-hrs/mes (~$4–5)**. ⭐ El tope se ajusta sin tocar código con `TREGUA_TOPE_MS` (de fábrica 6 h; 1 h sería `3600000`). ⚠️ **Nada de esto cuenta hasta que Render jale** |
 | ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) |
@@ -630,6 +630,17 @@ documento.
   desaparece es el minuto a minuto de madrugada, al 1%.
   ⚠️ **El tope se ajusta sin tocar código**: `TREGUA_TOPE_MS` en el entorno, de
   fábrica 6 horas. Es lo máximo que se duerme aunque el cálculo falle.
+- 📌 **CÓMO APAGAR LA TREGUA SIN DESPLEGAR, si algún día se porta mal** (129):
+
+  > En Render, variable de entorno **`TREGUA_TOPE_MS = 0`** y reiniciar.
+
+  Con el tope en cero el horizonte es siempre «ahora», así que los relojes
+  vuelven a trabajar cada minuto **exactamente como antes de la tregua**. Para
+  acotarla en vez de apagarla, `3600000` es una hora.
+  ⭐ **Y escribirla mal es inofensivo**: cualquier valor que no sea un número de
+  milisegundos válido —`1h`, `seis horas`, un negativo— se avisa por consola y
+  se usa el de fábrica. ⛔ No era así al nacer: `Number('1h')` daba `NaN` y eso
+  **congelaba los cuatro relojes para siempre**. Está contado en la 129.
   ⛔ **Quien escriba algo que crea trabajo tiene que llamar a
   `tregua.invalidar()`** —guardar jornada y agregar partido ya lo hacen—, y hay
   un centinela que lo cuenta. Olvidarlo es un partido que nadie consulta.
@@ -920,7 +931,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las dieciseis migraciones corridas**, **706 + 232** pruebas en
+funcionando, **las dieciseis migraciones corridas**, **709 + 232** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1327,7 +1338,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 706 pruebas rápidas, ~2 min
+npm test                   # las 709 pruebas rápidas, ~2 min
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -2025,7 +2036,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 706 pruebas rápidas y 232 de navegador
+### 2.5 `test/` — 709 pruebas rápidas y 232 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -22004,7 +22015,7 @@ factura.
 **Verificación:**
 
 ```
-npm test                    -> 706/706   (eran 686)
+npm test                    -> 709/709   (eran 686)
 CI=true npx playwright test -> 232/232   (13,6 min, escritorio y móvil)
 
 simulación contra los datos de PRODUCCIÓN:
@@ -22017,6 +22028,12 @@ mutaciones, los dos sentidos:
    quitar invalidar() de una ruta                 -> ROJO
    darle a un trabajo el intervalo del de al lado -> ROJO
    dos setInterval en el planificador             -> ROJO
+   quitar la guarda de TREGUA_TOPE_MS             -> ROJO
+
+la palanca del entorno, probada pasando por recalcular():
+   sin variable   tope=6 h    duerme 360 min   (lo normal)
+   TOPE_MS=0      tope=0      duerme   0 min   -> APAGADA, como antes de la tregua
+   TOPE_MS=1h     tope=NaN    ANTES: dormia para siempre  AHORA: cae al de fabrica
 ```
 
 **Lo que se espera de la factura, dicho honestamente:**
@@ -22060,7 +22077,26 @@ siguiente** si se pasan las 100, y eso es la aplicación caída.
 7. ⭐ **Una estimación cómoda que no se cumple cuesta más que una incómoda que
    sí.** La cuenta ingenua daba ~$1; la honesta $4–5. Decir $1 y que llegue $5
    es el camino a que no vuelvan a creerte.
-8. ⛔ **UNA COMPROBACIÓN CON FECHA CADUCA SOLA, Y NO SE NOTA AL LEERLA.** Al
+8. ⛔⛔ **LA PALANCA DE EMERGENCIA SE ROMPÍA AL ESCRIBIRLA MAL.** Marco preguntó
+   si podía jalar *«sin correr riesgos de lo que ya tenemos en producción»*. Al
+   comprobar la vía de escape que le iba a ofrecer —`TREGUA_TOPE_MS` en el
+   entorno— resultó que `Number('1h')` da `NaN`, y **`NaN` no degradaba al
+   comportamiento viejo: lo congelaba**. `ahora >= NaN` es falso, así que
+   `hayQueEsperar` decía «espera» para siempre y los cuatro relojes **no
+   volvían a correr jamás** — un marcador que no se actualiza nunca, por una
+   letra de más en una variable de Render.
+   ⭐ **Una palanca de emergencia que se rompe al escribirla mal no es una
+   palanca de emergencia.** Ahora `topeDelEntorno()` valida y, si el valor no
+   sirve, avisa por consola y usa el de fábrica: lo peor que puede pasar es
+   seguir igual que si nadie la hubiera tocado. Y de rebote queda la regla
+   general escrita en `hayQueEsperar`: **ante la duda, se trabaja** — trabajar
+   de más cuesta céntimos, dormir de más pierde marcadores.
+   ⚠️ **Y la primera prueba que escribí de esto no probaba nada**: usaba
+   `pedirPasada`, que fija el horizonte a pelo y **se salta el tope**. Daba
+   «duerme» con los cuatro valores, incluido el cero, y de ahí casi salió un
+   «sí, tienes interruptor de apagado» que era falso. El tope sólo decide dentro
+   de `recalcular`, y hay que probarlo ahí.
+9. ⛔ **UNA COMPROBACIÓN CON FECHA CADUCA SOLA, Y NO SE NOTA AL LEERLA.** Al
    cerrar esta entrada le dije a Marco que los cuatro partidos de vuelta seguían
    cerrados y con el marcador equivocado. Él contestó: *«¿por qué dices eso, si
    estoy revisando el marcador y está sin definir y la hora de cierre está
