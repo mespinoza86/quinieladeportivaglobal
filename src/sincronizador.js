@@ -43,6 +43,21 @@ const rankingMod = require('./ranking');
  * el mismo evento, y la comparación avisaría de discrepancias inventadas.
  */
 const { horaDelEvento } = require('./proveedor');
+/*
+ * Sólo para `pedirPasada`: cuando un partido termina hay que resolver sus
+ * trivias, y el horizonte de la tregua no puede verlo solo.
+ */
+const tregua = require('./tregua');
+
+/*
+ * Cuánto se espera, tras ver terminar un partido, para resolver sus trivias.
+ *
+ * ⚠️ No es cero: el proveedor puede tardar en dar el marcador definitivo, y
+ * resolver con un resultado a medias sería peor que esperar un minuto. Pero
+ * tampoco los cinco del reloj de trivias, porque entre medias la tregua podría
+ * haberse dormido seis horas.
+ */
+const MARGEN_TRIVIAS_MS = 60 * 1000;
 
 const CERROJO_SYNC = 'sincronizacion-global';
 const TTL_CERROJO_SYNC_MS = 5 * 60 * 1000;
@@ -629,8 +644,32 @@ async function reescribirJornadaDesdeCache(quinielaId, jornadaNombre, { ahora = 
     const nuevos = await oficialesMod.mapaDe(c, jornadaId);
     const cambiaronPuntos = oficialesMod.puntosPuedenHaberCambiado(anteriores, nuevos);
 
-    return { ok: true, escritos: filas.length, cambiaronPuntos };
+    /*
+     * ⛔ ¿HA TERMINADO ALGÚN PARTIDO EN ESTA PASADA? LAS TRIVIAS LO NECESITAN.
+     *
+     * Una trivia se resuelve cuando su partido termina. Pero en cuanto termina,
+     * su fixture deja de pedir consultas —`proxima_consulta` pasa a nulo— así
+     * que si era lo último vivo, el horizonte de la tregua salta al tope y las
+     * trivias se resolverían **hasta seis horas tarde**.
+     *
+     * ⚠️ La tregua no puede verlo por su cuenta: la tabla de trivias lleva RLS
+     * y consultarla obligaría a recorrer las quinielas activas una por una,
+     * justo el coste que ese módulo existe para evitar. Así que lo avisa quien
+     * sí lo sabe, que es este ciclo.
+     */
+    const algoTermino = [...nuevos.entries()].some(([id, o]) =>
+      o.estado === 'TC' && anteriores.get(id)?.estado !== 'TC');
+
+    return { ok: true, escritos: filas.length, cambiaronPuntos, algoTermino };
   });
+
+  /*
+   * Fuera de la transacción: pedirlo dentro no aportaría nada —es una variable
+   * en memoria— y un fallo aquí no debe deshacer unos marcadores ya escritos.
+   */
+  if (resultado.ok && resultado.algoTermino) {
+    tregua.pedirPasada(Date.now() + MARGEN_TRIVIAS_MS);
+  }
 
   if (!resultado.ok || !resultado.cambiaronPuntos) {
     /*

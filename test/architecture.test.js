@@ -403,7 +403,36 @@ test('el sincronizador no se dispara desde el tráfico de los usuarios', () => {
   const planificador = quitarComentarios(leer(path.join('src', 'planificador.js')));
   assert.match(planificador, /const INTERVALO_CICLO_SYNC_MS/);
   assert.match(planificador, /setInterval\(/);
-  assert.match(planificador, /unCiclo\(\)/);
+
+  /*
+   * ⚠️ Antes esto buscaba la llamada literal `unCiclo()`. El 14 de noviembre de
+   * 2026 el ciclo pasó a arrancarse a través de la tregua —`siTocaTrabajar(…,
+   * unCiclo)`, para que un latido sin nada que hacer no toque la base y Neon
+   * pueda suspender el cómputo— y la llamada directa desapareció.
+   *
+   * Lo que este centinela vigila NO es la forma de la llamada: es que el ciclo
+   * lo dispare el RELOJ del planificador y no el tráfico de los usuarios. Así
+   * que se comprueba que el reloj conoce `unCiclo`, no cómo lo invoca.
+   */
+  assert.match(planificador, /unCiclo/);
+
+  /*
+   * ⚠️ SEGUNDA VEZ QUE ESTO HAY QUE REESCRIBIRLO EN EL MISMO DÍA, y conviene
+   * que la tercera no haga falta.
+   *
+   * Buscaba `unCiclo()`; luego `setInterval(siTocaTrabajar(…, unCiclo))`; y
+   * ahora el ciclo cuelga de un latido maestro que reparte el turno entre los
+   * cuatro trabajos. Cada vez que cambió el cableado, el centinela se puso rojo
+   * sin que su INTENCIÓN hubiera cambiado ni un ápice.
+   *
+   * La intención es: **el ciclo lo dispara un reloj del planificador, no una
+   * petición HTTP**. Así que se comprueba eso y nada más — que `unCiclo` viva
+   * dentro de la función que el `setInterval` llama.
+   */
+  assert.match(planificador, /async function latido\(\)[\s\S]*?unCiclo[\s\S]*?\n  \}/,
+    'el ciclo tiene que correr dentro del latido del planificador');
+  assert.match(planificador, /setInterval\([\s\S]{0,120}latido\(\)/,
+    'y el latido tiene que colgar de un reloj');
 });
 
 test('el sincronizador no se autollama por HTTP ni conserva la puerta interna', () => {
@@ -2631,8 +2660,36 @@ test('⛔ el aviso por correo toma el cerrojo antes de mandar nada', () => {
    * un ciclo abandonado por tiempo -hay metrica que los cuenta- se llevaria el
    * aviso con el, y avisar no necesita salir a la red.
    */
-  assert.match(plan, /setInterval\([\s\S]{0,200}avisarDeCompartir\(\)/,
-    'el aviso necesita su propio reloj');
+  /*
+   * ⚠️ Antes esto buscaba `avisarDeCompartir()` con sus paréntesis. El 14 de
+   * noviembre de 2026 el aviso pasó a arrancarse a través de la tregua
+   * —`siTocaTrabajar(…, avisarDeCompartir)`— para que un latido sin nada que
+   * hacer no toque la base y Neon pueda suspender el cómputo.
+   *
+   * Lo que se vigila sigue siendo lo mismo: que el aviso tenga **su propio
+   * reloj** y no cuelgue del ciclo del proveedor. Sólo cambia cómo se invoca.
+   */
+  /*
+   * ⚠️ Lo que se vigila es que el aviso tenga **su propia cadencia** y no vaya
+   * colgado del ciclo del proveedor: un ciclo abandonado por tiempo —hay
+   * métrica que los cuenta— se llevaría el correo con él, y avisar no necesita
+   * salir a la red.
+   *
+   * Desde el latido maestro eso se expresa así: el aviso corre por su cuenta,
+   * con su propio intervalo, dentro del latido.
+   */
+  assert.match(plan, /correr\([^)]*INTERVALO_AVISO_COMPARTIR_MS, avisarDeCompartir/,
+    'el aviso necesita su propia cadencia, no la del sincronizador');
+
+  /*
+   * ⛔ Y QUE EL LATIDO SIGA PASANDO POR LA TREGUA, que es lo que lo hace barato.
+   *
+   * Si alguien quitara esa pregunta, los cuatro trabajos volverían a tocar la
+   * base cada 60 segundos y el cómputo de Neon no se suspendería nunca: ~197
+   * CU-hrs al mes, ~21 dólares, por un correo que casi nunca hay que mandar.
+   */
+  assert.match(plan, /if \(!\(await tregua\.tocaTrabajar\(/,
+    'el latido tiene que preguntar a la tregua antes de tocar la base');
 });
 
 test('⛔ el aviso por correo no lleva marcadores dentro', () => {
@@ -2900,4 +2957,94 @@ test('⛔ ninguna pantalla reimplementa la regla del cierre ni cruza por nombres
     'Una pantalla volvió a cruzar partidos por el nombre de los equipos aceptando '
     + 'el orden invertido. En una jornada de ida y vuelta eso confunde los dos. '
     + 'Cruza por `partido.id` contra `oficial.partidoId`.');
+});
+
+/*
+ * ============================================================================
+ * ⛔ TODA RUTA QUE CREE UN PARTIDO TIENE QUE DESPERTAR A LOS RELOJES
+ * ============================================================================
+ *
+ * Desde el 14 de noviembre de 2026 los relojes duermen hasta el momento en que,
+ * según lo guardado, toca el siguiente trabajo (`src/tregua.js`). Eso bajó la
+ * factura de Neon de ~197 CU-hrs al mes a una fracción.
+ *
+ * ⛔ Pero el horizonte vive EN MEMORIA, y una ruta que añade un partido puede
+ * adelantar el próximo trabajo sin que el horizonte se entere. Si los relojes
+ * están dormidos seis horas y el partido nuevo es dentro de una, **nadie lo
+ * consulta y el marcador no entra**. No da error: la pantalla se queda muda.
+ *
+ * ⚠️ Esto se encontró enumerando las formas de equivocarse, no probándolo:
+ * `agregar-partido` se había quedado sin `invalidar()` y **ninguna prueba lo
+ * habría cazado**, porque todas miraban `tregua.js` y el fallo estaba en quién
+ * la avisa. Un módulo correcto al que nadie llama no sirve de nada — es la
+ * misma lección que `apiRound` y que el validador de la hora.
+ */
+test('⛔ las rutas que crean partidos despiertan la tregua', () => {
+  const dominio = quitarComentarios(leer(path.join('src', 'rutas', 'dominio.js')));
+
+  /*
+   * Las rutas que AÑADEN trabajo: guardar una jornada entera y añadir un
+   * partido suelto. Quitar partidos o cambiar un comodín no adelanta nada.
+   */
+  const creanTrabajo = [
+    /app\.post\('\/api\/jornadas'/,
+    /app\.post\('\/api\/jornadas\/agregar-partido'/
+  ];
+
+  for (const ruta of creanTrabajo) {
+    assert.match(dominio, ruta, 'la ruta tiene que seguir existiendo');
+  }
+
+  const invalidaciones = (dominio.match(/tregua\.invalidar\(\)/g) || []).length;
+
+  assert.equal(invalidaciones, creanTrabajo.length,
+    `Hay ${creanTrabajo.length} rutas que crean trabajo y ${invalidaciones} llamadas a `
+    + '`tregua.invalidar()`. Si añadiste una ruta que crea partidos, tiene que despertar '
+    + 'a los relojes: si no, su partido puede empezar con todo el mundo dormido.');
+});
+
+/*
+ * ============================================================================
+ * ⛔ LOS CUATRO TRABAJOS CONSERVAN SU CADENCIA DENTRO DEL LATIDO
+ * ============================================================================
+ *
+ * Al meter la tregua, los cuatro `setInterval` se fundieron en un latido
+ * maestro. Eso arregló que se robaran el turno —el primero recalculaba el
+ * horizonte y los otros tres se dormían— pero abre otra puerta: que alguien
+ * cuelgue un trabajo del latido SIN su cadencia propia, y entonces un trabajo
+ * de cada cinco minutos empiece a correr cada minuto, o al revés.
+ *
+ * ⚠️ El caso que más duele es la notificación: tiene una ventana de quince
+ * minutos, así que perder turnos significa un aviso que no llega. No da error.
+ */
+test('⛔ cada trabajo del latido corre con SU intervalo, no con el de al lado', () => {
+  const plan = quitarComentarios(leer(path.join('src', 'planificador.js')));
+
+  const trabajos = [
+    ['unCiclo', 'INTERVALO_CICLO_SYNC_MS'],
+    ['avisarDeCompartir', 'INTERVALO_AVISO_COMPARTIR_MS'],
+    ['notificarDeTodas', 'INTERVALO_NOTIFICACIONES_MS'],
+    ['resolverTriviasDeTodas', 'INTERVALO_RESOLUCION_TRIVIAS_MS']
+  ];
+
+  for (const [trabajo, intervalo] of trabajos) {
+    /*
+     * ⚠️ `\\(` y no `\(`: esto se escribió primero desde el shell con un
+     * heredoc, que se comió una barra invertida y dejó `correr(` como grupo sin
+     * cerrar. El error fue honesto —«Unterminated group»— pero es la misma
+     * trampa de §C que ya mordió tres veces hoy. Texto con barras invertidas:
+     * herramienta de edición, no línea de comandos.
+     */
+    const esperado = new RegExp(`correr\\([^)]*${intervalo}, ${trabajo}`);
+    assert.match(plan, esperado,
+      `«${trabajo}» tiene que correr con ${intervalo}: si toma el de otro, `
+      + 'empieza a perder turnos o a gastar de más, y no da ningún error');
+  }
+
+  /* Y un solo reloj: si vuelven a ser cuatro, vuelve el robo de turnos. */
+  const relojes = (plan.match(/setInterval\(/g) || []).length;
+  assert.equal(relojes, 1,
+    `El planificador tiene ${relojes} relojes. Con más de uno vuelven a robarse `
+    + 'el turno a través de la tregua: el primero recalcula el horizonte y los '
+    + 'demás se encuentran con que «ya no toca».');
 });

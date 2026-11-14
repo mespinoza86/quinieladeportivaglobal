@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 6 de octubre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 14 de noviembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -24,7 +24,7 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 686/686
+npm test                    # 706/706
 npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
@@ -69,7 +69,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **686**, ~75 s |
+| Pruebas rápidas | **706**, ~2 min |
 | Pruebas de navegador | **232**, ~16 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -78,7 +78,8 @@ entradas de bitácora (040 a 052).
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
 | Base en Neon | ✅ **Las 16 migraciones corridas.** La 016 el 10 de octubre de 2026; desde entonces el esquema no se ha tocado |
 | Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo; producción se queda donde se jaló la última vez — mira la fila de Producción del PUNTO DE PARTIDA, que es la que se mantiene al día. En uso, con cuentas y quinielas de verdad |
-| Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
+| Tráfico a Neon | ✅ **~0,6 GB/mes** de 500, medido. Era 20,4 GB a principios de septiembre. ⚠️ **No es lo que se cobra** |
+| ⛔ Cómputo en Neon | **Lo que de verdad factura**: ~197 CU-hrs/mes a $0,106 → **~$21/mes**, casi todo encendido sin nada que hacer. La **tregua** (129) lo baja a una estimación honesta de **35–50 CU-hrs**. ⚠️ **Sólo cuenta cuando Render jale** |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
 **Lo que ya está probado y funciona**, y no hay que volver a discutirlo:
@@ -603,21 +604,34 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 13 de noviembre de 2026
+#### 📍 Dónde quedó todo el 14 de noviembre de 2026
 
 | | |
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 128** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ⛔ **LO MÁS URGENTE AL RETOMAR: JALAR.** Render se quedó en `85287bf` (entrada 121) — **comprobado el 10 de octubre de 2026** con dos lecturas de `/js/jornadas.js`: servía `horaPartido` ×4 y `usarFechaProveedor` ×0. Le faltan las entradas **123 a 128**, y con el código viejo **los cuatro partidos de vuelta de la Jornada 13 siguen cerrados y con el marcador del partido equivocado** (128). ⭐ Después de jalar, comprobarlo así: `curl -s .../js/llenar_jornada_user.js \| grep -c partidoId` debe dar ≥1 en dos lecturas seguidas, con un CONTROL inventado que dé cero. Nunca comparar tamaños (§C) |
+| Producción | ⛔ **LO MÁS URGENTE AL RETOMAR: JALAR.** Render se quedó en `85287bf` (entrada 121) — **comprobado el 10 de octubre de 2026** con dos lecturas de `/js/jornadas.js`: servía `horaPartido` ×4 y `usarFechaProveedor` ×0. Le faltan las entradas **123 a 129**, y con el código viejo pasan **dos cosas a la vez**: los cuatro partidos de vuelta de la Jornada 13 siguen cerrados y con el marcador del partido equivocado (128), **y los cuatro relojes siguen despertando a Neon cada minuto, así que la factura sigue igual** (129). ⭐ Después de jalar, comprobarlo así: `curl -s .../js/llenar_jornada_user.js \| grep -c partidoId` debe dar ≥1 en dos lecturas seguidas, con un CONTROL inventado que dé cero. Nunca comparar tamaños (§C) |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
-| Pruebas | **686** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
-| Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) y ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) |
+| Pruebas | **706** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
+| Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`). ⚠️ **Y no era esto lo que encarecía la factura** |
+| ⛔ Cómputo en Neon | **De aquí salían los ~$21/mes.** Medido el 14 de noviembre: 58 transacciones y 34 escrituras **por minuto**, día y noche, y `pg_postmaster_start_time()` dando **19,7 días sin suspenderse** con el autoapagado puesto. La **tregua** (129) lo arregla: ~13 despertares/día en vez de 1440, estimación honesta de **35–50 CU-hrs/mes (~$4–5)**. ⭐ El tope se ajusta sin tocar código con `TREGUA_TOPE_MS` (de fábrica 6 h; 1 h sería `3600000`). ⚠️ **Nada de esto cuenta hasta que Render jale** |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) |
 
 ##### Qué se puede tocar y esperar que funcione
 
+- ⭐ **LA TREGUA: los relojes duermen cuando no hay nada que hacer** (129).
+  `src/tregua.js` guarda **en memoria** hasta cuándo no hay trabajo, y los
+  relojes preguntan ahí **antes** de abrir una consulta. Así Neon ve sus cinco
+  minutos quietos y apaga el cómputo, que es de donde salían los ~$21/mes.
+  ⭐ **Durante un partido no cambia NADA**: se midió con 180 latidos —en vivo
+  100%, medio tiempo 100%, una hora antes del saque 100%— y lo único que
+  desaparece es el minuto a minuto de madrugada, al 1%.
+  ⚠️ **El tope se ajusta sin tocar código**: `TREGUA_TOPE_MS` en el entorno, de
+  fábrica 6 horas. Es lo máximo que se duerme aunque el cálculo falle.
+  ⛔ **Quien escriba algo que crea trabajo tiene que llamar a
+  `tregua.invalidar()`** —guardar jornada y agregar partido ya lo hacen—, y hay
+  un centinela que lo cuenta. Olvidarlo es un partido que nadie consulta.
 - **Tres temas**: oscuro (de fábrica), de día y cancha. Botón redondo arriba a la
   derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
@@ -905,7 +919,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las dieciseis migraciones corridas**, **686 + 232** pruebas en
+funcionando, **las dieciseis migraciones corridas**, **706 + 232** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1312,7 +1326,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 686 pruebas rápidas, ~75 s
+npm test                   # las 706 pruebas rápidas, ~2 min
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -2010,7 +2024,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 686 pruebas rápidas y 232 de navegador
+### 2.5 `test/` — 706 pruebas rápidas y 232 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -21748,6 +21762,318 @@ escrito lo que hacía.
   equivocado. Comprobarlo con `grep -c partidoId` en `/js/llenar_jornada_user.js`.
 - El pestillo **sigue sin verse decir «no»** (125). El que sirve es **Club
   América vs Tijuana** (Jornada 2), que no tiene marcador oficial.
+- §Deuda: la marca de «hora tocada a mano».
+- Y lo de siempre: la notificación al teléfono, el icono en iPhone, el ciclo del
+  borrador y el punto ciego de `axios`.
+
+---
+
+### 📌 Entrada 129 — 14 de noviembre de 2026 — La tregua: los relojes dejan de despertar a Neon por nada
+
+**Objetivo:** Marco: *«revisa cómo está lo del tráfico en Neon, te acuerdas que
+una vez lo habíamos ajustado, la factura me sigue llegando cara, analiza cómo
+está eso»*.
+
+## ⭐ LO PRIMERO: NO ERA EL TRÁFICO. ERA EL TIEMPO ENCENDIDO
+
+En septiembre se arregló el **tráfico** —de 20,4 GB/mes a 0,6— y quedó
+arreglado. Por eso la factura no bajó: **el tráfico no era lo que se cobraba**.
+
+Neon cobra tres cosas por separado, y la que duele es la primera:
+
+| Concepto | Lo que usamos | Lo que cuesta |
+|---|---|---|
+| **Cómputo** | **~197 CU-hrs/mes** | **$0,106 el CU-hora → ~$21/mes** |
+| Disco | 0,13 GB | incluido |
+| Tráfico | 0,86 GB de 500 | incluido |
+
+⛔ **Toda la factura era cómputo encendido sin nada que hacer.** Los partidos
+ocupan unas pocas horas por semana; el cómputo llevaba **19,7 días seguidos sin
+suspenderse**.
+
+## CÓMO SE SUPO, EN VEZ DE SUPONERLO
+
+Neon apaga el cómputo cuando lleva **cinco minutos sin actividad** («scale to
+zero»), y ese ajuste **ya estaba encendido**. Así que la pregunta era: ¿por qué
+no se apaga nunca? Se midió contra producción:
+
+```
+pg_postmaster_start_time()  ->  19,7 días de encendido continuo
+                                (con scale to zero puesto en 5 min)
+
+tráfico de la aplicación, con sólo Render hablando:
+   58 transacciones/min
+   34 escrituras/min
+   día y noche, sin parar
+```
+
+⭐ **`pg_postmaster_start_time()` es la prueba.** No dice «cuánto gastas»: dice
+**si alguna vez se apagó**. 19,7 días con el autoapagado puesto significa que
+algo lo tocaba antes de cada quinto minuto, siempre.
+
+**Y éramos nosotros.** El planificador tenía cuatro relojes, cada uno con su
+`setInterval` de 60 segundos:
+
+| Reloj | Cada |
+|---|---|
+| la sincronización con el proveedor | 1 min |
+| el aviso de compartir | 1 min |
+| la notificación de los partidos | 1 min |
+| la resolución de trivias | 2 min |
+
+Y **lo primero que hace cada uno es escribir el cerrojo** (`job_locks`), para que
+dos instancias no hagan el mismo trabajo. Escribir es actividad. Neon no veía
+jamás cinco minutos quietos.
+
+⚠️ **Ese cerrojo no sobra**, y no se quitó: es lo que impide que dos procesos
+sincronicen a la vez. El fallo no era el cerrojo, era **preguntarlo cuando no
+había nada que sincronizar**.
+
+## LA IDEA: PREGUNTAR EN MEMORIA ANTES DE PREGUNTAR A LA BASE
+
+`src/tregua.js`, nuevo. Los relojes siguen latiendo cada minuto —un temporizador
+en memoria es gratis— pero **antes de abrir una consulta preguntan aquí**:
+
+> ¿Hay algo que hacer antes de las 19:45?
+
+Si no, la respuesta es «espera», **sin tocar la base**. El cómputo se duerme.
+
+El horizonte sale de una sola consulta a `fixtures`:
+
+```sql
+SELECT min(proxima_consulta) FILTER (WHERE proxima_consulta > $2) AS proxima,
+       min(api_date)         FILTER (WHERE api_date > $1)         AS siguiente_partido
+  FROM fixtures
+ WHERE estado IS DISTINCT FROM 'TC'
+```
+
+⭐ **`fixtures` es la única tabla sin RLS**, así que esto es **una consulta sin
+contexto de quiniela**, no siete. Si llevara RLS, la tregua habría costado más
+viajes de los que ahorra.
+
+De ahí salen los dos momentos que importan —cuándo toca volver a preguntarle al
+proveedor, y dos horas antes del próximo partido, que es cuando despierta el
+primer aviso— y se duerme hasta el más cercano.
+
+⚠️ **Es conservador a propósito: despierta antes de lo necesario, nunca
+después.** Si una cuenta se equivoca, se equivoca gastando.
+
+## ⛔ EL FALLO QUE HABRÍA HECHO QUE NO SIRVIERA DE NADA: 19 FIXTURES ZOMBIS
+
+Al simularlo contra producción, el horizonte salía **«ahora»** siempre. La
+tregua no habría dormido ni un minuto.
+
+La causa: **19 fixtures con `proxima_consulta` vencida hacía hasta 60 días**,
+de dos quinielas que Marco borró (`LigaMx` y `Prueba1`). `fixtures` no lleva RLS
+y no cuelga de la quiniela, así que **borrar la quiniela no se los llevó**.
+Seguían pidiendo a gritos una consulta que ya no le importaba a nadie.
+
+⭐ Se arregla sin borrar nada: **`GRACIA_VENCIDA_MS = 12 horas`**. Una consulta
+vencida hace más de medio día no es trabajo atrasado, es basura, y no cuenta
+para el horizonte. Borrar filas de producción para que un cálculo salga era el
+camino arriesgado; ignorarlas es el barato y reversible.
+
+## ⛔⛔ Y EL GORDO, QUE SALIÓ DE UNA PREGUNTA DE MARCO
+
+Marco preguntó: *«¿de qué forma tu cálculo se puede equivocar?»*. Enumerando las
+formas aparecieron **dos fallos reales ya escritos**.
+
+### 1 · `agregar-partido` no despertaba a nadie
+
+`POST /api/jornadas` llamaba a `tregua.invalidar()` al guardar. **`POST
+/api/jornadas/agregar-partido` no.** Esa ruta también crea trabajo: si el
+horizonte decía «seis horas» y el partido añadido era dentro de una, **nadie lo
+habría consultado**.
+
+⚠️ **Esto no lo encontró ninguna prueba.** Lo encontró enumerar las rutas que
+crean partidos y contarlas contra las llamadas a despertar. Queda un centinela
+que hace exactamente esa cuenta.
+
+### 2 · Los cuatro relojes se robaban el turno entre ellos
+
+Los cuatro preguntaban a la tregua **cada uno por su cuenta**. El primero en
+latir preguntaba, recalculaba el horizonte, lo empujaba al futuro… y los otros
+tres se encontraban con que «ya no tocaba». Medido:
+
+```
+=== CON UN PARTIDO EN VIVO, 10 MINUTOS ===
+  sincronizar   10 de 10   ✔
+  notificar      9 de 10   ⛔
+  compartir      9 de 10   ⛔
+  trivias        1 de  2   ⛔
+```
+
+⛔ **Y en un día tranquilo el robo habría sido total**: el primero se lleva el
+único turno y los otros tres **no corren jamás**. La notificación de los 15
+minutos antes del partido **no habría salido nunca**.
+
+⭐ Eso es exactamente «un marcador que no entra» — el fallo que esta tregua
+existe para no causar — y lo habría metido el arreglo mismo, sin que ninguna
+prueba lo dijera.
+
+**El arreglo: un solo latido maestro.** Un `setInterval`, que pregunta **una
+vez** y reparte el turno entre los cuatro trabajos, cada uno con su cadencia:
+
+```js
+async function latido() {
+  const ahora = Date.now();
+  if (!(await tregua.tocaTrabajar(new Date(ahora)))) return;
+  await correr('la sincronización', INTERVALO_CICLO_SYNC_MS, unCiclo, ahora);
+  await correr('el aviso de compartir', INTERVALO_AVISO_COMPARTIR_MS, avisarDeCompartir, ahora);
+  await correr('la notificación de los partidos', INTERVALO_NOTIFICACIONES_MS, notificarDeTodas, ahora);
+  await correr('la resolución de trivias', INTERVALO_RESOLUCION_TRIVIAS_MS, resolverTriviasDeTodas, ahora);
+}
+```
+
+Vuelto a medir:
+
+```
+=== PARTIDO EN VIVO ===        === DÍA TRANQUILO ===
+  sincronizar  10/10  ✔          una pasada y a dormir
+  compartir    10/10  ✔          (1/1/1/1, como debe)
+  notificar    10/10  ✔
+  trivias        2/2  ✔
+```
+
+Queda un centinela que comprueba que **cada trabajo corre con SU intervalo, no
+con el de al lado**, y que los `setInterval` del planificador son **exactamente
+uno**.
+
+## LAS TRIVIAS, QUE HABRÍAN ESPERADO SEIS HORAS
+
+Cuando un partido termina deja de pedir consultas, así que el horizonte saltaba
+al tope y **las trivias de ese partido esperaban hasta seis horas** para
+resolverse. El sincronizador, al detectar que algo pasó a terminado, pide una
+pasada para dentro de un minuto:
+
+```js
+const algoTermino = [...nuevos.entries()].some(([id, o]) =>
+  o.estado === 'TC' && anteriores.get(id)?.estado !== 'TC');
+// ... fuera de la transacción:
+if (resultado.ok && resultado.algoTermino) tregua.pedirPasada(Date.now() + MARGEN_TRIVIAS_MS);
+```
+
+⚠️ **Fuera de la transacción a propósito.** Si la transacción se deshace, nadie
+ha pedido una pasada por un partido que no terminó.
+
+## ⚠️ DOS DE MIS PROPIAS PRUEBAS NO PROBABAN LO QUE DECÍAN
+
+Al mutar el código —quitar el tope de 6 horas, quitar el margen de 2 horas— las
+pruebas **siguieron verdes las dos veces**.
+
+| Mutación | Por qué no se notaba |
+|---|---|
+| quitar el tope | la ventana más larga del sincronizador **también es 6 h**, así que el tope no llega a decidir con los datos de hoy |
+| quitar el margen de 2 h | sólo gana para partidos a **entre 2 y 8 horas** vista, y ningún escenario caía ahí |
+
+Las dos reescritas con datos donde **el código tiene que decidir**, y vueltas a
+mutar: rojo las dos.
+
+⭐ Una prueba verde sobre un escenario donde la línea no participa es una prueba
+que no prueba nada. La mutación es lo único que lo dice.
+
+## LO QUE ESTO NO CAMBIA — la pregunta de Marco
+
+Marco preguntó: *«¿entonces con este cambio ya no vamos a ver el marcador
+actualizarse cada minuto?»*. Se simularon 180 latidos:
+
+| Situación | Veces que trabaja |
+|---|---|
+| partido en vivo | **100%** |
+| medio tiempo | **100%** |
+| una hora antes del saque | **100%** |
+| día sin partidos | **1%** |
+
+⭐ **El minuto a minuto durante el partido queda idéntico.** Lo que desaparece es
+el minuto a minuto **de madrugada, sin partidos**, que es de donde salía la
+factura.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/tregua.js` | **Nuevo.** El horizonte en memoria, el tope, la gracia de los vencidos, `invalidar()` y `pedirPasada()` |
+| `src/planificador.js` | Los cuatro `setInterval` fundidos en **un latido maestro** que reparte el turno |
+| `src/sincronizador.js` | Detecta `algoTermino` y pide una pasada para las trivias |
+| `src/rutas/dominio.js` | `tregua.invalidar()` en guardar jornada **y en agregar partido** |
+| `test/tregua.test.js` | **Nuevo.** 16 pruebas |
+| `test/architecture.test.js` | Tres centinelas: las rutas que crean partidos despiertan; cada trabajo con su cadencia; un solo `setInterval` |
+| `package.json` | ⚠️ `tregua.test.js` añadido a **los dos** guiones, `test` y `test:postgres` |
+
+**Verificación:**
+
+```
+npm test                    -> 706/706   (eran 686)
+CI=true npx playwright test -> 232/232   (13,6 min, escritorio y móvil)
+
+simulación contra los datos de PRODUCCIÓN:
+   dormiría 107 minutos ahora mismo
+   ~13 despertares/día en vez de 1440
+
+mutaciones, los dos sentidos:
+   quitar el tope de 6 h                          -> ROJO (tras reescribir la prueba)
+   quitar el margen de 2 h                        -> ROJO (tras reescribir la prueba)
+   quitar invalidar() de una ruta                 -> ROJO
+   darle a un trabajo el intervalo del de al lado -> ROJO
+   dos setInterval en el planificador             -> ROJO
+```
+
+**Lo que se espera de la factura, dicho honestamente:**
+
+| | CU-hrs/mes | $/mes |
+|---|---|---|
+| Antes | ~197 | ~$21 |
+| La cuenta ingenua | ~9 | ~$1 |
+| ⭐ **Estimación honesta** | **35–50** | **~$4–5** |
+
+⚠️ **La cuenta ingenua es mentira** y por eso no se da: cuentan también las horas
+de partido y **el tráfico de los usuarios**, que despierta el cómputo igual.
+35–50 es con eso dentro.
+
+⭐ Y 35–50 **cabe en el plan gratuito**, que da 100 CU-hrs por proyecto. Decisión
+de Marco, no de aquí: el plan gratuito **suspende el cómputo hasta el mes
+siguiente** si se pasan las 100, y eso es la aplicación caída.
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Arreglar el tráfico no arregla la factura si lo que se cobra es el
+   tiempo.** En septiembre se bajó de 20,4 GB a 0,6 y la factura no se movió,
+   porque el tráfico estaba incluido y lo caro era estar encendido. Mirar
+   **qué línea cobra** antes de optimizar nada.
+2. ⭐ **`pg_postmaster_start_time()` contesta la pregunta que importa.** No
+   «cuánto gastas» sino «¿se apagó alguna vez?». 19,7 días con el autoapagado
+   puesto señala al culpable sin discutir.
+3. ⛔ **Borrar una quiniela no borra sus fixtures.** `fixtures` es compartida y
+   sin RLS: 19 filas de dos quinielas borradas hacía meses habrían dejado la
+   tregua sin efecto. Una tabla compartida sobrevive al dueño de los datos.
+4. ⛔ **Cuatro relojes compartiendo un recurso no son cuatro relojes: son una
+   carrera.** Cada uno preguntando por su cuenta se robaban el turno, y en un
+   día tranquilo tres de los cuatro no corrían **nunca**. Un recurso compartido
+   quiere **un solo sitio que pregunte**.
+5. ⭐ **«¿De qué forma te puedes equivocar?» es la pregunta más rentable que
+   hace Marco.** Las dos veces que la ha hecho ha salido un fallo de verdad. Esta
+   vez dos, y el segundo apagaba la notificación de los 15 minutos en silencio.
+6. ⚠️ **Una prueba puede ser verde porque la línea no participa.** Dos de las
+   dieciséis pasaban con el código mutado: el escenario no llegaba a donde
+   decidía. Si no se muta, no se sabe.
+7. ⭐ **Una estimación cómoda que no se cumple cuesta más que una incómoda que
+   sí.** La cuenta ingenua daba ~$1; la honesta $4–5. Decir $1 y que llegue $5
+   es el camino a que no vuelvan a creerte.
+
+**Pendiente / siguiente paso:**
+
+- 📌 **EL TOPE ES AJUSTABLE SIN TOCAR CÓDIGO.** `TREGUA_TOPE_MS` se lee del
+  entorno; de fábrica son **6 horas**. Si Marco prefiere 1 hora, se pone en
+  Render la variable con `3600000` y listo: se sigue ahorrando el 95% —de 1440
+  despertares a 24— y un error de cálculo se notaría en una hora en vez de en
+  seis.
+- 📌 **DECISIÓN DE MARCO: ¿bajar al plan gratuito?** Con 35–50 CU-hrs cabe, pero
+  pasarse de 100 **suspende el cómputo hasta el mes siguiente**. Lo prudente es
+  quedarse en Launch un mes, mirar la cifra de verdad, y decidir con ella.
+- ⛔ **JALAR EN RENDER**, que sigue pendiente de la 128 y ahora también de ésta.
+  ⚠️ **La tregua sólo sirve si Render la tiene**: mientras no jale, los cuatro
+  relojes siguen despertando a Neon cada minuto y la factura sigue igual.
+- El pestillo **sigue sin verse decir «no»** (125): **Club América vs Tijuana**.
 - §Deuda: la marca de «hora tocada a mano».
 - Y lo de siempre: la notificación al teléfono, el icono en iPhone, el ciclo del
   borrador y el punto ciego de `axios`.

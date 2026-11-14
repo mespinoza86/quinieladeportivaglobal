@@ -38,6 +38,16 @@ const correo = require('./correo');
 const notificaciones = require('./notificaciones');
 const push = require('./push');
 const cerrojos = require('./cerrojos');
+/*
+ * ⛔ La tregua: lo que decide si este latido toca la base o se calla.
+ *
+ * Sin ella los cuatro relojes escribían un cerrojo cada 60 segundos, día y
+ * noche, y Neon no veía nunca los cinco minutos de inactividad que necesita
+ * para suspender el cómputo: 19,7 días encendido y ~197 CU-hrs al mes de
+ * factura, casi toda por estar despierto sin nada que hacer. El porqué entero
+ * está en `src/tregua.js`.
+ */
+const tregua = require('./tregua');
 
 const INTERVALO_CICLO_SYNC_MS = Number(process.env.SYNC_INTERVALO_MS || 60 * 1000);
 const INTERVALO_RESOLUCION_TRIVIAS_MS = 5 * 60 * 1000;
@@ -195,45 +205,96 @@ function arrancar() {
     return false;
   }
 
+  /*
+   * ============================================================
+   * ⛔ CADA LATIDO PREGUNTA PRIMERO SI HAY ALGO QUE HACER
+   * ============================================================
+   *
+   * `tregua.tocaTrabajar()` responde SIN tocar la base en el caso normal, que
+   * es el caso aburrido: no hay partidos en las próximas horas. Así Neon ve el
+   * hueco de inactividad que necesita para suspender el cómputo.
+   *
+   * ⚠️ El reloj sigue latiendo cada minuto, y eso está bien: un temporizador en
+   * memoria no cuesta nada. Lo que cuesta es la consulta, y es lo que se evita.
+   *
+   * ⭐ Y el primer reloj que llegue despierta a los cuatro: `tocaTrabajar`
+   * recalcula el horizonte y los demás lo verán ya vencido en su propio latido.
+   * Si el cómputo está despierto, aprovecharlo es gratis.
+   */
+  /*
+   * ==========================================================================
+   * ⛔ UN SOLO LATIDO MAESTRO, Y CUATRO TRABAJOS CON SU CADENCIA
+   * ==========================================================================
+   *
+   * Antes eran cuatro `setInterval` independientes, cada uno con su reloj y su
+   * cerrojo. Al meter la tregua entre medias eso se rompió de una forma que no
+   * daba ningún error: **los cuatro se robaban el turno**. El primero en latir
+   * preguntaba, recalculaba el horizonte, lo empujaba al futuro, y los otros
+   * tres se encontraban con que «ya no tocaba».
+   *
+   * Medido con un partido en vivo durante diez minutos:
+   *
+   *     sincronizar  10 de 10   ✔
+   *     notificar     9 de 10   ⛔
+   *     compartir     9 de 10   ⛔
+   *     trivias       1 de  2   ⛔
+   *
+   * ⚠️ Y en un día tranquilo el robo habría sido TOTAL: el primero se lleva el
+   * único turno y los otros tres no corren jamás. La notificación de los quince
+   * minutos —que tiene una ventana de quince minutos— se habría perdido sin que
+   * nada lo dijera.
+   *
+   * ⭐ Ahora late UNO, pregunta UNA vez y reparte. Cada trabajo conserva su
+   * cadencia con su propia marca de última ejecución, así que durante un
+   * partido el comportamiento es idéntico al de antes de la tregua.
+   *
+   * ⚠️ Lo que se pierde: los cuatro ya no son independientes. Un trabajo que se
+   * cuelgue retrasa a los de detrás. Por eso cada uno va con su `try` propio y
+   * el orden pone primero el que más tarda —sincronizar, que sale a la red—,
+   * cuyos fallos ya estaban acotados por su propio tiempo de espera.
+   */
+  const ultima = Object.create(null);
+
+  /** ¿A este trabajo le toca ya, por su propia cadencia? */
+  const leToca = (nombre, cada, ahora) =>
+    ultima[nombre] === undefined || ahora - ultima[nombre] >= cada;
+
+  const correr = async (nombre, cada, trabajo, ahora) => {
+    if (!leToca(nombre, cada, ahora)) return;
+    ultima[nombre] = ahora;
+    try {
+      await trabajo();
+    } catch (error) {
+      console.error(`Error en ${nombre}:`, error.message);
+    }
+  };
+
+  async function latido() {
+    const ahora = Date.now();
+
+    /*
+     * La única pregunta, y en el caso aburrido se responde SIN tocar la base.
+     * Es lo que deja a Neon suspender el cómputo.
+     */
+    if (!(await tregua.tocaTrabajar(new Date(ahora)))) return;
+
+    await correr('la sincronización', INTERVALO_CICLO_SYNC_MS, unCiclo, ahora);
+    await correr('el aviso de compartir', INTERVALO_AVISO_COMPARTIR_MS, avisarDeCompartir, ahora);
+    await correr('la notificación de los partidos', INTERVALO_NOTIFICACIONES_MS, notificarDeTodas, ahora);
+    await correr('la resolución de trivias', INTERVALO_RESOLUCION_TRIVIAS_MS, resolverTriviasDeTodas, ahora);
+  }
+
+  /*
+   * El latido va a la cadencia más fina de las cuatro, la del ciclo de
+   * sincronización. Las otras tres se respetan dentro, con `leToca`.
+   */
   temporizadores = [
     setInterval(() => {
-      unCiclo().catch(error => {
-        console.error('Error en el ciclo de sincronización:', error.message);
+      latido().catch(error => {
+        console.error('Error en el latido del planificador:', error.message);
       });
-    }, INTERVALO_CICLO_SYNC_MS),
-
-    setInterval(() => {
-      resolverTriviasDeTodas().catch(error => {
-        console.error('Error automático resolviendo trivias:', error.message);
-      });
-    }, INTERVALO_RESOLUCION_TRIVIAS_MS),
-
-    /*
-     * ⚠️ Va en su propio reloj y no colgado del ciclo de sincronización, aunque
-     * los dos corran cada minuto. Si fuera dentro, un ciclo abandonado por
-     * tiempo —que pasa: hay métrica para contarlo— se llevaría el aviso con él,
-     * y el correo dependería de que el proveedor externo respondiera a tiempo.
-     * Avisar no necesita salir a la red.
-     */
-    setInterval(() => {
-      avisarDeCompartir().catch(error => {
-        console.error('Error avisando de lo que hay que compartir:', error.message);
-      });
-    }, INTERVALO_AVISO_COMPARTIR_MS),
-
-    /*
-     * ⚠️ El cuarto, también con reloj y cerrojo propios. Avisar al teléfono no
-     * depende del proveedor ni del correo, y compartir su suerte sería regalar
-     * una forma de que se pierda: si el ciclo de sincronización se abandona por
-     * tiempo, el partido arranca igual.
-     */
-    setInterval(() => {
-      notificarDeTodas().catch(error => {
-        console.error('Error notificando los partidos que arrancan:', error.message);
-      });
-    }, INTERVALO_NOTIFICACIONES_MS)
+    }, INTERVALO_CICLO_SYNC_MS)
   ];
-
   // Un temporizador pendiente no debe impedir que el proceso termine.
   temporizadores.forEach(t => t.unref?.());
 

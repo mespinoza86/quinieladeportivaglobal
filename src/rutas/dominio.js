@@ -33,6 +33,11 @@ const jugadoresMod = require('../jugadores');
 const rankingMod = require('../ranking');
 const usuariosMod = require('../usuarios');
 const validacion = require('../validacion');
+/*
+ * Sólo para `invalidar()`: guardar una jornada puede adelantar el próximo
+ * trabajo de los relojes, y el horizonte que tienen en memoria se queda viejo.
+ */
+const tregua = require('../tregua');
 
 const {
   normalizarNombreDeJornada, normalizarPartido, normalizarPartidos,
@@ -222,6 +227,22 @@ module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
     });
 
     /*
+     * ⛔ EL HORIZONTE DE LA TREGUA SE OLVIDA AQUÍ.
+     *
+     * Los relojes duermen hasta el momento en que, según lo que había guardado,
+     * toca el siguiente trabajo. Guardar una jornada puede ADELANTAR ese
+     * momento —un partido dentro de una hora, una hora corregida— y el
+     * horizonte en memoria se queda viejo.
+     *
+     * ⭐ No hace falta sondear nada: este cambio llega por HTTP, que ya despertó
+     * el cómputo. Basta con olvidar, y el siguiente latido recalcula.
+     *
+     * ⚠️ Va DESPUÉS de guardar y sin `await` que pueda fallar: es una variable
+     * en memoria. Si esto lanzara, tiraría un guardado que ya está hecho.
+     */
+    tregua.invalidar();
+
+    /*
      * ⚠️ Se informa de lo que se borró. Antes `guardar` contaba los pronósticos
      * que se llevaba por delante y esta ruta TIRABA ESE NÚMERO sin mirarlo, así
      * que la gente perdía sus marcadores y nadie se enteraba.
@@ -261,6 +282,21 @@ module.exports = function rutasDeDominio(app, { requierePermiso, enQuiniela }) {
       throw validacion.errorDeValidacion(
         `Una jornada admite como máximo ${MAX_PARTIDOS_POR_JORNADA} partidos.`);
     }
+
+    /*
+     * ⛔ TAMBIÉN AQUÍ, Y SE ME HABÍA OLVIDADO.
+     *
+     * Esta ruta añade UN partido, y un partido nuevo es trabajo nuevo: hay que
+     * consultarlo antes de que empiece. Si los relojes están dormidos con un
+     * horizonte de seis horas y el partido es dentro de una, nadie lo consulta
+     * y el marcador no entra.
+     *
+     * ⚠️ Lo encontré enumerando las formas en que el cálculo de la tregua puede
+     * equivocarse, no probándolo: **ninguna prueba lo habría cazado**, porque
+     * todas miraban `tregua.js` y el fallo estaba en quién la avisa. De ahí el
+     * centinela que cuenta las rutas que escriben partidos.
+     */
+    tregua.invalidar();
 
     res.json({ success: true });
   });

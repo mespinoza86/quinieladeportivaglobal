@@ -56,7 +56,7 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '686'],
+  ['¿Cuántas pruebas rápidas?',            '706'],
   ['¿Cuántas de navegador?',               '232'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
@@ -120,7 +120,28 @@ const PREGUNTAS = [
    * ⚠️ Y el aviso de las migraciones a mano: olvidarlo ya costó cuatro
    * pantallas caídas. Quien retome tiene que encontrarlo sin leerse la 124.
    */
-  ['¿Se avisa de que las migraciones van a mano?', 'A MANO', 'viva']
+  ['¿Se avisa de que las migraciones van a mano?', 'A MANO', 'viva'],
+  /*
+   * Lo de la entrada 129, la tregua. Tres preguntas y no una, porque son tres
+   * cosas distintas que quien llegue mañana NO puede deducir del código:
+   *
+   *  · que los relojes duermen a propósito —si no, parece que están rotos—;
+   *  · que el tope se cambia con una variable de entorno, sin tocar código;
+   *  · ⛔ y la obligación de llamar a `invalidar()` al escribir algo que crea
+   *    trabajo. Eso es lo único que puede romperse en silencio, y olvidarlo es
+   *    un partido que nadie consulta.
+   *
+   * Las tres atadas a la parte viva: describen lo que la aplicación HACE hoy.
+   */
+  ['¿Se explica la tregua de los relojes?', 'tregua', 'viva'],
+  ['¿Se dice cómo cambiar el tope?',        'TREGUA_TOPE_MS', 'viva'],
+  ['¿Se avisa de que hay que invalidar?',   'tregua.invalidar()', 'viva'],
+  /*
+   * ⚠️ Y la factura. El error de septiembre fue optimizar el TRÁFICO cuando lo
+   * que se cobraba era el TIEMPO ENCENDIDO, y la bitácora tiene que dejar claro
+   * cuál de las dos líneas duele, o alguien lo repite.
+   */
+  ['¿Se dice qué línea de Neon cobra?',     'CU-hrs', 'viva']
 ];
 
 /*
@@ -163,7 +184,16 @@ const NO_DEBE_QUEDAR = [
   ['681 + 232',    'la suma de antes de la entrada 127'],
   ['228 de navegador', 'las de navegador pasaron a 232 (125)'],
   ['669 + 228',    'la suma de antes de la entrada 125'],
-  ['234 de navegador', 'nunca fueron 234: se escribió a ojo antes de leer la corrida']
+  ['234 de navegador', 'nunca fueron 234: se escribió a ojo antes de leer la corrida'],
+  /*
+   * La tanda del 14 de noviembre. Otra vez SEIS menciones viejas repartidas por
+   * cuatro apartados —la misma cuenta exacta que el 8 de octubre y que el 22—,
+   * así que esto ya no es casualidad: cada vez que cambian las pruebas hay que
+   * barrer la parte viva entera, no el sitio donde se vio la cifra.
+   */
+  ['686 pruebas',  'las rápidas pasaron a 706 (129)'],
+  ['686 + 232',    'la suma de antes de la entrada 129'],
+  ['686/686',      'la corrida de antes de la tregua']
 ];
 
 let fallos = 0;
