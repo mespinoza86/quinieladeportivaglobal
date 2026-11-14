@@ -610,7 +610,8 @@ documento.
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 128** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ⛔ **LO MÁS URGENTE AL RETOMAR: JALAR.** Render se quedó en `85287bf` (entrada 121) — **comprobado el 10 de octubre de 2026** con dos lecturas de `/js/jornadas.js`: servía `horaPartido` ×4 y `usarFechaProveedor` ×0. Le faltan las entradas **123 a 129**, y con el código viejo pasan **dos cosas a la vez**: los cuatro partidos de vuelta de la Jornada 13 siguen cerrados y con el marcador del partido equivocado (128), **y los cuatro relojes siguen despertando a Neon cada minuto, así que la factura sigue igual** (129). ⭐ Después de jalar, comprobarlo así: `curl -s .../js/llenar_jornada_user.js \| grep -c partidoId` debe dar ≥1 en dos lecturas seguidas, con un CONTROL inventado que dé cero. Nunca comparar tamaños (§C) |
+| Producción | ✅ **AL DÍA HASTA LA 128, comprobado el 14 de noviembre de 2026.** Render jaló solo en algún momento entre el 10 de octubre y hoy. Marcas servidas, con dos lecturas iguales y CONTROL en cero: `horaPartido` ×5 (121), `usarFechaProveedor` ×2 (124), `reabrirConfirmado` ×2 (125), `interrumpido` ×1 (127), `partidoId` ×2 y `bloqueado` ×19 (128). ⛔ **Lo único que le falta es la 129 (la tregua)**: `/readyz` daba `tiempoActivoSegundos` **61396** —17 horas— veinticinco minutos después de empujar `01338a2`, así que ese arranque es de la 128. ⚠️ **Mientras no jale, la factura de Neon sigue igual** |
+| ⛔ Cómo NO comprobarlo (14 de noviembre de 2026) | **Marco:** *«¿por qué dices que los 4 partidos de vuelta siguen cerrados y con el marcador equivocado, si estoy revisando el marcador y está sin definir y la hora de cierre está bien?»*. Tenía razón: yo repetía **esta misma fila escrita el 10 de octubre** como si fuera de hoy. ⭐ Una fila que dice «comprobado el 10 de octubre» es **verdad como historia y mentira como presente**, y el mes de diferencia no se ve al leerla. Si la frase es «producción está en X», **se vuelve a mirar**, aunque la fila lo diga con fecha y con pruebas |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
 | Pruebas | **706** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
@@ -22059,6 +22060,20 @@ siguiente** si se pasan las 100, y eso es la aplicación caída.
 7. ⭐ **Una estimación cómoda que no se cumple cuesta más que una incómoda que
    sí.** La cuenta ingenua daba ~$1; la honesta $4–5. Decir $1 y que llegue $5
    es el camino a que no vuelvan a creerte.
+8. ⛔ **UNA COMPROBACIÓN CON FECHA CADUCA SOLA, Y NO SE NOTA AL LEERLA.** Al
+   cerrar esta entrada le dije a Marco que los cuatro partidos de vuelta seguían
+   cerrados y con el marcador equivocado. Él contestó: *«¿por qué dices eso, si
+   estoy revisando el marcador y está sin definir y la hora de cierre está
+   bien?»*. **Tenía razón.** Yo estaba repitiendo la fila de Producción de la
+   cabecera, que decía «Render se quedó en `85287bf`, comprobado el 10 de
+   octubre» — cierto ese día, falso un mes después: Render había jalado solo.
+   ⭐ Una fila así es **verdad como historia y mentira como presente**, y la
+   fecha que la hace honesta es justo lo que no se mira al citarla. Si la frase
+   que voy a decir es «producción está en X», se vuelve a mirar **siempre**.
+   ⚠️ Y de rebote: una de mis sondas de ese rato buscaba `interrumpido` en
+   `public/css/estilos.css`, que **no existe**. Dio cero y el cero no significaba
+   «falta», significaba «no estoy mirando nada» — el fallo que ya está anotado
+   cinco veces en esta bitácora.
 
 **Pendiente / siguiente paso:**
 
@@ -22070,9 +22085,19 @@ siguiente** si se pasan las 100, y eso es la aplicación caída.
 - 📌 **DECISIÓN DE MARCO: ¿bajar al plan gratuito?** Con 35–50 CU-hrs cabe, pero
   pasarse de 100 **suspende el cómputo hasta el mes siguiente**. Lo prudente es
   quedarse en Launch un mes, mirar la cifra de verdad, y decidir con ella.
-- ⛔ **JALAR EN RENDER**, que sigue pendiente de la 128 y ahora también de ésta.
-  ⚠️ **La tregua sólo sirve si Render la tiene**: mientras no jale, los cuatro
-  relojes siguen despertando a Neon cada minuto y la factura sigue igual.
+- ⛔ **JALAR EN RENDER.** ⚠️ **La tregua sólo sirve si Render la tiene**: mientras
+  no jale, los cuatro relojes siguen despertando a Neon cada minuto y la factura
+  sigue igual. ⭐ **Y esta entrada NO TOCA NINGÚN ARCHIVO SERVIDO** —todo es
+  `src/`—, así que no hay marca que buscar con `grep`: la única señal es que
+  `tiempoActivoSegundos` de `/readyz` **baje**. Daba **61396** (17 horas) a los
+  veinticinco minutos de empujar `01338a2`, o sea que ese arranque era de la 128.
+- ⭐ **CÓMO SE VERÁ QUE LA TREGUA FUNCIONA, cuando esté puesta.** Tampoco hay
+  marca para esto: la prueba es que `pg_postmaster_start_time()` **se mueva**. El
+  14 de noviembre daba **20 días y 8 horas** de encendido continuo, así que
+  cualquier valor más bajo significa que el cómputo **se durmió**, que es lo que
+  nunca había pasado. ⚠️ Hay que mirarlo **en un hueco sin partidos**: ese día
+  había partido a las 13:45 y el horizonte respetaba esa hora correctamente, así
+  que estar despierto a las 13:39 era lo correcto, no un fallo.
 - El pestillo **sigue sin verse decir «no»** (125): **Club América vs Tijuana**.
 - §Deuda: la marca de «hora tocada a mano».
 - Y lo de siempre: la notificación al teléfono, el icono en iPhone, el ciclo del
