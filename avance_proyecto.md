@@ -22273,6 +22273,9 @@ comprobar que el caso que iba a probar ocurrió.**
 **Verificación:**
 
 ```
+la corrida del propio arreglo, en GitHub:
+   #110  37c7dc4  ✅ success    <- primera verde desde el 8 de octubre
+
 npm audit --omit=dev        -> 0 vulnerabilidades   (era el único paso rojo del CI)
 npm run check               -> válido
 npm test                    -> 709/709
@@ -22287,6 +22290,11 @@ dependencias de desarrollo, después del arreglo:
 el punto ciego de axios, ejercido contra la red de verdad:
    redirección http -> https   ✔ en dos URLs, con la url final comprobada
    CONTROL maxRedirects=0      ✔ frena con 301
+
+scripts/estado-ci.js, con control en los dos sentidos:
+   última corrida verde        -> salida 0
+   mutado para que la última sea la #109 (falló) -> salida 1, y NOMBRA el paso
+   restaurado                  -> salida 0
 ```
 
 **Hallazgos nuevos:**
@@ -22307,6 +22315,18 @@ el punto ciego de axios, ejercido contra la red de verdad:
 4. ⭐ **Una sonda tiene que comprobar que el caso ocurrió, no sólo que no hubo
    error.** La primera prueba del punto ciego pedía una URL que no redirigía y
    daba ✔ por la redirección que nunca pasó.
+5. ⛔⛔ **Y EL GUION QUE ESCRIBÍ PARA ESTO GRITÓ «ROJO» ESTANDO VERDE, A LOS
+   CINCO MINUTOS DE NACER.** `estado-ci.js` buscaba la primera corrida fallida de
+   la lista y salía en rojo si encontraba una. La corrida #110 —la del propio
+   arreglo— salió **verde**, y el guion señaló la #109, que ya era historia.
+   Habría seguido gritándolo las cinco corridas siguientes.
+   ⭐ **Un guion que avisa cuando no pasa nada acaba ignorado, que es
+   EXACTAMENTE el fallo que vino a evitar.** El estado del CI es el de la
+   **última corrida terminada**; las anteriores son contexto, no veredicto.
+   Arreglado, con control en los dos sentidos: verde→0, rojo→1.
+   ⚠️ Y de paso, la tercera sonda del día que medía otra cosa: comprobé el código
+   de salida con `node ... | tail` y leí el de `tail`, no el del guion. Con
+   tubería, `$?` es del último mandato.
 
 **Pendiente / siguiente paso:**
 

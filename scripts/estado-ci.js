@@ -98,16 +98,48 @@ const marca = c => (c === 'success' ? '✔' : c === null || c === undefined ? '�
    * era la auditoría de dependencias. Sin esta parte, el guion repetiría el
    * mismo malentendido que vino a resolver.
    */
-  const ultimaMala = corridas.find(r => r.conclusion && r.conclusion !== 'success');
+  /*
+   * ============================================================================
+   * ⛔ EL VEREDICTO LO DA LA ÚLTIMA CORRIDA TERMINADA, NO «¿HAY ALGUNA ROJA?»
+   * ============================================================================
+   *
+   * La primera versión de esto buscaba la primera corrida fallida de la lista y
+   * salía en rojo si encontraba una. El 14 de noviembre de 2026, a los cinco
+   * minutos de escribirla, la corrida #110 salió **verde** y el guion gritó
+   * «rojo» señalando la #109, que ya era historia — y habría seguido gritándolo
+   * durante las siguientes cinco corridas.
+   *
+   * ⭐ Un guion que avisa cuando no pasa nada acaba ignorado, que es exactamente
+   * el fallo que este guion vino a evitar. El estado del CI es **el de la última
+   * corrida**; las anteriores son contexto, no veredicto.
+   *
+   * ⚠️ Y se salta las que siguen en marcha: una corrida `in_progress` no ha
+   * dicho nada todavía, y tomarla por buena o por mala es inventar.
+   */
+  const ultima = corridas.find(r => r.status === 'completed' && r.conclusion);
 
-  if (!ultimaMala) {
-    console.log('\n  ✔ ninguna de las últimas corridas falló.');
+  if (!ultima) {
+    console.log('\n  … ninguna corrida ha terminado todavía. Vuelve a mirar en un rato.');
+    /* No se sabe: ni 0 ni 1. Ver el `catch` de abajo. */
+    process.exit(2);
+  }
+
+  const rojasViejas = corridas.filter(
+    r => r !== ultima && r.conclusion && r.conclusion !== 'success').length;
+
+  if (ultima.conclusion === 'success') {
+    console.log(`\n  ✔ la última corrida terminada (#${ultima.run_number}) pasó.`);
+    if (rojasViejas) {
+      console.log(`  ⚠️  hay ${rojasViejas} corrida(s) roja(s) más atrás en la lista,`
+        + ' pero son historia: el estado de hoy es el de arriba.');
+    }
     process.exit(0);
   }
 
-  console.log(`\n  ⛔ la corrida #${ultimaMala.run_number} no pasó. Qué paso falló:\n`);
+  console.log(`\n  ⛔ la última corrida terminada (#${ultima.run_number}) NO pasó.`
+    + ' Qué paso falló:\n');
 
-  const jobs = await pedir(`/repos/${REPO}/actions/runs/${ultimaMala.id}/jobs`);
+  const jobs = await pedir(`/repos/${REPO}/actions/runs/${ultima.id}/jobs`);
 
   for (const job of (jobs.jobs || [])) {
     console.log(`     ${marca(job.conclusion)} ${job.name} → ${job.conclusion}`);
@@ -119,7 +151,7 @@ const marca = c => (c === 'success' ? '✔' : c === null || c === undefined ? '�
   }
 
   console.log('\n  Para ver el registro completo:'
-    + `\n     ${ultimaMala.html_url}`);
+    + `\n     ${ultima.html_url}`);
 
   /*
    * Sale con 1 para que se note en un encadenado, igual que el auditor de la
