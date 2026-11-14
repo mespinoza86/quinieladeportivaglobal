@@ -28,6 +28,8 @@
 const db = require('./db');
 const jugadoresMod = require('./jugadores');
 const triviasMod = require('./trivias');
+/* Se importa la regla del cierre, no se copia: vive en un solo sitio. */
+const { partidoYaInicio } = require('./fechas');
 
 /* ==================== Lectura ==================== */
 
@@ -146,6 +148,23 @@ async function deJornada(quinielaId, jornadaNombre, ahora = new Date()) {
         resuelta: t.resuelta,
         puntos: t.puntos || 1,
         estado: t.estado || 'PROGRAMADO',
+        /*
+         * ⛔ EL CANDADO, CALCULADO AQUÍ Y NO EN EL NAVEGADOR.
+         *
+         * «Respuestas de trivias» tenía su propia función `partidoYaInicio` con
+         * la lista `[LIVE, MT, TC]` copiada, y era una de las SIETE copias que
+         * había repartidas por las pantallas. Ninguna conocía `INTERRUMPIDO`
+         * (entrada 127): una trivia de un partido parado por lluvia se trataba
+         * como si el partido no hubiera empezado.
+         *
+         * ⚠️ Esta consulta cruza por `t.partido_id` en SQL, así que el estado ya
+         * era el del partido correcto — eso nunca estuvo mal aquí. Lo que estaba
+         * mal era la lista.
+         */
+        bloqueado: partidoYaInicio(
+          { api_date: t.fecha || '' },
+          t.estado ? { estado: t.estado } : null,
+          ahora),
         minuto: t.minuto ?? null,
         fecha: t.fecha || '',
         marcador1: t.marcador1 ?? null,

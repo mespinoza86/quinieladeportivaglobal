@@ -43,8 +43,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /*
+     * ⛔ EL CANDADO LO DECIDE EL SERVIDOR.
+     *
+     * Aquí vivía una copia de la regla del cierre —la lista
+     * `[LIVE, MT, TC]` y la comparación de la fecha— reimplementada en el
+     * navegador. Había SIETE copias así repartidas por las pantallas, y el
+     * centinela que prohíbe duplicar `partidoYaInicio` sólo vigila `src/`.
+     *
+     * ⚠️ Y estaban desfasadas: ninguna conocía `INTERRUMPIDO` (entrada 127),
+     * así que un partido parado por lluvia salía como «no empezó» mientras el
+     * servidor lo daba por cerrado.
+     *
+     * Ahora `bloqueado` llega en la lista de oficiales, calculado con la regla
+     * única. La fecha se conserva sólo como respaldo para un partido que aún no
+     * tiene fila de oficiales.
+     */
     function partidoYaCerro(partidoBase, partidoOficial) {
-        if (partidoOficial && ['LIVE', 'MT', 'TC'].includes(partidoOficial.estado)) return true;
+        if (partidoOficial && typeof partidoOficial.bloqueado === 'boolean') {
+            return partidoOficial.bloqueado;
+        }
         if (!partidoBase?.apiDate) return false;
 
         const fecha = new Date(String(partidoBase.apiDate).replace(' ', 'T'));
@@ -74,11 +92,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return html`<span class="status-pill status-scheduled">${formatearFechaPartido(partido.fecha)}</span>`;
     }
 
+    /*
+     * ⛔ POR EL ID. Antes por nombres aceptando el orden invertido, y en una
+     * jornada de ida y vuelta cada partido se llevaba el oficial de su espejo
+     * —y aquí eso además torcía los PUNTOS que pinta la pantalla—. Pasó el 13
+     * de noviembre de 2026. El comentario largo, en `llenar_jornada_user.js`.
+     */
     function buscarOficialPorPartido(partidosOficiales, partidoBase) {
-        return partidosOficiales.find(partido =>
-            (partido.equipo1 === partidoBase.equipo1 && partido.equipo2 === partidoBase.equipo2) ||
-            (partido.equipo1 === partidoBase.equipo2 && partido.equipo2 === partidoBase.equipo1)
-        );
+        if (!partidoBase?.id) return undefined;
+        return partidosOficiales.find(partido => partido.partidoId === partidoBase.id);
     }
 
     function calcularPuntos(pronostico, resultadoOficial) {

@@ -36,8 +36,21 @@ function estadoPartidoHTML(partido) {
   return html`<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
 }
 
+/*
+ * ⛔ EL CANDADO LO DECIDE EL SERVIDOR.
+ *
+ * Esta función era una de las SIETE copias de la regla del cierre que había en
+ * el navegador, y ninguna conocía `INTERRUMPIDO` (entrada 127): una trivia de
+ * un partido parado por lluvia se trataba como si no hubiera empezado.
+ *
+ * ⚠️ Y encima se llama igual que la del servidor, `partidoYaInicio`, pero el
+ * centinela que exige que esa función exista UNA sola vez sólo mira `src/`.
+ *
+ * Ahora `bloqueado` llega calculado con la regla única. La fecha queda de
+ * respaldo por si un día la ruta no lo manda.
+ */
 function partidoYaInicio(trivia) {
-  if (['LIVE', 'MT', 'TC'].includes(trivia.estado)) return true;
+  if (typeof trivia.bloqueado === 'boolean') return trivia.bloqueado;
 
   if (!trivia.fecha) return false;
 

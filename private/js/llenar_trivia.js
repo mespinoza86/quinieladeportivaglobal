@@ -98,16 +98,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     return jornadaData?.partidos?.[Number(trivia.partidoIndex)] || null;
   }
 
+  /*
+   * ⛔ POR EL ID DEL PARTIDO CUANDO SE PUEDE, NUNCA POR EL ORDEN INVERTIDO.
+   *
+   * Cruzaba por el nombre de los equipos aceptando las dos orientaciones, y el
+   * 13 de noviembre de 2026 la Jornada 13 era de eliminatorias de IDA Y VUELTA
+   * —«Colombia vs Chile» el día 13 y «Chile vs Colombia» el 17—, así que cada
+   * trivia podía quedar colgada del oficial del partido espejo. El comentario
+   * largo está en `llenar_jornada_user.js`.
+   *
+   * ⚠️ El respaldo por nombres se conserva para una trivia cuyo `partidoIndex`
+   * ya no resuelve —puede pasar si la jornada se editó después de crearla—,
+   * pero SIN la rama invertida: los equipos de la lista de oficiales vienen del
+   * PARTIDO y siempre en nuestro orden, así que esa rama no podía acertar nada
+   * que la directa no acertara ya. Sólo podía equivocarse.
+   */
   function buscarOficial(partidoBase, trivia) {
     if (!partidoBase && !trivia) return null;
+
+    if (partidoBase?.id) {
+      return oficialesJornada.find(o => o.partidoId === partidoBase.id);
+    }
 
     const equipo1 = partidoBase?.equipo1 || trivia?.equipo1;
     const equipo2 = partidoBase?.equipo2 || trivia?.equipo2;
 
-    return oficialesJornada.find(o =>
-      (o.equipo1 === equipo1 && o.equipo2 === equipo2) ||
-      (o.equipo1 === equipo2 && o.equipo2 === equipo1)
-    );
+    return oficialesJornada.find(o => o.equipo1 === equipo1 && o.equipo2 === equipo2);
   }
 
   function obtenerFechaPartido(apiDate) {
@@ -151,8 +167,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const partidoBase = obtenerPartidoBase(trivia);
     const oficial = buscarOficial(partidoBase, trivia);
 
-    if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) {
-      return true;
+    /*
+     * ⚠️ El `bloqueado` del servidor. La lista de estados que había aquí no
+     * conocía `INTERRUMPIDO` (entrada 127), así que una trivia de un partido
+     * parado por lluvia seguía editable.
+     */
+    if (oficial && typeof oficial.bloqueado === 'boolean') {
+      return oficial.bloqueado;
     }
 
     const fecha = obtenerFechaPartido(partidoBase?.apiDate);

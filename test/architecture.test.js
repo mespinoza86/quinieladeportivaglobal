@@ -1683,7 +1683,20 @@ test('la privacidad de los pronósticos se decide partido a partido', () => {
    *
    * Si aparece un cuarto sitio, o desaparece uno, alguien ha tocado la regla.
    */
-  const decisiones = (rutas.match(/\.bloqueado\b/g) || []).length;
+  /*
+   * ⚠️ SE CUENTAN LAS DECISIONES, NO LAS MENCIONES.
+   *
+   * Antes esto contaba `.bloqueado` a secas y daba 3. El 13 de noviembre de
+   * 2026 se añadió `bloqueado: Boolean(fila.bloqueado)` a la respuesta de
+   * `/api/resultados-con-equipos` —para que la pantalla no vuelva a calcular el
+   * candado por su cuenta— y la cuenta subió a 4 **sin que ninguna decisión
+   * hubiera cambiado**: ese campo se ENTREGA, no decide nada.
+   *
+   * Contando mal, el centinela obligaba a subir el número a ciegas cada vez que
+   * alguien entregara el dato, y con eso dejaba de vigilar lo que importa. Ahora
+   * busca la forma de la decisión: `<algo> || fila.bloqueado`.
+   */
+  const decisiones = (rutas.match(/\|\|\s*(fila|f)\.bloqueado\b/g) || []).length;
   assert.equal(decisiones, 3,
     `Cambio el numero de sitios que deciden la visibilidad (eran 3): hay ${decisiones}`);
 
@@ -2830,4 +2843,61 @@ test('⛔ las columnas de la migración 016 no se nombran en ningún SELECT', ()
   assert.deepEqual(culpables, [],
     'una columna de la migración 016 en un SELECT explícito rompe toda lectura '
     + 'en una base sin migrar. Léela con SELECT * o no la leas.');
+});
+
+/*
+ * ============================================================================
+ * ⛔ EL NAVEGADOR NO DECIDE EL CIERRE, NI CRUZA PARTIDOS POR NOMBRE
+ * ============================================================================
+ *
+ * Dos reglas que nacieron del mismo fallo, el 13 de noviembre de 2026.
+ *
+ * La Jornada 13 era de eliminatorias de IDA Y VUELTA: «Colombia vs Chile» el
+ * día 13 y «Chile vs Colombia» el 17, en la misma jornada. Las pantallas
+ * cruzaban la lista de partidos con la de resultados oficiales **por el nombre
+ * de los equipos aceptando el orden invertido**, así que el partido del 17 se
+ * llevaba el marcador en vivo del 13 **y su candado**. Cuatro pares espejo.
+ *
+ * ⚠️ Y al mirarlo aparecieron SIETE copias de la regla del cierre en
+ * `private/js/`, ninguna de las cuales conocía `INTERRUMPIDO` (entrada 127). El
+ * centinela que exige que `partidoYaInicio` exista una sola vez **sólo vigila
+ * `src/`**, así que esas copias vivieron ahí años sin que nadie las viera. Una
+ * de ellas se llamaba igual que la del servidor.
+ *
+ * Este centinela cubre el hueco: mira `private/js/`.
+ */
+test('⛔ ninguna pantalla reimplementa la regla del cierre ni cruza por nombres', () => {
+  const dir = path.join(root, 'private', 'js');
+  const archivos = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+
+  assert.ok(archivos.length > 30, 'el control: tiene que haber encontrado los scripts');
+
+  const copiasDeLaRegla = [];
+  const crucesPorNombre = [];
+
+  for (const nombre of archivos) {
+    const codigo = quitarComentarios(fs.readFileSync(path.join(dir, nombre), 'utf8'));
+
+    /*
+     * La lista de estados que cierran un partido. Si aparece en el navegador es
+     * una copia de la regla, y se queda vieja sin que nada avise: ya pasó con
+     * `INTERRUMPIDO`. El candado llega en `bloqueado`, calculado en el servidor.
+     */
+    if (/\[\s*'LIVE'\s*,\s*'MT'\s*,\s*'TC'/.test(codigo)) copiasDeLaRegla.push(nombre);
+
+    /*
+     * Cruzar dos listas de partidos aceptando el orden invertido de los
+     * equipos. Es lo que confundía la ida con la vuelta. Se cruza por el id.
+     */
+    if (/equipo1\s*===\s*\w+\.equipo2\s*&&/.test(codigo)) crucesPorNombre.push(nombre);
+  }
+
+  assert.deepEqual(copiasDeLaRegla, [],
+    'Una pantalla volvió a decidir el cierre por su cuenta. Usa `bloqueado`, '
+    + 'que llega calculado con la regla única y conoce todos los estados.');
+
+  assert.deepEqual(crucesPorNombre, [],
+    'Una pantalla volvió a cruzar partidos por el nombre de los equipos aceptando '
+    + 'el orden invertido. En una jornada de ida y vuelta eso confunde los dos. '
+    + 'Cruza por `partido.id` contra `oficial.partidoId`.');
 });

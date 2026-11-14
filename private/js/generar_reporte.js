@@ -84,11 +84,20 @@ document.addEventListener('DOMContentLoaded', () => {
       : 0;
   }
 
-  function buscarPartidoPorEquipos(partidos, equipo1, equipo2) {
-    return partidos.find(p =>
-      (p.equipo1 === equipo1 && p.equipo2 === equipo2) ||
-      (p.equipo1 === equipo2 && p.equipo2 === equipo1)
-    );
+  /*
+   * ⛔ POR EL ID DEL PARTIDO, NUNCA POR LOS NOMBRES.
+   *
+   * Se llamaba `buscarPartidoPorEquipos` y hacía exactamente eso: cruzar por el
+   * nombre de los equipos aceptando el orden invertido. El 13 de noviembre de
+   * 2026 la Jornada 13 era de eliminatorias de IDA Y VUELTA —«Colombia vs
+   * Chile» el día 13 y «Chile vs Colombia» el 17— y cada partido se llevaba el
+   * oficial de su espejo. En este archivo eso salía impreso en el PDF.
+   *
+   * El comentario largo está en `llenar_jornada_user.js`.
+   */
+  function buscarOficialDelPartido(partidosOficial, partidoBase) {
+    if (!partidoBase?.id) return undefined;
+    return partidosOficial.find(p => p.partidoId === partidoBase.id);
   }
 
   generarPdfBtn.addEventListener('click', async () => {
@@ -180,27 +189,26 @@ document.addEventListener('DOMContentLoaded', () => {
           equipo2: partidoBase.equipo2
         };
 
-        const partidoOficial = buscarPartidoPorEquipos(
-          partidosOficial,
-          partidoBase.equipo1,
-          partidoBase.equipo2
-        );
+        const partidoOficial = buscarOficialDelPartido(partidosOficial, partidoBase);
 
-        let oficialParaCalculo = partidoOficial;
-
-        if (
-          partidoOficial &&
-          partidoOficial.equipo1 === partidoBase.equipo2 &&
-          partidoOficial.equipo2 === partidoBase.equipo1
-        ) {
-          oficialParaCalculo = {
-            ...partidoOficial,
-            equipo1: partidoBase.equipo1,
-            equipo2: partidoBase.equipo2,
-            marcador1: partidoOficial.marcador2,
-            marcador2: partidoOficial.marcador1
-          };
-        }
+        /*
+         * ⛔ AQUÍ SE VOLTEABA EL MARCADOR SI EL OFICIAL VENÍA «AL REVÉS», Y ESO
+         * NO PUEDE PASAR.
+         *
+         * `/api/resultados-oficiales` saca los equipos de la MISMA fila de
+         * `partidos` que `/api/jornadas/:nombre`, así que vienen en el mismo
+         * orden por construcción.
+         *
+         * ⚠️ Y mientras el cruce se hacía por nombres aceptando el orden
+         * invertido, este bloque sí se disparaba —con el oficial del partido
+         * equivocado— y además le daba la vuelta al marcador. Dos errores que
+         * se tapaban entre ellos, y acababan impresos en el PDF.
+         *
+         * ⭐ Que el PROVEEDOR mande local y visitante al revés sí pasa, y se
+         * arregla en `sincronizador.reescribirJornadaDesdeCache`, antes de
+         * guardar. Cuando llega aquí ya está en nuestra orientación.
+         */
+        const oficialParaCalculo = partidoOficial;
 
         const puntos = oficialParaCalculo
           ? calcularPuntosPronosticados(pronConEquipos, oficialParaCalculo)

@@ -5414,3 +5414,101 @@ test('reabrir un partido cerrado exige confirmación explícita por la ruta', as
   const j2 = tras.body.find(x => x.nombre === 'JPestillo');
   assert.equal(j2.partidos[0].apiDate, '2099-01-09 15:00');
 });
+
+/*
+ * ============================================================================
+ * ⛔ IDA Y VUELTA EN LA MISMA JORNADA: «A vs B» Y «B vs A»
+ * ============================================================================
+ *
+ * Caso real de Marco, 13 de noviembre de 2026. La Jornada 13 era de
+ * eliminatorias y tenía CUATRO pares de ida y vuelta: «Colombia vs Chile» el día
+ * 13 y «Chile vs Colombia» el 17, los dos en la misma jornada.
+ *
+ * Las pantallas cruzaban la lista de partidos con la de resultados oficiales
+ * **por el nombre de los equipos, aceptando el orden invertido** —porque el
+ * proveedor a veces manda local y visitante al revés—. Con las dos orientaciones
+ * presentes de verdad, el partido del día 17 encontraba primero el del 13 y se
+ * llevaba **su marcador en vivo (1-0) y su candado**.
+ *
+ * ⚠️ Los datos nunca estuvieron mal, y los puntos del ranking tampoco: el
+ * servidor cruza por `partido_id` en SQL. Lo que estaba mal era el cruce en el
+ * navegador, y lo que faltaba era que las rutas mandaran una LLAVE.
+ *
+ * Esta prueba vigila la llave. Sin ella no hay forma de distinguir los dos.
+ */
+test('⛔ dos partidos espejo en la misma jornada son distinguibles por id', async () => {
+  const jefe = await admin('jefe');
+
+  await jefe.agente.post('/api/jornadas').send({
+    nombre: 'JEspejo',
+    partidos: [
+      partido('Colombia', 'Chile', { apiFixtureId: '857056', apiDate: '2020-01-01 18:00' }),
+      partido('Chile', 'Colombia', { apiFixtureId: '857057', apiDate: '2099-11-17 17:00' })
+    ]
+  });
+
+  /* Sólo el de la IDA tiene marcador: es el que se está jugando. */
+  await jefe.agente.post('/api/resultados-oficiales').send({
+    jornada: 'JEspejo',
+    resultados: [{ marcador1: 1, marcador2: 0 }, {}]
+  });
+
+  const jornada = await jefe.agente.get('/api/jornadas/JEspejo');
+  const oficiales = await jefe.agente.get('/api/resultados-oficiales?jornada=JEspejo');
+
+  const partidos = jornada.body.partidos;
+  const oficialesLista = oficiales.body[0].partidos;
+
+  /* 1 · Las dos rutas mandan una llave, y es la misma. */
+  assert.equal(partidos.length, 2);
+  for (const p of partidos) {
+    assert.equal(typeof p.id, 'string', 'cada partido tiene que traer su id');
+  }
+  for (const o of oficialesLista) {
+    assert.equal(typeof o.partidoId, 'string', 'cada oficial tiene que traer su partidoId');
+  }
+
+  assert.notEqual(partidos[0].id, partidos[1].id, 'y los dos ids son distintos');
+
+  /*
+   * 2 ⛔ EL CRUCE POR ID DA LO CORRECTO.
+   *
+   * Es lo que ahora hacen las pantallas. El de la ida tiene el 1-0; el de la
+   * vuelta no tiene marcador ninguno.
+   */
+  const porId = id => oficialesLista.find(o => o.partidoId === id);
+
+  const ida = partidos.find(p => p.equipo1 === 'Colombia');
+  const vuelta = partidos.find(p => p.equipo1 === 'Chile');
+
+  assert.equal(porId(ida.id).marcador1, 1, 'la ida tiene su 1-0');
+  assert.equal(porId(ida.id).marcador2, 0);
+  assert.equal(porId(vuelta.id).marcador1, null,
+    '⛔ la vuelta NO tiene marcador: es el fallo que se vio en pantalla');
+  assert.equal(porId(vuelta.id).marcador2, null);
+
+  /*
+   * 3 ⛔ Y EL CANDADO VIENE DEL SERVIDOR, correcto para cada uno.
+   *
+   * La ida empezó —fecha pasada y marcador cargado—; la vuelta es en 2099.
+   * Antes el navegador calculaba esto por su cuenta y le daba a la vuelta el
+   * estado de la ida.
+   */
+  assert.equal(porId(ida.id).bloqueado, true, 'la ida está cerrada');
+  assert.equal(porId(vuelta.id).bloqueado, false,
+    '⛔ la vuelta NO puede estar cerrada: se juega en 2099');
+
+  /*
+   * 4 · EL CONTROL que demuestra que la prueba vale: el cruce VIEJO —por
+   * nombres aceptando el orden invertido— se equivoca con estos mismos datos.
+   * Si algún día alguien lo reintroduce, aquí está escrito lo que hacía.
+   */
+  const cruceViejo = p => oficialesLista.find(o =>
+    (o.equipo1 === p.equipo1 && o.equipo2 === p.equipo2) ||
+    (o.equipo1 === p.equipo2 && o.equipo2 === p.equipo1));
+
+  assert.equal(cruceViejo(vuelta).marcador1, 1,
+    'el cruce viejo le daba a la vuelta el marcador de la ida: por eso se cambió');
+  assert.equal(cruceViejo(vuelta).bloqueado, true,
+    'y su candado, que es por lo que Marco no podía llenar ese partido');
+});

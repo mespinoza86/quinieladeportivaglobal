@@ -376,9 +376,18 @@ function vigilarMarcadores(nombreJornada, partidos, oficialesIniciales) {
     /* Cambiar de jornada apaga el reloj anterior: si no, se acumularían. */
     if (relojEnVivo) { clearInterval(relojEnVivo); relojEnVivo = null; }
 
-    const emparejar = (lista, partido) => lista.find(o =>
-        (o.equipo1 === partido.equipo1 && o.equipo2 === partido.equipo2) ||
-        (o.equipo1 === partido.equipo2 && o.equipo2 === partido.equipo1));
+    /*
+     * ⛔ POR ID, igual que `buscarOficial`. El comentario largo está allí: esto
+     * cruzaba por nombres aceptando el orden invertido, y en una jornada de ida
+     * y vuelta cada partido se llevaba el marcador en vivo de su espejo.
+     *
+     * ⚠️ Es la MISMA regla que `buscarOficial` y a propósito no se comparte:
+     * aquélla mira `oficialesJornada`, la lista de la última pintada, y ésta
+     * mira `ultimos`, la del reloj en vivo. Son dos listas distintas, y
+     * fundirlas haría que el reloj dependiera de cuándo se pintó por última vez.
+     */
+    const emparejar = (lista, partido) =>
+        partido?.id ? lista.find(o => o.partidoId === partido.id) : undefined;
 
     /*
      * ⚠️ Se arranca con lo que YA se trajo al pintar, no con una lista vacía.
@@ -456,8 +465,14 @@ function pintarMarcadoresEnVivo(partidos, oficialDe) {
 
         const oficial = oficialDe(partido);
         const caja = tarjeta.querySelector('.match-score');
-        const cerrado = Boolean(oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado))
-            || fechaPartidoYaPaso(partido.apiDate);
+        /*
+         * ⚠️ El `bloqueado` del servidor, no una copia de la regla: la lista
+         * de estados que había aquí no conocía `INTERRUMPIDO` (entrada 127).
+         * La fecha queda como respaldo si aún no hay fila de oficiales.
+         */
+        const cerrado = (oficial && typeof oficial.bloqueado === 'boolean')
+            ? oficial.bloqueado
+            : fechaPartidoYaPaso(partido.apiDate);
 
         if (caja) caja.outerHTML = String(cajaDeMarcador(oficial, cerrado));
 
@@ -660,23 +675,64 @@ try {
   console.error('Error cargando oficiales:', e);
 }
 
+/*
+ * ============================================================================
+ * ⛔ SE CRUZA POR EL ID DEL PARTIDO, NUNCA POR LOS NOMBRES
+ * ============================================================================
+ *
+ * Esto era:
+ *
+ *     oficialesJornada.find(o =>
+ *       (o.equipo1 === partido.equipo1 && o.equipo2 === partido.equipo2) ||
+ *       (o.equipo1 === partido.equipo2 && o.equipo2 === partido.equipo1));
+ *
+ * O sea, por el nombre de los equipos **aceptando el orden invertido**. Y la
+ * tolerancia al orden invertido tenía su motivo: el proveedor a veces manda
+ * local y visitante al revés, y hay código en el sincronizador para eso.
+ *
+ * ⛔ PERO EL 13 DE NOVIEMBRE DE 2026 SE DIO LA VUELTA. La Jornada 13 era de
+ * eliminatorias de IDA Y VUELTA: «Colombia vs Chile» el día 13 y «Chile vs
+ * Colombia» el 17, los dos en la misma jornada. Para el segundo, este `find`
+ * encontraba primero el del día 13 —encajaba por la rama invertida— y le daba
+ * **su marcador en vivo, 1-0, y su candado**. Cuatro pares espejo así en esa
+ * jornada.
+ *
+ * ⚠️ La tolerancia al orden invertido es exactamente lo que falla cuando las
+ * DOS orientaciones existen de verdad. Y los datos nunca estuvieron mal: lo
+ * que estaba mal era el cruce.
+ *
+ * Con el id, dos partidos con los mismos equipos en orden distinto son lo que
+ * siempre fueron: dos partidos distintos.
+ */
 function buscarOficial(partido) {
-  return oficialesJornada.find(o =>
-    (o.equipo1 === partido.equipo1 && o.equipo2 === partido.equipo2) ||
-    (o.equipo1 === partido.equipo2 && o.equipo2 === partido.equipo1)
-  );
+  if (!partido?.id) return undefined;
+  return oficialesJornada.find(o => o.partidoId === partido.id);
 }
 
+/*
+ * ⛔ EL CANDADO LO DECIDE EL SERVIDOR.
+ *
+ * Aquí vivía una copia de la regla del cierre: la lista `['LIVE','MT','TC']` y
+ * la comparación de la fecha, reimplementadas en el navegador. Hay un centinela
+ * que prohíbe duplicar `partidoYaInicio`, pero **sólo vigila `src/`**, así que
+ * esta copia estuvo ahí sin que nadie la viera.
+ *
+ * Y ya estaba desfasada: no conocía `INTERRUMPIDO` (entrada 127), así que un
+ * partido parado por lluvia salía editable mientras el servidor lo daba por
+ * cerrado — y al guardar lo habría rechazado sin explicar por qué.
+ *
+ * ⚠️ `bloqueado` viene en la lista de oficiales, calculado con la regla única.
+ * Si de un partido no hay fila de oficiales —puede pasar con una jornada recién
+ * creada— se cae a la fecha, que es lo único que queda; pero ese caso ya no
+ * decide nada sobre estados del proveedor.
+ */
 function partidoBloqueado(partido) {
   const oficial = buscarOficial(partido);
-
-  if (oficial && ['LIVE', 'MT', 'TC'].includes(oficial.estado)) return true;
+  if (oficial && typeof oficial.bloqueado === 'boolean') return oficial.bloqueado;
 
   if (!partido.apiDate) return false;
 
-  const fecha = parseFechaPartidoCostaRica(partido.apiDate)
-
-  
+  const fecha = parseFechaPartidoCostaRica(partido.apiDate);
   if (!fecha || Number.isNaN(fecha.getTime())) return false;
 
   return fecha <= new Date();

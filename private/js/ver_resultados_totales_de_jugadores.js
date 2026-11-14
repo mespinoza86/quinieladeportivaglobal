@@ -168,34 +168,65 @@ function estadoPartidoHTML(partido) {
     return html`<span class="status-pill status-scheduled">${formatearFecha(partido.fecha)}</span>`;
 }
 
+/*
+ * ⛔ POR EL ID DEL PARTIDO, NUNCA POR LOS NOMBRES.
+ *
+ * Cruzaba por el nombre de los equipos aceptando el orden invertido, y el 13 de
+ * noviembre de 2026 la Jornada 13 era de eliminatorias de IDA Y VUELTA:
+ * «Colombia vs Chile» el día 13 y «Chile vs Colombia» el 17, en la misma
+ * jornada. El segundo se llevaba el oficial del primero. Cuatro pares espejo.
+ *
+ * El comentario largo está en `llenar_jornada_user.js`.
+ */
 function buscarOficialPorPartido(resultadosOficiales, partidoBase) {
-    return resultadosOficiales.find(p =>
-        (p.equipo1 === partidoBase.equipo1 && p.equipo2 === partidoBase.equipo2) ||
-        (p.equipo1 === partidoBase.equipo2 && p.equipo2 === partidoBase.equipo1)
-    );
+    if (!partidoBase?.id) return undefined;
+    return resultadosOficiales.find(p => p.partidoId === partidoBase.id);
 }
 
-function normalizarOficial(partidoOficial, partidoBase) {
-    if (!partidoOficial) return null;
-
-    const invertido =
-        partidoOficial.equipo1 === partidoBase.equipo2 &&
-        partidoOficial.equipo2 === partidoBase.equipo1;
-
-    if (!invertido) return partidoOficial;
-
-    return {
-        ...partidoOficial,
-        equipo1: partidoBase.equipo1,
-        equipo2: partidoBase.equipo2,
-        marcador1: partidoOficial.marcador2,
-        marcador2: partidoOficial.marcador1
-    };
+/*
+ * ⛔ AQUÍ SE VOLTEABA EL MARCADOR SI EL OFICIAL VENÍA «AL REVÉS», Y ESO NO PUEDE
+ * PASAR.
+ *
+ * `/api/resultados-oficiales` saca `equipo1` y `equipo2` de la **misma fila de
+ * `partidos`** que los saca `/api/jornadas/:nombre`. Así que el oficial y el
+ * partido traen los equipos en el mismo orden siempre, por construcción: el
+ * `invertido` que había aquí no podía ser cierto nunca.
+ *
+ * ⚠️ Y era peor que inútil. Mientras el cruce se hacía por NOMBRES aceptando el
+ * orden invertido, este bloque sí se disparaba — con el oficial del partido
+ * EQUIVOCADO— y encima le daba la vuelta al marcador. El 13 de noviembre de
+ * 2026, «Chile vs Colombia» recibía el 1-0 de «Colombia vs Chile» y este código
+ * lo convertía en 0-2... perdón, en 0-1. Dos errores que se disfrazaban de
+ * normalidad.
+ *
+ * ⭐ El caso de verdad —que el PROVEEDOR mande local y visitante al revés— se
+ * arregla donde toca: en `sincronizador.reescribirJornadaDesdeCache`, que
+ * voltea el marcador ANTES de guardarlo. Cuando llega aquí ya está en nuestra
+ * orientación.
+ */
+function normalizarOficial(partidoOficial) {
+    return partidoOficial || null;
 }
 
+/*
+ * ⛔ EL CANDADO LO DECIDE EL SERVIDOR.
+ *
+ * Aquí vivía una copia de la regla del cierre —la lista [LIVE, MT, TC] y la
+ * comparación de la fecha— reimplementada en el navegador. Había SIETE copias
+ * así repartidas por las pantallas, y el centinela que prohíbe duplicar
+ * `partidoYaInicio` sólo vigila `src/`.
+ *
+ * ⚠️ Y estaban desfasadas: ninguna conocía `INTERRUMPIDO` (entrada 127), así
+ * que un partido parado por lluvia salía como «no empezó» mientras el servidor
+ * lo daba por cerrado.
+ *
+ * Ahora `bloqueado` llega en la lista de oficiales, calculado con la regla
+ * única. La fecha se conserva sólo como respaldo para un partido que aún no
+ * tiene fila de oficiales.
+ */
 function partidoYaCerro(partidoBase, partidoOficial) {
-    if (partidoOficial && ['LIVE', 'MT', 'TC'].includes(partidoOficial.estado)) {
-        return true;
+    if (partidoOficial && typeof partidoOficial.bloqueado === 'boolean') {
+        return partidoOficial.bloqueado;
     }
 
     if (!partidoBase.apiDate) return false;

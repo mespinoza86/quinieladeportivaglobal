@@ -28,8 +28,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /*
+     * ⛔ EL CANDADO LO DECIDE EL SERVIDOR.
+     *
+     * Aquí vivía una copia de la regla del cierre —la lista
+     * `[LIVE, MT, TC]` y la comparación de la fecha— reimplementada en el
+     * navegador. Había SIETE copias así repartidas por las pantallas, y el
+     * centinela que prohíbe duplicar `partidoYaInicio` sólo vigila `src/`.
+     *
+     * ⚠️ Y estaban desfasadas: ninguna conocía `INTERRUMPIDO` (entrada 127),
+     * así que un partido parado por lluvia salía como «no empezó» mientras el
+     * servidor lo daba por cerrado.
+     *
+     * Ahora `bloqueado` llega en la lista de oficiales, calculado con la regla
+     * única. La fecha se conserva sólo como respaldo para un partido que aún no
+     * tiene fila de oficiales.
+     */
     function partidoYaCerro(partidoBase, partidoOficial) {
-        if (partidoOficial && ['LIVE', 'MT', 'TC'].includes(partidoOficial.estado)) return true;
+        if (partidoOficial && typeof partidoOficial.bloqueado === 'boolean') {
+            return partidoOficial.bloqueado;
+        }
         if (!partidoBase?.apiDate) return false;
 
         const fecha = new Date(String(partidoBase.apiDate).replace(' ', 'T'));
@@ -62,11 +80,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return html`<span class="status-pill status-scheduled">Programado</span>`;
     }
 
+    /*
+     * ⛔ POR EL ID DEL PARTIDO, NUNCA POR LOS NOMBRES.
+     *
+     * Cruzaba por el nombre de los equipos aceptando el orden invertido, y el
+     * 13 de noviembre de 2026 la Jornada 13 era de eliminatorias de IDA Y
+     * VUELTA: «Colombia vs Chile» el día 13 y «Chile vs Colombia» el 17. El
+     * segundo se llevaba el resultado del primero. Cuatro pares espejo.
+     *
+     * El id lo manda ahora `/api/jornadas/:nombre` y los oficiales traen
+     * `partidoId`. Ver el comentario largo en `llenar_jornada_user.js`.
+     */
     function buscarOficialPorPartido(partidosOficiales, partidoBase) {
-        return partidosOficiales.find(partido =>
-            (partido.equipo1 === partidoBase.equipo1 && partido.equipo2 === partidoBase.equipo2) ||
-            (partido.equipo1 === partidoBase.equipo2 && partido.equipo2 === partidoBase.equipo1)
-        );
+        if (!partidoBase?.id) return undefined;
+        return partidosOficiales.find(partido => partido.partidoId === partidoBase.id);
     }
 
     function pedirPassword() {

@@ -222,6 +222,23 @@ module.exports = function rutasDePuntuacion(app, { requierePermiso, enQuiniela }
     res.json(filas.map(fila => {
       const visible = todo || fila.bloqueado;
       return {
+        /*
+         * ⛔ EL ID, por la misma razón que los escudos de abajo: esta lista
+         * blanca escrita a mano deja fuera lo que no se nombre, y sin el id la
+         * pantalla no tiene llave para cruzar con los resultados oficiales. Lo
+         * hacía por el nombre de los equipos aceptando el orden invertido, y el
+         * 13 de noviembre de 2026 eso dio a «Chile vs Colombia» el resultado de
+         * «Colombia vs Chile».
+         *
+         * ⚠️ No es un dato reservado: es la identidad de un partido de ESTA
+         * quiniela, y quien pide esta ruta ya está dentro de ella.
+         */
+        partidoId: fila.partidoId,
+        /*
+         * `bloqueado` también viaja: es lo que decide el candado, y tenerlo
+         * aquí evita que la pantalla lo vuelva a calcular por su cuenta.
+         */
+        bloqueado: Boolean(fila.bloqueado),
         equipo1: fila.equipo1,
         equipo2: fila.equipo2,
 

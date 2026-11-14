@@ -71,6 +71,17 @@ function partidoPublico(fila, ahora = new Date()) {
     && (ahora - desde) >= HORAS_PARA_AVISAR_FECHA * 60 * 60 * 1000;
 
   return {
+    /*
+     * ⛔ LA IDENTIDAD DEL PARTIDO, para poder cruzar esta lista con la de
+     * resultados oficiales sin adivinar.
+     *
+     * Sin ella, «Llenar quiniela» cruzaba por el nombre de los equipos y
+     * aceptaba el orden invertido. El 13 de noviembre de 2026 la Jornada 13
+     * tenía cuatro pares de ida y vuelta —«Colombia vs Chile» el día 13 y
+     * «Chile vs Colombia» el 17— y el segundo se llevaba el marcador del
+     * primero, en vivo, **y su candado**.
+     */
+    id: fila.id,
     equipo1: fila.equipo1,
     equipo2: fila.equipo2,
     logoEquipo1: fila.logo_equipo1,

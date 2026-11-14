@@ -179,11 +179,32 @@ async function deJornada(quinielaId, jornadaNombre, ahora = new Date()) {
 
         return {
           /*
+           * ⛔ LA LLAVE PARA CRUZAR ESTA LISTA CON LA DE PARTIDOS.
+           *
+           * Sin ella las pantallas cruzaban por el nombre de los equipos
+           * aceptando el orden invertido, y el 13 de noviembre de 2026 eso dio
+           * a «Chile vs Colombia» el resultado de «Colombia vs Chile» —y su
+           * candado—. Cuatro pares espejo en la misma jornada de eliminatorias.
+           */
+          partidoId: p.id,
+          /*
            * `true` = nuestra hora dice que empezó y el proveedor no lo da por
            * iniciado. Puede ser que el proveedor vaya retrasado (lo de esta
            * noche), que tenga mal la hora, o que el partido se aplazara.
            */
           esperandoProveedor: yaDebioEmpezar && !proveedorLoVe,
+          /*
+           * ⭐ Y EL CANDADO LO DECIDE EL SERVIDOR, no el navegador.
+           *
+           * «Llenar quiniela» tenía su propia `partidoBloqueado()` con una
+           * copia de la lista `['LIVE','MT','TC']` y de la comparación de
+           * fechas. El centinela que prohíbe duplicar `partidoYaInicio` sólo
+           * vigila `src/`, así que esa copia vivió ahí sin que nadie la viera —
+           * y ya estaba desfasada: no conocía `INTERRUMPIDO`, así que un
+           * partido parado por lluvia salía editable mientras el servidor lo
+           * daba por cerrado.
+           */
+          bloqueado: partidoYaInicio(p, o, ahora),
           equipo1: p.equipo1,
           equipo2: p.equipo2,
           logoEquipo1: p.logo_equipo1,

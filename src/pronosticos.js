@@ -121,6 +121,22 @@ async function deJugador(quinielaId, jugadorNombre, jornadaNombre, ahora = new D
     return partidos.map(partido => {
       const mio = mios.get(partido.id);
       return {
+        /*
+         * ⛔ EL ID DEL PARTIDO VIAJA, Y NO ES UN ADORNO.
+         *
+         * Sin él las pantallas no tenían ninguna llave para cruzar esta lista
+         * con la de resultados oficiales, así que lo hacían **por el nombre de
+         * los equipos, aceptando el orden invertido**. El 13 de noviembre de
+         * 2026 eso reventó: la Jornada 13 era de eliminatorias de ida y vuelta,
+         * con «Colombia vs Chile» el día 13 y «Chile vs Colombia» el 17, y el
+         * segundo se llevaba el resultado del primero —1-0, en vivo— **y su
+         * candado**. Cuatro pares espejo en esa jornada.
+         *
+         * ⚠️ Los datos nunca estuvieron mal: lo que estaba mal era el cruce.
+         * Con el id, dos partidos con los mismos equipos en orden distinto son
+         * lo que siempre fueron: dos partidos distintos.
+         */
+        partidoId: partido.id,
         equipo1: partido.equipo1,
         equipo2: partido.equipo2,
         logoEquipo1: partido.logo_equipo1,

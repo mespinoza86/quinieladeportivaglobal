@@ -76,8 +76,8 @@ entradas de bitácora (040 a 052).
 | `arrancar.js` | 88 líneas: abre el puerto, comprueba el rol, arranca los relojes |
 | `src/` | 31 módulos + `src/rutas/` (6) |
 | Mongo en el proyecto | **Nada.** Ni `mongoose`, ni `connect-mongo`, ni `mongodb-memory-server` |
-| Base en Neon | ✅ **Las 15 migraciones corridas.** La 015 el 14 de septiembre; desde entonces el esquema no se ha tocado |
-| Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo —hasta la entrada 117: **la lista de siete, completa**—, pero producción se queda donde se jaló la última vez. En uso, con cuentas y quinielas de verdad |
+| Base en Neon | ✅ **Las 16 migraciones corridas.** La 016 el 10 de octubre de 2026; desde entonces el esquema no se ha tocado |
+| Producción | ⚠️ **Hay que jalar desde Render.** En GitHub está todo; producción se queda donde se jaló la última vez — mira la fila de Producción del PUNTO DE PARTIDA, que es la que se mantiene al día. En uso, con cuentas y quinielas de verdad |
 | Tráfico a Neon | ✅ **~0,6 GB/mes** de 5, medido. Era 20,4 GB a principios de septiembre |
 | Disco en Neon | **10 MB** de 500. No es un límite que preocupe |
 
@@ -603,18 +603,18 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 10 de octubre de 2026
+#### 📍 Dónde quedó todo el 13 de noviembre de 2026
 
 | | |
 |---|---|
-| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 127** |
+| Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 128** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ⚠️ **Render tiene hasta `85287bf` (entrada 121): le faltan las entradas 123-125.** Comprobado el 10 de octubre de 2026: `/js/jornadas.js` servía `horaPartido` ×4 (la 121 sí está) y `usarFechaProveedor` ×0 (la 124 no). **Lo de las 123-125 está commiteado pero sin jalar, y sin probar a mano.** Pendiente de la 121 también |
+| Producción | ⛔ **LO MÁS URGENTE AL RETOMAR: JALAR.** Render se quedó en `85287bf` (entrada 121) — **comprobado el 10 de octubre de 2026** con dos lecturas de `/js/jornadas.js`: servía `horaPartido` ×4 y `usarFechaProveedor` ×0. Le faltan las entradas **123 a 128**, y con el código viejo **los cuatro partidos de vuelta de la Jornada 13 siguen cerrados y con el marcador del partido equivocado** (128). ⭐ Después de jalar, comprobarlo así: `curl -s .../js/llenar_jornada_user.js \| grep -c partidoId` debe dar ≥1 en dos lecturas seguidas, con un CONTROL inventado que dé cero. Nunca comparar tamaños (§C) |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
 | Pruebas | **686** rápidas + **232** de navegador, en verde y **cero flaky**. ⭐ La auditoría de dependencias en **0 vulnerabilidades**: era lo único que tenía el CI en rojo |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`) |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) y ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) y ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -622,6 +622,16 @@ documento.
   derecha, en las 34 pantallas. La elección se guarda en el navegador.
 - **Llenar quiniela**: botones − / + que nacen VACÍOS, el campo sigue siendo
   escribible, y el marcador real en el centro.
+- ⭐ **Dos partidos de IDA Y VUELTA en la misma jornada son distinguibles** (128).
+  «Colombia vs Chile» y «Chile vs Colombia» ya no se confunden: las pantallas
+  cruzan sus listas **por el id del partido**, no por el nombre de los equipos.
+  ⛔ Hasta el 13 de noviembre de 2026 el de la vuelta se llevaba el marcador en
+  vivo del de la ida **y su candado**; había cuatro pares así en la Jornada 13.
+  Los datos nunca estuvieron mal — era el cruce.
+- ⭐ **El candado lo decide SIEMPRE el servidor** (128). `bloqueado` viaja en las
+  rutas, calculado con `partidoYaInicio`, que vive en un solo sitio. Había
+  **siete copias de esa regla en el navegador** y ninguna conocía `INTERRUMPIDO`.
+  Hay un centinela que vigila `private/js/` para que no vuelvan.
 - ⭐ **Un partido INTERRUMPIDO se dice como tal** (127). Si el proveedor manda
   `Interrupted`, `Suspended` o `Abandoned`, la pastilla pone **⏸ Interrumpido**
   en vez de la hora de inicio, el pronóstico **sigue cerrado** —el partido
@@ -650,7 +660,7 @@ documento.
 - ⭐ **El pestillo** (125). Si un guardado reabriría el pronóstico de un partido
   ya cerrado, el **servidor** lo rechaza y la pantalla pregunta nombrando el
   partido y las dos horas. Decir «no» no guarda nada.
-  ⚠️ **AÚN SIN VERSE DECIR «NO».** El 22 de octubre Marco lo probó moviendo la
+  ⚠️ **SIN PROBAR A MANO: aún no se le ha visto decir «no».** El 22 de octubre Marco lo probó moviendo la
   hora de un partido de la Jornada3 a noviembre, y **no preguntó nada** — y
   estuvo bien: ese partido tenía marcador oficial (`TC`), así que no se podía
   reabrir. El que sirve para verlo es **Club América vs Tijuana** (Jornada 2),
@@ -21556,6 +21566,191 @@ mutaciones (copia byte a byte, nunca git checkout):
 - §Deuda: la marca de «hora tocada a mano».
 - Y lo de siempre, sin tocar desde septiembre: la notificación al teléfono, el
   icono en iPhone, el ciclo del borrador y el punto ciego de `axios`.
+
+---
+
+### 📌 Entrada 128 — 13 de noviembre de 2026 — Ida y vuelta: el partido del día 17 se llevaba el marcador del día 13
+
+**Objetivo:** Marco, con un partido en juego: *«tenemos actualmente un partido
+jugándose que es Colombia vs Chile, pero resulta que para la otra semana juega
+Chile vs Colombia, resulta que la aplicación me está dando en el partido de Chile
+vs Colombia el resultado de Colombia vs Chile, y de hecho me cerró el partido de
+la otra semana»*.
+
+## ⭐ LO PRIMERO, PORQUE CAMBIA TODO LO DEMÁS: LOS DATOS ESTABAN BIEN
+
+La base tenía exactamente lo correcto:
+
+```
+Colombia vs Chile  (orden 0)   fixture 857056  13-nov 18:00  oficial 1-0 LIVE min 59
+Chile vs Colombia  (orden 19)  fixture 857057  17-nov 17:00  oficial  ---  PROGRAMADO
+```
+
+Identificadores distintos, sin colisión de claves, el oficial del segundo vacío.
+**Y los puntos del ranking también estaban bien**, porque el servidor los calcula
+cruzando por `partido_id` en SQL.
+
+⛔ **El fallo estaba en el NAVEGADOR**, en cómo las pantallas juntaban dos listas.
+
+## POR QUÉ PASABA
+
+Las pantallas piden por separado los partidos de la jornada y los resultados
+oficiales, y los cruzaban así:
+
+```js
+oficialesJornada.find(o =>
+  (o.equipo1 === partido.equipo1 && o.equipo2 === partido.equipo2) ||
+  (o.equipo1 === partido.equipo2 && o.equipo2 === partido.equipo1));
+```
+
+Por el **nombre de los equipos**, y **aceptando el orden invertido**. Para «Chile
+vs Colombia» ese `find` recorría la lista y el primero que encajaba ganaba — y
+«Colombia vs Chile» encajaba por la segunda rama. Así se llevaba su 1-0, su
+estado `LIVE` y, de ahí, **su candado**: `partidoBloqueado()` llamaba al mismo
+`buscarOficial()`.
+
+Los dos síntomas de Marco salían de la misma línea.
+
+## ⚠️ Y POR QUÉ SE ACEPTABA EL ORDEN INVERTIDO, QUE ES LO INTERESANTE
+
+No era un descuido: **el proveedor a veces manda local y visitante al revés**, y
+hay código en el sincronizador para eso (`invertido` en
+`reescribirJornadaDesdeCache`, que voltea el marcador antes de guardar). Alguien
+hizo las pantallas tolerantes al mismo cambalache.
+
+⭐ **Esa tolerancia es exactamente lo que falla cuando las dos orientaciones
+existen de verdad.** Una jornada de eliminatorias de ida y vuelta las tiene las
+dos, legítimamente, y entonces «tolerar» es «confundir».
+
+## LA CAUSA DE FONDO: NINGUNA RUTA MANDABA UNA LLAVE
+
+`/api/jornadas/:nombre` entregaba equipos, logos, fecha… y **no el id del
+partido**. `/api/resultados-oficiales` tampoco. Sin llave común, cruzar por
+nombres era lo único que quedaba. El arreglo es mandar la llave:
+
+| Ruta | Campo nuevo |
+|---|---|
+| `/api/jornadas/:nombre` | `id` |
+| `/api/resultados-oficiales` | `partidoId` y `bloqueado` |
+| `/api/resultados-con-equipos/...` | `partidoId` y `bloqueado` |
+| `/api/resultados-trivias/...` | `bloqueado` |
+
+Y **siete sitios** en seis pantallas pasan a cruzar por id.
+
+## ⛔ Y AL MIRARLO: SIETE COPIAS DE LA REGLA DEL CIERRE EN EL NAVEGADOR
+
+`partidoBloqueado()`, `partidoYaCerro()`, `triviaBloqueada()`, y hasta una
+función llamada **`partidoYaInicio` igual que la del servidor**: siete
+reimplementaciones de la lista `['LIVE','MT','TC']` más la comparación de fechas,
+repartidas por `private/js/`.
+
+⚠️ **El centinela que prohíbe duplicar `partidoYaInicio` sólo vigila `src/`.** Por
+eso esas copias vivieron ahí sin que nadie las viera.
+
+⛔ **Y ya estaban desfasadas:** ninguna conocía `INTERRUMPIDO`, añadido tres
+semanas antes (127). Un partido parado por lluvia salía editable en la pantalla
+mientras el servidor lo daba por cerrado — y al guardar lo habría rechazado sin
+explicar por qué.
+
+Las siete se sustituyen por el `bloqueado` que ahora manda el servidor,
+calculado con la regla única. **Queda un centinela nuevo que vigila
+`private/js/`**, y se comprobó reintroduciendo las dos faltas.
+
+## ⚠️ DOS BLOQUES DE CÓDIGO MUERTO QUE EMPEORABAN EL FALLO
+
+En `generar_reporte.js` y en `ver_resultados_totales_de_jugadores.js` había un
+bloque que **volteaba el marcador** si el oficial venía «al revés» respecto al
+partido. No puede pasar: las dos rutas sacan los equipos de **la misma fila de
+`partidos`**, así que vienen en el mismo orden por construcción.
+
+⭐ Pero mientras el cruce se hacía por nombres, ese bloque **sí se disparaba** —con
+el oficial del partido equivocado— y encima le daba la vuelta al marcador. Dos
+errores que se tapaban entre ellos. Retirados, con el comentario de dónde vive el
+caso de verdad.
+
+## EL ALCANCE, MEDIDO
+
+**Cuatro pares espejo en la Jornada 13**, no uno:
+
+| Partido | Ida | Vuelta |
+|---|---|---|
+| Colombia / Chile | 13-nov 18:00 | 17-nov 17:00 |
+| Guatemala / Canadá | 13-nov 20:00 | 16-nov 19:00 |
+| Haití / Estados Unidos | 14-nov 15:30 | 17-nov 18:00 |
+| Jamaica / México | 14-nov 19:00 | 17-nov 20:30 |
+
+⚠️ Los otros tres **no se habían roto todavía sólo porque su ida no había
+empezado**. Se habrían roto esa misma semana.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `src/jornadas.js` | `partidoPublico` manda el `id` |
+| `src/oficiales.js` | `deJornada` manda `partidoId` y `bloqueado` |
+| `src/pronosticos.js` | `deJugador` manda `partidoId` |
+| `src/rutas/puntuacion.js` | La lista blanca pasa `partidoId` y `bloqueado` |
+| `src/respuestas-trivia.js` | `deJornada` manda `bloqueado` |
+| `private/js/llenar_jornada_user.js` | Cruce por id ×2; fuera la copia de la regla |
+| `private/js/ver-resultados.js` | Idem |
+| `private/js/ver-resultados_puntos.js` | Idem |
+| `private/js/ver_resultados_totales_de_jugadores.js` | Idem, y fuera el volteo muerto |
+| `private/js/generar_reporte.js` | Idem |
+| `private/js/llenar_trivia.js` | Idem |
+| `private/js/ver_resultados_trivias.js` | Fuera su copia de la regla |
+| `test/architecture.test.js` | Centinela de `private/js/`; el conteo de decisiones, arreglado |
+| `test/rutas.test.js` | La prueba del par espejo, con control del cruce viejo |
+| `test/dominio.test.js` | El `id` entra en la forma exacta |
+
+**Verificación:**
+
+```
+npm test                    -> 686/686
+CI=true npx playwright test -> ver el cierre de esta entrada
+
+contra la base de PRODUCCIÓN, los cuatro pares espejo:
+   Chile vs Colombia   POR ID -> ---  PROGRAMADO  bloqueado=false   ✅
+                       el viejo le daba 1-0 LIVE bloqueado=true     ⛔
+
+centinela nuevo, mutado en los dos sentidos:
+   reintroducir la copia de la regla   -> ROJO
+   reintroducir el cruce por nombres   -> ROJO
+```
+
+⭐ **La prueba del par espejo lleva su propio CONTROL**: comprueba que el cruce
+viejo se equivoca **con esos mismos datos**. Si alguien lo reintroduce, ahí está
+escrito lo que hacía.
+
+**Hallazgos nuevos:**
+
+1. ⛔ **Una tolerancia puede ser un fallo.** Aceptar el orden invertido existía
+   por un motivo real —el proveedor lo manda al revés a veces— y es
+   indistinguible de confundir dos partidos cuando los dos órdenes son
+   legítimos. Lo que resuelve una ambigüedad no puede ser una heurística:
+   tiene que ser una llave.
+2. ⛔ **Un centinela que vigila una carpeta no vigila el proyecto.** El que
+   prohíbe duplicar la regla del cierre mira `src/`, y había siete copias en
+   `private/js/`, una con el mismo nombre que la original.
+3. ⚠️ **Dos errores pueden taparse entre ellos.** El volteo del marcador era
+   código muerto *y* lo que hacía creíble el resultado equivocado: con el
+   oficial correcto no se dispara nunca.
+4. ⭐ **Un fallo visible en una pantalla puede estar en seis.** Marco vio una;
+   el mismo cruce estaba en seis pantallas y en el PDF.
+5. ⭐ **Preguntar primero «¿están mal los datos?» ahorra el camino entero.** Si
+   la base hubiera estado mal, esto habría sido una reparación con riesgo. Estaba
+   bien, así que fue un arreglo de presentación: sin migración, sin tocar datos,
+   sin rehacer la jornada y sin que nadie vuelva a llenar nada.
+
+**Pendiente / siguiente paso:**
+
+- ⚠️ **JALAR EN RENDER.** Es lo único que separa a Marco del arreglo: con el
+  código viejo, los cuatro partidos de vuelta siguen cerrados y con el marcador
+  equivocado. Comprobarlo con `grep -c partidoId` en `/js/llenar_jornada_user.js`.
+- El pestillo **sigue sin verse decir «no»** (125). El que sirve es **Club
+  América vs Tijuana** (Jornada 2), que no tiene marcador oficial.
+- §Deuda: la marca de «hora tocada a mano».
+- Y lo de siempre: la notificación al teléfono, el icono en iPhone, el ciclo del
+  borrador y el punto ciego de `axios`.
 
 ---
 

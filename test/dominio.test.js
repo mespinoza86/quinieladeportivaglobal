@@ -105,7 +105,23 @@ test('los partidos vuelven con la forma que espera el frontend', async () => {
   ]);
 
   const j = await jornadas.porNombre(quiniela.id, 'J');
-  assert.deepEqual(j.partidos[0], {
+
+  /*
+   * ⛔ `id` ENTRA EN LA FORMA, y es lo más importante de esta lista.
+   *
+   * El 13 de noviembre de 2026 la Jornada 13 era de eliminatorias de ida y
+   * vuelta —«Colombia vs Chile» el día 13 y «Chile vs Colombia» el 17— y las
+   * pantallas cruzaban esta lista con la de resultados oficiales **por el
+   * nombre de los equipos, aceptando el orden invertido**. El segundo partido se
+   * llevaba el marcador en vivo del primero y su candado.
+   *
+   * Si este `id` deja de viajar, esas pantallas se quedan sin llave y vuelven a
+   * tener que adivinar. Por eso está en la comparación exacta.
+   */
+  assert.equal(typeof j.partidos[0].id, 'string', 'el id del partido tiene que viajar');
+  const { id, ...formaSinId } = j.partidos[0];
+
+  assert.deepEqual(formaSinId, {
     equipo1: 'Saprissa', equipo2: 'Alajuelense',
     logoEquipo1: 'Saprissa.png', logoEquipo2: 'Alajuelense.png',
     comodin: true, apiFixtureId: '123', apiLeagueId: null,
