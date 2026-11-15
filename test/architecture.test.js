@@ -3048,3 +3048,59 @@ test('⛔ cada trabajo del latido corre con SU intervalo, no con el de al lado',
     + 'el turno a través de la tregua: el primero recalcula el horizonte y los '
     + 'demás se encuentran con que «ya no toca».');
 });
+
+/*
+ * ============================================================================
+ * ⛔ LA SONDA DE SALUD DE RENDER NO PUEDE TOCAR LA BASE
+ * ============================================================================
+ *
+ * El 15 de noviembre de 2026, con la tregua ya desplegada, el cómputo de Neon
+ * seguía SIN dormirse: 21 días de encendido continuo. La tregua funcionaba —las
+ * escrituras del cerrojo habían pasado de 34/min a 0— pero quedaban ~4,7
+ * transacciones por minuto, una cada trece segundos.
+ *
+ * Era Render preguntando por su ruta de salud, que apuntaba a `/readyz`, y
+ * `/readyz` hace un `SELECT 1`. Así Neon no veía jamás cinco minutos quietos.
+ *
+ * ⭐ Lo que lo hace digno de un centinela es que la elección estaba RAZONADA en
+ * `render.yaml`: se eligió `/readyz` *precisamente porque* Neon suspende el
+ * cómputo. El razonamiento se volvió del revés solo en cuanto dormir pasó a ser
+ * lo deseado en vez de una avería, y nadie vuelve a leer un comentario que
+ * explica una decisión que ya parece tomada.
+ *
+ * ⚠️ Esta prueba NO exige que diga `/healthz`. Exige lo que de verdad importa:
+ * que la ruta elegida no consulte la base. Si mañana alguien añade un
+ * `/listo-de-verdad` sin base, vale igual; y si alguien le mete una consulta a
+ * `/healthz`, esto se pone rojo aunque el nombre no haya cambiado.
+ */
+test('⛔ la ruta de salud que vigila Render no consulta la base', () => {
+  const yaml = leer('render.yaml');
+
+  const m = yaml.match(/^\s*healthCheckPath:\s*(\S+)\s*$/m);
+  assert.ok(m, 'render.yaml tiene que declarar healthCheckPath: sin eso no sé qué vigila Render');
+
+  const ruta = m[1];
+  const servidor = quitarComentarios(leer(path.join('src', 'servidor.js')));
+
+  /*
+   * El cuerpo de ESA ruta y no el archivo entero: `src/servidor.js` está lleno
+   * de consultas legítimas. Se corta desde su `app.get` hasta el siguiente, que
+   * es donde acaba.
+   */
+  const inicio = servidor.indexOf(`app.get('${ruta}'`);
+  assert.notEqual(inicio, -1,
+    `render.yaml vigila «${ruta}» y no encuentro esa ruta en src/servidor.js. `
+    + 'Una sonda de salud que apunta a un 404 deja a Render reiniciando la '
+    + 'instancia para siempre.');
+
+  const resto = servidor.slice(inicio + 1);
+  const siguiente = resto.indexOf('app.get(');
+  const cuerpo = siguiente === -1 ? resto : resto.slice(0, siguiente);
+
+  assert.doesNotMatch(cuerpo, /db\.consulta|enQuiniela/,
+    `La ruta de salud «${ruta}» consulta la base, y Render la pide cada pocos `
+    + 'segundos: así Neon no ve nunca los cinco minutos de inactividad que '
+    + 'necesita para suspender el cómputo, y la tregua (129) no ahorra nada. '
+    + 'Medido el 15-nov-2026: ~4,7 transacciones/min sólo por esto. '
+    + 'Usa una ruta que no toque la base, como /healthz.');
+});

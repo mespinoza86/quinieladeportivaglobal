@@ -56,7 +56,7 @@ const PREGUNTAS = [
   ['¿Se dice cómo saber el commit de verdad?', 'git log origin/main..main'],
   ['¿Cuántas pantallas hay?',              String(sh('ls public/*.html | wc -l'))],
   ['¿Cuántos scripts de navegador?',       String(sh('ls private/js/*.js | wc -l'))],
-  ['¿Cuántas pruebas rápidas?',            '709'],
+  ['¿Cuántas pruebas rápidas?',            '710'],
   ['¿Cuántas de navegador?',               '232'],
   ['¿Cuántas migraciones?',                String(sh('ls db/migraciones/*.sql | wc -l'))],
   ['¿Qué hace `aviso.js`?',                'aviso.js'],
@@ -150,7 +150,14 @@ const PREGUNTAS = [
    * escrita ahí, el de mañana no la corre.
    */
   ['¿Se dice cómo mirar el estado del CI?', 'estado-ci.js', 'viva'],
-  ['¿Se avisa de que el CI se pone rojo solo?', 'auditoría de dependencias', 'viva']
+  ['¿Se avisa de que el CI se pone rojo solo?', 'auditoría de dependencias', 'viva'],
+  /*
+   * ⛔ Lo de la entrada 131, y es lo que de verdad falta por hacer: la tregua no
+   * ahorra nada mientras la sonda de salud de Render pida `/readyz`. Es un
+   * cambio que NO esta en el codigo -hay que darle a un boton en el panel-, asi
+   * que si no esta escrito en la cabecera, nadie se enterara de que falta.
+   */
+  ['¿Se dice que falta cambiar la sonda de Render?', 'Health Check Path', 'viva']
 ];
 
 /*
@@ -209,7 +216,11 @@ const NO_DEBE_QUEDAR = [
    */
   ['706 pruebas',  'las rapidas pasaron a 709 al validar TREGUA_TOPE_MS (129)'],
   ['706 + 232',    'la suma de antes de validar la palanca del entorno'],
-  ['706/706',      'la corrida de antes de la guarda del entorno']
+  ['706/706',      'la corrida de antes de la guarda del entorno'],
+  /* El centinela de la sonda de salud (131). */
+  ['709 pruebas',  'las rapidas pasaron a 710 con el centinela de la sonda (131)'],
+  ['709 + 232',    'la suma de antes de la entrada 131'],
+  ['709/709',      'la corrida de antes del centinela de la sonda']
 ];
 
 let fallos = 0;

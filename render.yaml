@@ -24,10 +24,40 @@ services:
     buildCommand: npm ci --omit=dev
     startCommand: npm start
 
-    # /healthz dice "el proceso responde"; /readyz dice "puede atender trafico".
-    # Render necesita la SEGUNDA: con la base dormida -Neon suspende el computo
-    # por inactividad- el proceso vive pero no puede servir nada util.
-    healthCheckPath: /readyz
+    # /healthz dice "el proceso responde"; /readyz dice "puede atender trafico"
+    # y para eso hace un SELECT 1 contra la base.
+    #
+    # ============================================================================
+    # ⛔ POR QUE AQUI VA /healthz Y NO /readyz, QUE ERA LO DE ANTES
+    # ============================================================================
+    #
+    # Hasta el 15 de noviembre de 2026 esto apuntaba a /readyz, y el comentario
+    # decia: "Render necesita la SEGUNDA: con la base dormida -Neon suspende el
+    # computo por inactividad- el proceso vive pero no puede servir nada util".
+    #
+    # ⭐ Ese razonamiento se volvio del reves solo. Render pide la ruta de salud
+    # cada pocos segundos -medido: ~4,7 transacciones/min, una cada ~13 s-, asi
+    # que el SELECT 1 de /readyz **impedia que Neon viera jamas sus cinco minutos
+    # de inactividad**. La comprobacion puesta para detectar una base dormida era
+    # exactamente lo que no la dejaba dormirse.
+    #
+    # Y con la tregua (entrada 129) la base dormida dejo de ser una averia: es el
+    # estado DESEADO fuera de las horas de partido. Vigilarla como si fuera un
+    # fallo es pedirle a Render que pelee contra el ahorro.
+    #
+    # ⚠️ Lo que Render hace con un fallo de salud es reiniciar o reemplazar la
+    # instancia, y eso NO arregla una base caida. Asi que /readyz tampoco servia
+    # para lo que se esperaba de el.
+    #
+    # ⭐ /readyz NO desaparece: sigue siendo la sonda de verdad, sin cache, para
+    # mirar a mano si la base responde y si el correo esta configurado. Lo que
+    # cambia es quien la llama: una persona cuando quiere saber, no un robot cada
+    # trece segundos.
+    #
+    # ⛔ CAMBIAR ESTE ARCHIVO NO CAMBIA NADA POR SI SOLO. Render no lo aplica a un
+    # servicio que ya existe: hay que ponerlo en el panel, en Settings ->
+    # Health Check Path.
+    healthCheckPath: /healthz
 
     envVars:
       - key: NODE_ENV

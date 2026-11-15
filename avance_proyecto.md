@@ -12,7 +12,7 @@
 
 ---
 
-## 🔖 PUNTO DE PARTIDA — última actualización: 14 de noviembre de 2026
+## 🔖 PUNTO DE PARTIDA — última actualización: 15 de noviembre de 2026
 
 > **Lee esto primero al retomar.** Resume dónde quedó todo y qué hacer a
 > continuación. El detalle de cada paso está en la bitácora (§19).
@@ -24,7 +24,7 @@ git branch --show-current   # debe decir: main
 git status                  # debe estar limpio
 git log --oneline -8        # qué se hizo en la última sesión
 git log origin/main..main   # ⚠️ si sale algo, hay commits SIN EMPUJAR
-npm test                    # 709/709
+npm test                    # 710/710
 npm run test:e2e            # 232/232, ~16 min
 
 node scripts/auditar-bitacora.js   # ¿este archivo sigue respondiendo lo que hace falta?
@@ -78,7 +78,7 @@ entradas de bitácora (040 a 052).
 
 | Qué | Estado |
 |---|---|
-| Pruebas rápidas | **709**, ~2 min |
+| Pruebas rápidas | **710**, ~2 min |
 | Pruebas de navegador | **232**, ~16 min, contra el servidor de verdad |
 | Rutas | **115**, todas sobre PostgreSQL |
 | `server.js` | **Borrado.** Empezó con 5.270 líneas el 14 de agosto |
@@ -613,21 +613,21 @@ documento.
 **Lo primero, siempre:** `git branch --show-current` (debe decir `main`),
 `git log --oneline -3`, `git status` y `npm test`.
 
-#### 📍 Dónde quedó todo el 14 de noviembre de 2026
+#### 📍 Dónde quedó todo el 15 de noviembre de 2026
 
 | | |
 |---|---|
 | Último commit | **Míralo con `git log --oneline -5`.** Esta fila no puede decirlo: el commit que escribe la bitácora no puede nombrarse a sí mismo, así que cualquier hash escrito aquí va uno por detrás. Lo último que se hizo fue la **Entrada 128** |
 | Árbol | ✅ Limpio y **todo empujado**. Compruébalo con `git log origin/main..main`: si sale algo, hay commits sin empujar. ⚠️ **`conversacion.md` y `conversion.md` están en la carpeta a propósito y FUERA del repositorio**, sin `.gitignore` que lo impida: se excluyen a mano. Cuál es el bueno y por qué, en §DECISIONES QUE ESPERAN A MARCO |
-| Producción | ✅ **AL DÍA HASTA LA 128, comprobado el 14 de noviembre de 2026.** Render jaló solo en algún momento entre el 10 de octubre y hoy. Marcas servidas, con dos lecturas iguales y CONTROL en cero: `horaPartido` ×5 (121), `usarFechaProveedor` ×2 (124), `reabrirConfirmado` ×2 (125), `interrumpido` ×1 (127), `partidoId` ×2 y `bloqueado` ×19 (128). ⛔ **Lo único que le falta es la 129 (la tregua)**: `/readyz` daba `tiempoActivoSegundos` **61396** —17 horas— veinticinco minutos después de empujar `01338a2`, así que ese arranque es de la 128. ⚠️ **Mientras no jale, la factura de Neon sigue igual** |
+| Producción | ✅ **AL DÍA, comprobado el 15 de noviembre de 2026.** Marco jaló la noche del 14. Marcas servidas, dos lecturas iguales y CONTROL en cero: `horaPartido` ×5 (121), `usarFechaProveedor` ×2 (124), `reabrirConfirmado` ×2 (125), `interrumpido` ×1 (127), `partidoId` ×2 y `bloqueado` ×19 (128). Y la **129**, que no toca ningún archivo servido, por `tiempoActivoSegundos` de `/readyz`: **37288** —10,4 h— o sea el arranque de esa noche |
 | ⛔ Cómo NO comprobarlo (14 de noviembre de 2026) | **Marco:** *«¿por qué dices que los 4 partidos de vuelta siguen cerrados y con el marcador equivocado, si estoy revisando el marcador y está sin definir y la hora de cierre está bien?»*. Tenía razón: yo repetía **esta misma fila escrita el 10 de octubre** como si fuera de hoy. ⭐ Una fila que dice «comprobado el 10 de octubre» es **verdad como historia y mentira como presente**, y el mes de diferencia no se ve al leerla. Si la frase es «producción está en X», **se vuelve a mirar**, aunque la fila lo diga con fecha y con pruebas |
 | Producción (histórico) | ⚠️ Lo anterior a la 121. Todo lo anterior **sí está puesto: comprobado el 8 de octubre de 2026**, no afirmado — las tres marcas de los últimos commits de código estaban servidas (`panelSinJornadas`, la tarjeta de «Pronósticos» con su `hidden`, y `textoDeInvitacion` ×4, idéntico al local), con CONTROL en cero para una marca inventada y para la versión vieja de esa tarjeta. ⭐ **Cómo se comprueba otra vez:** buscar en lo que sirve Render una marca que sólo exista en la versión nueva —para la 121, `horaPartido` en `/js/jornadas.js`—, dos lecturas seguidas, y un CONTROL que tenga que dar cero. Nunca comparar tamaños (§C) |
 | Base de datos | ✅ Las **16** migraciones corridas. ⭐ La **016** (`016-fecha-del-proveedor.sql`) **ya está en Neon**: Marco la corrió el 10 de octubre y se comprobó con `information_schema` —las dos columnas de `partidos`, con sus tipos—. ⚠️ Se corren **A MANO** en el editor SQL de Neon con el rol dueño: no hay ejecutor automático, y olvidarlo ya costó cuatro pantallas caídas (124) |
-| Pruebas | **709** rápidas + **232** de navegador, en verde y **cero flaky** |
+| Pruebas | **710** rápidas + **232** de navegador, en verde y **cero flaky** |
 | ⛔ Estado del CI | **Compruébalo con `node scripts/estado-ci.js`**, no con la memoria. ⚠️ Estuvo **cinco corridas en rojo, del 10 de octubre al 14 de noviembre**, y no lo rompió ningún cambio: la **auditoría de dependencias** se puso roja sola cuando se publicaron cuatro avisos contra un `package-lock.json` congelado. Arreglado con cinco saltos de parche (130), `npm audit --omit=dev` en **0 vulnerabilidades**. ⭐ Y el correo de GitHub nombra el *workflow* —que se llama «Pruebas»—, **no el paso**: las pruebas estaban verdes en las cinco |
 | Tráfico a Neon | ✅ Sigue en ~0,6 GB/mes. Se midió otra vez el 21: el arreglo del ciclo sigue puesto (3,62 KB frente a 689 del `SELECT *`). ⚠️ **Y no era esto lo que encarecía la factura** |
-| ⛔ Cómputo en Neon | **De aquí salían los ~$21/mes.** Medido el 14 de noviembre: 58 transacciones y 34 escrituras **por minuto**, día y noche, y `pg_postmaster_start_time()` dando **19,7 días sin suspenderse** con el autoapagado puesto. La **tregua** (129) lo arregla: ~13 despertares/día en vez de 1440, estimación honesta de **35–50 CU-hrs/mes (~$4–5)**. ⭐ El tope se ajusta sin tocar código con `TREGUA_TOPE_MS` (de fábrica 6 h; 1 h sería `3600000`). ⚠️ **Nada de esto cuenta hasta que Render jale** |
-| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) y ⛔ **el CI, un mes en rojo por una auditoría que se puso roja sola, y el punto ciego de axios cubierto por fin** (130) |
+| ⛔ Cómputo en Neon | **La tregua funciona y la factura NO ha bajado todavía.** Medido el 15 de noviembre, con la 129 ya puesta: escrituras **34/min → 0/min** ⭐, transacciones **58/min → ~4,7/min**… y el cómputo **21 días encendido sin UNA suspensión**. ⛔ El culpable que quedaba: **la sonda de salud de Render apuntaba a `/readyz`, que hace `SELECT 1`**, y Render la pide cada ~13 s, así que Neon no veía nunca sus 5 minutos quietos. Arreglado en el repositorio (131) → `healthCheckPath: /healthz`. ⛔⛔ **PERO FALTA PONERLO EN EL PANEL: Settings → Health Check Path → `/healthz`.** Hasta entonces no se ahorra un céntimo. ⭐ El tope se ajusta con `TREGUA_TOPE_MS` (de fábrica 6 h; `0` la apaga) |
+| ⭐ Lo que se acabó estos días | **§22 rematado** (104), **la tarjeta de pronóstico** (105), **§23 entero: los tres temas** (106-108), **el refresco que reiniciaba la pantalla** (109), **entrar y ver lo tuyo** (110), **la tarjeta unificada** (111), **el icono propio al instalar** (112), **el menú y la barra reordenados** (113), **las ligas con su país** (114), **la revisión de usabilidad: seis cambios** (115), **el recorrido como usuario y los cinco primeros puntos** (116), **los dos últimos puntos y seis pantallas borradas** (117), **las cuatro mejoras para quien entra por primera vez** (118), **la auditoría de esta bitácora, ejecutable** (119), **los dos datos que la bitácora tenía mal** (120), ⭐ **corregir a mano la hora que el proveedor da mal, con rearme de los avisos** (121) **el volcado de la conversación rehecho, con cinco mensajes que no eran de Marco** (122), **el diagnóstico del proveedor que miente con cara de normalidad** (123), ⭐ **los dos avisos —por qué un partido no tiene marcador, y que el proveedor dice otra hora— más el 500 que tumbó media aplicación** (124) ⭐ **el pestillo: un partido cerrado no se reabre por descuido** (125), **la bitácora al día y el estado exacto al cerrar** (126) ⭐ **el estado INTERRUMPIDO y cómo anular un partido que no se reanuda** (127) ⛔ **el cruce por nombres que confundía la ida con la vuelta, y las siete copias de la regla del cierre en el navegador** (128) y ⭐ **la tregua: los relojes dejan de despertar a Neon por nada, y los dos fallos que salieron de preguntar «¿de qué forma te puedes equivocar?»** (129) y ⛔ **el CI, un mes en rojo por una auditoría que se puso roja sola, y el punto ciego de axios cubierto por fin** (130) y ⛔ **la tregua funcionando y la factura sin bajar: era la sonda de salud de Render** (131) |
 
 ##### Qué se puede tocar y esperar que funcione
 
@@ -941,7 +941,7 @@ correo que hay que encender.
 > estamos, qué se propone, y qué hace falta de él.
 
 **Dónde estamos: no hay nada a medias.** Todo lo construido está desplegado y
-funcionando, **las dieciseis migraciones corridas**, **709 + 232** pruebas en
+funcionando, **las dieciseis migraciones corridas**, **710 + 232** pruebas en
 verde, el árbol limpio y `main` al día con `origin`. **No hay ninguna tarea
 empezada sin terminar.**
 
@@ -1348,7 +1348,7 @@ Lo que sí conviene saber:
 
 ```bash
 npm start                  # arranca la aplicación. Exige DATABASE_URL
-npm test                   # las 709 pruebas rápidas, ~2 min
+npm test                   # las 710 pruebas rápidas, ~2 min
 npm run test:postgres      # 390 de los módulos ⚠️ NO incluye cobros.test.js
 npm run test:rutas         # solo las 212 del servidor
 npm run test:arquitectura  # solo los 70 centinelas
@@ -2046,7 +2046,7 @@ consulta está en «Lo siguiente».
 | `migrate-legacy.js` | 101 | Migrador de la base anterior. Simulación por defecto. **Lo único que aún habla con MongoDB** |
 | `generar-iconos.ps1` | 129 | Rehace los iconos de `public/iconos/` desde el dibujo. **No se corre en cada despliegue**: los PNG están commiteados. Es de Windows a propósito —usa `System.Drawing`— para no meter una dependencia con binarios nativos por algo que se hace una vez cada dos años (112) |
 
-### 2.5 `test/` — 709 pruebas rápidas y 232 de navegador
+### 2.5 `test/` — 710 pruebas rápidas y 232 de navegador
 
 `npm test` las corre todas en ~50 s, **sin red y sin tocar ninguna base real**:
 por debajo hay un PostgreSQL 18 compilado a WebAssembly (PGlite), así que es
@@ -22344,6 +22344,193 @@ scripts/estado-ci.js, con control en los dos sentidos:
 - Lo que no cambia: **jalar en Render** la 129 (la tregua), ya con el tope
   validado, y **esta noche después de las 21:00** para no cambiar la rueda en
   marcha con dos partidos en vivo.
+
+---
+
+### 📌 Entrada 131 — 15 de noviembre de 2026 — La tregua funciona y la factura no baja: era la sonda de salud de Render
+
+**Objetivo:** Marco: *«anoche lo jalé, puedes revisar cómo se ve todo?»*.
+
+## LO QUE SÍ SALIÓ BIEN
+
+```
+Render   /readyz tiempoActivoSegundos = 37288  -> 10,4 h: redesplegó anoche ✔
+CI       #111 b6b14b6 success · #110 37c7dc4 success                       ✔
+```
+
+Y la tregua, medida contra producción, hace **exactamente** lo que prometía:
+
+| | ANTES (14-nov) | AHORA |
+|---|---|---|
+| transacciones/min | 58 | **6,0** (2 son mías → ~4,7) |
+| escrituras/min | 34 | **0,0** ⭐ |
+
+⭐ **Las escrituras del cerrojo desaparecieron del todo.** En el momento de
+medirlo la tregua estaba dormida, con el horizonte puesto a las 09:58 —la
+próxima consulta pendiente— y el siguiente partido a las 13:45. Funciona.
+
+## ⛔ Y AUN ASÍ, EL CÓMPUTO NO SE DURMIÓ NI UNA VEZ
+
+```
+pg_postmaster_start_time()  ->  25 de octubre, SIN cambio
+lleva encendido             ->  21 días 4 horas
+ayer decía                  ->  20 días 8 horas
+```
+
+**21 días de encendido continuo.** La diferencia con ayer es exactamente el
+tiempo transcurrido: no hubo ni una suspensión. ⚠️ Con lo cual **la factura de
+noviembre no va a bajar**, por mucho que la tregua haga su trabajo.
+
+Quedaban ~4,7 transacciones por minuto. **Una cada trece segundos**, y cinco
+minutos quietos es lo que Neon necesita para apagar el cómputo.
+
+## QUIÉN ERA, ENUMERANDO EN VEZ DE SOSPECHAR
+
+Nadie conectado salvo mi propia consulta (`pg_stat_activity`: un `pgbouncer`).
+Así que la lista de lo que puede tocar la base por su cuenta:
+
+| Candidato | Veredicto |
+|---|---|
+| Los cuatro relojes | ⭐ descartado: 0 escrituras/min |
+| La poda del almacén de sesiones | cada **15 min**, deja huecos de 14: no es el bloqueo |
+| Otro `setInterval` escondido | sólo hay uno en todo `src/`, el del latido |
+| ⛔ **La sonda de salud de Render** | **era esto** |
+
+Y estaba escrito **en nuestro propio `render.yaml`**:
+
+```yaml
+# Render necesita la SEGUNDA: con la base dormida -Neon suspende el computo
+# por inactividad- el proceso vive pero no puede servir nada util.
+healthCheckPath: /readyz
+```
+
+`/readyz` hace `SELECT 1` contra la base. Render la pide cada pocos segundos.
+
+**Comprobado, con control:**
+
+```
+10 peticiones a /readyz   -> 16 transacciones nuevas  (una por petición + el fondo)
+10 peticiones a /healthz  ->  2 transacciones nuevas  (ninguna es del endpoint)
+```
+
+⭐ Si los dos números hubieran salido iguales, la conclusión era falsa. No lo
+fueron.
+
+## ⭐⭐ LO QUE HACE ESTO DIGNO DE CONTARSE: EL RAZONAMIENTO SE VOLVIÓ DEL REVÉS SOLO
+
+La elección de `/readyz` **no fue un descuido**. Estaba razonada, por escrito, y
+el razonamiento era bueno: *«con la base dormida el proceso vive pero no puede
+servir nada útil»*. Vigilar la base tenía sentido cuando una base dormida era
+una avería.
+
+⛔ **Pero la tregua convirtió «la base dormida» en el estado DESEADO.** Y desde
+ese momento la misma frase, sin cambiar una letra, pasó de ser una buena razón a
+ser el fallo: **la comprobación puesta para detectar una base dormida era
+exactamente lo que no la dejaba dormirse.**
+
+⚠️ Y nadie vuelve a leer un comentario que explica una decisión que ya parece
+tomada. Por eso esto se descubrió midiendo, no leyendo.
+
+⭐ La lección general: **un cambio puede invalidar un razonamiento escrito en
+otro sitio sin tocar su código.** La 129 no modificó `render.yaml` ni tenía por
+qué, y aun así lo dejó mintiendo.
+
+## EL ARREGLO
+
+**`healthCheckPath: /healthz`**, que no toca la base.
+
+⚠️ **Y `/readyz` NO desaparece**: sigue siendo la sonda de verdad, sin caché,
+para mirar a mano si la base responde y si el correo está configurado. Lo que
+cambia es **quién la llama**: una persona cuando quiere saber, no un robot cada
+trece segundos.
+
+⭐ **Lo que se pierde, dicho claro:** Render deja de enterarse de que la base no
+responde. Pero lo que Render hace con un fallo de salud es **reiniciar o
+reemplazar la instancia**, y eso no arregla una base caída — así que `/readyz`
+tampoco servía para lo que se esperaba de él. Lo que sí evita es el caso nuevo y
+peor: que Render tome por enferma una instancia cuya base está dormida **a
+propósito**.
+
+⚠️ **Y el precio del ahorro, que es real:** con el cómputo suspendido, la primera
+petición después de un rato tranquilo paga el despertar de Neon —del orden de un
+segundo—. Fuera de horas de partido, y sobre todo de madrugada, le toca a quien
+entre primero.
+
+## ⛔ LO QUE MARCO TIENE QUE HACER, PORQUE ESTE ARCHIVO NO LO HACE
+
+**Cambiar `render.yaml` no cambia nada por sí solo.** Render no lo aplica a un
+servicio que ya existe; lo dice el propio comentario de cabecera del archivo
+desde el 21 de agosto.
+
+> En Render: **Settings → Health Check Path → `/healthz`**
+
+Hasta que eso esté puesto en el panel, la medición de arriba sigue igual y la
+tregua sigue sin ahorrar un céntimo.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---|---|
+| `render.yaml` | `healthCheckPath` de `/readyz` a `/healthz`, con el porqué y el aviso de que hay que ponerlo en el panel |
+| `test/architecture.test.js` | Centinela: la ruta de salud no puede consultar la base |
+
+**Verificación:**
+
+```
+npm test                    -> 710/710   (eran 709)
+npm run check               -> válido
+
+contra PRODUCCIÓN:
+  transacciones/min   58 -> 6,0   (2 mías)
+  escrituras/min      34 -> 0,0
+  cómputo encendido   21 días 4 h, sin una suspensión
+
+/readyz vs /healthz, 10 peticiones cada uno:
+  /readyz  -> 16 transacciones   ⛔
+  /healthz ->  2 transacciones   ✔
+
+el centinela, mutado en los dos sentidos:
+  healthCheckPath: /readyz     -> ROJO, y explica por qué
+  healthCheckPath: /inventada  -> ROJO (una sonda que apunta a un 404)
+  restaurado                   -> VERDE
+```
+
+⭐ **El centinela no exige que diga `/healthz`.** Exige que la ruta elegida **no
+consulte la base**, que es el motivo. Si mañana aparece otra ruta sin base, vale
+igual; y si alguien le mete una consulta a `/healthz`, se pone rojo sin que el
+nombre haya cambiado.
+
+**Hallazgos nuevos:**
+
+1. ⛔⛔ **Un cambio puede invalidar un razonamiento escrito en otro archivo, sin
+   tocar su código.** La tregua convirtió «base dormida» de avería en objetivo,
+   y con eso dejó mintiendo a un comentario de `render.yaml` que nadie había
+   tocado. ⭐ Al hacer un cambio así, la pregunta que faltó fue: **¿quién más da
+   por supuesto lo contrario de esto?**
+2. ⛔ **«Funciona» y «sirve» no son lo mismo.** La tregua cumplió su promesa
+   —0 escrituras/min, dormida cuando toca— y el resultado para Marco era cero:
+   la factura igual. ⚠️ Si me hubiera quedado en medir el módulo, habría dado la
+   129 por buena y la factura habría llegado igual de cara el mes siguiente.
+   **Lo que se mide es el objetivo, no la pieza.**
+3. ⭐ **4,7 transacciones por minuto son suficientes para tirar el ahorro
+   entero.** No hacía falta una fuga grande: con una cada trece segundos, el
+   umbral de cinco minutos no se alcanza nunca. Un ahorro con umbral se pierde
+   del todo o no se pierde: no hay término medio.
+4. ⚠️ **Lo escrito con buenas razones es lo que menos se revisa.** La elección de
+   `/readyz` llevaba su párrafo explicativo, y eso la volvió invisible: un
+   comentario que justifica una decisión parece cerrarla.
+
+**Pendiente / siguiente paso:**
+
+- ⛔ **MARCO: Settings → Health Check Path → `/healthz`** en el panel de Render.
+  Es lo único que separa a la tregua de ahorrar de verdad.
+- ⭐ **Y cómo se comprobará, mañana:** `pg_postmaster_start_time()` tiene que
+  marcar **menos de 21 días**. Cualquier valor más bajo significa que el cómputo
+  se durmió, que no ha pasado desde el 25 de octubre. ⚠️ Mirarlo **de madrugada o
+  por la mañana temprano**, no a media tarde con partidos en juego.
+- 📌 Sigue en pie la decisión del plan gratuito, pero **ahora con más razón para
+  esperar**: la cifra de noviembre no va a servir de referencia, porque media
+  factura se gastó antes de este arreglo.
 
 ---
 
